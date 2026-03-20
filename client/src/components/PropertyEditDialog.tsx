@@ -71,7 +71,7 @@ export function PropertyEditDialog({ property, stageName, open, onClose }: Prope
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">Beds / Baths</span>
-              <span className="font-medium">{property.bedrooms ?? '—'} / {property.bathrooms ?? '—'}</span>
+              <span className="font-medium">{property.bedrooms ?? '—'} / {property.full_baths ?? '—'}{property.half_baths ? ` + ${property.half_baths}h` : ''}</span>
             </div>
           </div>
 

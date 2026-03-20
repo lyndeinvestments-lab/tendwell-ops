@@ -179,6 +179,24 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* Mobile-responsive touch targets */
+  @media (max-width: 767px) {
+    table th, table td {
+      padding-top: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+
+    /* Larger touch targets on mobile */
+    button, [role="button"], input, select, textarea {
+      min-height: 2.25rem;
+    }
+
+    /* Stack header items */
+    .p-5 {
+      padding: 0.75rem;
+    }
+  }
 }
 
 /**

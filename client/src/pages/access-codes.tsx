@@ -5,15 +5,66 @@ import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { Search } from 'lucide-react'
+import { Search, Eye, EyeOff } from 'lucide-react'
 
 const ACCESS_COLS = [
-  { key: 'auto_code', label: 'Auto Code' },
-  { key: 'door_code', label: 'Door Code' },
-  { key: 'other_codes', label: 'Other Codes' },
-  { key: 'wifi_info', label: 'WiFi Info' },
-  { key: 'notes', label: 'Notes' },
+  { key: 'auto_code', label: 'Auto Code', sensitive: true },
+  { key: 'door_code', label: 'Door Code', sensitive: true },
+  { key: 'other_codes', label: 'Other Codes', sensitive: true },
+  { key: 'wifi_info', label: 'WiFi Info', sensitive: true },
+  { key: 'notes', label: 'Notes', sensitive: false },
 ]
+
+function MaskedCell({ value, field, id, sensitive, onSave }: {
+  value: string | null; field: string; id: string; sensitive: boolean
+  onSave: (v: string) => void
+}) {
+  const [revealed, setRevealed] = useState(false)
+
+  if (!sensitive || !value) {
+    return (
+      <InlineEdit
+        value={value}
+        type="text"
+        onSave={onSave}
+        testId={`inline-${field}-${id}`}
+        placeholder="—"
+      />
+    )
+  }
+
+  if (!revealed) {
+    return (
+      <button
+        onClick={() => setRevealed(true)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
+        data-testid={`reveal-${field}-${id}`}
+      >
+        <span className="tracking-widest">••••••</span>
+        <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+      </button>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <InlineEdit
+        value={value}
+        type="text"
+        onSave={onSave}
+        testId={`inline-${field}-${id}`}
+        placeholder="—"
+      />
+      <button
+        onClick={() => setRevealed(false)}
+        className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+        data-testid={`hide-${field}-${id}`}
+      >
+        <EyeOff className="w-3 h-3" />
+      </button>
+    </div>
+  )
+}
 
 export default function AccessCodesPage() {
   const { toast } = useToast()
@@ -50,7 +101,7 @@ export default function AccessCodesPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Access Codes</h1>
-          <p className="text-sm text-muted-foreground">Click cells to edit</p>
+          <p className="text-sm text-muted-foreground">Hover masked fields to reveal — click to edit</p>
         </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -94,12 +145,12 @@ export default function AccessCodesPage() {
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                   {ACCESS_COLS.map(c => (
                     <td key={c.key} className="py-2 px-3">
-                      <InlineEdit
+                      <MaskedCell
                         value={p[c.key]}
-                        type="text"
+                        field={c.key}
+                        id={p.id}
+                        sensitive={c.sensitive}
                         onSave={v => updateField({ id: p.id, field: c.key, value: v })}
-                        testId={`inline-${c.key}-${p.id}`}
-                        placeholder="—"
                       />
                     </td>
                   ))}

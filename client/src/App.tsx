@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
+import { useState } from 'react';
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import PipelinePage from "@/pages/pipeline";
@@ -25,6 +26,18 @@ const sidebarStyle = {
   "--sidebar-width": "220px",
   "--sidebar-width-icon": "3rem",
 } as React.CSSProperties;
+
+// Mobile detection hook
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useState(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  });
+  return isMobile;
+}
 
 function AppRoutes() {
   const { user } = useAuth();
