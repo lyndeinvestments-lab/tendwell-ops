@@ -8,19 +8,21 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { PerplexityAttribution } from "@/components/PerplexityAttribution";
-import { useState } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
-import DashboardPage from "@/pages/dashboard";
-import PipelinePage from "@/pages/pipeline";
-import CostTrackingPage from "@/pages/cost-tracking";
-import PropertyListPage from "@/pages/property-list";
-import LinenTrackerPage from "@/pages/linen-tracker";
-import AccessCodesPage from "@/pages/access-codes";
-import AcFiltersPage from "@/pages/ac-filters";
-import QuoteSheetPage from "@/pages/quote-sheet";
-import MasterListPage from "@/pages/master-list";
-import ProFormaPage from "@/pages/pro-forma";
-import NotFound from "@/pages/not-found";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const PipelinePage = lazy(() => import("@/pages/pipeline"));
+const CostTrackingPage = lazy(() => import("@/pages/cost-tracking"));
+const PropertyListPage = lazy(() => import("@/pages/property-list"));
+const LinenTrackerPage = lazy(() => import("@/pages/linen-tracker"));
+const AccessCodesPage = lazy(() => import("@/pages/access-codes"));
+const AcFiltersPage = lazy(() => import("@/pages/ac-filters"));
+const QuoteSheetPage = lazy(() => import("@/pages/quote-sheet"));
+const MasterListPage = lazy(() => import("@/pages/master-list"));
+const ProFormaPage = lazy(() => import("@/pages/pro-forma"));
+const NotFound = lazy(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -30,12 +32,12 @@ const sidebarStyle = {
 // Mobile detection hook
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
-  useState(() => {
+  useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
-  });
+  }, []);
   return isMobile;
 }
 
@@ -50,19 +52,21 @@ function AppRoutes() {
   }
 
   return (
-    <Switch>
-      <Route path="/" component={DashboardPage} />
-      <Route path="/pipeline" component={PipelinePage} />
-      <Route path="/cost-tracking" component={CostTrackingPage} />
-      <Route path="/property-list" component={PropertyListPage} />
-      <Route path="/linen-tracker" component={LinenTrackerPage} />
-      <Route path="/access-codes" component={AccessCodesPage} />
-      <Route path="/ac-filters" component={AcFiltersPage} />
-      <Route path="/quote-sheet" component={QuoteSheetPage} />
-      <Route path="/master-list" component={MasterListPage} />
-      <Route path="/pro-forma" component={ProFormaPage} />
-      <Route component={NotFound} />
-    </Switch>
+    <Suspense fallback={<div className="p-5 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64" /></div>}>
+      <Switch>
+        <Route path="/" component={DashboardPage} />
+        <Route path="/pipeline" component={PipelinePage} />
+        <Route path="/cost-tracking" component={CostTrackingPage} />
+        <Route path="/property-list" component={PropertyListPage} />
+        <Route path="/linen-tracker" component={LinenTrackerPage} />
+        <Route path="/access-codes" component={AccessCodesPage} />
+        <Route path="/ac-filters" component={AcFiltersPage} />
+        <Route path="/quote-sheet" component={QuoteSheetPage} />
+        <Route path="/master-list" component={MasterListPage} />
+        <Route path="/pro-forma" component={ProFormaPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </Suspense>
   );
 }
 
