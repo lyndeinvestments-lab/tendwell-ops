@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://eetsudoksvsmwtiqraot.supabase.co'
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVldHN1ZG9rc3ZzbXd0aXFyYW90Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwMjExMzksImV4cCI6MjA4OTU5NzEzOX0.VRo5_l4K5ncYT6e4HuL53dh3cVnLMFxx2zr-egE7-bU'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 // In-memory storage to avoid localStorage (blocked in sandboxed iframes)
 const memoryStorage: Record<string, string> = {}
