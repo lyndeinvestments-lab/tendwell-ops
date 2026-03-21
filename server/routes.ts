@@ -2,8 +2,12 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = 'https://eetsudoksvsmwtiqraot.supabase.co'
-const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVldHN1ZG9rc3ZzbXd0aXFyYW90Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDAyMTEzOSwiZXhwIjoyMDg5NTk3MTM5fQ.Ago83AfkFavkZSsSPaRaK-2z7OOG0p2qJRFawGLDVPw'
+const supabaseUrl = process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  throw new Error('Missing required environment variables: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY')
+}
 
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
