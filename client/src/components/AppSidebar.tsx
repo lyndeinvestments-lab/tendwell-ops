@@ -7,7 +7,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut
+  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccess } from '@/lib/auth'
@@ -48,6 +48,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
+      { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
     ],
   },
 ]

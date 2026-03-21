@@ -22,6 +22,7 @@ const AcFiltersPage = lazy(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazy(() => import("@/pages/quote-sheet"));
 const MasterListPage = lazy(() => import("@/pages/master-list"));
 const ProFormaPage = lazy(() => import("@/pages/pro-forma"));
+const PreviousPropertiesPage = lazy(() => import("@/pages/previous-properties"))
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
@@ -64,6 +65,7 @@ function AppRoutes() {
         <Route path="/quote-sheet" component={QuoteSheetPage} />
         <Route path="/master-list" component={MasterListPage} />
         <Route path="/pro-forma" component={ProFormaPage} />
+        <Route path="/previous-properties" component={PreviousPropertiesPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

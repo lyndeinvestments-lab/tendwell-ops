@@ -77,6 +77,7 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   'ac-filters': ['admin', 'operations'],
   'master-list': ['admin'],
   'pro-forma': ['admin'],
+  'previous-properties': ['admin'],
 }
 
 export function canAccess(view: string, role: UserRole): boolean {

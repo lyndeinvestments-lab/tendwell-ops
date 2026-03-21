@@ -28,6 +28,7 @@ export default function AcFiltersPage() {
       const { data, error } = await supabase
         .from('operational_properties')
         .select('id, name, stage_name, notes, filter_size, last_filter_changed, next_filter_due')
+        .neq('stage_name', 'Offboarded')
       if (error) throw error
       return data || []
     },
