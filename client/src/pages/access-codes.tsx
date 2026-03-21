@@ -77,6 +77,7 @@ export default function AccessCodesPage() {
       const { data, error } = await supabase
         .from('operational_properties')
         .select('id, name, stage_name, auto_code, door_code, other_codes, wifi_info, notes')
+        .neq('stage_name', 'Offboarded')
       if (error) throw error
       return data || []
     },
