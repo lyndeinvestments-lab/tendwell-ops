@@ -85,11 +85,6 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          <a href="https://www.perplexity.ai/computer" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-            Created with Perplexity Computer
-          </a>
-        </p>
       </div>
     </div>
   )
