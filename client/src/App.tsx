@@ -11,6 +11,7 @@ import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 import { useState, useEffect, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Analytics } from '@vercel/analytics/react';
 
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const PipelinePage = lazy(() => import("@/pages/pipeline"));
@@ -104,6 +105,7 @@ function App() {
             <AppLayout />
           </Router>
           <Toaster />
+          <Analytics />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
