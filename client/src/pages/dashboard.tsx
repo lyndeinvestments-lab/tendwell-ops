@@ -1,16 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
+import { useLocation } from 'wouter'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus } from 'lucide-react'
+import { formatDistanceToNow, format } from 'date-fns'
 
-function KpiCard({ title, value, subtitle, icon: Icon, loading, alert }: {
+function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
   title: string; value: string | number; subtitle?: string
   icon: React.ComponentType<{ className?: string }>; loading: boolean; alert?: boolean
+  onClick?: () => void
 }) {
   return (
-    <Card className={`border-card-border ${alert ? 'border-destructive/40' : ''}`}>
+    <Card
+      className={`border-card-border ${alert ? 'border-destructive/40' : ''} ${onClick ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}`}
+      onClick={onClick}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div>
@@ -34,6 +39,8 @@ function KpiCard({ title, value, subtitle, icon: Icon, loading, alert }: {
 }
 
 export default function DashboardPage() {
+  const [, navigate] = useLocation()
+
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
     queryFn: async () => {
@@ -67,18 +74,32 @@ export default function DashboardPage() {
     },
   })
 
+  const { data: transitions30, isLoading: trans30Loading } = useQuery({
+    queryKey: ['/supabase/transitions-30d'],
+    queryFn: async () => {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { data, error } = await supabase
+        .from('stage_transitions')
+        .select('property_id, to_stage_id, created_at, properties!stage_transitions_property_id_fkey(name), pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
   const stageMap = stages?.reduce((acc: Record<number, any>, s: any) => ({ ...acc, [s.id]: s }), {}) || {}
-  
+
   const total = properties?.length ?? 0
   const activeStage = stages?.find((s: any) => s.name === 'Active')
   const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
   const offboardingStage = stages?.find((s: any) => s.name === 'Offboarding')
-  
+
   const activeProps = properties?.filter((p: any) => p.stage_id === activeStage?.id) || []
   const active = activeProps.length
   const onboarding = properties?.filter((p: any) => p.stage_id === onboardingStage?.id).length ?? 0
   const offboarding = properties?.filter((p: any) => p.stage_id === offboardingStage?.id).length ?? 0
-  
+
   const totalRevenue = activeProps.reduce((sum: number, p: any) => sum + (p.monthly_revenue_estimate || 0), 0)
   const totalProfit = activeProps.reduce((sum: number, p: any) => sum + (p.monthly_profit_estimate || 0), 0)
   const avgProfit = activeProps.length
@@ -88,10 +109,10 @@ export default function DashboardPage() {
   // Negative profit properties
   const negativeProfit = activeProps.filter((p: any) => (p.estimated_profit || 0) < 0)
 
-  // Missing data detection
+  // Missing data detection — exclude Lead, Quote, Offboarded
   const missingData = properties?.filter((p: any) => {
     const stg = stageMap[p.stage_id]
-    if (!stg || stg.name === 'Offboarded' || stg.name === 'Lead') return false
+    if (!stg || stg.name === 'Offboarded' || stg.name === 'Lead' || stg.name === 'Quote') return false
     return !p.ce_charged || !p.cleaner_pay || !p.square_footage || !p.bedrooms || !p.address
   }) || []
 
@@ -105,8 +126,34 @@ export default function DashboardPage() {
     else profitBuckets.negative++
   })
 
+  // 30-day activity metrics
+  const onboardingStageId = onboardingStage?.id
+  const activeStageId = activeStage?.id
+  const offboardingStageIdVal = offboardingStage?.id
+  const offboardedStage = stages?.find((s: any) => s.name === 'Offboarded')
+  const offboardedStageId = offboardedStage?.id
+
+  const newProperties30 = transitions30?.filter((t: any) =>
+    t.to_stage_id === onboardingStageId || t.to_stage_id === activeStageId
+  ) || []
+  const offboarded30 = transitions30?.filter((t: any) =>
+    t.to_stage_id === offboardedStageId
+  ) || []
+
+  // De-duplicate by property (take most recent per property)
+  const dedup = (arr: any[]) => {
+    const seen = new Set()
+    return arr.filter((t: any) => {
+      if (seen.has(t.property_id)) return false
+      seen.add(t.property_id)
+      return true
+    })
+  }
+  const newProps30Deduped = dedup(newProperties30)
+  const offboarded30Deduped = dedup(offboarded30)
+
   return (
-    <div className="p-5 max-w-6xl space-y-5">
+    <div className="p-5 space-y-5">
       <div>
         <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Operations overview</p>
@@ -114,10 +161,10 @@ export default function DashboardPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} />
-        <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} />
-        <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} />
-        <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} />
+        <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
+        <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/property-list')} />
+        <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/pipeline')} />
+        <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/pipeline')} />
         <KpiCard
           title="Monthly Revenue"
           value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
@@ -134,6 +181,61 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* 30-Day Activity Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <Card className="border-card-border">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <UserCheck className="w-4 h-4 text-blue-500" />
+              <span className="text-sm font-medium">New Properties (30 days)</span>
+              {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
+                <span className="ml-auto text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">{newProps30Deduped.length}</span>
+              )}
+            </div>
+            {trans30Loading ? (
+              <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
+            ) : newProps30Deduped.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No new properties in the last 30 days</p>
+            ) : (
+              <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                {newProps30Deduped.map((t: any) => (
+                  <div key={t.property_id} className="flex justify-between text-xs">
+                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</span>
+                    <span className="text-muted-foreground whitespace-nowrap">{t.pipeline_stages?.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-card-border">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <UserMinus className="w-4 h-4 text-gray-500" />
+              <span className="text-sm font-medium">Offboarded (30 days)</span>
+              {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
+                <span className="ml-auto text-sm font-semibold tabular-nums text-muted-foreground">{offboarded30Deduped.length}</span>
+              )}
+            </div>
+            {trans30Loading ? (
+              <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
+            ) : offboarded30Deduped.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No offboarded properties in the last 30 days</p>
+            ) : (
+              <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                {offboarded30Deduped.map((t: any) => (
+                  <div key={t.property_id} className="flex justify-between text-xs">
+                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/previous-properties')}>{t.properties?.name}</span>
+                    <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Alerts Row */}
       {!isLoading && (negativeProfit.length > 0 || missingData.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -147,7 +249,7 @@ export default function DashboardPage() {
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {negativeProfit.slice(0, 8).map((p: any) => (
                     <div key={p.id} className="flex justify-between text-xs">
-                      <span className="truncate mr-2">{p.name}</span>
+                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/cost-tracking')}>{p.name}</span>
                       <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${p.estimated_profit?.toFixed(2)}</span>
                     </div>
                   ))}
@@ -173,7 +275,7 @@ export default function DashboardPage() {
                     if (!p.address) missing.push('Address')
                     return (
                       <div key={p.id} className="flex justify-between text-xs gap-2">
-                        <span className="truncate">{p.name}</span>
+                        <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list')}>{p.name}</span>
                         <span className="text-amber-600 dark:text-amber-400 whitespace-nowrap">{missing.join(', ')}</span>
                       </div>
                     )
@@ -261,7 +363,7 @@ export default function DashboardPage() {
                   return (
                     <div key={t.id} className="flex items-start justify-between gap-2 py-1 border-b border-border/40 last:border-0">
                       <div>
-                        <p className="text-sm font-medium leading-none">{t.properties?.name}</p>
+                        <p className="text-sm font-medium leading-none cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {fromStage?.name ?? '—'} → {toStage?.name ?? '—'}
                         </p>

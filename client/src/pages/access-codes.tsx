@@ -5,7 +5,7 @@ import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { Search, Eye, EyeOff } from 'lucide-react'
+import { Search, Eye, EyeOff, Copy, Check } from 'lucide-react'
 
 const ACCESS_COLS = [
   { key: 'auto_code', label: 'Auto Code', sensitive: true },
@@ -14,6 +14,27 @@ const ACCESS_COLS = [
   { key: 'wifi_info', label: 'WiFi Info', sensitive: true },
   { key: 'notes', label: 'Notes', sensitive: false },
 ]
+
+function CopyButton({ value, field, id }: { value: string; field: string; id: string }) {
+  const [copied, setCopied] = useState(false)
+  function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation()
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+      title={copied ? 'Copied!' : 'Copy to clipboard'}
+      data-testid={`copy-${field}-${id}`}
+    >
+      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+    </button>
+  )
+}
 
 function MaskedCell({ value, field, id, sensitive, onSave }: {
   value: string | null; field: string; id: string; sensitive: boolean
@@ -55,6 +76,7 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
         testId={`inline-${field}-${id}`}
         placeholder="—"
       />
+      <CopyButton value={value} field={field} id={id} />
       <button
         onClick={() => setRevealed(false)}
         className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
