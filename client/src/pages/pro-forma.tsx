@@ -5,8 +5,11 @@ import { InlineEdit } from '@/components/InlineEdit'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
-import { Search, AlertTriangle } from 'lucide-react'
+import { Search, AlertTriangle, Upload } from 'lucide-react'
+import { CsvImportModal } from '@/components/CsvImportModal'
 
 const FREQ_OPTIONS = [
   { value: 'weekly', label: 'Weekly', cleans: 4.33 },
@@ -35,7 +38,6 @@ function FrequencyCell({ id, value }: { id: string; value: string }) {
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
 
-  const opt = FREQ_OPTIONS.find(o => o.value === value)
   const labelColor = value === 'as_needed' ? 'text-amber-600 dark:text-amber-400' : ''
 
   return (
@@ -58,6 +60,9 @@ export default function ProFormaPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkFreq, setBulkFreq] = useState('')
+  const [showImport, setShowImport] = useState(false)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/pro-forma'],
@@ -80,6 +85,25 @@ export default function ProFormaPage() {
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
 
+  const { mutate: bulkSetFreq, isPending: bulkPending } = useMutation({
+    mutationFn: async ({ ids, freq }: { ids: string[]; freq: string }) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ cleaning_frequency: freq })
+        .in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      const count = selected.size
+      setSelected(new Set())
+      setBulkFreq('')
+      toast({ title: `Updated ${count} properties` })
+    },
+    onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
+  })
+
   const filtered = useMemo(() => {
     if (!properties) return []
     if (!search) return properties
@@ -95,9 +119,26 @@ export default function ProFormaPage() {
     }
   }, [filtered])
 
-  // Count properties that still need frequency updated from default
   const asNeededCount = filtered?.filter((p: any) => p.cleaning_frequency === 'as_needed').length ?? 0
-  const negativeProfit = filtered?.filter((p: any) => (p.monthly_profit_estimate || 0) < 0).length ?? 0
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    if (filtered.length > 0 && selected.size === filtered.length) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((p: any) => p.id)))
+    }
+  }
+
+  const allSelected = filtered.length > 0 && selected.size === filtered.length
+  const someSelected = selected.size > 0 && selected.size < filtered.length
 
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
@@ -113,6 +154,16 @@ export default function ProFormaPage() {
               <span>{asNeededCount} using default frequency (2/mo)</span>
             </div>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowImport(true)}
+            className="h-8 text-xs gap-1.5"
+            data-testid="button-import-csv"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
+          </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -127,10 +178,18 @@ export default function ProFormaPage() {
         </div>
       </div>
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      <div className={`overflow-auto flex-1 rounded-lg border border-border ${selected.size > 0 ? 'pb-16' : ''}`}>
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
+              <th className="py-2 px-3 w-8">
+                <Checkbox
+                  checked={allSelected}
+                  data-state={someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked'}
+                  onCheckedChange={toggleAll}
+                  data-testid="checkbox-select-all"
+                />
+              </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[140px]">Property</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">CE/Clean</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cost/Clean</th>
@@ -147,18 +206,25 @@ export default function ProFormaPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(10)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(11)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !filtered || filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
+                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
               </tr>
             ) : (
               filtered.map((p: any) => {
                 const profitNeg = (p.monthly_profit_estimate || 0) < 0
                 return (
                   <tr key={p.id} data-testid={`row-proforma-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${profitNeg ? 'bg-destructive/5' : ''}`}>
+                    <td className="py-2 px-3">
+                      <Checkbox
+                        checked={selected.has(p.id)}
+                        onCheckedChange={() => toggleSelect(p.id)}
+                        data-testid={`checkbox-${p.id}`}
+                      />
+                    </td>
                     <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.ce_charged)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.total_estimated_cost)}</td>
@@ -185,6 +251,7 @@ export default function ProFormaPage() {
             )}
             {totals && !isLoading && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                <td className="py-2 px-3" />
                 <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={7}>Monthly Totals ({filtered?.length})</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.revenue)}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.cost)}</td>
@@ -194,6 +261,57 @@ export default function ProFormaPage() {
           </tbody>
         </table>
       </div>
+
+      {/* Sticky bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-5 py-3 bg-background border-t border-border shadow-lg">
+          <span className="text-sm font-medium text-foreground">
+            {selected.size} {selected.size === 1 ? 'property' : 'properties'} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Select value={bulkFreq} onValueChange={setBulkFreq}>
+              <SelectTrigger className="h-8 w-40 text-xs" data-testid="select-bulk-freq">
+                <SelectValue placeholder="Set Frequency…" />
+              </SelectTrigger>
+              <SelectContent>
+                {FREQ_OPTIONS.map(f => (
+                  <SelectItem key={f.value} value={f.value} className="text-xs">
+                    {f.label} ({f.cleans}/mo)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              disabled={!bulkFreq || bulkPending}
+              onClick={() => bulkSetFreq({ ids: Array.from(selected), freq: bulkFreq })}
+              data-testid="button-bulk-apply"
+            >
+              {bulkPending ? 'Applying…' : 'Apply'}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { setSelected(new Set()); setBulkFreq('') }}
+              data-testid="button-clear-selection"
+            >
+              Clear Selection
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {showImport && (
+        <CsvImportModal
+          properties={properties || []}
+          onClose={() => setShowImport(false)}
+          onImportComplete={() => {
+            qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+            qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+            setShowImport(false)
+          }}
+        />
+      )}
     </div>
   )
 }
