@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
+import rateLimit from "express-rate-limit";
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -18,12 +19,21 @@ const ROLE_VIEWS: Record<string, string[]> = {
   cleaning: ['linen-tracker'],
 }
 
+// Rate limit login: max 10 attempts per 15 minutes per IP
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Please try again in 15 minutes." },
+})
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     const { password } = req.body
     if (!password) {
       return res.status(400).json({ error: "Password required" })
