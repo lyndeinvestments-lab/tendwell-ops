@@ -12,14 +12,33 @@ type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_cons
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
-  const cls = pct >= 30 ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
-              pct >= 15 ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
+  const isHigh = pct >= 30, isMid = pct >= 15, isPos = pct >= 0
+  const cls = isHigh ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
+              isMid ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
+              isPos ? 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' :
               'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+  const tier = isHigh ? 'High' : isMid ? 'Mid' : isPos ? 'Low' : 'Neg'
   return (
-    <span data-testid={`badge-profit-${Math.round(pct)}`} className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>
-      {pct.toFixed(1)}%
-    </span>
+    <div className="flex items-center gap-1">
+      <span data-testid={`badge-profit-${Math.round(pct)}`} className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>
+        {pct.toFixed(1)}%
+      </span>
+      <span className={`text-xs font-medium px-1 py-0.5 rounded ${cls}`}>{tier}</span>
+    </div>
   )
+}
+
+function StageBadge({ stage }: { stage: string | null }) {
+  if (!stage) return <span className="text-muted-foreground text-xs">—</span>
+  const colors: Record<string, string> = {
+    Active: 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
+    Onboarding: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+    Offboarding: 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
+    Lead: 'text-gray-600 bg-gray-50 border-gray-200',
+    Quote: 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+  }
+  const cls = colors[stage] || 'text-gray-600 bg-gray-50 border-gray-200'
+  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{stage}</span>
 }
 
 function fmt(n: number | null | undefined) {
@@ -39,7 +58,7 @@ export default function CostTrackingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage')
+        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage')
       if (error) throw error
       return data || []
     },
@@ -120,6 +139,7 @@ export default function CostTrackingPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th className={thCls} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>CE Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
               <th className={thCls} onClick={() => toggleSort('est_laundry')}>Laundry <SortIcon col="est_laundry" /></th>
@@ -142,12 +162,13 @@ export default function CostTrackingPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">No operational properties found</td>
+                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No operational properties found</td>
               </tr>
             ) : (
               filtered.map((p: any) => (
                 <tr key={p.id} data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                  <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
                   <td className="py-2 px-3">
                     <InlineEdit
                       value={p.ce_charged}
@@ -176,7 +197,7 @@ export default function CostTrackingPage() {
             )}
             {totals && !isLoading && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={2}>Totals ({filtered.length})</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ce)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.pay)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundry)}</td>

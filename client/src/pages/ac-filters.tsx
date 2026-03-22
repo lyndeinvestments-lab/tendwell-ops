@@ -3,9 +3,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { Search, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck } from 'lucide-react'
+
+const FILTER_INTERVAL_DAYS = 90
+
+function calcNextDue(fromDate: string): string {
+  const d = new Date(fromDate)
+  d.setDate(d.getDate() + FILTER_INTERVAL_DAYS)
+  return d.toISOString().slice(0, 10)
+}
 
 function getDueStatus(nextDue: string | null): { label: string; color: string; icon: typeof CheckCircle2 } | null {
   if (!nextDue) return null
@@ -42,6 +51,22 @@ export default function AcFiltersPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] }),
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
+
+  function markChangedToday(id: string) {
+    const today = new Date().toISOString().slice(0, 10)
+    const nextDue = calcNextDue(today)
+    supabase.from('properties').update({
+      last_filter_changed: today,
+      next_filter_due: nextDue,
+    }).eq('id', id).then(({ error }) => {
+      if (error) {
+        toast({ title: 'Update failed', variant: 'destructive' })
+      } else {
+        qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+        toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
+      }
+    })
+  }
 
   const filtered = useMemo(() => {
     if (!properties) return []
@@ -107,20 +132,21 @@ export default function AcFiltersPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Next Due</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8">Due</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Notes</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(8)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
+                <td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
               </tr>
             ) : (
               filtered.map((p: any) => {
@@ -170,6 +196,19 @@ export default function AcFiltersPage() {
                         placeholder="Add notes…"
                         className="w-full min-w-[150px]"
                       />
+                    </td>
+                    <td className="py-2 px-3">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs gap-1 px-2"
+                        onClick={() => markChangedToday(p.id)}
+                        data-testid={`button-mark-changed-${p.id}`}
+                        title="Mark filter changed today and set next due date"
+                      >
+                        <CalendarCheck className="w-3 h-3" />
+                        Today
+                      </Button>
                     </td>
                   </tr>
                 )

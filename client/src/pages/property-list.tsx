@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
@@ -11,8 +11,14 @@ import { Search } from 'lucide-react'
 
 export default function PropertyListPage() {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }
+  })
   const [selected, setSelected] = useState<any>(null)
+
+  useEffect(() => {
+    try { localStorage.setItem('property-list-filter', statusFilter) } catch { /* ignore */ }
+  }, [statusFilter])
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/properties-list'],
@@ -38,7 +44,7 @@ export default function PropertyListPage() {
     return properties.filter((p: any) => {
       const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase()) ||
         p.address?.toLowerCase().includes(search.toLowerCase())
-      const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
+      const matchStatus = !statusFilter || statusFilter === 'all' || p.stage_name === statusFilter
       return matchSearch && matchStatus
     })
   }, [properties, search, statusFilter])
@@ -63,14 +69,17 @@ export default function PropertyListPage() {
             />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger data-testid="select-status-filter" className="h-8 w-40 text-sm">
+            <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {stages?.map((s: any) => (
-                <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
-              ))}
+              <SelectItem value="all">All Statuses ({properties?.length ?? 0})</SelectItem>
+              {stages?.map((s: any) => {
+                const count = properties?.filter((p: any) => p.stage_name === s.name).length ?? 0
+                return (
+                  <SelectItem key={s.id} value={s.name}>{s.name} ({count})</SelectItem>
+                )
+              })}
             </SelectContent>
           </Select>
         </div>

@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { Search, Download, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2 } from 'lucide-react'
+import { InlineEdit } from '@/components/InlineEdit'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return ''
@@ -109,6 +110,34 @@ export default function MasterListPage() {
       setDetailProperty(null)
     },
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+  })
+
+  // Quick inline update for CE/Pay with undo
+  const { mutate: quickUpdate } = useMutation({
+    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | null }) => {
+      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_, { id, field, value }) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      // Show undo toast — find prev value from current data
+      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
+      toast({
+        title: 'Updated',
+        description: `${field === 'ce_charged' ? 'CE' : 'Pay'} updated`,
+        action: (
+          <button
+            className="text-xs underline"
+            onClick={() => quickUpdate({ id, field, value: prev })}
+          >
+            Undo
+          </button>
+        ) as any,
+        duration: 5000,
+      })
+    },
+    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
 
   function handleSort(key: SortKey) {
@@ -284,8 +313,24 @@ export default function MasterListPage() {
                   <td className="py-1.5 px-3 tabular-nums">{p.bedrooms ?? '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.full_baths != null ? `${p.full_baths}${p.half_baths ? ` / ${p.half_baths}h` : ''}` : '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{p.ce_charged != null ? `$${fmt(p.ce_charged)}` : '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{p.cleaner_pay != null ? `$${fmt(p.cleaner_pay)}` : '—'}</td>
+                  <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
+                    <InlineEdit
+                      value={p.ce_charged}
+                      type="number"
+                      onSave={v => quickUpdate({ id: p.id, field: 'ce_charged', value: v ? parseFloat(v) : null })}
+                      testId={`inline-ce-${p.id}`}
+                      placeholder="—"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
+                    <InlineEdit
+                      value={p.cleaner_pay}
+                      type="number"
+                      onSave={v => quickUpdate({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
+                      testId={`inline-pay-${p.id}`}
+                      placeholder="—"
+                    />
+                  </td>
                   <td className="py-1.5 px-3 tabular-nums">
                     {p.profit_percentage != null ? (
                       <span className={`font-medium ${p.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' : p.profit_percentage >= 15 ? 'text-amber-600' : 'text-destructive'}`}>

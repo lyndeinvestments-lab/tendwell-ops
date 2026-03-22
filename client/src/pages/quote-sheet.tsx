@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
-import { Plus, ArrowRight, Loader2 } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy } from 'lucide-react'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 const INSPECTION_COST = 15
@@ -165,6 +165,24 @@ export default function QuoteSheetPage() {
     onError: () => toast({ title: 'Failed', variant: 'destructive' }),
   })
 
+  function handleDuplicate(prop: any) {
+    setNewProp({
+      name: '',
+      client_name: prop.client || '',
+      ce_charged: prop.ce_charged != null ? String(prop.ce_charged) : '',
+      cleaner_pay: prop.cleaner_pay != null ? String(prop.cleaner_pay) : '',
+      bedrooms: prop.bedrooms != null ? String(prop.bedrooms) : '',
+      number_of_beds: prop.number_of_beds != null ? String(prop.number_of_beds) : '',
+      full_baths: prop.full_baths != null ? String(prop.full_baths) : '',
+      half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
+      number_of_kitchens: prop.number_of_kitchens != null ? String(prop.number_of_kitchens) : '',
+      hot_tub: prop.hot_tub || false,
+      sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
+      address: '',
+    })
+    setAddOpen(true)
+  }
+
   function handleConvert(prop: any) {
     const reqFields = onboardingStage?.requires_fields || []
     const missing = reqFields.filter((f: string) => !prop[f])
@@ -248,15 +266,27 @@ export default function QuoteSheetPage() {
                       {p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '—'}
                     </td>
                     <td className="py-2 px-3">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 text-xs gap-1 hover:text-primary"
-                        onClick={() => handleConvert(p)}
-                        data-testid={`button-convert-${p.id}`}
-                      >
-                        <ArrowRight className="w-3 h-3" /> Onboard
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs gap-1 hover:text-primary px-2"
+                          onClick={() => handleDuplicate(p)}
+                          data-testid={`button-duplicate-${p.id}`}
+                          title="Duplicate quote"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs gap-1 hover:text-primary px-2"
+                          onClick={() => handleConvert(p)}
+                          data-testid={`button-convert-${p.id}`}
+                        >
+                          <ArrowRight className="w-3 h-3" /> Onboard
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 )
