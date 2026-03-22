@@ -7,7 +7,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
-import { PerplexityAttribution } from "@/components/PerplexityAttribution";
 import { useState, useEffect, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -89,7 +88,6 @@ function AppLayout() {
           <main className="flex-1 overflow-auto">
             <AppRoutes />
           </main>
-          <PerplexityAttribution />
         </div>
       </div>
     </SidebarProvider>
