@@ -3,20 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { STAGE_COLORS } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search } from 'lucide-react'
+import { usePropertyModal } from '@/hooks/use-property-modal'
+import { Search, X, Download } from 'lucide-react'
+import Papa from 'papaparse'
 
 export default function PropertyListPage() {
   usePageTitle('Property List')
+  const { openPropertyModal } = usePropertyModal()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }
   })
-  const [selected, setSelected] = useState<any>(null)
 
   useEffect(() => {
     try { localStorage.setItem('property-list-filter', statusFilter) } catch { /* ignore */ }
@@ -51,6 +51,24 @@ export default function PropertyListPage() {
     })
   }, [properties, search, statusFilter])
 
+  function exportCsv() {
+    const rows = filtered.map((p: any) => ({
+      'Property': p.name || '',
+      'Address': p.address || '',
+      'Bedrooms': p.bedrooms ?? '',
+      'Full Baths': p.full_baths ?? '',
+      'Max Guests': p.guest_count ?? '',
+      'Sq Ft': p.square_footage ?? '',
+      'Status': p.stage_name || '',
+    }))
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'property-list.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="p-5 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -67,8 +85,13 @@ export default function PropertyListPage() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               data-testid="input-search-properties"
-              className="pl-8 h-8 w-56 text-sm"
+              className="pl-8 pr-7 h-8 w-56 text-sm"
             />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
@@ -84,6 +107,17 @@ export default function PropertyListPage() {
               })}
             </SelectContent>
           </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="h-8 text-xs gap-1.5"
+            data-testid="button-export-csv"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </Button>
         </div>
       </div>
 
@@ -120,10 +154,10 @@ export default function PropertyListPage() {
                   <tr
                     key={p.id}
                     data-testid={`row-property-${p.id}`}
-                    onClick={() => setSelected(p)}
+                    onClick={() => openPropertyModal(p.id, 'property-list')}
                     className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
                   >
-                    <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs text-primary hover:underline">{p.name}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
@@ -144,29 +178,6 @@ export default function PropertyListPage() {
           </tbody>
         </table>
       </div>
-
-      {/* Property detail dialog — no financials */}
-      <Dialog open={!!selected} onOpenChange={v => !v && setSelected(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base">{selected?.name}</DialogTitle>
-          </DialogHeader>
-          {selected && (
-            <div className="space-y-3 py-1">
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-xs text-muted-foreground block">Address</span><span>{selected.address || '—'}</span></div>
-                <div><span className="text-xs text-muted-foreground block">Status</span>
-                  <span>{selected.stage_name || "—"}</span>
-                </div>
-                <div><span className="text-xs text-muted-foreground block">Bedrooms</span><span>{selected.bedrooms ?? '—'}</span></div>
-                <div><span className="text-xs text-muted-foreground block">Bathrooms</span><span>{selected.full_baths ?? '—'}</span></div>
-                <div><span className="text-xs text-muted-foreground block">Max Guests</span><span>{selected.guest_count ?? '—'}</span></div>
-                <div><span className="text-xs text-muted-foreground block">Sq Ft</span><span>{selected.square_footage?.toLocaleString() ?? '—'}</span></div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

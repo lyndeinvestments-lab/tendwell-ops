@@ -264,7 +264,11 @@ export default function QuoteSheetPage() {
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">$15.00</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">$5.00</td>
                     <td className="py-2 px-3 text-xs tabular-nums">
-                      {p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '—'}
+                      {p.profit_percentage != null ? (
+                        <span className={`font-medium ${p.profit_percentage >= 20 ? 'text-green-600 dark:text-green-400' : p.profit_percentage >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>
+                          {p.profit_percentage.toFixed(1)}%
+                        </span>
+                      ) : '—'}
                     </td>
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1">
@@ -361,8 +365,8 @@ export default function QuoteSheetPage() {
               </div>
             </div>
 
-            {/* Live estimate preview */}
-            {(newProp.number_of_beds || newProp.full_baths) && (
+            {/* Live estimate + profit % preview */}
+            {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
               <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1 text-xs">
                 <p className="font-medium text-foreground mb-1">Estimated Costs</p>
                 {(() => {
@@ -371,13 +375,24 @@ export default function QuoteSheetPage() {
                   const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
                   const laundry = calcLaundry(beds)
                   const consumables = calcConsumables(fullBaths, beds, kitchens, newProp.hot_tub ? 1 : 0)
+                  const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST
+                  const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
+                  const profitPct = ce && ce > 0 ? ((ce - totalCost) / ce) * 100 : null
                   return (
                     <>
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">$15.00</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">$5.00</span></div>
-                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(laundry + consumables + INSPECTION_COST + TRASH_COST)}</span></div>
+                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalCost)}</span></div>
+                      {profitPct !== null && (
+                        <div className="flex justify-between border-t border-border pt-1 font-semibold">
+                          <span>Profit %</span>
+                          <span className={`tabular-nums ${profitPct >= 20 ? 'text-green-600 dark:text-green-400' : profitPct >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>
+                            {profitPct.toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
                     </>
                   )
                 })()}
