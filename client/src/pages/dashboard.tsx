@@ -1,9 +1,12 @@
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'wouter'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
@@ -43,6 +46,34 @@ export default function DashboardPage() {
   const [, navigate] = useLocation()
   usePageTitle('Dashboard')
 
+  type Preset = '7d' | '30d' | '90d' | 'custom'
+  const [preset, setPreset] = useState<Preset>('30d')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+
+  const { sinceDate, untilDate, periodLabel } = useMemo(() => {
+    if (preset === 'custom') {
+      const since = customFrom
+        ? new Date(customFrom).toISOString()
+        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const until = customTo
+        ? new Date(new Date(customTo).getTime() + 24 * 60 * 60 * 1000 - 1).toISOString()
+        : new Date().toISOString()
+      const label =
+        customFrom && customTo
+          ? `${format(new Date(customFrom), 'MMM d')}–${format(new Date(customTo), 'MMM d')}`
+          : '30 days'
+      return { sinceDate: since, untilDate: until, periodLabel: label }
+    }
+    const days = preset === '7d' ? 7 : preset === '90d' ? 90 : 30
+    const label = preset === '7d' ? '7 days' : preset === '90d' ? '90 days' : '30 days'
+    return {
+      sinceDate: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
+      untilDate: new Date().toISOString(),
+      periodLabel: label,
+    }
+  }, [preset, customFrom, customTo])
+
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
     queryFn: async () => {
@@ -64,11 +95,13 @@ export default function DashboardPage() {
   })
 
   const { data: transitions, isLoading: transLoading } = useQuery({
-    queryKey: ['/supabase/stage_transitions_recent'],
+    queryKey: ['/supabase/stage_transitions_recent', sinceDate, untilDate],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('stage_transitions')
         .select('id, property_id, from_stage_id, to_stage_id, created_at, properties!stage_transitions_property_id_fkey(name)')
+        .gte('created_at', sinceDate)
+        .lte('created_at', untilDate)
         .order('created_at', { ascending: false })
         .limit(10)
       if (error) throw error
@@ -77,13 +110,13 @@ export default function DashboardPage() {
   })
 
   const { data: transitions30, isLoading: trans30Loading } = useQuery({
-    queryKey: ['/supabase/transitions-30d'],
+    queryKey: ['/supabase/transitions-period', sinceDate, untilDate],
     queryFn: async () => {
-      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
       const { data, error } = await supabase
         .from('stage_transitions')
         .select('property_id, to_stage_id, created_at, properties!stage_transitions_property_id_fkey(name), pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
-        .gte('created_at', since)
+        .gte('created_at', sinceDate)
+        .lte('created_at', untilDate)
         .order('created_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -161,6 +194,39 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">Operations overview</p>
       </div>
 
+      {/* Date Range Filter Bar */}
+      <div className="flex flex-wrap items-center gap-2">
+        {(['7d', '30d', '90d', 'custom'] as Preset[]).map((p) => (
+          <Button
+            key={p}
+            variant={preset === p ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setPreset(p)}
+          >
+            {p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : p === '90d' ? '90 Days' : 'Custom'}
+          </Button>
+        ))}
+        {preset === 'custom' && (
+          <>
+            <Input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="w-auto"
+              aria-label="From date"
+            />
+            <span className="text-sm text-muted-foreground">to</span>
+            <Input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="w-auto"
+              aria-label="To date"
+            />
+          </>
+        )}
+      </div>
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
@@ -189,7 +255,7 @@ export default function DashboardPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserCheck className="w-4 h-4 text-blue-500" />
-              <span className="text-sm font-medium">New Properties (30 days)</span>
+              <span className="text-sm font-medium">New Properties ({periodLabel})</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
                 <span className="ml-auto text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">{newProps30Deduped.length}</span>
               )}
@@ -197,7 +263,7 @@ export default function DashboardPage() {
             {trans30Loading ? (
               <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
             ) : newProps30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No new properties in the last 30 days</p>
+              <p className="text-xs text-muted-foreground">No new properties in this period</p>
             ) : (
               <div className="space-y-0.5 max-h-28 overflow-y-auto">
                 {newProps30Deduped.map((t: any) => (
@@ -215,7 +281,7 @@ export default function DashboardPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserMinus className="w-4 h-4 text-gray-500" />
-              <span className="text-sm font-medium">Offboarded (30 days)</span>
+              <span className="text-sm font-medium">Offboarded ({periodLabel})</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
                 <span className="ml-auto text-sm font-semibold tabular-nums text-muted-foreground">{offboarded30Deduped.length}</span>
               )}
@@ -223,7 +289,7 @@ export default function DashboardPage() {
             {trans30Loading ? (
               <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
             ) : offboarded30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No offboarded properties in the last 30 days</p>
+              <p className="text-xs text-muted-foreground">No offboarded properties in this period</p>
             ) : (
               <div className="space-y-0.5 max-h-28 overflow-y-auto">
                 {offboarded30Deduped.map((t: any) => (
@@ -246,7 +312,7 @@ export default function DashboardPage() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4 text-destructive" />
-                  <span className="text-sm font-medium text-destructive">{negativeProfit.length} Negative Profit {negativeProfit.length === 1 ? 'Property' : 'Properties'}</span>
+                  <span className="text-sm font-medium text-destructive">{negativeProfit.length} Negative Profit {negativeProfit.length === 1 ? 'Property' : 'Properties'}<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
                 </div>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {negativeProfit.slice(0, 8).map((p: any) => (
@@ -265,7 +331,7 @@ export default function DashboardPage() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertCircle className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-medium text-amber-600 dark:text-amber-400">{missingData.length} Properties Missing Data</span>
+                  <span className="text-sm font-medium text-amber-600 dark:text-amber-400">{missingData.length} Properties Missing Data<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
                 </div>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {missingData.slice(0, 8).map((p: any) => {
@@ -294,7 +360,7 @@ export default function DashboardPage() {
         {/* Profit Distribution */}
         <Card className="border-card-border">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Profit Distribution (Active)</CardTitle>
+            <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {isLoading ? (
@@ -325,7 +391,7 @@ export default function DashboardPage() {
         {/* Properties by Stage */}
         <Card className="border-card-border">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Properties by Stage</CardTitle>
+            <CardTitle className="text-sm font-medium">Properties by Stage<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {isLoading ? (
@@ -352,7 +418,7 @@ export default function DashboardPage() {
         {/* Recent Stage Transitions */}
         <Card className="border-card-border">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Recent Transitions</CardTitle>
+            <CardTitle className="text-sm font-medium">Recent Transitions ({periodLabel})</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {transLoading ? (
@@ -380,7 +446,7 @@ export default function DashboardPage() {
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Activity className="w-8 h-8 text-muted-foreground/40 mb-2" />
-                <p className="text-sm text-muted-foreground">No transitions yet</p>
+                <p className="text-sm text-muted-foreground">No transitions in this period</p>
               </div>
             )}
           </CardContent>
