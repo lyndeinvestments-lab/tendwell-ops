@@ -6,7 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { ArrowUpDown, Search } from 'lucide-react'
+import { TablePagination } from '@/components/TablePagination'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage'
 
@@ -49,9 +51,12 @@ function fmt(n: number | null | undefined) {
 export default function CostTrackingPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Cost Tracking')
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/operational_properties'],
@@ -96,6 +101,8 @@ export default function CostTrackingPage() {
     return arr
   }, [properties, search, sortKey, sortDir])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   const totals = useMemo(() => {
     if (!filtered.length) return null
     return {
@@ -127,7 +134,7 @@ export default function CostTrackingPage() {
             type="search"
             placeholder="Search…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             data-testid="input-search-cost"
             className="pl-8 h-8 w-56 text-sm"
           />
@@ -165,7 +172,7 @@ export default function CostTrackingPage() {
                 <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No operational properties found</td>
               </tr>
             ) : (
-              filtered.map((p: any) => (
+              paged.map((p: any) => (
                 <tr key={p.id} data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                   <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
@@ -214,6 +221,9 @@ export default function CostTrackingPage() {
           </tbody>
         </table>
       </div>
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
     </div>
   )
 }

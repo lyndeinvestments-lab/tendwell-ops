@@ -1,5 +1,4 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
-import { supabase } from '@/lib/supabase'
 
 export type UserRole = 'admin' | 'operations' | 'cleaning'
 
@@ -25,21 +24,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(password: string) {
     setIsLoading(true)
     try {
-      // Query app_users directly from Supabase (RLS allows SELECT for anon)
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('role, label, allowed_views, password_hash')
-        .eq('password_hash', password)
-        .single()
+      // Authenticate via server-side endpoint (password never compared client-side)
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
 
-      if (error || !data) {
-        throw new Error('Invalid password')
+      if (!response.ok) {
+        const err = await response.json()
+        throw new Error(err.error || 'Invalid password')
       }
+
+      const data = await response.json()
 
       setUser({
         role: data.role as UserRole,
         label: data.label,
-        allowedViews: data.allowed_views || [],
+        allowedViews: data.allowedViews || [],
       })
     } catch (e: any) {
       throw new Error(e.message || 'Invalid password')
@@ -78,6 +80,7 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   'master-list': ['admin'],
   'pro-forma': ['admin'],
   'previous-properties': ['admin'],
+  settings: ['admin'],
 }
 
 export function canAccess(view: string, role: UserRole): boolean {

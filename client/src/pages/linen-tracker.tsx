@@ -6,7 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
-import { Search, AlertTriangle } from 'lucide-react'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Search, AlertTriangle, Copy } from 'lucide-react'
+import { TablePagination } from '@/components/TablePagination'
 
 const LINEN_COLS = [
   { key: 'king_beds', label: 'King' },
@@ -33,8 +36,12 @@ function isZeroInventory(p: any): boolean {
 export default function LinenTrackerPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Linen Tracker')
   const [search, setSearch] = useState('')
   const [showZeroOnly, setShowZeroOnly] = useState(false)
+  const [copyTarget, setCopyTarget] = useState<any>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/linen-tracker'],
@@ -66,6 +73,8 @@ export default function LinenTrackerPage() {
     })
   }, [properties, search, showZeroOnly])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   const zeroCount = useMemo(() => {
     if (!properties) return 0
     return properties.filter(isZeroInventory).length
@@ -81,7 +90,7 @@ export default function LinenTrackerPage() {
         <div className="flex items-center gap-2">
           {zeroCount > 0 && (
             <button
-              onClick={() => setShowZeroOnly(v => !v)}
+              onClick={() => { setShowZeroOnly(v => !v); setPage(1) }}
               className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
                 showZeroOnly
                   ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
@@ -99,7 +108,7 @@ export default function LinenTrackerPage() {
               type="search"
               placeholder="Search…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-linen"
               className="pl-8 h-8 w-56 text-sm"
             />
@@ -133,14 +142,22 @@ export default function LinenTrackerPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((p: any) => {
+              paged.map((p: any) => {
                 const flagged = isZeroInventory(p)
                 return (
-                  <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${flagged ? 'bg-red-50/40 dark:bg-red-900/10' : ''}`}>
+                  <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${flagged ? 'bg-red-50/40 dark:bg-red-900/10' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs">
                       <div className="flex items-center gap-1.5">
                         {flagged && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data recorded" />}
                         {p.name}
+                        <button
+                          onClick={() => setCopyTarget(p)}
+                          className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                          aria-label="Copy linen data from another property"
+                          data-testid={`copy-linen-${p.id}`}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
                       </div>
                     </td>
                     {LINEN_COLS.map(c => (
@@ -164,6 +181,47 @@ export default function LinenTrackerPage() {
           </tbody>
         </table>
       </div>
+
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+
+      <Dialog open={!!copyTarget} onOpenChange={v => !v && setCopyTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Copy linen data to {copyTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Select a property to copy linen counts from:</p>
+          <div className="max-h-64 overflow-auto space-y-1">
+            {(properties || [])
+              .filter((s: any) => s.id !== copyTarget?.id && !isZeroInventory(s))
+              .map((s: any) => (
+                <button
+                  key={s.id}
+                  className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+                  data-testid={`copy-source-${s.id}`}
+                  onClick={() => {
+                    const updates = NUMERIC_KEYS.map(k =>
+                      supabase.from('properties').update({ [k]: s[k] ?? null }).eq('id', copyTarget.id)
+                    )
+                    Promise.all(updates).then(() => {
+                      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+                      toast({ title: 'Linen data copied', description: `Copied from ${s.name} to ${copyTarget.name}` })
+                      setCopyTarget(null)
+                    }).catch(() => {
+                      toast({ title: 'Copy failed', variant: 'destructive' })
+                    })
+                  }}
+                >
+                  <span className="font-medium">{s.name}</span>
+                  <span className="text-muted-foreground ml-2 text-xs">
+                    {s.bedrooms}BR — {NUMERIC_KEYS.filter(k => s[k] > 0).length} fields set
+                  </span>
+                </button>
+              ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

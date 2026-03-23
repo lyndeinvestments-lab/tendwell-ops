@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
+import { format, parseISO } from 'date-fns'
 
 interface InlineEditProps {
   value: string | number | null | undefined
   onSave: (val: string) => void
-  type?: 'text' | 'number'
+  type?: 'text' | 'number' | 'date'
   placeholder?: string
   className?: string
   testId?: string
@@ -54,7 +55,20 @@ export function InlineEdit({ value, onSave, type = 'text', placeholder = '—', 
     )
   }
 
-  const display = value != null && value !== '' ? String(value) : placeholder
+  let display: string
+  if (value != null && value !== '') {
+    if (type === 'date') {
+      try {
+        display = format(parseISO(String(value)), 'MMM d, yyyy')
+      } catch {
+        display = String(value)
+      }
+    } else {
+      display = String(value)
+    }
+  } else {
+    display = placeholder
+  }
 
   return (
     <span
