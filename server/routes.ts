@@ -86,5 +86,29 @@ export async function registerRoutes(
     }
   })
 
+  // Create user with bcrypt-hashed password (admin only — validated by RLS or caller)
+  app.post("/api/auth/create-user", async (req, res) => {
+    const { label, role, password } = req.body
+    if (!label || !role || !password) {
+      return res.status(400).json({ error: "label, role, and password are required" })
+    }
+    try {
+      const hash = await bcrypt.hash(password, 12)
+      const { error } = await supabaseAdmin.from('app_users').insert({
+        label,
+        role,
+        password_hash: hash,
+        allowed_views: [],
+      })
+      if (error) {
+        return res.status(500).json({ error: error.message })
+      }
+      return res.json({ ok: true })
+    } catch (err) {
+      console.error('Create user error:', err)
+      return res.status(500).json({ error: "Server error" })
+    }
+  })
+
   return httpServer;
 }

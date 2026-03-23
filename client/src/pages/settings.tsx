@@ -55,13 +55,15 @@ export default function SettingsPage() {
 
   const { mutate: addUser, isPending: adding } = useMutation({
     mutationFn: async ({ label, role, password }: { label: string; role: UserRole; password: string }) => {
-      const { error } = await supabase.from('app_users').insert({
-        label,
-        role,
-        password_hash: password,
-        allowed_views: [],
+      const res = await fetch('/api/auth/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label, role, password }),
       })
-      if (error) throw error
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Failed to create user')
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
