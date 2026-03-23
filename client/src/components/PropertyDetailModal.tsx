@@ -75,6 +75,8 @@ export function PropertyDetailModal() {
   const [, navigate] = useLocation()
   const [isEditing, setIsEditing] = useState(false)
   const [form, setForm] = useState<Record<string, any>>({})
+  const [inlineField, setInlineField] = useState<string | null>(null)
+  const [inlineValue, setInlineValue] = useState('')
 
   const propertyId = modalState?.propertyId
   const highlightFields = modalState?.highlightFields ?? []
@@ -135,6 +137,44 @@ export function PropertyDetailModal() {
     },
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
   })
+
+  // Per-field inline save (click a field to edit it without pencil icon)
+  const { mutate: saveInlineField } = useMutation({
+    mutationFn: async ({ field, value }: { field: string; value: any }) => {
+      const numFields = ['bedrooms', 'full_baths', 'square_footage', 'ce_charged', 'cleaner_pay']
+      const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
+      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', propertyId!)
+      if (error) throw error
+      // Write to property_edit_log
+      try {
+        await supabase.from('property_edit_log').insert({
+          property_id: propertyId,
+          field_name: field,
+          old_value: String(property?.[field] ?? ''),
+          new_value: String(dbValue ?? ''),
+        })
+      } catch { /* silent */ }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      toast({ title: 'Saved' })
+      setInlineField(null)
+    },
+    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+  })
+
+  function startInlineEdit(field: string, currentValue: any) {
+    if (!canEdit || isEditing) return
+    setInlineField(field)
+    setInlineValue(String(currentValue ?? ''))
+  }
+
+  function commitInlineEdit(field: string) {
+    saveInlineField({ field, value: inlineValue })
+  }
 
   const isAdmin = user?.role === 'admin'
   const isOperations = user?.role === 'operations'
@@ -266,8 +306,20 @@ export function PropertyDetailModal() {
                       data-testid="modal-input-address"
                       autoFocus={highlightFields[0] === 'address'}
                     />
+                  ) : inlineField === 'address' ? (
+                    <Input
+                      autoFocus
+                      value={inlineValue}
+                      onChange={e => setInlineValue(e.target.value)}
+                      onBlur={() => commitInlineEdit('address')}
+                      onKeyDown={e => e.key === 'Enter' && commitInlineEdit('address')}
+                      className="mt-0.5 h-7 text-xs"
+                    />
                   ) : (
-                    <p className="text-sm mt-0.5">{property.address || '—'}</p>
+                    <p className={`text-sm mt-0.5 ${canEdit ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                       onClick={() => startInlineEdit('address', property.address)}>
+                      {property.address || '—'}
+                    </p>
                   )}
                 </div>
               </div>
@@ -289,8 +341,19 @@ export function PropertyDetailModal() {
                         data-testid={`modal-input-${row.field}`}
                         autoFocus={highlightFields[0] === row.field}
                       />
+                    ) : inlineField === row.field ? (
+                      <Input
+                        autoFocus
+                        type="number"
+                        value={inlineValue}
+                        onChange={e => setInlineValue(e.target.value)}
+                        onBlur={() => commitInlineEdit(row.field)}
+                        onKeyDown={e => e.key === 'Enter' && commitInlineEdit(row.field)}
+                        className="mt-0.5 h-7 text-xs"
+                      />
                     ) : (
-                      <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''}`}>
+                      <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''} ${canEdit && row.editable !== false ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                         onClick={() => row.editable !== false && startInlineEdit(row.field, property[row.field])}>
                         {row.value ?? '—'}
                       </p>
                     )}
@@ -319,8 +382,20 @@ export function PropertyDetailModal() {
                           data-testid={`modal-input-${row.field}`}
                           autoFocus={highlightFields[0] === row.field}
                         />
+                      ) : inlineField === row.field ? (
+                        <Input
+                          autoFocus
+                          type="number"
+                          step="0.01"
+                          value={inlineValue}
+                          onChange={e => setInlineValue(e.target.value)}
+                          onBlur={() => commitInlineEdit(row.field)}
+                          onKeyDown={e => e.key === 'Enter' && commitInlineEdit(row.field)}
+                          className="mt-0.5 h-7 text-xs"
+                        />
                       ) : (
-                        <p className="text-sm mt-0.5">
+                        <p className={`text-sm mt-0.5 ${canEdit ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                           onClick={() => startInlineEdit(row.field, row.value)}>
                           {row.value != null ? `$${Number(row.value).toFixed(2)}` : '—'}
                         </p>
                       )}

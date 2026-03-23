@@ -156,6 +156,8 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         {...listeners}
         {...attributes}
         data-testid={`card-property-${property.id}`}
+        data-property-id={property.id}
+        onClick={handleNameClick}
         className={`bg-card border border-card-border rounded px-2 py-1 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
       >
         <div className="flex items-center justify-between gap-1">
@@ -189,14 +191,13 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       {...listeners}
       {...attributes}
       data-testid={`card-property-${property.id}`}
+      data-property-id={property.id}
+      onClick={handleNameClick}
       className={`bg-card border border-card-border rounded-md p-2.5 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
     >
-      <button
-        onClick={handleNameClick}
-        className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full"
-      >
+      <span className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full block">
         {property.name}
-      </button>
+      </span>
       {property.client_name && (
         <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>
       )}

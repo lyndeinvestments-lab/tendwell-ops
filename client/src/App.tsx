@@ -63,6 +63,7 @@ function AppRoutes() {
     <Suspense fallback={<div className="p-5 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64" /></div>}>
       <Switch>
         <Route path="/" component={DashboardPage} />
+        <Route path="/dashboard" component={DashboardPage} />
         <Route path="/pipeline" component={PipelinePage} />
         <Route path="/cost-tracking" component={CostTrackingPage} />
         <Route path="/property-list" component={PropertyListPage} />

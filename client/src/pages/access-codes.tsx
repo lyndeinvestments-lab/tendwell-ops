@@ -81,14 +81,17 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
 
   if (!revealed) {
     return (
-      <button
-        onClick={() => { setRevealed(true); logAccessEvent(id, field, 'reveal') }}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
-        data-testid={`reveal-${field}-${id}`}
-      >
-        <span className="tracking-widest">••••••</span>
-        <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </button>
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => { setRevealed(true); logAccessEvent(id, field, 'reveal') }}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
+          data-testid={`reveal-${field}-${id}`}
+        >
+          <span className="tracking-widest">••••••</span>
+          <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
+        {value && <CopyButton value={value} field={field} id={id} />}
+      </div>
     )
   }
 

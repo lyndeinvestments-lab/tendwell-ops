@@ -19,6 +19,12 @@ export function PropertyModalProvider({ children }: { children: ReactNode }) {
 
   function openPropertyModal(propertyId: string, sourceContext?: string, highlightFields?: string[]) {
     setModalState({ propertyId, sourceContext, highlightFields })
+    // Track recently viewed (#18)
+    try {
+      const prev = JSON.parse(localStorage.getItem('tendwell-recent-views') || '[]')
+      const next = [propertyId, ...prev.filter((id: string) => id !== propertyId)].slice(0, 5)
+      localStorage.setItem('tendwell-recent-views', JSON.stringify(next))
+    } catch { /* ignore */ }
   }
 
   function closePropertyModal() {

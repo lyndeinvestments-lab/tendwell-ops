@@ -10,7 +10,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown, ToggleLeft, ToggleRight } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
@@ -53,6 +53,8 @@ export default function LinenTrackerPage() {
   const [showZeroOnly, setShowZeroOnly] = useState(false)
   const [showRestockOnly, setShowRestockOnly] = useState(false)
   const [copyTarget, setCopyTarget] = useState<any>(null)
+  const [restockTarget, setRestockTarget] = useState<any | null>(null)
+  const [showRecommended, setShowRecommended] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
@@ -136,6 +138,40 @@ export default function LinenTrackerPage() {
     return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
   }
 
+  function getDeficientItems(p: any) {
+    if (!p || !p.bedrooms) return []
+    const min = p.bedrooms * restockMultiplier
+    return NUMERIC_KEYS
+      .map(k => ({ key: k, label: LINEN_COLS.find(c => c.key === k)!.label, current: p[k] ?? 0, minimum: min }))
+      .filter(item => item.current < item.minimum)
+  }
+
+  function handlePropertyClick(p: any) {
+    const flaggedZero = isZeroInventory(p)
+    const flaggedRestock = !flaggedZero && isBelowThreshold(p, restockMultiplier)
+    if (flaggedZero || flaggedRestock) {
+      setRestockTarget(p)
+    } else {
+      openPropertyModal(p.id, 'linen-tracker')
+    }
+  }
+
+  async function handleSaveAllRestock() {
+    if (!restockTarget) return
+    const deficient = getDeficientItems(restockTarget)
+    if (deficient.length === 0) { setRestockTarget(null); return }
+    const updates: Record<string, number> = {}
+    deficient.forEach(item => { updates[item.key] = item.minimum })
+    const { error } = await supabase.from('properties').update(updates).eq('id', restockTarget.id)
+    if (error) {
+      toast({ title: 'Batch update failed', variant: 'destructive' })
+    } else {
+      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      toast({ title: 'All items restocked', description: `${restockTarget.name} updated to minimum thresholds` })
+      setRestockTarget(null)
+    }
+  }
+
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -176,6 +212,18 @@ export default function LinenTrackerPage() {
             <Download className="w-3.5 h-3.5" />
             Export CSV
           </Button>
+          <button
+            onClick={() => setShowRecommended(v => !v)}
+            className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
+              showRecommended
+                ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            }`}
+            data-testid="button-toggle-recommended"
+          >
+            {showRecommended ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
+            Show Recommended
+          </button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -239,7 +287,7 @@ export default function LinenTrackerPage() {
                         {flaggedZero && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data recorded" />}
                         {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" title="Below restock threshold" />}
                         <button
-                          onClick={() => openPropertyModal(p.id, 'linen-tracker')}
+                          onClick={() => handlePropertyClick(p)}
                           className="text-primary hover:underline text-left"
                           data-testid={`link-property-${p.id}`}
                         >
@@ -255,20 +303,45 @@ export default function LinenTrackerPage() {
                         </button>
                       </div>
                     </td>
-                    {LINEN_COLS.map(c => (
-                      <td key={c.key} className="py-2 px-3">
-                        <InlineEdit
-                          value={p[c.key]}
-                          type={c.key === 'linen_notes' ? 'text' : 'number'}
-                          onSave={v => updateLinen({
-                            id: p.id,
-                            field: c.key,
-                            value: c.key === 'linen_notes' ? v : (v ? parseInt(v) : null)
-                          })}
-                          testId={`inline-${c.key}-${p.id}`}
-                        />
-                      </td>
-                    ))}
+                    {LINEN_COLS.map(c => {
+                      const isNumeric = c.key !== 'linen_notes'
+                      const actual = p[c.key] ?? 0
+                      const recommended = isNumeric && p.bedrooms ? p.bedrooms * restockMultiplier : 0
+                      const meetsMin = actual >= recommended
+                      return (
+                        <td key={c.key} className="py-2 px-3">
+                          {showRecommended && isNumeric ? (
+                            <div className="flex items-center gap-1">
+                              <InlineEdit
+                                value={p[c.key]}
+                                type="number"
+                                onSave={v => updateLinen({
+                                  id: p.id,
+                                  field: c.key,
+                                  value: v ? parseInt(v) : null
+                                })}
+                                testId={`inline-${c.key}-${p.id}`}
+                                className={meetsMin ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}
+                              />
+                              <span className={`text-xs ${meetsMin ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                / {recommended}
+                              </span>
+                            </div>
+                          ) : (
+                            <InlineEdit
+                              value={p[c.key]}
+                              type={isNumeric ? 'number' : 'text'}
+                              onSave={v => updateLinen({
+                                id: p.id,
+                                field: c.key,
+                                value: isNumeric ? (v ? parseInt(v) : null) : v
+                              })}
+                              testId={`inline-${c.key}-${p.id}`}
+                            />
+                          )}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })
@@ -315,6 +388,54 @@ export default function LinenTrackerPage() {
                 </button>
               ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!restockTarget} onOpenChange={v => !v && setRestockTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restock Checklist — {restockTarget?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 max-h-80 overflow-auto">
+            {restockTarget && getDeficientItems(restockTarget).length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">All items meet minimum thresholds.</p>
+            )}
+            {restockTarget && getDeficientItems(restockTarget).map(item => (
+              <div key={item.key} className="flex items-center justify-between py-2 px-3 rounded-md border border-border" data-testid={`restock-item-${item.key}`}>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-medium">{item.label}</span>
+                  <span className="text-sm text-red-600 dark:text-red-400 font-mono">{item.current}</span>
+                  <span className="text-xs text-muted-foreground">/</span>
+                  <span className="text-sm text-green-600 dark:text-green-400 font-mono">{item.minimum}</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  data-testid={`restock-mark-${item.key}`}
+                  onClick={async () => {
+                    const { error } = await supabase.from('properties').update({ [item.key]: item.minimum }).eq('id', restockTarget.id)
+                    if (error) {
+                      toast({ title: 'Update failed', variant: 'destructive' })
+                    } else {
+                      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+                      toast({ title: `${item.label} restocked` })
+                      setRestockTarget((prev: any) => prev ? { ...prev, [item.key]: item.minimum } : null)
+                    }
+                  }}
+                >
+                  Mark Restocked
+                </Button>
+              </div>
+            ))}
+          </div>
+          {restockTarget && getDeficientItems(restockTarget).length > 0 && (
+            <div className="flex justify-end pt-2">
+              <Button size="sm" onClick={handleSaveAllRestock} data-testid="restock-save-all">
+                Save All
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
