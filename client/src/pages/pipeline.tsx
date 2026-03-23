@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER } from '@/lib/supabase'
 import {
@@ -14,7 +15,9 @@ import { Label } from '@/components/ui/label'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { PropertyEditDialog } from '@/components/PropertyEditDialog'
 import { useToast } from '@/hooks/use-toast'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus } from 'lucide-react'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
 
@@ -186,6 +189,7 @@ function PropertyCardOverlay({ property }: { property: any }) {
 export default function PipelinePage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Pipeline')
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
@@ -201,6 +205,10 @@ export default function PipelinePage() {
   } | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [localProperties, setLocalProperties] = useState<any[] | null>(null)
+  const [search, setSearch] = useState('')
+  const [addLeadOpen, setAddLeadOpen] = useState(false)
+  const [newLeadName, setNewLeadName] = useState('')
+  const [newLeadClient, setNewLeadClient] = useState('')
 
   const { data: stages, isLoading: stagesLoading } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -239,7 +247,15 @@ export default function PipelinePage() {
     }
   }, [properties, isDragging])
 
-  const displayProperties = localProperties ?? properties
+  const displayProperties = useMemo(() => {
+    const base = localProperties ?? properties
+    if (!base || !search.trim()) return base
+    const q = search.trim().toLowerCase()
+    return base.filter((p: any) =>
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.client_name && p.client_name.toLowerCase().includes(q))
+    )
+  }, [localProperties, properties, search])
 
   const { mutate: moveProperty, isPending: isMoving } = useMutation({
     mutationFn: async ({ propId, stageId, fromStageId }: { propId: string; stageId: string; fromStageId: string }) => {
@@ -251,11 +267,24 @@ export default function PipelinePage() {
         to_stage_id: stageId,
       })
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-30d'] })
+
+      // Phase 10: Auto-set follow_up_date when moving to Onboarding
+      const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      if (toStage?.name === 'Onboarding') {
+        const prop = displayProperties?.find((p: any) => p.id === variables.propId)
+        if (prop && !prop.follow_up_date) {
+          const sevenDaysFromNow = new Date()
+          sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
+          const dateStr = sevenDaysFromNow.toISOString().split('T')[0]
+          updateFollowUpDate({ propId: variables.propId, date: dateStr })
+        }
+      }
+
       setTransition(null)
     },
     onError: () => {
@@ -276,6 +305,28 @@ export default function PipelinePage() {
     onError: () => {
       toast({ title: 'Failed to save follow-up date', variant: 'destructive' })
     },
+  })
+
+  const leadStage = stages?.find((s: any) => s.name === 'Lead')
+
+  const { mutate: addLead, isPending: addLeadPending } = useMutation({
+    mutationFn: async () => {
+      if (!leadStage) throw new Error('No Lead stage found')
+      const { error } = await supabase.from('properties').insert({
+        name: newLeadName.trim(),
+        client: newLeadClient.trim() || null,
+        stage_id: leadStage.id,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      toast({ title: 'Lead added to pipeline' })
+      setAddLeadOpen(false)
+      setNewLeadName('')
+      setNewLeadClient('')
+    },
+    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to add lead'), variant: 'destructive' }),
   })
 
   function handleFollowUpChange(propId: string, date: string) {
@@ -381,7 +432,21 @@ export default function PipelinePage() {
           <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
           <p className="text-sm text-muted-foreground">Drag properties between stages</p>
         </div>
+        <div className="relative w-64">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+          <Input
+            type="search"
+            placeholder="Search properties..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8 h-8 text-sm"
+            data-testid="input-search-pipeline"
+          />
+        </div>
         <div className="flex items-center gap-4">
+          <Button size="sm" variant="outline" onClick={() => setAddLeadOpen(true)} data-testid="button-add-lead">
+            <Plus className="w-3.5 h-3.5 mr-1" /> Add Lead
+          </Button>
           <div className="flex items-center gap-2">
             <Switch id="compact-mode" checked={compact} onCheckedChange={setCompact} data-testid="switch-compact" />
             <Label htmlFor="compact-mode" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
@@ -481,6 +546,42 @@ export default function PipelinePage() {
           onClose={() => setEditProperty(null)}
         />
       )}
+
+      <Dialog open={addLeadOpen} onOpenChange={setAddLeadOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Lead</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="lead-name">Property Name *</Label>
+              <Input
+                id="lead-name"
+                placeholder="Enter property name"
+                value={newLeadName}
+                onChange={(e) => setNewLeadName(e.target.value)}
+                data-testid="input-lead-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lead-client">Client Name</Label>
+              <Input
+                id="lead-client"
+                placeholder="Enter client name (optional)"
+                value={newLeadClient}
+                onChange={(e) => setNewLeadClient(e.target.value)}
+                data-testid="input-lead-client"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAddLeadOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => addLead()} disabled={!newLeadName.trim() || addLeadPending} data-testid="button-save-lead">
+              {addLeadPending ? 'Saving...' : 'Add Lead'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
