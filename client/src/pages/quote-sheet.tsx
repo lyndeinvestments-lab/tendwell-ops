@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Plus, ArrowRight, Loader2, Copy } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 const INSPECTION_COST = 15
@@ -209,10 +210,16 @@ export default function QuoteSheetPage() {
           <h1 className="text-xl font-semibold text-foreground">Quote Sheet</h1>
           <p className="text-sm text-muted-foreground">Properties currently in Quote stage</p>
         </div>
-        <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5">
-          <Plus className="w-3.5 h-3.5" />
-          New Quote
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 no-print" data-testid="button-print-quote">
+            <Printer className="w-3.5 h-3.5" />
+            Print
+          </Button>
+          <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
+            <Plus className="w-3.5 h-3.5" />
+            New Quote
+          </Button>
+        </div>
       </div>
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
@@ -244,7 +251,9 @@ export default function QuoteSheetPage() {
               ))
             ) : !properties || properties.length === 0 ? (
               <tr>
-                <td colSpan={14} className="text-center py-12 text-muted-foreground text-sm">No properties in Quote stage</td>
+                <td colSpan={14}>
+                <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
+              </td>
               </tr>
             ) : (
               properties.map((p: any) => {

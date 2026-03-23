@@ -16,6 +16,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
   { value: 'operations', label: 'Operations' },
   { value: 'cleaning', label: 'Cleaning' },
+  { value: 'viewer', label: 'Viewer' },
 ]
 
 function RoleBadge({ role }: { role: string }) {
@@ -23,6 +24,8 @@ function RoleBadge({ role }: { role: string }) {
     ? 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800'
     : role === 'operations'
     ? 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+    : role === 'viewer'
+    ? 'text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
     : 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
   return (
     <span className={`text-xs font-medium px-1.5 py-0.5 rounded border capitalize ${cls}`}>

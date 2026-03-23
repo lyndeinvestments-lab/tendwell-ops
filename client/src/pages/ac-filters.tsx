@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAppSettings } from '@/hooks/use-app-settings'
@@ -34,6 +34,7 @@ export default function AcFiltersPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [justSavedId, setJustSavedId] = useState<string | null>(null)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/ac-filters'],
@@ -77,6 +78,8 @@ export default function AcFiltersPage() {
       } else {
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
         toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
+        setJustSavedId(id)
+        setTimeout(() => setJustSavedId(null), 1500)
       }
     })
   }
@@ -181,12 +184,13 @@ export default function AcFiltersPage() {
               paged.map((p: any) => {
                 const dueStatus = getDueStatus(p.next_filter_due, intervalDays)
                 const rowClass = dueStatus?.label === 'Overdue'
-                  ? 'bg-destructive/5'
+                  ? 'bg-red-100 dark:bg-red-900/20'
                   : dueStatus?.label === 'Due soon'
                   ? 'bg-amber-50/50 dark:bg-amber-900/10'
                   : ''
+                const justSaved = justSavedId === p.id
                 return (
-                  <tr key={p.id} data-testid={`row-filter-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass}`}>
+                  <tr key={p.id} data-testid={`row-filter-${p.id}`} data-just-saved={justSaved || undefined} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass} ${justSaved ? 'animate-pulse bg-green-100 dark:bg-green-900/30' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.stage_name || '—'}</td>
                     <td className="py-2 px-3">
