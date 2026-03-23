@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
 
-export type UserRole = 'admin' | 'operations' | 'cleaning'
+export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer'
 
 export interface AuthUser {
   role: UserRole
@@ -69,17 +69,17 @@ export function useAuth() {
 
 // View access config — used by sidebar + route guard
 export const VIEW_ACCESS: Record<string, UserRole[]> = {
-  dashboard: ['admin'],
-  pipeline: ['admin'],
+  dashboard: ['admin', 'viewer'],
+  pipeline: ['admin', 'viewer'],
   'quote-sheet': ['admin'],
-  'cost-tracking': ['admin'],
-  'property-list': ['admin', 'operations'],
-  'linen-tracker': ['admin', 'operations', 'cleaning'],
+  'cost-tracking': ['admin', 'viewer'],
+  'property-list': ['admin', 'operations', 'viewer'],
+  'linen-tracker': ['admin', 'operations', 'cleaning', 'viewer'],
   'access-codes': ['admin', 'operations'],
-  'ac-filters': ['admin', 'operations'],
-  'master-list': ['admin'],
-  'pro-forma': ['admin'],
-  'previous-properties': ['admin'],
+  'ac-filters': ['admin', 'operations', 'viewer'],
+  'master-list': ['admin', 'viewer'],
+  'pro-forma': ['admin', 'viewer'],
+  'previous-properties': ['admin', 'viewer'],
   settings: ['admin'],
 }
 

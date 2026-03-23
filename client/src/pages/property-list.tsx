@@ -1,14 +1,73 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Search, X, Download } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
+import { Search, X, Download, Building2 } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
+
+function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }: {
+  propertyId: string; currentStageName: string; stageColor: string; stages: any[]
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+
+  const { mutate: changeStage } = useMutation({
+    mutationFn: async (stageId: string) => {
+      const fromStage = stages.find((s: any) => s.name === currentStageName)
+      const { error } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propertyId)
+      if (error) throw error
+      await supabase.from('stage_transitions').insert({
+        property_id: propertyId,
+        from_stage_id: fromStage?.id,
+        to_stage_id: stageId,
+        changed_by: 'ops-user',
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: 'Stage updated' })
+      setOpen(false)
+    },
+    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+  })
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          onClick={e => { e.stopPropagation(); setOpen(true) }}
+          className="text-xs px-1.5 py-0.5 rounded font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all"
+          style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
+          title="Click to change stage"
+        >
+          {currentStageName}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-40 p-1" align="start" onClick={e => e.stopPropagation()}>
+        {stages.map((s: any) => (
+          <button
+            key={s.id}
+            onClick={() => changeStage(s.id)}
+            className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors ${s.name === currentStageName ? 'font-semibold bg-muted/50' : ''}`}
+          >
+            {s.name}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export default function PropertyListPage() {
   usePageTitle('Property List')
@@ -145,7 +204,9 @@ export default function PropertyListPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
+                <td colSpan={7}>
+                  <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
+                </td>
               </tr>
             ) : (
               filtered.map((p: any) => {
@@ -164,7 +225,14 @@ export default function PropertyListPage() {
                     <td className="py-2 px-3 text-xs tabular-nums">{p.guest_count ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage ? p.square_footage.toLocaleString() : '—'}</td>
                     <td className="py-2 px-3">
-                      {p.stage_name ? (
+                      {p.stage_name && stages?.length ? (
+                        <StageBadgePopover
+                          propertyId={p.id}
+                          currentStageName={p.stage_name}
+                          stageColor={color}
+                          stages={stages}
+                        />
+                      ) : p.stage_name ? (
                         <span className="text-xs px-1.5 py-0.5 rounded font-medium"
                           style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
                           {p.stage_name}

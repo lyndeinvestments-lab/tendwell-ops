@@ -57,12 +57,21 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const q = query.trim().toLowerCase()
 
   const matchedPages = useMemo(() => {
-    if (!q) return PAGE_ROUTES.slice(0, 5)
+    if (!q) return PAGE_ROUTES
     return PAGE_ROUTES.filter(p =>
       p.name.toLowerCase().includes(q) ||
       p.keywords.some(k => k.includes(q))
-    ).slice(0, 4)
+    )
   }, [q])
+
+  // Recently viewed from localStorage
+  const recentIds: string[] = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('tendwell-recent-views') || '[]') } catch { return [] }
+  }, [open])
+  const recentProperties = useMemo(() => {
+    if (q || !properties) return []
+    return recentIds.map(id => properties.find((p: any) => p.id === id)).filter(Boolean).slice(0, 5)
+  }, [q, properties, recentIds])
 
   const matchedProperties = useMemo(() => {
     if (!q || !properties) return []
@@ -107,10 +116,44 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
           <kbd className="hidden sm:inline text-xs bg-muted px-1.5 py-0.5 rounded text-muted-foreground">Esc</kbd>
         </div>
 
-        {totalResults === 0 ? (
+        {totalResults === 0 && recentProperties.length === 0 ? (
           <div className="py-8 text-center text-sm text-muted-foreground">No results found</div>
         ) : (
           <div className="max-h-80 overflow-y-auto py-1">
+            {/* Pages group — always first */}
+            {matchedPages.length > 0 && (
+              <>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Pages</div>
+                {matchedPages.map(page => (
+                  <button
+                    key={page.path}
+                    onClick={() => handleSelectPage(page.path)}
+                    className="w-full flex items-center justify-between px-4 py-1.5 text-sm hover:bg-muted transition-colors text-left"
+                    data-testid={`cmd-page-${page.path}`}
+                  >
+                    <span>{page.name}</span>
+                    <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                  </button>
+                ))}
+              </>
+            )}
+
+            {/* Recently Viewed — on empty query only */}
+            {recentProperties.length > 0 && (
+              <>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Recently Viewed</div>
+                {recentProperties.map((p: any) => (
+                  <button
+                    key={`recent-${p.id}`}
+                    onClick={() => handleSelectProperty(p.id)}
+                    className="w-full flex items-center justify-between px-4 py-1.5 text-sm hover:bg-muted transition-colors text-left"
+                  >
+                    <span className="font-medium truncate">{p.name}</span>
+                  </button>
+                ))}
+              </>
+            )}
+
             {matchedProperties.length > 0 && (
               <>
                 <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Properties</div>
@@ -139,21 +182,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
               </>
             )}
 
-            {matchedPages.length > 0 && (
-              <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Pages</div>
-                {matchedPages.map(page => (
-                  <button
-                    key={page.path}
-                    onClick={() => handleSelectPage(page.path)}
-                    className="w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-muted transition-colors text-left"
-                    data-testid={`cmd-page-${page.path.replace('/', '') || 'dashboard'}`}
-                  >
-                    <span>{page.name}</span>
-                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                  </button>
-                ))}
-              </>
+            {/* Pages group already rendered above */}
+            {false && matchedPages.length > 0 && (
+              <></>
             )}
           </div>
         )}

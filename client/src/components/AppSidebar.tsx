@@ -98,6 +98,7 @@ export function AppSidebar() {
                         <SidebarMenuButton
                           asChild
                           isActive={isActive}
+                          tooltip={item.title}
                           data-testid={`nav-${item.view}`}
                         >
                           <Link href={item.href} className="flex items-center gap-2.5 px-3 py-2">
