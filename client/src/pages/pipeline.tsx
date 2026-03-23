@@ -211,13 +211,23 @@ export default function PipelinePage() {
     },
   })
 
-  const { data: properties, isLoading: propsLoading } = useQuery({
+  const { data: properties, isLoading: propsLoading, error: propsError } = useQuery({
     queryKey: ['/supabase/pipeline'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
         .select('id, name, client, stage_id, ce_charged, profit_percentage, follow_up_date, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
-      if (error) throw error
+      if (error) {
+        // If follow_up_date column doesn't exist yet, retry without it
+        if (error.message?.includes('follow_up_date')) {
+          const { data: fallback, error: fallbackError } = await supabase
+            .from('properties')
+            .select('id, name, client, stage_id, ce_charged, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+          if (fallbackError) throw fallbackError
+          return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null }))
+        }
+        throw error
+      }
       return (data || []).map((p: any) => ({ ...p, client_name: p.client }))
     },
   })
@@ -362,6 +372,7 @@ export default function PipelinePage() {
   }, [])
 
   const isLoading = stagesLoading || propsLoading
+  const loadError = propsError
 
   return (
     <div className="p-5 h-full flex flex-col">
@@ -396,6 +407,13 @@ export default function PipelinePage() {
               </div>
             </div>
           ))}
+        </div>
+      ) : loadError ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-2">
+            <p className="text-sm font-medium text-destructive">Failed to load pipeline</p>
+            <p className="text-xs text-muted-foreground max-w-sm">{(loadError as any)?.message || 'An error occurred while fetching properties.'}</p>
+          </div>
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-auto relative">
