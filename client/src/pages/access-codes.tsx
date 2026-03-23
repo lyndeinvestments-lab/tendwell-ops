@@ -5,7 +5,9 @@ import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { Search, Eye, EyeOff, Copy, Check } from 'lucide-react'
+import { TablePagination } from '@/components/TablePagination'
 
 const ACCESS_COLS = [
   { key: 'auto_code', label: 'Auto Code', sensitive: true },
@@ -14,6 +16,19 @@ const ACCESS_COLS = [
   { key: 'wifi_info', label: 'WiFi Info', sensitive: true },
   { key: 'notes', label: 'Notes', sensitive: false },
 ]
+
+async function logAccessEvent(propertyId: string, fieldName: string, action: 'reveal' | 'update') {
+  try {
+    await supabase.from('access_audit_log').insert({
+      property_id: propertyId,
+      field_name: fieldName,
+      action,
+      timestamp: new Date().toISOString(),
+    })
+  } catch {
+    // Silently fail - don't block UI for audit logging
+  }
+}
 
 function CopyButton({ value, field, id }: { value: string; field: string; id: string }) {
   const [copied, setCopied] = useState(false)
@@ -42,12 +57,17 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
 }) {
   const [revealed, setRevealed] = useState(false)
 
+  const handleSave = (v: string) => {
+    onSave(v)
+    logAccessEvent(id, field, 'update')
+  }
+
   if (!sensitive || !value) {
     return (
       <InlineEdit
         value={value}
         type="text"
-        onSave={onSave}
+        onSave={handleSave}
         testId={`inline-${field}-${id}`}
         placeholder="—"
       />
@@ -57,7 +77,7 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
   if (!revealed) {
     return (
       <button
-        onClick={() => setRevealed(true)}
+        onClick={() => { setRevealed(true); logAccessEvent(id, field, 'reveal') }}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
         data-testid={`reveal-${field}-${id}`}
       >
@@ -72,7 +92,7 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
       <InlineEdit
         value={value}
         type="text"
-        onSave={onSave}
+        onSave={handleSave}
         testId={`inline-${field}-${id}`}
         placeholder="—"
       />
@@ -91,7 +111,10 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
 export default function AccessCodesPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Access Codes')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/access-codes'],
@@ -119,6 +142,8 @@ export default function AccessCodesPage() {
     return properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
   }, [properties, search])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4">
@@ -132,7 +157,7 @@ export default function AccessCodesPage() {
             type="search"
             placeholder="Search…"
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             data-testid="input-search-access"
             className="pl-8 h-8 w-56 text-sm"
           />
@@ -163,7 +188,7 @@ export default function AccessCodesPage() {
                 <td colSpan={ACCESS_COLS.length + 1} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
               </tr>
             ) : (
-              filtered.map((p: any) => (
+              paged.map((p: any) => (
                 <tr key={p.id} data-testid={`row-access-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                   {ACCESS_COLS.map(c => (
@@ -183,6 +208,9 @@ export default function AccessCodesPage() {
           </tbody>
         </table>
       </div>
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
     </div>
   )
 }

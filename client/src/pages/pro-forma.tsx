@@ -8,8 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useToast } from '@/hooks/use-toast'
-import { Search, AlertTriangle, Upload } from 'lucide-react'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { Search, AlertTriangle, Upload, Download } from 'lucide-react'
+import Papa from 'papaparse'
 import { CsvImportModal } from '@/components/CsvImportModal'
+import { TablePagination } from '@/components/TablePagination'
 
 const FREQ_OPTIONS = [
   { value: 'weekly', label: 'Weekly', cleans: 4.33 },
@@ -59,10 +62,13 @@ function FrequencyCell({ id, value }: { id: string; value: string }) {
 export default function ProFormaPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Pro Forma')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkFreq, setBulkFreq] = useState('')
   const [showImport, setShowImport] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/pro-forma'],
@@ -110,6 +116,8 @@ export default function ProFormaPage() {
     return properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
   }, [properties, search])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   const totals = useMemo(() => {
     if (!filtered?.length) return null
     return {
@@ -135,6 +143,29 @@ export default function ProFormaPage() {
     } else {
       setSelected(new Set(filtered.map((p: any) => p.id)))
     }
+  }
+
+  function exportCsv() {
+    const rows = filtered.map((p: any) => ({
+      'Property': p.name || '',
+      'CE/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
+      'Cost/Clean': p.total_estimated_cost != null ? `$${p.total_estimated_cost.toFixed(2)}` : '',
+      'Profit/Clean': p.estimated_profit != null ? `$${p.estimated_profit.toFixed(2)}` : '',
+      'Frequency': FREQ_OPTIONS.find(f => f.value === p.cleaning_frequency)?.label || p.cleaning_frequency || '',
+      'Cleans/Mo': p.avg_cleans_per_month ?? '',
+      'First Clean': p.first_clean_date ? p.first_clean_date.slice(0, 10) : '',
+      'Mo Revenue': p.monthly_revenue_estimate != null ? `$${p.monthly_revenue_estimate.toFixed(2)}` : '',
+      'Mo Cost': p.monthly_cost_estimate != null ? `$${p.monthly_cost_estimate.toFixed(2)}` : '',
+      'Mo Profit': p.monthly_profit_estimate != null ? `$${p.monthly_profit_estimate.toFixed(2)}` : '',
+    }))
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'pro-forma.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
@@ -164,13 +195,24 @@ export default function ProFormaPage() {
             <Upload className="w-3.5 h-3.5" />
             Import CSV
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="h-8 text-xs gap-1.5"
+            data-testid="button-export-csv"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
               placeholder="Search…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-proforma"
               className="pl-8 h-8 w-48 text-sm"
             />
@@ -214,7 +256,7 @@ export default function ProFormaPage() {
                 <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
               </tr>
             ) : (
-              filtered.map((p: any) => {
+              paged.map((p: any) => {
                 const profitNeg = (p.monthly_profit_estimate || 0) < 0
                 return (
                   <tr key={p.id} data-testid={`row-proforma-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${profitNeg ? 'bg-destructive/5' : ''}`}>
@@ -236,10 +278,9 @@ export default function ProFormaPage() {
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.first_clean_date ? p.first_clean_date.slice(0, 10) : ''}
-                        type="text"
+                        type="date"
                         onSave={v => updateDate({ id: p.id, value: v })}
                         testId={`inline-date-${p.id}`}
-                        placeholder="yyyy-mm-dd"
                       />
                     </td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.monthly_revenue_estimate)}</td>
@@ -261,6 +302,10 @@ export default function ProFormaPage() {
           </tbody>
         </table>
       </div>
+
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
 
       {/* Sticky bulk action bar */}
       {selected.size > 0 && (

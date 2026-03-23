@@ -7,10 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useState, useEffect, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Analytics } from '@vercel/analytics/react';
+import { ThemeProvider } from 'next-themes';
 
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const PipelinePage = lazy(() => import("@/pages/pipeline"));
@@ -23,6 +25,7 @@ const QuoteSheetPage = lazy(() => import("@/pages/quote-sheet"));
 const MasterListPage = lazy(() => import("@/pages/master-list"));
 const ProFormaPage = lazy(() => import("@/pages/pro-forma"));
 const PreviousPropertiesPage = lazy(() => import("@/pages/previous-properties"))
+const SettingsPage = lazy(() => import("@/pages/settings"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
@@ -66,6 +69,7 @@ function AppRoutes() {
         <Route path="/master-list" component={MasterListPage} />
         <Route path="/pro-forma" component={ProFormaPage} />
         <Route path="/previous-properties" component={PreviousPropertiesPage} />
+        <Route path="/settings" component={SettingsPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -86,7 +90,9 @@ function AppLayout() {
             <SidebarTrigger data-testid="button-sidebar-toggle" className="h-8 w-8" />
           </header>
           <main className="flex-1 overflow-auto">
-            <AppRoutes />
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
           </main>
         </div>
       </div>
@@ -96,17 +102,19 @@ function AppLayout() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AuthProvider>
-          <Router hook={useHashLocation}>
-            <AppLayout />
-          </Router>
-          <Toaster />
-          <Analytics />
-        </AuthProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AuthProvider>
+            <Router hook={useHashLocation}>
+              <AppLayout />
+            </Router>
+            <Toaster />
+            <Analytics />
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

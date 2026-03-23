@@ -1,5 +1,6 @@
 import { useLocation, Link } from 'wouter'
 import { useAuth } from '@/lib/auth'
+import { useTheme } from 'next-themes'
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
@@ -7,7 +8,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive
+  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccess } from '@/lib/auth'
@@ -49,6 +50,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
+      { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },
 ]
@@ -56,6 +58,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
 export function AppSidebar() {
   const { user, logout } = useAuth()
   const [location] = useLocation()
+  const { theme, setTheme } = useTheme()
 
   if (!user) return null
 
@@ -112,7 +115,18 @@ export function AppSidebar() {
         })}
       </SidebarContent>
 
-      <SidebarFooter className="px-3 py-3 border-t border-sidebar-border">
+      <SidebarFooter className="px-3 py-3 border-t border-sidebar-border space-y-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          data-testid="button-theme-toggle"
+          className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground h-8"
+          aria-label="Toggle dark mode"
+        >
+          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          <span className="text-sm">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+        </Button>
         <Button
           variant="ghost"
           size="sm"

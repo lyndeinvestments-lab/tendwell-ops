@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { createClient } from "@supabase/supabase-js";
 import rateLimit from "express-rate-limit";
+import bcrypt from "bcrypt";
+import cors from "cors";
 
 const supabaseUrl = process.env.SUPABASE_URL
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -14,7 +16,7 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey)
 
 // View access map per role
 const ROLE_VIEWS: Record<string, string[]> = {
-  admin: ['dashboard', 'pipeline', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'access-codes', 'ac-filters', 'master-list', 'pro-forma'],
+  admin: ['dashboard', 'pipeline', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings'],
   operations: ['property-list', 'linen-tracker', 'access-codes', 'ac-filters'],
   cleaning: ['linen-tracker'],
 }
@@ -33,6 +35,16 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // CORS configuration
+  app.use(cors({
+    origin: process.env.NODE_ENV === "production"
+      ? process.env.CORS_ORIGIN || false
+      : true,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  }));
+
   app.post("/api/auth/login", loginLimiter, async (req, res) => {
     const { password } = req.body
     if (!password) {
@@ -40,20 +52,32 @@ export async function registerRoutes(
     }
 
     try {
-      const { data, error } = await supabaseAdmin
+      // Fetch all users and compare password hashes securely server-side
+      const { data: users, error } = await supabaseAdmin
         .from('app_users')
         .select('role, label, password_hash')
-        .eq('password_hash', password)
-        .single()
 
-      if (error || !data) {
+      if (error || !users) {
         return res.status(401).json({ error: "Invalid password" })
       }
 
-      const allowedViews = ROLE_VIEWS[data.role] || []
+      // Compare supplied password against each stored bcrypt hash
+      let matchedUser = null
+      for (const user of users) {
+        if (user.password_hash && await bcrypt.compare(password, user.password_hash)) {
+          matchedUser = user
+          break
+        }
+      }
+
+      if (!matchedUser) {
+        return res.status(401).json({ error: "Invalid password" })
+      }
+
+      const allowedViews = ROLE_VIEWS[matchedUser.role] || []
       return res.json({
-        role: data.role,
-        label: data.label,
+        role: matchedUser.role,
+        label: matchedUser.label,
         allowedViews,
       })
     } catch (err) {
