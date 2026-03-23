@@ -7,7 +7,7 @@ import {
   SidebarHeader, SidebarFooter, SidebarSeparator,
 } from '@/components/ui/sidebar'
 import {
-  LayoutDashboard, Kanban, FileSpreadsheet, DollarSign, Building2,
+  LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     label: 'Sales',
     items: [
       { title: 'Pipeline', href: '/pipeline', view: 'pipeline', icon: Kanban },
+      { title: 'Contacts', href: '/contacts', view: 'contacts', icon: Users },
       { title: 'Quote Sheet', href: '/quote-sheet', view: 'quote-sheet', icon: FileSpreadsheet },
     ],
   },
