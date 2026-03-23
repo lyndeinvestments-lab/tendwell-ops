@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER } from '@/lib/supabase'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, useSensor, useSensors, closestCenter,
@@ -13,30 +14,78 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
-import { PropertyEditDialog } from '@/components/PropertyEditDialog'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X } from 'lucide-react'
+import { format } from 'date-fns'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
 
-// Droppable column
-function StageColumn({ stage, properties, onCardClick, compact, collapsed, onToggleCollapse, onFollowUpChange }: {
+// ── Profit badge ──────────────────────────────────────────────────────────────
+function ProfitBadge({ pct, stageName }: { pct: number | null | undefined; stageName: string }) {
+  const isOnboarding = stageName === 'Onboarding'
+  if (pct == null) {
+    if (isOnboarding) {
+      return <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">No data</span>
+    }
+    return null
+  }
+  const cls =
+    pct >= 30 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
+    pct >= 15 ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400' :
+    pct >= 0  ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400' :
+                'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded font-medium tabular-nums ${cls}`}>
+      {pct.toFixed(0)}%
+    </span>
+  )
+}
+
+// ── Stage history tooltip ──────────────────────────────────────────────────────
+function StageHistoryTooltip({ transitions, children }: { transitions: any[]; children: React.ReactNode }) {
+  if (!transitions || transitions.length === 0) return <>{children}</>
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="cursor-help">{children}</div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="max-w-xs p-2 space-y-1">
+        <p className="text-xs font-medium mb-1">Stage History</p>
+        {transitions.map((t: any, i: number) => (
+          <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <span>{t.pipeline_stages?.name ?? '—'}</span>
+            <span className="text-muted-foreground/60">·</span>
+            <span>{format(new Date(t.created_at), 'MMM d, yyyy')}</span>
+          </div>
+        ))}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+// ── Droppable column ──────────────────────────────────────────────────────────
+function StageColumn({ stage, properties, onNameClick, compact, collapsed, onToggleCollapse, onFollowUpChange }: {
   stage: any
   properties: any[]
-  onCardClick: (p: any) => void
+  onNameClick: (p: any) => void
   compact: boolean
   collapsed: boolean
   onToggleCollapse: () => void
   onFollowUpChange: (propId: string, date: string) => void
+  transitionsByProperty?: Record<string, any[]>
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id })
   const color = STAGE_COLORS[stage.name] || '#6b7280'
   const displayProps = collapsed ? [] : properties
 
   return (
-    <div className={`flex flex-col h-full ${collapsed ? 'min-w-[140px] max-w-[140px]' : 'min-w-[220px] max-w-[240px]'}`}>
+    <div
+      id={`col-${stage.name}`}
+      className={`flex flex-col h-full ${collapsed ? 'min-w-[140px] max-w-[140px]' : 'min-w-[220px] max-w-[240px]'}`}
+    >
       <div className="flex items-center gap-1.5 mb-2 px-1 flex-shrink-0">
         <button
           onClick={onToggleCollapse}
@@ -67,7 +116,7 @@ function StageColumn({ stage, properties, onCardClick, compact, collapsed, onTog
               property={p}
               stageName={stage.name}
               stageColor={color}
-              onClick={() => onCardClick(p)}
+              onNameClick={() => onNameClick(p)}
               compact={compact}
               onFollowUpChange={(date) => onFollowUpChange(p.id, date)}
             />
@@ -78,21 +127,26 @@ function StageColumn({ stage, properties, onCardClick, compact, collapsed, onTog
   )
 }
 
-// Draggable card
-function DraggableCard({ property, stageName, stageColor, onClick, compact, onFollowUpChange }: {
-  property: any; stageName: string; stageColor: string; onClick: () => void; compact: boolean
+// ── Draggable card ─────────────────────────────────────────────────────────────
+function DraggableCard({ property, stageName, stageColor, onNameClick, compact, onFollowUpChange }: {
+  property: any; stageName: string; stageColor: string; onNameClick: () => void; compact: boolean
   onFollowUpChange: (date: string) => void
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: property.id })
   const showFollowUp = FOLLOW_UP_STAGES.has(stageName)
+  const transitions: any[] = property._transitions ?? []
 
   function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
     e.stopPropagation()
     onFollowUpChange(e.target.value)
   }
 
-  function handleDateClick(e: React.MouseEvent) {
+  function handleDateClick(e: React.MouseEvent) { e.stopPropagation() }
+
+  // Name click (stop drag-start propagation)
+  function handleNameClick(e: React.MouseEvent) {
     e.stopPropagation()
+    onNameClick()
   }
 
   if (compact) {
@@ -102,20 +156,16 @@ function DraggableCard({ property, stageName, stageColor, onClick, compact, onFo
         {...listeners}
         {...attributes}
         data-testid={`card-property-${property.id}`}
-        onClick={onClick}
         className={`bg-card border border-card-border rounded px-2 py-1 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
       >
         <div className="flex items-center justify-between gap-1">
-          <p className="text-xs font-medium text-foreground truncate">{property.name}</p>
-          {property.profit_percentage != null && (
-            <span className={`text-xs font-medium tabular-nums flex-shrink-0 ${
-              property.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' :
-              property.profit_percentage >= 15 ? 'text-amber-600 dark:text-amber-400' :
-              'text-destructive'
-            }`}>
-              {property.profit_percentage.toFixed(0)}%
-            </span>
-          )}
+          <button
+            onClick={handleNameClick}
+            className="text-xs font-medium text-foreground truncate hover:underline text-left"
+          >
+            {property.name}
+          </button>
+          <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
         </div>
         {showFollowUp && (
           <div className="flex items-center gap-1 mt-0.5" onClick={handleDateClick}>
@@ -139,10 +189,14 @@ function DraggableCard({ property, stageName, stageColor, onClick, compact, onFo
       {...listeners}
       {...attributes}
       data-testid={`card-property-${property.id}`}
-      onClick={onClick}
       className={`bg-card border border-card-border rounded-md p-2.5 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
     >
-      <p className="text-xs font-semibold text-foreground leading-snug">{property.name}</p>
+      <button
+        onClick={handleNameClick}
+        className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full"
+      >
+        {property.name}
+      </button>
       {property.client_name && (
         <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>
       )}
@@ -150,28 +204,22 @@ function DraggableCard({ property, stageName, stageColor, onClick, compact, onFo
         {property.ce_charged != null ? (
           <span className="text-xs text-foreground/80">${property.ce_charged}</span>
         ) : <span className="text-xs text-muted-foreground">—</span>}
-        {property.profit_percentage != null && (
-          <span className={`text-xs font-medium tabular-nums ${
-            property.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' :
-            property.profit_percentage >= 15 ? 'text-amber-600 dark:text-amber-400' :
-            'text-destructive'
-          }`}>
-            {property.profit_percentage.toFixed(1)}%
-          </span>
-        )}
+        <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
       </div>
       {showFollowUp && (
-        <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/40" onClick={handleDateClick}>
-          <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-          <input
-            type="date"
-            value={property.follow_up_date || ''}
-            onChange={handleDateChange}
-            className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
-            placeholder="Add follow-up"
-            title="Follow-up date"
-          />
-        </div>
+        <StageHistoryTooltip transitions={transitions}>
+          <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/40" onClick={handleDateClick}>
+            <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            <input
+              type="date"
+              value={property.follow_up_date || ''}
+              onChange={handleDateChange}
+              className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
+              placeholder="Add follow-up"
+              title="Follow-up date"
+            />
+          </div>
+        </StageHistoryTooltip>
       )}
     </div>
   )
@@ -189,14 +237,13 @@ function PropertyCardOverlay({ property }: { property: any }) {
 export default function PipelinePage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { openPropertyModal } = usePropertyModal()
   usePageTitle('Pipeline')
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
 
   const [activeProperty, setActiveProperty] = useState<any>(null)
-  const [editProperty, setEditProperty] = useState<any>(null)
-  const [editStageName, setEditStageName] = useState('')
   const [compact, setCompact] = useState(false)
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set())
   const [hideEmpty, setHideEmpty] = useState(false)
@@ -226,7 +273,6 @@ export default function PipelinePage() {
         .from('properties')
         .select('id, name, client, stage_id, ce_charged, profit_percentage, follow_up_date, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
       if (error) {
-        // If follow_up_date column doesn't exist yet, retry without it
         if (error.message?.includes('follow_up_date')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
@@ -240,11 +286,35 @@ export default function PipelinePage() {
     },
   })
 
+  // ── Stage history (single bulk query) ─────────────────────────────────────
+  const pipelineIds = useMemo(() => (properties ?? []).map((p: any) => p.id), [properties])
+
+  const { data: allTransitions } = useQuery({
+    queryKey: ['/supabase/stage_transitions_bulk', pipelineIds.slice().sort().join(',')],
+    enabled: pipelineIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('stage_transitions')
+        .select('property_id, created_at, pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
+        .in('property_id', pipelineIds)
+        .order('created_at', { ascending: false })
+      return data ?? []
+    },
+    staleTime: 60_000,
+  })
+
+  const transitionsByProperty = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    for (const t of (allTransitions ?? [])) {
+      if (!map[t.property_id]) map[t.property_id] = []
+      if (map[t.property_id].length < 3) map[t.property_id].push(t)
+    }
+    return map
+  }, [allTransitions])
+
   // Sync localProperties from server when not dragging
   useEffect(() => {
-    if (!isDragging) {
-      setLocalProperties(properties ?? null)
-    }
+    if (!isDragging) setLocalProperties(properties ?? null)
   }, [properties, isDragging])
 
   const displayProperties = useMemo(() => {
@@ -271,24 +341,20 @@ export default function PipelinePage() {
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/transitions-30d'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
 
-      // Phase 10: Auto-set follow_up_date when moving to Onboarding
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
         if (prop && !prop.follow_up_date) {
           const sevenDaysFromNow = new Date()
           sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-          const dateStr = sevenDaysFromNow.toISOString().split('T')[0]
-          updateFollowUpDate({ propId: variables.propId, date: dateStr })
+          updateFollowUpDate({ propId: variables.propId, date: sevenDaysFromNow.toISOString().split('T')[0] })
         }
       }
-
       setTransition(null)
     },
     onError: () => {
-      // Revert optimistic update on failure
       setLocalProperties(properties ?? null)
       toast({ title: 'Failed to move property', variant: 'destructive' })
     },
@@ -299,12 +365,8 @@ export default function PipelinePage() {
       const { error } = await supabase.from('properties').update({ follow_up_date: date || null }).eq('id', propId)
       if (error) throw error
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-    },
-    onError: () => {
-      toast({ title: 'Failed to save follow-up date', variant: 'destructive' })
-    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] }),
+    onError: () => toast({ title: 'Failed to save follow-up date', variant: 'destructive' }),
   })
 
   const leadStage = stages?.find((s: any) => s.name === 'Lead')
@@ -330,7 +392,6 @@ export default function PipelinePage() {
   })
 
   function handleFollowUpChange(propId: string, date: string) {
-    // Optimistic update
     setLocalProperties(prev => prev
       ? prev.map(p => p.id === propId ? { ...p, follow_up_date: date } : p)
       : prev
@@ -350,8 +411,7 @@ export default function PipelinePage() {
     if (!stages || !displayProperties) return []
     return stages.filter((s: any) => {
       if (!hideEmpty) return true
-      const count = displayProperties.filter((p: any) => p.stage_id === s.id).length
-      return count > 0
+      return displayProperties.filter((p: any) => p.stage_id === s.id).length > 0
     })
   }, [stages, displayProperties, hideEmpty])
 
@@ -381,7 +441,6 @@ export default function PipelinePage() {
       return val === null || val === undefined || val === ''
     })
 
-    // Optimistic update — move the card immediately
     setLocalProperties(prev => prev
       ? prev.map(p => p.id === prop.id ? { ...p, stage_id: toStageId } : p)
       : prev
@@ -396,16 +455,11 @@ export default function PipelinePage() {
 
   function confirmTransition() {
     if (!transition) return
-    moveProperty({
-      propId: transition.property.id,
-      stageId: transition.toStageId,
-      fromStageId: transition.fromStageId,
-    })
+    moveProperty({ propId: transition.property.id, stageId: transition.toStageId, fromStageId: transition.fromStageId })
   }
 
   function cancelTransition() {
     if (!transition) return
-    // Revert optimistic update
     setLocalProperties(prev => prev
       ? prev.map(p => p.id === transition.property.id ? { ...p, stage_id: transition.fromStageId } : p)
       : prev
@@ -413,7 +467,6 @@ export default function PipelinePage() {
     setTransition(null)
   }
 
-  // Scroll-to-top detection
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -423,7 +476,6 @@ export default function PipelinePage() {
   }, [])
 
   const isLoading = stagesLoading || propsLoading
-  const loadError = propsError
 
   return (
     <div className="p-5 h-full flex flex-col">
@@ -439,9 +491,17 @@ export default function PipelinePage() {
             placeholder="Search properties..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 h-8 text-sm"
+            className="pl-8 pr-8 h-8 text-sm"
             data-testid="input-search-pipeline"
           />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <Button size="sm" variant="outline" onClick={() => setAddLeadOpen(true)} data-testid="button-add-lead">
@@ -473,11 +533,11 @@ export default function PipelinePage() {
             </div>
           ))}
         </div>
-      ) : loadError ? (
+      ) : propsError ? (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-2">
             <p className="text-sm font-medium text-destructive">Failed to load pipeline</p>
-            <p className="text-xs text-muted-foreground max-w-sm">{(loadError as any)?.message || 'An error occurred while fetching properties.'}</p>
+            <p className="text-xs text-muted-foreground max-w-sm">{(propsError as any)?.message}</p>
           </div>
         </div>
       ) : (
@@ -490,16 +550,14 @@ export default function PipelinePage() {
           >
             <div className="flex gap-3 pb-4 items-stretch min-h-full">
               {visibleStages.map((stage: any) => {
-                const stageProps = displayProperties?.filter((p: any) => p.stage_id === stage.id) || []
+                const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
+                  .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
                 return (
                   <StageColumn
                     key={stage.id}
                     stage={stage}
                     properties={stageProps}
-                    onCardClick={(p) => {
-                      setEditProperty(p)
-                      setEditStageName(stage.name)
-                    }}
+                    onNameClick={(p) => openPropertyModal(p.id, 'pipeline')}
                     compact={compact}
                     collapsed={collapsedStages.has(String(stage.id))}
                     onToggleCollapse={() => toggleCollapse(String(stage.id))}
@@ -513,7 +571,6 @@ export default function PipelinePage() {
             </DragOverlay>
           </DndContext>
 
-          {/* Scroll to top button */}
           {showScrollTop && (
             <button
               onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -535,15 +592,6 @@ export default function PipelinePage() {
           targetStage={transition.toStageName}
           missingFields={transition.missing}
           isPending={isMoving}
-        />
-      )}
-
-      {editProperty && (
-        <PropertyEditDialog
-          property={editProperty}
-          stageName={editStageName}
-          open={true}
-          onClose={() => setEditProperty(null)}
         />
       )}
 

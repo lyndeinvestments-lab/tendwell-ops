@@ -8,9 +8,13 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { PropertyModalProvider } from "@/hooks/use-property-modal";
+import { PropertyDetailModal } from "@/components/PropertyDetailModal";
+import { CommandPalette } from "@/components/CommandPalette";
 import { useState, useEffect, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Search } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
 
@@ -78,25 +82,54 @@ function AppRoutes() {
 
 function AppLayout() {
   const { user } = useAuth();
+  const [cmdOpen, setCmdOpen] = useState(false);
+
+  // Global Cmd+K / Ctrl+K handler
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setCmdOpen(prev => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   if (!user) return <LoginPage />;
 
   return (
-    <SidebarProvider style={sidebarStyle}>
-      <div className="flex h-screen w-full overflow-hidden">
-        <AppSidebar />
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center h-11 px-3 border-b border-border/60 bg-background/95 flex-shrink-0">
-            <SidebarTrigger data-testid="button-sidebar-toggle" className="h-8 w-8" />
-          </header>
-          <main className="flex-1 overflow-auto">
-            <ErrorBoundary>
-              <AppRoutes />
-            </ErrorBoundary>
-          </main>
+    <PropertyModalProvider>
+      <SidebarProvider style={sidebarStyle}>
+        <div className="flex h-screen w-full overflow-hidden">
+          <AppSidebar />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <header className="flex items-center h-11 px-3 border-b border-border/60 bg-background/95 flex-shrink-0 gap-2">
+              <SidebarTrigger data-testid="button-sidebar-toggle" className="h-8 w-8" />
+              <div className="ml-auto">
+                <button
+                  onClick={() => setCmdOpen(true)}
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-muted"
+                  data-testid="button-command-palette"
+                  title="Search (⌘K)"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Search</span>
+                  <kbd className="hidden sm:inline bg-muted border border-border rounded px-1 py-0.5 text-xs">⌘K</kbd>
+                </button>
+              </div>
+            </header>
+            <main className="flex-1 overflow-auto">
+              <ErrorBoundary>
+                <AppRoutes />
+              </ErrorBoundary>
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+      <PropertyDetailModal />
+      <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
+    </PropertyModalProvider>
   );
 }
 
