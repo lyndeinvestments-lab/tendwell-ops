@@ -67,7 +67,11 @@ export default function MasterListPage() {
     return qIdx === -1 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx))
   }, [])
 
-  const [stageFilter, setStageFilter] = useState(() => urlParams.get('stage') || 'all')
+  const [stageFilter, setStageFilter] = useState(() => {
+    const urlStage = urlParams.get('stage')
+    if (urlStage) return urlStage
+    try { return localStorage.getItem('ml-stage-filter') || 'all' } catch { return 'all' }
+  })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStage, setBulkStage] = useState('')
   const [assignClient, setAssignClient] = useState('')
@@ -334,7 +338,7 @@ export default function MasterListPage() {
             <Input type="search" placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-master" className="pl-8 h-7 w-48 text-xs" />
           </div>
-          <Select value={stageFilter} onValueChange={v => { setStageFilter(v); setPage(1) }}>
+          <Select value={stageFilter} onValueChange={v => { setStageFilter(v); setPage(1); try { localStorage.setItem('ml-stage-filter', v) } catch {} }}>
             <SelectTrigger data-testid="select-stage-filter" className="h-7 w-36 text-xs">
               <SelectValue placeholder="All stages" />
             </SelectTrigger>

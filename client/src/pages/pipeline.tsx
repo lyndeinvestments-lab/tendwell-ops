@@ -201,6 +201,20 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       {property.client_name && (
         <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>
       )}
+      {property.contacts?.full_name && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <p className="text-xs text-primary/80 mt-0.5 truncate cursor-help">{property.contacts.full_name}</p>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs p-2 space-y-1">
+            <p className="text-xs font-medium">{property.contacts.full_name}</p>
+            {property.contacts.phone && <p className="text-xs text-muted-foreground">{property.contacts.phone}</p>}
+            {property.contacts.email && <p className="text-xs text-muted-foreground">{property.contacts.email}</p>}
+            {property.contacts.payment_method && <p className="text-xs text-muted-foreground">Payment: {property.contacts.payment_method}</p>}
+            {property.contacts.client_since && <p className="text-xs text-muted-foreground">Client since {property.contacts.client_since}</p>}
+          </TooltipContent>
+        </Tooltip>
+      )}
       <div className="flex items-center justify-between mt-2 gap-1">
         {property.ce_charged != null ? (
           <span className="text-xs text-foreground/80">${property.ce_charged}</span>
@@ -272,14 +286,14 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, stage_id, ce_charged, profit_percentage, follow_up_date, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, client, stage_id, ce_charged, profit_percentage, follow_up_date, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
       if (error) {
-        if (error.message?.includes('follow_up_date')) {
+        if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
             .select('id, name, client, stage_id, ce_charged, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
           if (fallbackError) throw fallbackError
-          return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null }))
+          return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
         }
         throw error
       }

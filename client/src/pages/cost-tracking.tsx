@@ -10,7 +10,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
@@ -254,7 +255,9 @@ export default function CostTrackingPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No operational properties found</td>
+                <td colSpan={11}>
+                  <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
+                </td>
               </tr>
             ) : (
               paged.map((p: any) => (

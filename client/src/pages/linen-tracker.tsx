@@ -10,7 +10,8 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown, ToggleLeft, ToggleRight, BedDouble } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
@@ -272,8 +273,12 @@ export default function LinenTrackerPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={LINEN_COLS.length + 1} className="text-center py-12 text-muted-foreground text-sm">
-                  {showZeroOnly ? 'No properties with missing linen data' : showRestockOnly ? 'No properties need restock' : 'No active properties found'}
+                <td colSpan={LINEN_COLS.length + 1}>
+                  <EmptyState
+                    icon={BedDouble}
+                    title={showZeroOnly ? 'No missing linen data' : showRestockOnly ? 'All stocked up' : 'No active properties'}
+                    description={showZeroOnly ? 'All properties have linen inventory recorded.' : showRestockOnly ? 'No properties need restocking right now.' : 'No active properties found matching your search.'}
+                  />
                 </td>
               </tr>
             ) : (

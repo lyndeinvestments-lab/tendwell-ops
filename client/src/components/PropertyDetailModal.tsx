@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
@@ -11,7 +11,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check, Users, ExternalLink } from 'lucide-react'
 
 // ── Access code reveal cell ──────────────────────────────────────────────────
 function RevealCell({ value, field, id }: { value: string | null; field: string; id: string }) {
@@ -96,6 +97,47 @@ export function PropertyDetailModal() {
     enabled: !!propertyId,
   })
 
+  // Contacts for linking
+  const [contactSearch, setContactSearch] = useState('')
+  const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
+  const { data: allContacts } = useQuery({
+    queryKey: ['/supabase/contacts-lite'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contacts').select('id, full_name, company, payment_method')
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!propertyId,
+    staleTime: 30_000,
+  })
+
+  const linkedContact = useMemo(() => {
+    if (!property?.contact_id || !allContacts) return null
+    return allContacts.find((c: any) => c.id === property.contact_id) || null
+  }, [property?.contact_id, allContacts])
+
+  const filteredContacts = useMemo(() => {
+    if (!allContacts) return []
+    const q = contactSearch.toLowerCase()
+    if (!q) return allContacts.slice(0, 20)
+    return allContacts.filter((c: any) => c.full_name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q)).slice(0, 20)
+  }, [allContacts, contactSearch])
+
+  const { mutate: linkContact } = useMutation({
+    mutationFn: async (contactId: string | null) => {
+      const { error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', propertyId!)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      toast({ title: 'Contact updated' })
+      setContactPopoverOpen(false)
+    },
+    onError: () => toast({ title: 'Failed to update contact', variant: 'destructive' }),
+  })
+
   // Reset form when property changes
   useEffect(() => {
     if (property) {
@@ -104,6 +146,7 @@ export function PropertyDetailModal() {
         bedrooms: property.bedrooms ?? '',
         full_baths: property.full_baths ?? '',
         square_footage: property.square_footage ?? '',
+        guest_count: property.guest_count ?? '',
         ce_charged: property.ce_charged ?? '',
         cleaner_pay: property.cleaner_pay ?? '',
         notes: property.notes || '',
@@ -119,6 +162,7 @@ export function PropertyDetailModal() {
         bedrooms: form.bedrooms !== '' ? parseFloat(String(form.bedrooms)) : null,
         full_baths: form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null,
         square_footage: form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null,
+        guest_count: form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null,
         ce_charged: form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null,
         cleaner_pay: form.cleaner_pay !== '' ? parseFloat(String(form.cleaner_pay)) : null,
         notes: form.notes || null,
@@ -244,7 +288,7 @@ export function PropertyDetailModal() {
             {canEdit && !isLoading && (
               isEditing ? (
                 <button
-                  onClick={() => { setIsEditing(false); setForm({ address: property?.address || '', bedrooms: property?.bedrooms ?? '', full_baths: property?.full_baths ?? '', square_footage: property?.square_footage ?? '', ce_charged: property?.ce_charged ?? '', cleaner_pay: property?.cleaner_pay ?? '', notes: property?.notes || '' }) }}
+                  onClick={() => { setIsEditing(false); setForm({ address: property?.address || '', bedrooms: property?.bedrooms ?? '', full_baths: property?.full_baths ?? '', square_footage: property?.square_footage ?? '', guest_count: property?.guest_count ?? '', ce_charged: property?.ce_charged ?? '', cleaner_pay: property?.cleaner_pay ?? '', notes: property?.notes || '' }) }}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                   title="Cancel editing"
                   data-testid="modal-cancel-edit"
@@ -295,6 +339,62 @@ export function PropertyDetailModal() {
                   </div>
                 ))}
               </div>
+              {/* Point of Contact */}
+              <div>
+                <Label className="text-xs text-muted-foreground">Point of Contact</Label>
+                <div className="mt-0.5 flex items-center gap-2">
+                  {linkedContact ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <Users className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm font-medium">{linkedContact.full_name}</span>
+                      {linkedContact.company && <span className="text-xs text-muted-foreground">({linkedContact.company})</span>}
+                      {linkedContact.payment_method && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
+                      )}
+                      {canEdit && (
+                        <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title="Unlink contact">
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  ) : canEdit ? (
+                    <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
+                      <PopoverTrigger asChild>
+                        <button className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-dashed border-border hover:border-primary/40">
+                          Assign contact…
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-2" align="start">
+                        <Input
+                          value={contactSearch}
+                          onChange={e => setContactSearch(e.target.value)}
+                          placeholder="Search contacts…"
+                          className="h-7 text-xs mb-2"
+                          autoFocus
+                        />
+                        <div className="max-h-40 overflow-y-auto space-y-0.5">
+                          {filteredContacts.length === 0 ? (
+                            <p className="text-xs text-muted-foreground text-center py-2">No contacts found</p>
+                          ) : (
+                            filteredContacts.map((c: any) => (
+                              <button
+                                key={c.id}
+                                onClick={() => { linkContact(c.id); setContactSearch('') }}
+                                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors"
+                              >
+                                <span className="font-medium">{c.full_name}</span>
+                                {c.company && <span className="text-muted-foreground ml-1">({c.company})</span>}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <span className="text-sm text-muted-foreground">—</span>
+                  )}
+                </div>
+              </div>
               <div className="grid grid-cols-1 gap-2">
                 <div>
                   <Label className="text-xs text-muted-foreground">Address</Label>
@@ -328,7 +428,7 @@ export function PropertyDetailModal() {
                   { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms },
                   { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null },
                   { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString() },
-                  { label: 'Guests', field: 'guest_count', value: property.guest_count, editable: false },
+                  { label: 'Guests', field: 'guest_count', value: property.guest_count },
                 ].map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>

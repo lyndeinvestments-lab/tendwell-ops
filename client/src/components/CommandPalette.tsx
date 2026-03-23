@@ -5,21 +5,25 @@ import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Search, ArrowRight } from 'lucide-react'
+import {
+  Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
+  DollarSign, Building2, BedDouble, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
+} from 'lucide-react'
 
 const PAGE_ROUTES = [
-  { name: 'Dashboard', path: '/', keywords: ['dashboard', 'home', 'overview', 'kpi'] },
-  { name: 'Pipeline', path: '/pipeline', keywords: ['pipeline', 'kanban', 'board', 'leads', 'stages'] },
-  { name: 'Quote Sheet', path: '/quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'] },
-  { name: 'Cost Tracking', path: '/cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'] },
-  { name: 'Property List', path: '/property-list', keywords: ['property', 'list', 'properties'] },
-  { name: 'Linen Tracker', path: '/linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory'] },
-  { name: 'Access Codes', path: '/access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'] },
-  { name: 'AC Filters', path: '/ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'] },
-  { name: 'Master List', path: '/master-list', keywords: ['master', 'list', 'all properties', 'admin'] },
-  { name: 'Pro Forma', path: '/pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly'] },
-  { name: 'Previous Properties', path: '/previous-properties', keywords: ['previous', 'offboarded', 'archive'] },
-  { name: 'Settings', path: '/settings', keywords: ['settings', 'users', 'config', 'configuration'] },
+  { name: 'Dashboard', path: '/', keywords: ['dashboard', 'home', 'overview', 'kpi'], icon: LayoutDashboard },
+  { name: 'Pipeline', path: '/pipeline', keywords: ['pipeline', 'kanban', 'board', 'leads', 'stages'], icon: Kanban },
+  { name: 'Contacts', path: '/contacts', keywords: ['contacts', 'crm', 'client', 'people'], icon: Users },
+  { name: 'Quote Sheet', path: '/quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'], icon: FileSpreadsheet },
+  { name: 'Cost Tracking', path: '/cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'], icon: DollarSign },
+  { name: 'Property List', path: '/property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
+  { name: 'Linen Tracker', path: '/linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory'], icon: BedDouble },
+  { name: 'Access Codes', path: '/access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
+  { name: 'AC Filters', path: '/ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
+  { name: 'Master List', path: '/master-list', keywords: ['master', 'list', 'all properties', 'admin'], icon: ListFilter },
+  { name: 'Pro Forma', path: '/pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly'], icon: TrendingUp },
+  { name: 'Previous Properties', path: '/previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
+  { name: 'Settings', path: '/settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
 ]
 
 interface CommandPaletteProps {
@@ -131,6 +135,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     className="w-full flex items-center justify-between px-4 py-1.5 text-sm hover:bg-muted transition-colors text-left"
                     data-testid={`cmd-page-${page.path}`}
                   >
+                    <page.icon className="w-4 h-4 text-muted-foreground mr-2 flex-shrink-0" />
                     <span>{page.name}</span>
                     <ArrowRight className="w-3 h-3 text-muted-foreground" />
                   </button>
