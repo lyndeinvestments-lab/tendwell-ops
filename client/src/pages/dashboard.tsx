@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useLocation } from 'wouter'
+import { useLocation, Link } from 'wouter'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { supabase } from '@/lib/supabase'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus } from 'lucide-react'
+import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
@@ -44,6 +45,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }
 
 export default function DashboardPage() {
   const [, navigate] = useLocation()
+  const { openPropertyModal } = usePropertyModal()
   usePageTitle('Dashboard')
 
   type Preset = '7d' | '30d' | '90d' | 'custom'
@@ -335,16 +337,29 @@ export default function DashboardPage() {
                 </div>
                 <div className="space-y-1 max-h-32 overflow-y-auto">
                   {missingData.slice(0, 8).map((p: any) => {
-                    const missing: string[] = []
-                    if (!p.ce_charged) missing.push('CE')
-                    if (!p.cleaner_pay) missing.push('Pay')
-                    if (!p.square_footage) missing.push('SqFt')
-                    if (!p.bedrooms) missing.push('Beds')
-                    if (!p.address) missing.push('Address')
+                    const missingFields: string[] = []
+                    if (!p.ce_charged) missingFields.push('ce_charged')
+                    if (!p.cleaner_pay) missingFields.push('cleaner_pay')
+                    if (!p.square_footage) missingFields.push('square_footage')
+                    if (!p.bedrooms) missingFields.push('bedrooms')
+                    if (!p.address) missingFields.push('address')
+                    const missingLabels = missingFields.map(f => ({ ce_charged: 'CE', cleaner_pay: 'Pay', square_footage: 'SqFt', bedrooms: 'Beds', address: 'Address' }[f] ?? f))
                     return (
-                      <div key={p.id} className="flex justify-between text-xs gap-2">
+                      <div key={p.id} className="flex items-center justify-between text-xs gap-2">
                         <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
-                        <span className="text-amber-600 dark:text-amber-400 whitespace-nowrap">{missing.join(', ')}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span className="text-amber-600 dark:text-amber-400">{missingLabels.join(', ')}</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-5 px-1.5 text-xs gap-1"
+                            onClick={() => openPropertyModal(p.id, 'dashboard-missing', missingFields)}
+                            data-testid={`button-fix-missing-${p.id}`}
+                          >
+                            <Wrench className="w-2.5 h-2.5" />
+                            Fix
+                          </Button>
+                        </div>
                       </div>
                     )
                   })}
@@ -431,7 +446,13 @@ export default function DashboardPage() {
                   return (
                     <div key={t.id} className="flex items-start justify-between gap-2 py-1 border-b border-border/40 last:border-0">
                       <div>
-                        <p className="text-sm font-medium leading-none cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</p>
+                        <p
+                          className="text-sm font-medium leading-none cursor-pointer hover:underline"
+                          onClick={() => t.property_id && openPropertyModal(t.property_id)}
+                          data-testid={`link-transition-${t.id}`}
+                        >
+                          {t.properties?.name}
+                        </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           {fromStage?.name ?? 'New'} → {toStage?.name ?? '—'}
                         </p>
@@ -442,6 +463,12 @@ export default function DashboardPage() {
                     </div>
                   )
                 })}
+                <Link
+                  href="/master-list?stageChangeLast30=true"
+                  className="block text-xs text-primary hover:underline text-right mt-1 pt-1 border-t border-border/40"
+                >
+                  View All Transitions →
+                </Link>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">

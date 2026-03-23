@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
+import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -67,6 +68,29 @@ export default function MasterListPage() {
   const [highlightHandled, setHighlightHandled] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+
+  // Detect ?stageChangeLast30=true in hash URL
+  const stageChangeLast30 = useMemo(() => {
+    const hash = window.location.hash || ''
+    const qIdx = hash.indexOf('?')
+    if (qIdx === -1) return false
+    return new URLSearchParams(hash.slice(qIdx)).get('stageChangeLast30') === 'true'
+  }, [])
+
+  // Fetch recent transition property IDs when stageChangeLast30 is active
+  const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd')
+  const { data: recentTransitionIds } = useQuery({
+    queryKey: ['/supabase/stage_transitions_recent_30d'],
+    enabled: stageChangeLast30,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('stage_transitions')
+        .select('property_id')
+        .gte('created_at', thirtyDaysAgo)
+      return new Set(data?.map((r: any) => r.property_id) ?? [])
+    },
+    staleTime: 60_000,
+  })
 
   const { data: stages } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -182,7 +206,8 @@ export default function MasterListPage() {
         v?.toLowerCase().includes(search.toLowerCase())
       )
       const matchStage = stageFilter === 'all' || p.pipeline_stages?.name === stageFilter
-      return matchSearch && matchStage
+      const matchRecent = !stageChangeLast30 || !recentTransitionIds || recentTransitionIds.has(p.id)
+      return matchSearch && matchStage && matchRecent
     })
 
     // Sort
@@ -205,7 +230,7 @@ export default function MasterListPage() {
     })
 
     return result
-  }, [properties, search, stageFilter, sortKey, sortDir])
+  }, [properties, search, stageFilter, sortKey, sortDir, stageChangeLast30, recentTransitionIds])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 

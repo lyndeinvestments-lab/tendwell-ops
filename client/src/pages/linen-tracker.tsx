@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
+import Papa from 'papaparse'
 
 const LINEN_COLS = [
   { key: 'king_beds', label: 'King' },
@@ -27,21 +30,32 @@ const LINEN_COLS = [
 const NUMERIC_KEYS = LINEN_COLS.filter(c => c.key !== 'linen_notes').map(c => c.key)
 
 function isZeroInventory(p: any): boolean {
-  // Flag if property has beds but all numeric linen counts are 0 or null
   const hasBeds = (p.bedrooms ?? 0) > 0
   if (!hasBeds) return false
   return NUMERIC_KEYS.every(k => !p[k] || p[k] === 0)
 }
 
+function isBelowThreshold(p: any, multiplier: number): boolean {
+  if (!p.bedrooms || p.bedrooms === 0) return false
+  const threshold = p.bedrooms * multiplier
+  const totalBeds = (p.king_beds ?? 0) + (p.queen_beds ?? 0) + (p.full_beds ?? 0) + (p.twin_beds ?? 0)
+  return totalBeds < threshold || (p.bath_towels ?? 0) < threshold
+}
+
 export default function LinenTrackerPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { openPropertyModal } = usePropertyModal()
+  const { getNumber } = useAppSettings()
+  const restockMultiplier = getNumber('linen_restock_multiplier', 2)
   usePageTitle('Linen Tracker')
   const [search, setSearch] = useState('')
   const [showZeroOnly, setShowZeroOnly] = useState(false)
+  const [showRestockOnly, setShowRestockOnly] = useState(false)
   const [copyTarget, setCopyTarget] = useState<any>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/linen-tracker'],
@@ -60,18 +74,31 @@ export default function LinenTrackerPage() {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      toast({ title: 'Saved' })
+    },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {
     if (!properties) return []
-    return properties.filter((p: any) => {
+    let result = properties.filter((p: any) => {
       const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase())
       const matchZero = !showZeroOnly || isZeroInventory(p)
-      return matchSearch && matchZero
+      const matchRestock = !showRestockOnly || isBelowThreshold(p, restockMultiplier)
+      return matchSearch && matchZero && matchRestock
     })
-  }, [properties, search, showZeroOnly])
+
+    if (sortDir) {
+      result = [...result].sort((a: any, b: any) => {
+        const cmp = (a.name || '').localeCompare(b.name || '')
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    }
+
+    return result
+  }, [properties, search, showZeroOnly, showRestockOnly, restockMultiplier, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -80,6 +107,35 @@ export default function LinenTrackerPage() {
     return properties.filter(isZeroInventory).length
   }, [properties])
 
+  const restockCount = useMemo(() => {
+    if (!properties) return 0
+    return properties.filter((p: any) => isBelowThreshold(p, restockMultiplier)).length
+  }, [properties, restockMultiplier])
+
+  function toggleSort() {
+    setSortDir(prev => prev === null ? 'asc' : prev === 'asc' ? 'desc' : null)
+  }
+
+  function exportCsv() {
+    const rows = filtered.map((p: any) => {
+      const row: Record<string, any> = { 'Property': p.name || '' }
+      LINEN_COLS.forEach(c => { row[c.label] = p[c.key] ?? '' })
+      return row
+    })
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'linen-tracker.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const SortIcon = () => {
+    if (sortDir === 'asc') return <ArrowUp className="w-3 h-3" />
+    if (sortDir === 'desc') return <ArrowDown className="w-3 h-3" />
+    return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+  }
+
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -87,10 +143,24 @@ export default function LinenTrackerPage() {
           <h1 className="text-xl font-semibold text-foreground">Linen Tracker</h1>
           <p className="text-sm text-muted-foreground">Active properties — click to edit</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {restockCount > 0 && (
+            <button
+              onClick={() => { setShowRestockOnly(v => !v); setShowZeroOnly(false); setPage(1) }}
+              className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
+                showRestockOnly
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'
+                  : 'border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+              }`}
+              data-testid="button-filter-restock"
+            >
+              <AlertTriangle className="w-3 h-3" />
+              {restockCount} need{restockCount === 1 ? 's' : ''} restock
+            </button>
+          )}
           {zeroCount > 0 && (
             <button
-              onClick={() => { setShowZeroOnly(v => !v); setPage(1) }}
+              onClick={() => { setShowZeroOnly(v => !v); setShowRestockOnly(false); setPage(1) }}
               className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
                 showZeroOnly
                   ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
@@ -99,9 +169,13 @@ export default function LinenTrackerPage() {
               data-testid="button-filter-zero-inventory"
             >
               <AlertTriangle className="w-3 h-3" />
-              {zeroCount} propert{zeroCount === 1 ? 'y has' : 'ies have'} no linen data
+              {zeroCount} no linen data
             </button>
           )}
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
+            <Download className="w-3.5 h-3.5" />
+            Export CSV
+          </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -110,8 +184,13 @@ export default function LinenTrackerPage() {
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-linen"
-              className="pl-8 h-8 w-56 text-sm"
+              className="pl-8 pr-7 h-8 w-56 text-sm"
             />
+            {search && (
+              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -120,7 +199,15 @@ export default function LinenTrackerPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px]">Property</th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] cursor-pointer select-none hover:text-foreground group"
+                onClick={toggleSort}
+              >
+                <span className="flex items-center gap-1">
+                  Property
+                  <SortIcon />
+                </span>
+              </th>
               {LINEN_COLS.map(c => (
                 <th key={c.key} className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{c.label}</th>
               ))}
@@ -138,18 +225,26 @@ export default function LinenTrackerPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={LINEN_COLS.length + 1} className="text-center py-12 text-muted-foreground text-sm">
-                  {showZeroOnly ? 'No properties with missing linen data' : 'No active properties found'}
+                  {showZeroOnly ? 'No properties with missing linen data' : showRestockOnly ? 'No properties need restock' : 'No active properties found'}
                 </td>
               </tr>
             ) : (
               paged.map((p: any) => {
-                const flagged = isZeroInventory(p)
+                const flaggedZero = isZeroInventory(p)
+                const flaggedRestock = !flaggedZero && isBelowThreshold(p, restockMultiplier)
                 return (
-                  <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${flagged ? 'bg-red-50/40 dark:bg-red-900/10' : ''}`}>
+                  <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${flaggedZero ? 'bg-red-50/40 dark:bg-red-900/10' : flaggedRestock ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs">
                       <div className="flex items-center gap-1.5">
-                        {flagged && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data recorded" />}
-                        {p.name}
+                        {flaggedZero && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data recorded" />}
+                        {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" title="Below restock threshold" />}
+                        <button
+                          onClick={() => openPropertyModal(p.id, 'linen-tracker')}
+                          className="text-primary hover:underline text-left"
+                          data-testid={`link-property-${p.id}`}
+                        >
+                          {p.name}
+                        </button>
                         <button
                           onClick={() => setCopyTarget(p)}
                           className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"

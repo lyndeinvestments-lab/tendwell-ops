@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth, type UserRole } from '@/lib/auth'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -9,7 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { UserPlus, Trash2, Shield, Users } from 'lucide-react'
+import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind } from 'lucide-react'
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -27,6 +28,122 @@ function RoleBadge({ role }: { role: string }) {
     <span className={`text-xs font-medium px-1.5 py-0.5 rounded border capitalize ${cls}`}>
       {role}
     </span>
+  )
+}
+
+function AppSettingsSection() {
+  const { toast } = useToast()
+  const { get, saveSetting } = useAppSettings()
+
+  const COST_FIELDS = [
+    { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15' },
+    { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5' },
+    { key: 'cost_consumables', label: 'Consumables Base Rate ($)', placeholder: '30' },
+  ]
+
+  const PROFIT_FIELDS = [
+    { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30' },
+    { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15' },
+  ]
+
+  function handleSave(key: string, value: string) {
+    saveSetting({ key, value })
+    toast({ title: 'Setting saved' })
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Cost Defaults */}
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          Cost Defaults
+        </h2>
+        <p className="text-xs text-muted-foreground">Default costs used in Quote Sheet calculations</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {COST_FIELDS.map(f => (
+            <div key={f.key} className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
+              <label className="text-xs text-muted-foreground">{f.label}</label>
+              <Input
+                type="number"
+                defaultValue={get(f.key, f.placeholder)}
+                placeholder={f.placeholder}
+                className="h-7 text-xs"
+                data-testid={`input-setting-${f.key}`}
+                onBlur={e => handleSave(f.key, e.target.value)}
+              />
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                onClick={e => {
+                  const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
+                  handleSave(f.key, input.value)
+                }}>
+                Save
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Profit Tiers */}
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <TrendingUp className="w-4 h-4" />
+          Profit Tiers
+        </h2>
+        <p className="text-xs text-muted-foreground">Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {PROFIT_FIELDS.map(f => (
+            <div key={f.key} className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
+              <label className="text-xs text-muted-foreground">{f.label}</label>
+              <Input
+                type="number"
+                defaultValue={get(f.key, f.placeholder)}
+                placeholder={f.placeholder}
+                className="h-7 text-xs"
+                data-testid={`input-setting-${f.key}`}
+                onBlur={e => handleSave(f.key, e.target.value)}
+              />
+              <Button size="sm" variant="outline" className="h-7 text-xs"
+                onClick={e => {
+                  const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
+                  handleSave(f.key, input.value)
+                }}>
+                Save
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* AC Filter Schedule */}
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <Wind className="w-4 h-4" />
+          AC Filter Schedule
+        </h2>
+        <p className="text-xs text-muted-foreground">Default interval for AC filter replacement reminders</p>
+        <div className="rounded-lg border border-border p-4">
+          <div className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
+            <label className="text-xs text-muted-foreground">Replacement Interval (days)</label>
+            <Input
+              type="number"
+              defaultValue={get('ac_filter_interval', '90')}
+              placeholder="90"
+              className="h-7 text-xs"
+              data-testid="input-setting-ac_filter_interval"
+              onBlur={e => handleSave('ac_filter_interval', e.target.value)}
+            />
+            <Button size="sm" variant="outline" className="h-7 text-xs"
+              onClick={e => {
+                const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
+                handleSave('ac_filter_interval', input.value)
+              }}>
+              Save
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -171,6 +288,8 @@ export default function SettingsPage() {
           </table>
         </div>
       </div>
+
+      <AppSettingsSection />
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-sm">
