@@ -310,3 +310,14 @@
     inset: -1px;
   }
 }
+
+/* Print styles (#11) */
+@media print {
+  [data-sidebar], header, .no-print, [data-testid="button-sidebar-toggle"], [data-testid="button-command-palette"] { display: none !important; }
+  body { background: white !important; }
+  main { overflow: visible !important; }
+  table { font-size: 11px !important; }
+  .print-header { display: block !important; }
+}
+.print-header { display: none; }
+

@@ -59,11 +59,24 @@ export default function MasterListPage() {
   const [location] = useLocation()
   usePageTitle('Master List')
   const [search, setSearch] = useState('')
-  const [stageFilter, setStageFilter] = useState('all')
+
+  // Parse URL params for stage filter and sort
+  const urlParams = useMemo(() => {
+    const hash = window.location.hash || ''
+    const qIdx = hash.indexOf('?')
+    return qIdx === -1 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx))
+  }, [])
+
+  const [stageFilter, setStageFilter] = useState(() => urlParams.get('stage') || 'all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStage, setBulkStage] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [assignClient, setAssignClient] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    try { return (localStorage.getItem('ml-sort-key') as SortKey) || 'name' } catch { return 'name' }
+  })
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { return (localStorage.getItem('ml-sort-dir') as SortDir) || 'asc' } catch { return 'asc' }
+  })
   const [detailProperty, setDetailProperty] = useState<any>(null)
   const [highlightHandled, setHighlightHandled] = useState(false)
   const [page, setPage] = useState(1)
@@ -161,6 +174,12 @@ export default function MasterListPage() {
     },
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
   })
+
+  // Persist sort/filter to localStorage (#9)
+  useEffect(() => {
+    try { localStorage.setItem('ml-sort-key', sortKey) } catch {}
+    try { localStorage.setItem('ml-sort-dir', sortDir) } catch {}
+  }, [sortKey, sortDir])
 
   // Quick inline update for CE/Pay with undo
   const { mutate: quickUpdate } = useMutation({

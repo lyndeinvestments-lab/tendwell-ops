@@ -39,6 +39,7 @@ function FrequencyCell({ id, value }: { id: string; value: string }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: 'Frequency saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })

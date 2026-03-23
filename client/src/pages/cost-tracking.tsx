@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { ArrowUpDown, Search, Download, X } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
@@ -65,20 +65,23 @@ export default function CostTrackingPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  const [bulkEditMode, setBulkEditMode] = useState(false)
+  const [bulkChanges, setBulkChanges] = useState<Record<string, number>>({})
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/operational_properties'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage')
+        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes')
       if (error) throw error
       return data || []
     },
   })
 
   const { mutate: updateProperty } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | null }) => {
+    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
     },
@@ -147,6 +150,23 @@ export default function CostTrackingPage() {
     URL.revokeObjectURL(url)
   }
 
+  async function bulkSaveAll() {
+    try {
+      await Promise.all(
+        Object.entries(bulkChanges).map(([id, value]) =>
+          supabase.from('properties').update({ cleaner_pay: value }).eq('id', id).then(({ error }) => { if (error) throw error })
+        )
+      )
+      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: `Updated ${Object.keys(bulkChanges).length} properties` })
+      setBulkEditMode(false)
+      setBulkChanges({})
+    } catch {
+      toast({ title: 'Bulk update failed', variant: 'destructive' })
+    }
+  }
+
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   function SortIcon({ col }: { col: SortKey }) {
@@ -194,6 +214,15 @@ export default function CostTrackingPage() {
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 gap-1.5 text-xs" data-testid="button-export-csv">
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
+          <Button
+            variant={bulkEditMode ? "default" : "outline"}
+            size="sm"
+            onClick={() => { setBulkEditMode(m => !m); setBulkChanges({}) }}
+            className="h-8 gap-1.5 text-xs"
+            data-testid="button-bulk-edit"
+          >
+            {bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit'}
+          </Button>
         </div>
       </div>
 
@@ -201,7 +230,7 @@ export default function CostTrackingPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={thCls} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
+              <th className={thCls} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>CE Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
@@ -229,15 +258,25 @@ export default function CostTrackingPage() {
               </tr>
             ) : (
               paged.map((p: any) => (
-                <tr key={p.id} data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                <Fragment key={p.id}>
+                <tr data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-2 px-3 font-medium text-xs">
-                    <button
-                      onClick={() => openPropertyModal(p.id)}
-                      className="hover:underline text-left"
-                      data-testid={`link-property-${p.id}`}
-                    >
-                      {p.name}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setExpandedRow(prev => prev === p.id ? null : p.id)}
+                        className="p-0.5 rounded hover:bg-muted"
+                        data-testid={`chevron-${p.id}`}
+                      >
+                        {expandedRow === p.id ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => openPropertyModal(p.id)}
+                        className="hover:underline text-left"
+                        data-testid={`link-property-${p.id}`}
+                      >
+                        {p.name}
+                      </button>
+                    </div>
                   </td>
                   <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
                   <td className="py-2 px-3">
@@ -249,12 +288,22 @@ export default function CostTrackingPage() {
                     />
                   </td>
                   <td className="py-2 px-3">
-                    <InlineEdit
-                      value={p.cleaner_pay}
-                      type="number"
-                      onSave={v => updateProperty({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
-                      testId={`inline-pay-${p.id}`}
-                    />
+                    {bulkEditMode ? (
+                      <input
+                        type="number"
+                        defaultValue={p.cleaner_pay}
+                        onChange={e => setBulkChanges(prev => ({...prev, [p.id]: parseFloat(e.target.value) || 0}))}
+                        className="h-6 text-xs w-20 border border-input rounded px-1"
+                        data-testid={`bulk-pay-${p.id}`}
+                      />
+                    ) : (
+                      <InlineEdit
+                        value={p.cleaner_pay}
+                        type="number"
+                        onSave={v => updateProperty({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
+                        testId={`inline-pay-${p.id}`}
+                      />
+                    )}
                   </td>
                   <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.est_laundry)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.est_consumables)}</td>
@@ -264,6 +313,45 @@ export default function CostTrackingPage() {
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
                   <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
                 </tr>
+                {expandedRow === p.id && (
+                  <tr className="bg-muted/20 border-b border-border/50">
+                    <td colSpan={11} className="py-3 px-6">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-xs mb-3">
+                        <div>
+                          <span className="text-muted-foreground block">Est Laundry</span>
+                          <span className="font-medium">{fmt(p.est_laundry)}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Est Consumables</span>
+                          <span className="font-medium">{fmt(p.est_consumables)}</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Inspection</span>
+                          <span className="font-medium">$15.00</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Trash</span>
+                          <span className="font-medium">$5.00</span>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground block">Cleaner Pay</span>
+                          <span className="font-medium">{fmt(p.cleaner_pay)}</span>
+                        </div>
+                      </div>
+                      <div className="text-xs">
+                        <span className="text-muted-foreground block mb-1">Notes</span>
+                        <InlineEdit
+                          value={p.notes}
+                          type="text"
+                          placeholder="Add notes…"
+                          onSave={v => updateProperty({ id: p.id, field: 'notes', value: v || null })}
+                          testId={`inline-notes-${p.id}`}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))
             )}
             {totals && !isLoading && (
@@ -287,6 +375,19 @@ export default function CostTrackingPage() {
       </div>
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+      {bulkEditMode && Object.keys(bulkChanges).length > 0 && (
+        <div className="sticky bottom-0 left-0 right-0 bg-background border-t border-border p-3 flex items-center justify-between z-20 shadow-lg">
+          <span className="text-sm text-muted-foreground">{Object.keys(bulkChanges).length} change(s) pending</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => { setBulkEditMode(false); setBulkChanges({}) }} data-testid="button-bulk-cancel">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={bulkSaveAll} data-testid="button-bulk-save">
+              Save All
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )
