@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -11,8 +11,11 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { useLocation } from 'wouter'
 import { Search, Download, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2 } from 'lucide-react'
 import { InlineEdit } from '@/components/InlineEdit'
+import { TablePagination } from '@/components/TablePagination'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return ''
@@ -52,6 +55,8 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 export default function MasterListPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const [location] = useLocation()
+  usePageTitle('Master List')
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -59,6 +64,9 @@ export default function MasterListPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [detailProperty, setDetailProperty] = useState<any>(null)
+  const [highlightHandled, setHighlightHandled] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: stages } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -79,6 +87,24 @@ export default function MasterListPage() {
       return data || []
     },
   })
+
+  // Auto-open detail panel when ?highlight= param is present
+  useEffect(() => {
+    if (highlightHandled || !properties || properties.length === 0) return
+    // Parse query string from hash-based URL (e.g., #/master-list?highlight=id)
+    const fullUrl = window.location.hash || ''
+    const qIdx = fullUrl.indexOf('?')
+    if (qIdx === -1) return
+    const params = new URLSearchParams(fullUrl.slice(qIdx))
+    const highlightId = params.get('highlight')
+    if (highlightId) {
+      const match = properties.find((p: any) => p.id === highlightId)
+      if (match) {
+        setDetailProperty(match)
+        setHighlightHandled(true)
+      }
+    }
+  }, [properties, highlightHandled])
 
   const { mutate: bulkChangeStage, isPending: bulkPending } = useMutation({
     mutationFn: async ({ ids, stageId }: { ids: string[]; stageId: string }) => {
@@ -181,6 +207,8 @@ export default function MasterListPage() {
     return result
   }, [properties, search, stageFilter, sortKey, sortDir])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   function toggleSelect(id: string) {
     setSelected(prev => {
       const n = new Set(prev)
@@ -236,14 +264,33 @@ export default function MasterListPage() {
                 data-testid="button-bulk-apply">
                 {bulkPending ? 'Applying…' : 'Apply'}
               </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1" data-testid="button-export-selected"
+                onClick={() => {
+                  const cols = ['name', 'client', 'address', 'bedrooms', 'full_baths', 'square_footage', 'ce_charged', 'cleaner_pay', 'profit_percentage', 'stage']
+                  const header = cols.join(',')
+                  const selectedRows = filtered.filter((p: any) => selected.has(p.id))
+                  const rows = selectedRows.map((p: any) => cols.map(c => {
+                    if (c === 'stage') return `"${p.pipeline_stages?.name || ''}"`
+                    const v = p[c]
+                    return v == null ? '' : typeof v === 'string' ? `"${v.replace(/"/g, '""')}"` : v
+                  }).join(','))
+                  const csv = [header, ...rows].join('\n')
+                  const blob = new Blob([csv], { type: 'text/csv' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url; a.download = 'tendwell-selected-properties.csv'; a.click()
+                  URL.revokeObjectURL(url)
+                }}>
+                <Download className="w-3 h-3" /> Export Selected
+              </Button>
             </div>
           )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input type="search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)}
+            <Input type="search" placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-master" className="pl-8 h-7 w-48 text-xs" />
           </div>
-          <Select value={stageFilter} onValueChange={setStageFilter}>
+          <Select value={stageFilter} onValueChange={v => { setStageFilter(v); setPage(1) }}>
             <SelectTrigger data-testid="select-stage-filter" className="h-7 w-36 text-xs">
               <SelectValue placeholder="All stages" />
             </SelectTrigger>
@@ -287,7 +334,7 @@ export default function MasterListPage() {
                   {[...Array(12)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-3 w-full" /></td>)}
                 </tr>
               ))
-            ) : filtered.map((p: any) => {
+            ) : paged.map((p: any) => {
               const color = p.pipeline_stages?.color || '#6b7280'
               const comp = completeness(p)
               return (
@@ -345,17 +392,21 @@ export default function MasterListPage() {
                     </span>
                   </td>
                   <td className="py-1.5 px-3">
-                    <div className="flex items-center gap-1" title={`${comp}% complete`}>
-                      <div className="w-8 h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all"
-                          style={{
-                            width: `${comp}%`,
-                            backgroundColor: comp === 100 ? '#22c55e' : comp >= 60 ? '#f59e0b' : '#ef4444'
-                          }}
-                        />
+                    {p.pipeline_stages?.name === 'Offboarded' ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex items-center gap-1" title={`${comp}% complete`}>
+                        <div className="w-8 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${comp}%`,
+                              backgroundColor: comp === 100 ? '#22c55e' : comp >= 60 ? '#f59e0b' : '#ef4444'
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </td>
                 </tr>
               )
@@ -364,10 +415,14 @@ export default function MasterListPage() {
         </table>
       </div>
 
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+
       {/* Property Detail Slide-out Panel */}
       <PropertyDetailPanel
         property={detailProperty}
-        stages={stages}
+        stages={stages || []}
         open={!!detailProperty}
         onClose={() => setDetailProperty(null)}
         onSave={saveDetail}
@@ -405,7 +460,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         cleaning_frequency: property.cleaning_frequency || 'as_needed',
         auto_code: property.auto_code || '',
         door_code: property.door_code || '',
-        wifi_info: property.wifi_info || '',
+        wifi_network: (property.wifi_info || '').split('\n')[0] || '',
+        wifi_password: (property.wifi_info || '').split('\n')[1] || '',
         notes: property.notes || '',
         stage_id: property.stage_id,
       })
@@ -427,6 +483,9 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         updates[key] = val || null
       }
     }
+    updates.wifi_info = [form.wifi_network, form.wifi_password].filter(Boolean).join('\n')
+    delete updates.wifi_network
+    delete updates.wifi_password
     onSave(updates)
   }
 
@@ -448,7 +507,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
       { key: 'number_of_beds', label: 'Number of Beds', type: 'number' },
       { key: 'guest_count', label: 'Guest Count', type: 'number' },
       { key: 'kitchens', label: 'Kitchens', type: 'number' },
-      { key: 'pet_friendly', label: 'Pet Friendly', type: 'text' },
+      { key: 'pet_friendly', label: 'Pet Friendly', type: 'select', options: ['Yes', 'No'] },
     ]},
     { section: 'Financial', fields: [
       { key: 'ce_charged', label: 'CE Charged', type: 'number' },
@@ -458,7 +517,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
       { key: 'cleaning_frequency', label: 'Cleaning Frequency', type: 'select', options: ['weekly', 'biweekly', 'monthly', 'as_needed'] },
       { key: 'auto_code', label: 'Auto Code', type: 'text' },
       { key: 'door_code', label: 'Door Code', type: 'text' },
-      { key: 'wifi_info', label: 'WiFi Info', type: 'text' },
+      { key: 'wifi_network', label: 'WiFi Network', type: 'text' },
+      { key: 'wifi_password', label: 'WiFi Password', type: 'text' },
       { key: 'notes', label: 'Notes', type: 'text' },
     ]},
   ]
@@ -519,6 +579,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                         className="h-7 text-xs"
                         data-testid={`detail-input-${field.key}`}
                         step={field.type === 'number' ? '0.01' : undefined}
+                        min={field.type === 'number' ? '0' : undefined}
                       />
                     )}
                   </div>

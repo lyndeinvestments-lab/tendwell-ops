@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'wouter'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -40,6 +41,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }
 
 export default function DashboardPage() {
   const [, navigate] = useLocation()
+  usePageTitle('Dashboard')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
@@ -275,7 +277,7 @@ export default function DashboardPage() {
                     if (!p.address) missing.push('Address')
                     return (
                       <div key={p.id} className="flex justify-between text-xs gap-2">
-                        <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list')}>{p.name}</span>
+                        <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
                         <span className="text-amber-600 dark:text-amber-400 whitespace-nowrap">{missing.join(', ')}</span>
                       </div>
                     )
@@ -305,7 +307,7 @@ export default function DashboardPage() {
                   { label: 'Low (0-15%)', count: profitBuckets.low, color: '#ef4444', pct: active > 0 ? (profitBuckets.low / active * 100) : 0 },
                   { label: 'Negative', count: profitBuckets.negative, color: '#dc2626', pct: active > 0 ? (profitBuckets.negative / active * 100) : 0 },
                 ].map(b => (
-                  <div key={b.label}>
+                  <div key={b.label} className="cursor-pointer" onClick={() => navigate('/cost-tracking')}>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-muted-foreground">{b.label}</span>
                       <span className="font-medium tabular-nums">{b.count}</span>
@@ -365,7 +367,7 @@ export default function DashboardPage() {
                       <div>
                         <p className="text-sm font-medium leading-none cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {fromStage?.name ?? '—'} → {toStage?.name ?? '—'}
+                          {fromStage?.name ?? 'New'} → {toStage?.name ?? '—'}
                         </p>
                       </div>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">

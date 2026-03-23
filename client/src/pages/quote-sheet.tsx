@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { Plus, ArrowRight, Loader2, Copy } from 'lucide-react'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ const EMPTY_PROP: NewProp = {
 export default function QuoteSheetPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('Quote Sheet')
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
@@ -186,8 +188,7 @@ export default function QuoteSheetPage() {
   function handleConvert(prop: any) {
     const reqFields = onboardingStage?.requires_fields || []
     const missing = reqFields.filter((f: string) => !prop[f])
-    if (missing.length > 0) setConverting({ prop, missing })
-    else convertToOnboarding(prop)
+    setConverting({ prop, missing })
   }
 
   // Compute estimates for display (fall back to client-side calc if DB value absent)

@@ -6,7 +6,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck } from 'lucide-react'
+import { TablePagination } from '@/components/TablePagination'
 
 const FILTER_INTERVAL_DAYS = 90
 
@@ -29,7 +31,10 @@ function getDueStatus(nextDue: string | null): { label: string; color: string; i
 export default function AcFiltersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  usePageTitle('AC Filters')
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/ac-filters'],
@@ -73,6 +78,8 @@ export default function AcFiltersPage() {
     return properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
   }, [properties, search])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   // Summary stats
   const overdue = filtered.filter((p: any) => {
     const status = getDueStatus(p.next_filter_due)
@@ -113,7 +120,7 @@ export default function AcFiltersPage() {
               type="search"
               placeholder="Search…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-filters"
               className="pl-8 h-8 w-56 text-sm"
             />
@@ -149,7 +156,7 @@ export default function AcFiltersPage() {
                 <td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
               </tr>
             ) : (
-              filtered.map((p: any) => {
+              paged.map((p: any) => {
                 const dueStatus = getDueStatus(p.next_filter_due)
                 return (
                   <tr key={p.id} data-testid={`row-filter-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${dueStatus?.label === 'Overdue' ? 'bg-destructive/5' : ''}`}>
@@ -167,24 +174,27 @@ export default function AcFiltersPage() {
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.last_filter_changed ? p.last_filter_changed.slice(0, 10) : ''}
-                        type="text"
-                        onSave={v => updateField({ id: p.id, field: 'last_filter_changed', value: v })}
+                        type="date"
+                        onSave={v => {
+                          updateField({ id: p.id, field: 'last_filter_changed', value: v })
+                          if (v) {
+                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v) })
+                          }
+                        }}
                         testId={`inline-last-changed-${p.id}`}
-                        placeholder="yyyy-mm-dd"
                       />
                     </td>
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.next_filter_due ? p.next_filter_due.slice(0, 10) : ''}
-                        type="text"
+                        type="date"
                         onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v })}
                         testId={`inline-next-due-${p.id}`}
-                        placeholder="yyyy-mm-dd"
                       />
                     </td>
                     <td className="py-2 px-3">
                       {dueStatus && (
-                        <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} title={dueStatus.label} />
+                        <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} aria-label={dueStatus.label} />
                       )}
                     </td>
                     <td className="py-2 px-3">
@@ -217,6 +227,9 @@ export default function AcFiltersPage() {
           </tbody>
         </table>
       </div>
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
     </div>
   )
 }

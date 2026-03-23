@@ -7,9 +7,11 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { STAGE_COLORS } from '@/lib/supabase'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { Search } from 'lucide-react'
 
 export default function PropertyListPage() {
+  usePageTitle('Property List')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }

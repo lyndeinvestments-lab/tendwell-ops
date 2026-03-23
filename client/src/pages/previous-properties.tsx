@@ -1,12 +1,16 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Search, Download } from 'lucide-react'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { Search, Download, RotateCcw } from 'lucide-react'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
+import { TablePagination } from '@/components/TablePagination'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
@@ -28,7 +32,57 @@ function ProfitBadge({ pct }: { pct: number | null }) {
 }
 
 export default function PreviousPropertiesPage() {
+  usePageTitle('Previous Properties')
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [reactivateProperty, setReactivateProperty] = useState<any>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+
+  const { data: stages } = useQuery({
+    queryKey: ['/supabase/pipeline_stages'],
+    queryFn: async () => {
+      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
+      return data || []
+    },
+  })
+
+  const { mutate: reactivate, isPending: reactivating } = useMutation({
+    mutationFn: async (property: any) => {
+      const activeStage = (stages || []).find((s: any) => s.name.toLowerCase() === 'active')
+      if (!activeStage) throw new Error('Active stage not found')
+
+      const { error: updateError } = await supabase
+        .from('properties')
+        .update({ stage_id: activeStage.id })
+        .eq('id', property.id)
+      if (updateError) throw updateError
+
+      const offboardedStage = (stages || []).find((s: any) => s.name.toLowerCase() === 'offboarded')
+      const { error: transitionError } = await supabase
+        .from('stage_transitions')
+        .insert({
+          property_id: property.id,
+          from_stage_id: offboardedStage?.id || property.stage_id,
+          to_stage_id: activeStage.id,
+        })
+      if (transitionError) throw transitionError
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
+      queryClient.invalidateQueries({ queryKey: ['/supabase/offboard-dates'] })
+      queryClient.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      queryClient.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      queryClient.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: 'Property re-activated', description: `${reactivateProperty?.name} has been moved to Active.` })
+      setReactivateProperty(null)
+    },
+    onError: () => {
+      toast({ title: 'Re-activation failed', variant: 'destructive' })
+      setReactivateProperty(null)
+    },
+  })
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/previous-properties'],
@@ -106,6 +160,8 @@ export default function PreviousPropertiesPage() {
       })
   }, [properties, search, offboardDates])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
       Property: p.name || '',
@@ -143,7 +199,7 @@ export default function PreviousPropertiesPage() {
               type="search"
               placeholder="Search…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-previous"
               className="pl-8 h-8 w-56 text-sm"
             />
@@ -176,25 +232,26 @@ export default function PreviousPropertiesPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Profit %</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Date Offboarded</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(5)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(10)].map((_, j) => (
+                  {[...Array(11)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-muted-foreground text-sm">
+                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">
                   {search ? 'No properties match your search' : 'No offboarded properties'}
                 </td>
               </tr>
             ) : (
-              filtered.map((p: any) => (
+              paged.map((p: any) => (
                 <tr key={p.id} data-testid={`row-previous-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors opacity-80">
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{p.client || '—'}</td>
@@ -212,6 +269,18 @@ export default function PreviousPropertiesPage() {
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
                     {datesLoading ? <Skeleton className="h-3 w-20" /> : formatOffboardDate(p.id)}
                   </td>
+                  <td className="py-2 px-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 gap-1 text-xs"
+                      onClick={() => setReactivateProperty(p)}
+                      data-testid={`button-reactivate-${p.id}`}
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      Re-activate
+                    </Button>
+                  </td>
                 </tr>
               ))
             )}
@@ -220,8 +289,29 @@ export default function PreviousPropertiesPage() {
       </div>
 
       {!isLoading && filtered.length > 0 && (
-        <p className="text-xs text-muted-foreground text-right">{filtered.length} propert{filtered.length === 1 ? 'y' : 'ies'}</p>
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
+
+      <AlertDialog open={!!reactivateProperty} onOpenChange={v => !v && setReactivateProperty(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Re-activate Property</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to re-activate <strong>{reactivateProperty?.name}</strong>? This will move it back to the Active stage.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reactivating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={reactivating}
+              onClick={() => reactivateProperty && reactivate(reactivateProperty)}
+              data-testid="button-confirm-reactivate"
+            >
+              {reactivating ? 'Re-activating…' : 'Re-activate'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
