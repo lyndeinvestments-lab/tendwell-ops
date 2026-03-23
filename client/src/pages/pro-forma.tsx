@@ -21,6 +21,8 @@ const FREQ_OPTIONS = [
   { value: 'as_needed', label: 'As Needed', cleans: 2 },
 ]
 
+const BREAK_EVEN_MARGIN = 0.20
+
 function fmt(n: number | null | undefined, prefix = '$') {
   if (n == null) return '—'
   return `${prefix}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -242,18 +244,19 @@ export default function ProFormaPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Revenue</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Cost</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Profit</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap" title={`CE needed to break even at ${BREAK_EVEN_MARGIN * 100}% margin`}>Break-Even CE</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(11)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(12)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !filtered || filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
+                <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
               </tr>
             ) : (
               paged.map((p: any) => {
@@ -286,6 +289,11 @@ export default function ProFormaPage() {
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.monthly_revenue_estimate)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.monthly_cost_estimate)}</td>
                     <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${profitNeg ? 'text-destructive' : 'text-primary'}`}>{fmt(p.monthly_profit_estimate)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground italic">
+                      {p.total_estimated_cost != null
+                        ? fmt(p.total_estimated_cost / (1 - BREAK_EVEN_MARGIN))
+                        : '—'}
+                    </td>
                   </tr>
                 )
               })
@@ -297,6 +305,7 @@ export default function ProFormaPage() {
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.revenue)}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.cost)}</td>
                 <td className={`py-2 px-3 text-xs tabular-nums ${totals.profit < 0 ? 'text-destructive' : 'text-primary'}`}>{fmt(totals.profit)}</td>
+              <td className="py-2 px-3" />
               </tr>
             )}
           </tbody>

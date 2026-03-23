@@ -1,16 +1,22 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { ArrowUpDown, Search } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
+import Papa from 'papaparse'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage'
+
+const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding', 'Offboarded']
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
@@ -51,8 +57,10 @@ function fmt(n: number | null | undefined) {
 export default function CostTrackingPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { openPropertyModal } = usePropertyModal()
   usePageTitle('Cost Tracking')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
@@ -77,6 +85,7 @@ export default function CostTrackingPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
@@ -88,9 +97,12 @@ export default function CostTrackingPage() {
 
   const filtered = useMemo(() => {
     if (!properties) return []
-    let arr = properties.filter((p: any) =>
-      p.name?.toLowerCase().includes(search.toLowerCase())
-    )
+    let arr = properties.filter((p: any) => {
+      const q = search.toLowerCase()
+      const matchSearch = !q || (p.name?.toLowerCase().includes(q) || p.stage_name?.toLowerCase().includes(q))
+      const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
+      return matchSearch && matchStatus
+    })
     arr = [...arr].sort((a: any, b: any) => {
       const av = a[sortKey] ?? ''
       const bv = b[sortKey] ?? ''
@@ -99,7 +111,7 @@ export default function CostTrackingPage() {
       return 0
     })
     return arr
-  }, [properties, search, sortKey, sortDir])
+  }, [properties, search, statusFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -115,6 +127,26 @@ export default function CostTrackingPage() {
     }
   }, [filtered])
 
+  function exportCsv() {
+    const rows = filtered.map((p: any) => ({
+      'Property': p.name || '',
+      'Status': p.stage_name || '',
+      'CE Charged': p.ce_charged ?? '',
+      'Cleaner Pay': p.cleaner_pay ?? '',
+      'Laundry': p.est_laundry ?? '',
+      'Consumables': p.est_consumables ?? '',
+      'Total Cost': p.total_estimated_cost ?? '',
+      'Profit': p.estimated_profit ?? '',
+      'Profit %': p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
+    }))
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'cost-tracking.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   function SortIcon({ col }: { col: SortKey }) {
@@ -123,21 +155,45 @@ export default function CostTrackingPage() {
 
   return (
     <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Cost Tracking</h1>
           <p className="text-sm text-muted-foreground">Operational properties — click cells to edit</p>
         </div>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
-            data-testid="input-search-cost"
-            className="pl-8 h-8 w-56 text-sm"
-          />
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-8 w-44 text-sm" data-testid="select-status-filter">
+              <SelectValue placeholder="All Statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {STATUS_OPTIONS.map(s => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              data-testid="input-search-cost"
+              className="pl-8 pr-8 h-8 w-56 text-sm"
+            />
+            {search && (
+              <button
+                onClick={() => { setSearch(''); setPage(1) }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 gap-1.5 text-xs" data-testid="button-export-csv">
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
         </div>
       </div>
 
@@ -174,7 +230,15 @@ export default function CostTrackingPage() {
             ) : (
               paged.map((p: any) => (
                 <tr key={p.id} data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                  <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                  <td className="py-2 px-3 font-medium text-xs">
+                    <button
+                      onClick={() => openPropertyModal(p.id)}
+                      className="hover:underline text-left"
+                      data-testid={`link-property-${p.id}`}
+                    >
+                      {p.name}
+                    </button>
+                  </td>
                   <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
                   <td className="py-2 px-3">
                     <InlineEdit

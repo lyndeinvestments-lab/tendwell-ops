@@ -1,24 +1,18 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 
-const FILTER_INTERVAL_DAYS = 90
-
-function calcNextDue(fromDate: string): string {
-  const d = new Date(fromDate)
-  d.setDate(d.getDate() + FILTER_INTERVAL_DAYS)
-  return d.toISOString().slice(0, 10)
-}
-
-function getDueStatus(nextDue: string | null): { label: string; color: string; icon: typeof CheckCircle2 } | null {
+function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
   if (!nextDue) return null
   const due = new Date(nextDue)
   const now = new Date()
@@ -28,11 +22,16 @@ function getDueStatus(nextDue: string | null): { label: string; color: string; i
   return { label: 'OK', color: 'text-green-600 dark:text-green-400', icon: CheckCircle2 }
 }
 
+const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding']
+
 export default function AcFiltersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { getNumber } = useAppSettings()
+  const intervalDays = getNumber('ac_filter_interval', 90)
   usePageTitle('AC Filters')
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
@@ -53,9 +52,18 @@ export default function AcFiltersPage() {
       const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+      toast({ title: 'Saved' })
+    },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
+
+  function calcNextDue(fromDate: string): string {
+    const d = new Date(fromDate)
+    d.setDate(d.getDate() + intervalDays)
+    return d.toISOString().slice(0, 10)
+  }
 
   function markChangedToday(id: string) {
     const today = new Date().toISOString().slice(0, 10)
@@ -75,20 +83,18 @@ export default function AcFiltersPage() {
 
   const filtered = useMemo(() => {
     if (!properties) return []
-    return properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
-  }, [properties, search])
+    return properties.filter((p: any) => {
+      const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase())
+      const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
+      return matchSearch && matchStatus
+    })
+  }, [properties, search, statusFilter])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
-  // Summary stats
-  const overdue = filtered.filter((p: any) => {
-    const status = getDueStatus(p.next_filter_due)
-    return status?.label === 'Overdue'
-  }).length
-  const dueSoon = filtered.filter((p: any) => {
-    const status = getDueStatus(p.next_filter_due)
-    return status?.label === 'Due soon'
-  }).length
+  // Summary stats from ALL properties (not filtered)
+  const allOverdue = (properties || []).filter((p: any) => getDueStatus(p.next_filter_due, intervalDays)?.label === 'Overdue').length
+  const allDueSoon = (properties || []).filter((p: any) => getDueStatus(p.next_filter_due, intervalDays)?.label === 'Due soon').length
 
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
@@ -99,21 +105,32 @@ export default function AcFiltersPage() {
             Track filter sizes and change schedules — click cells to edit
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          {(overdue > 0 || dueSoon > 0) && (
+        <div className="flex items-center gap-3 flex-wrap">
+          {(allOverdue > 0 || allDueSoon > 0) && (
             <div className="flex items-center gap-2 text-xs">
-              {overdue > 0 && (
+              {allOverdue > 0 && (
                 <span className="flex items-center gap-1 text-destructive font-medium">
-                  <AlertTriangle className="w-3 h-3" /> {overdue} overdue
+                  <AlertTriangle className="w-3 h-3" /> {allOverdue} overdue
                 </span>
               )}
-              {dueSoon > 0 && (
+              {allDueSoon > 0 && (
                 <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
-                  <Clock className="w-3 h-3" /> {dueSoon} due soon
+                  <Clock className="w-3 h-3" /> {allDueSoon} due soon
                 </span>
               )}
             </div>
           )}
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-status-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              {STATUS_OPTIONS.map(s => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -122,8 +139,13 @@ export default function AcFiltersPage() {
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-filters"
-              className="pl-8 h-8 w-56 text-sm"
+              className="pl-8 pr-7 h-8 w-56 text-sm"
             />
+            {search && (
+              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -157,9 +179,14 @@ export default function AcFiltersPage() {
               </tr>
             ) : (
               paged.map((p: any) => {
-                const dueStatus = getDueStatus(p.next_filter_due)
+                const dueStatus = getDueStatus(p.next_filter_due, intervalDays)
+                const rowClass = dueStatus?.label === 'Overdue'
+                  ? 'bg-destructive/5'
+                  : dueStatus?.label === 'Due soon'
+                  ? 'bg-amber-50/50 dark:bg-amber-900/10'
+                  : ''
                 return (
-                  <tr key={p.id} data-testid={`row-filter-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${dueStatus?.label === 'Overdue' ? 'bg-destructive/5' : ''}`}>
+                  <tr key={p.id} data-testid={`row-filter-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass}`}>
                     <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.stage_name || '—'}</td>
                     <td className="py-2 px-3">
