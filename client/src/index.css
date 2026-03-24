@@ -192,9 +192,25 @@
       min-height: 2.25rem;
     }
 
-    /* Stack header items */
+    /* Tighter page padding on mobile */
     .p-5 {
       padding: 0.75rem;
+    }
+
+    /* Ensure wide tables scroll horizontally instead of overflowing */
+    .overflow-x-auto {
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* Prevent text from being too small in table cells on mobile */
+    table {
+      font-size: 0.8125rem;
+    }
+
+    /* Make dialog content full-width on small screens */
+    [role="dialog"] .sm\:max-w-lg,
+    [role="dialog"] .sm\:max-w-md {
+      max-width: calc(100vw - 2rem);
     }
   }
 }
