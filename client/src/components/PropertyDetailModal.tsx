@@ -399,6 +399,260 @@ function AssignmentsTab({ propertyId }: { propertyId: string }) {
   )
 }
 
+// ── Photos Tab ───────────────────────────────────────────────────────────────
+function PhotosTab({ propertyId }: { propertyId: string }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [uploading, setUploading] = useState(false)
+
+  const { data: photos, isLoading } = useQuery({
+    queryKey: ['/supabase/property-photos', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_photos')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('sort_order')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { mutate: deletePhoto } = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('property_photos').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
+      toast({ title: 'Photo deleted' })
+    },
+    onError: () => toast({ title: 'Failed to delete photo', variant: 'destructive' }),
+  })
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const ext = file.name.split('.').pop()
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const path = `${propertyId}/${filename}`
+        const { error: uploadErr } = await supabase.storage.from('property-photos').upload(path, file)
+        if (uploadErr) throw uploadErr
+        const { data: urlData } = supabase.storage.from('property-photos').getPublicUrl(path)
+        const currentCount = photos?.length ?? 0
+        await supabase.from('property_photos').insert({
+          property_id: propertyId,
+          photo_url: urlData.publicUrl,
+          sort_order: currentCount,
+        })
+      }
+      qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
+      toast({ title: `${files.length} photo(s) uploaded` })
+    } catch {
+      toast({ title: 'Upload failed', variant: 'destructive' })
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  if (isLoading) return <div className="grid grid-cols-3 gap-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="aspect-square rounded-md" />)}</div>
+
+  return (
+    <div className="space-y-3">
+      <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+        <input type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
+        <Plus className="w-4 h-4 text-muted-foreground" />
+        <span className="text-xs text-muted-foreground">{uploading ? 'Uploading…' : 'Click to upload photos'}</span>
+      </label>
+      {photos && photos.length > 0 ? (
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((p: any) => (
+            <div key={p.id} className="relative group aspect-square">
+              <img src={p.photo_url} alt="" className="w-full h-full object-cover rounded-md border border-border" />
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
+                <button
+                  onClick={() => window.open(p.photo_url, '_blank')}
+                  className="bg-white/90 text-gray-800 p-1.5 rounded text-xs hover:bg-white"
+                  title="Copy URL"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => { if (confirm('Delete this photo?')) deletePhoto(p.id) }}
+                  className="bg-red-500/90 text-white p-1.5 rounded text-xs hover:bg-red-500"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground text-center py-4">No photos yet. Upload the first one above.</p>
+      )}
+    </div>
+  )
+}
+
+// ── Supplies Tab ─────────────────────────────────────────────────────────────
+const DEFAULT_SUPPLIES = [
+  'Toilet Paper', 'Paper Towels', 'Dish Soap', 'Trash Bags',
+  'Coffee Pods', 'Laundry Pods', 'Dryer Sheets',
+]
+
+function SuppliesTab({ propertyId }: { propertyId: string }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [newItem, setNewItem] = useState('')
+  const [seeding, setSeeding] = useState(false)
+
+  const { data: supplies, isLoading } = useQuery({
+    queryKey: ['/supabase/property-supplies', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_supplies')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('item_name')
+      if (error) throw error
+      // Auto-seed defaults if empty
+      if (data && data.length === 0) {
+        const rows = DEFAULT_SUPPLIES.map(name => ({ property_id: propertyId, item_name: name, par_level: 2, current_qty: 2 }))
+        await supabase.from('property_supplies').insert(rows)
+        const { data: seeded } = await supabase.from('property_supplies').select('*').eq('property_id', propertyId).order('item_name')
+        return seeded || []
+      }
+      return data || []
+    },
+  })
+
+  const { mutate: updateQty } = useMutation({
+    mutationFn: async ({ id, current_qty }: { id: string; current_qty: number }) => {
+      const { error } = await supabase.from('property_supplies').update({ current_qty }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] }),
+    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+  })
+
+  const { mutate: addItem, isPending: adding } = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('property_supplies').insert({
+        property_id: propertyId,
+        item_name: newItem.trim(),
+        par_level: 1,
+        current_qty: 0,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] })
+      toast({ title: 'Item added' })
+      setNewItem('')
+    },
+    onError: () => toast({ title: 'Failed to add item', variant: 'destructive' }),
+  })
+
+  async function markAllRestocked() {
+    if (!supplies) return
+    setSeeding(true)
+    try {
+      await Promise.all(supplies.map((s: any) =>
+        supabase.from('property_supplies').update({ current_qty: s.par_level, last_restocked: new Date().toISOString() }).eq('id', s.id)
+      ))
+      qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] })
+      toast({ title: 'All items marked restocked' })
+    } catch {
+      toast({ title: 'Failed to restock', variant: 'destructive' })
+    } finally {
+      setSeeding(false)
+    }
+  }
+
+  if (isLoading) return <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+
+  const needsRestock = (supplies || []).filter((s: any) => s.current_qty < s.par_level).length
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        {needsRestock > 0 && (
+          <span className="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800">
+            {needsRestock} item{needsRestock !== 1 ? 's' : ''} need restock
+          </span>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs ml-auto"
+          disabled={seeding || !supplies?.length}
+          onClick={markAllRestocked}
+        >
+          Mark All Restocked
+        </Button>
+      </div>
+      <div className="rounded-lg border border-border overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/60">
+            <tr>
+              <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Item</th>
+              <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Par</th>
+              <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Qty</th>
+              <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-24">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(supplies || []).map((s: any) => {
+              const low = s.current_qty < s.par_level
+              return (
+                <tr key={s.id} className={`border-t border-border/50 ${low ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
+                  <td className="py-2 px-3">{s.item_name}</td>
+                  <td className="py-2 px-3 text-center tabular-nums text-muted-foreground">{s.par_level}</td>
+                  <td className="py-2 px-3 text-center">
+                    <input
+                      type="number"
+                      min={0}
+                      value={s.current_qty}
+                      onChange={e => updateQty({ id: s.id, current_qty: Number(e.target.value) })}
+                      className="w-14 h-6 text-xs border border-input rounded px-1.5 bg-background tabular-nums text-center"
+                    />
+                  </td>
+                  <td className="py-2 px-3">
+                    {low ? (
+                      <span className="px-1.5 py-0.5 rounded text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800">
+                        Needs Restock
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">OK</span>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={newItem}
+          onChange={e => setNewItem(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && newItem.trim()) addItem() }}
+          placeholder="Add custom item…"
+          className="flex-1 h-7 text-xs border border-input rounded px-2 bg-background"
+        />
+        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!newItem.trim() || adding} onClick={() => addItem()}>
+          Add
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 // ── Financials Enhancement: Profit History + vs. Portfolio Avg ──
 function FinancialsEnhancement({ property }: { property: any }) {
   const { data: editHistory } = useQuery({
@@ -764,6 +1018,8 @@ export function PropertyDetailModal() {
               {stageName === 'Onboarding' && <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>}
               <TabsTrigger value="inspections" className="text-xs">Inspections</TabsTrigger>
               <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>
+              <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
+              <TabsTrigger value="supplies" className="text-xs">Supplies</TabsTrigger>
             </TabsList>
 
             {/* ── Overview Tab ── */}
@@ -1056,6 +1312,16 @@ export function PropertyDetailModal() {
             {/* ── Assignments Tab ── */}
             <TabsContent value="assignments" className="mt-3">
               <AssignmentsTab propertyId={property.id} />
+            </TabsContent>
+
+            {/* ── Photos Tab ── */}
+            <TabsContent value="photos" className="mt-3">
+              <PhotosTab propertyId={property.id} />
+            </TabsContent>
+
+            {/* ── Supplies Tab ── */}
+            <TabsContent value="supplies" className="mt-3">
+              <SuppliesTab propertyId={property.id} />
             </TabsContent>
           </Tabs>
         )}

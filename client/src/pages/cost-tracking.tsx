@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, Fragment, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -8,9 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from '@/components/ui/context-menu'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
@@ -136,6 +139,8 @@ export default function CostTrackingPage() {
   const [bulkEditMode, setBulkEditMode] = useState(false)
   const [bulkChanges, setBulkChanges] = useState<Record<string, number>>({})
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
+  const [localProperties, setLocalProperties] = useState<any[] | null>(null)
+  const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set())
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/operational_properties'],
@@ -146,20 +151,46 @@ export default function CostTrackingPage() {
       if (error) throw error
       return data || []
     },
-  })
+    onSuccess: (data: any[]) => setLocalProperties(data),
+  } as any)
+
+  const displayProperties = localProperties ?? properties ?? []
+
+  function flashCell(cellId: string) {
+    setFlashedCells(prev => new Set(prev).add(cellId))
+    setTimeout(() => setFlashedCells(prev => { const s = new Set(prev); s.delete(cellId); return s }), 1500)
+  }
 
   const { mutate: updateProperty } = useMutation({
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => {
+    onMutate: ({ id, field, value }) => {
+      const snapshot = localProperties ? [...localProperties] : null
+      setLocalProperties(prev => prev ? prev.map(p => p.id === id ? { ...p, [field]: value } : p) : prev)
+      return { snapshot }
+    },
+    onSuccess: (_, { id, field }) => {
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      flashCell(`${id}-${field}`)
       toast({ title: 'Saved' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (_, __, ctx: any) => {
+      if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
+      toast({ title: 'Update failed', variant: 'destructive' })
+    },
   })
+
+  const resetRow = useCallback(async (id: string) => {
+    const { error } = await supabase.from('properties')
+      .update({ est_laundry: null, est_consumables: null })
+      .eq('id', id)
+    if (error) { toast({ title: 'Reset failed', variant: 'destructive' }); return }
+    qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
+    toast({ title: 'Row reset to defaults' })
+  }, [qc, toast])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -167,8 +198,8 @@ export default function CostTrackingPage() {
   }
 
   const filtered = useMemo(() => {
-    if (!properties) return []
-    let arr = properties.filter((p: any) => {
+    if (!displayProperties.length && isLoading) return []
+    let arr = displayProperties.filter((p: any) => {
       const q = search.toLowerCase()
       const matchSearch = !q || (p.name?.toLowerCase().includes(q) || p.stage_name?.toLowerCase().includes(q))
       const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
@@ -329,6 +360,8 @@ export default function CostTrackingPage() {
             ) : (
               paged.map((p: any) => (
                 <Fragment key={p.id}>
+                <ContextMenu>
+                  <ContextMenuTrigger asChild>
                 <tr data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                   <td className="py-2 px-3 font-medium text-xs">
                     <div className="flex items-center gap-1">
@@ -349,7 +382,7 @@ export default function CostTrackingPage() {
                     </div>
                   </td>
                   <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
-                  <td className="py-2 px-3">
+                  <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-ce_charged`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
                     <InlineEdit
                       value={p.ce_charged}
                       type="number"
@@ -357,7 +390,7 @@ export default function CostTrackingPage() {
                       testId={`inline-ce-${p.id}`}
                     />
                   </td>
-                  <td className="py-2 px-3">
+                  <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-cleaner_pay`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
                     {bulkEditMode ? (
                       <input
                         type="number"
@@ -375,14 +408,35 @@ export default function CostTrackingPage() {
                       />
                     )}
                   </td>
-                  <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.est_laundry)}</td>
-                  <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.est_consumables)}</td>
+                  <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-est_laundry`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
+                    <InlineEdit
+                      value={p.est_laundry}
+                      type="number"
+                      onSave={v => updateProperty({ id: p.id, field: 'est_laundry', value: v ? parseFloat(v) : null })}
+                      testId={`inline-laundry-${p.id}`}
+                    />
+                  </td>
+                  <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-est_consumables`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
+                    <InlineEdit
+                      value={p.est_consumables}
+                      type="number"
+                      onSave={v => updateProperty({ id: p.id, field: 'est_consumables', value: v ? parseFloat(v) : null })}
+                      testId={`inline-consumables-${p.id}`}
+                    />
+                  </td>
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">$15.00</td>
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">$5.00</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.total_estimated_cost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
                   <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
                 </tr>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem onClick={() => resetRow(p.id)} className="gap-2">
+                      <RotateCcw className="w-3.5 h-3.5" /> Reset Row
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
                 {expandedRow === p.id && (
                   <tr className="bg-muted/20 border-b border-border/50">
                     <td colSpan={11} className="py-3 px-6">

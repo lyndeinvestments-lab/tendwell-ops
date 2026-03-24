@@ -8,14 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowUpDown, Download, DollarSign, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'profit' | 'profit_pct'
-type ViewMode = 'property' | 'client'
+type ViewMode = 'property' | 'client' | 'forecast'
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
@@ -61,6 +61,9 @@ export default function RevenueReportPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [viewMode, setViewMode] = useState<ViewMode>('property')
   const [expandedClients, setExpandedClients] = useState<Set<string>>(new Set())
+  const [globalOccupancy, setGlobalOccupancy] = useState(75)
+  const [propertyOccupancy, setPropertyOccupancy] = useState<Record<string, number>>({})
+  const [occupancyScenario, setOccupancyScenario] = useState<'custom' | 'best' | 'worst'>('custom')
 
   // Fetch all properties with cost data
   const { data: properties, isLoading } = useQuery({
@@ -242,6 +245,50 @@ export default function RevenueReportPage() {
     URL.revokeObjectURL(url)
   }
 
+  // Forecast calculations
+  const effectiveOccupancy = occupancyScenario === 'best' ? 95 : occupancyScenario === 'worst' ? 55 : globalOccupancy
+
+  const forecastMonths = useMemo(() => {
+    const result = []
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1)
+      result.push({ label: `${MONTHS[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`, date: d })
+    }
+    return result
+  }, [now])
+
+  const forecastData = useMemo(() => {
+    return sorted.map((p: any) => {
+      const occ = propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy
+      const monthlyProj = (p.ce_charged || 0) * (occ / 100)
+      return { ...p, occ, monthlyProj, sixMonthTotal: monthlyProj * 6 }
+    })
+  }, [sorted, propertyOccupancy, effectiveOccupancy])
+
+  const forecastChartData = useMemo(() => {
+    return forecastMonths.map(m => ({
+      label: m.label,
+      projected: forecastData.reduce((s: number, p: any) => s + (p.monthlyProj || 0), 0),
+    }))
+  }, [forecastMonths, forecastData])
+
+  function exportForecastCsv() {
+    const headers = ['Property', 'CE Charged', 'Occupancy %', ...forecastMonths.map(m => m.label), '6-Month Total']
+    const rows = forecastData.map((p: any) => ({
+      Property: p.name || '',
+      'CE Charged': p.ce_charged ?? '',
+      'Occupancy %': p.occ,
+      ...Object.fromEntries(forecastMonths.map(m => [m.label, p.monthlyProj.toFixed(2)])),
+      '6-Month Total': p.sixMonthTotal.toFixed(2),
+    }))
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `forecast-${MONTHS[month]}-${year}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
@@ -274,22 +321,25 @@ export default function RevenueReportPage() {
             </SelectContent>
           </Select>
           <div className="flex items-center border rounded-md overflow-hidden">
-            <button
-              onClick={() => setViewMode('property')}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'property' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-            >
-              By Property
-            </button>
-            <button
-              onClick={() => setViewMode('client')}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === 'client' ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-            >
-              By Client
-            </button>
+            {(['property', 'client', 'forecast'] as ViewMode[]).map(v => (
+              <button
+                key={v}
+                onClick={() => setViewMode(v)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+              >
+                {v === 'property' ? 'By Property' : v === 'client' ? 'By Client' : 'Forecast'}
+              </button>
+            ))}
           </div>
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={sorted.length === 0} className="h-8 gap-1.5 text-xs">
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
+          {viewMode === 'forecast' ? (
+            <Button variant="outline" size="sm" onClick={exportForecastCsv} disabled={forecastData.length === 0} className="h-8 gap-1.5 text-xs">
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={sorted.length === 0} className="h-8 gap-1.5 text-xs">
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </Button>
+          )}
         </div>
       </div>
 
@@ -350,8 +400,116 @@ export default function RevenueReportPage() {
         </CardContent>
       </Card>
 
+      {/* Forecast Panel */}
+      {viewMode === 'forecast' && (
+        <div className="space-y-4 flex-1 overflow-auto">
+          {/* Controls */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-muted-foreground">Global Occupancy</label>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={effectiveOccupancy}
+                disabled={occupancyScenario !== 'custom'}
+                onChange={e => { setGlobalOccupancy(Number(e.target.value)); setOccupancyScenario('custom') }}
+                className="w-28 accent-primary"
+              />
+              <span className="text-xs font-medium tabular-nums w-8">{effectiveOccupancy}%</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {[{ key: 'best', label: 'Best Case (95%)', pct: 95 }, { key: 'worst', label: 'Worst Case (55%)', pct: 55 }, { key: 'custom', label: 'Custom', pct: globalOccupancy }].map(s => (
+                <button
+                  key={s.key}
+                  onClick={() => setOccupancyScenario(s.key as any)}
+                  className={`px-2.5 py-1 text-xs rounded border transition-colors ${occupancyScenario === s.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted'}`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Bar chart */}
+          <Card>
+            <CardContent className="p-4">
+              <p className="text-sm font-medium mb-3">6-Month Revenue Projection</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={forecastChartData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: number) => fmt(v)} />
+                  <Bar dataKey="projected" name="Projected Revenue" radius={[4,4,0,0]}>
+                    {forecastChartData.map((_, i) => (
+                      <Cell key={i} fill={`hsl(${220 + i * 10}, 80%, 55%)`} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Forecast table */}
+          <div className="overflow-auto rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+                <tr>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Property</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">CE Charged</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Occupancy %</th>
+                  {forecastMonths.map(m => (
+                    <th key={m.label} className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{m.label}</th>
+                  ))}
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">6-Mo Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forecastData.length === 0 ? (
+                  <tr><td colSpan={10}><EmptyState icon={TrendingUp} title="No properties" description="No active properties to forecast." /></td></tr>
+                ) : forecastData.map((p: any) => (
+                  <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                    <td className="py-2 px-3 font-medium text-xs">
+                      <button onClick={() => openPropertyModal(p.id)} className="hover:underline text-left">{p.name}</button>
+                    </td>
+                    <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.ce_charged)}</td>
+                    <td className="py-2 px-3 text-xs">
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy}
+                          onChange={e => setPropertyOccupancy(prev => ({ ...prev, [p.id]: Number(e.target.value) }))}
+                          className="w-14 h-6 text-xs border border-input rounded px-1 bg-background tabular-nums"
+                        />
+                        <span className="text-muted-foreground text-xs">%</span>
+                      </div>
+                    </td>
+                    {forecastMonths.map(m => (
+                      <td key={m.label} className="py-2 px-3 tabular-nums text-xs">{fmt(p.monthlyProj)}</td>
+                    ))}
+                    <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.sixMonthTotal)}</td>
+                  </tr>
+                ))}
+                {forecastData.length > 0 && (
+                  <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                    <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={3}>Total</td>
+                    {forecastMonths.map(m => (
+                      <td key={m.label} className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.monthlyProj, 0))}</td>
+                    ))}
+                    <td className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.sixMonthTotal, 0))}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Property/Client Table */}
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {viewMode !== 'forecast' && <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
@@ -435,7 +593,7 @@ export default function RevenueReportPage() {
             )}
           </tbody>
         </table>
-      </div>
+      </div>}
     </div>
   )
 }
