@@ -7,7 +7,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, Download, RotateCcw } from 'lucide-react'
+import { Search, Download, RotateCcw, Archive } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { TablePagination } from '@/components/TablePagination'
@@ -246,8 +247,12 @@ export default function PreviousPropertiesPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={11} className="text-center py-12 text-muted-foreground text-sm">
-                  {search ? 'No properties match your search' : 'No offboarded properties'}
+                <td colSpan={11}>
+                  <EmptyState
+                    icon={Archive}
+                    title={search ? 'No matching properties' : 'No offboarded properties'}
+                    description={search ? 'No previous properties match your search.' : 'Properties that are offboarded will appear here.'}
+                  />
                 </td>
               </tr>
             ) : (

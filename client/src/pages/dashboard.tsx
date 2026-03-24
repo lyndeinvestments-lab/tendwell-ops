@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench } from 'lucide-react'
+import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
@@ -124,6 +124,38 @@ export default function DashboardPage() {
       return data || []
     },
   })
+
+  // CRM data
+  const { data: crmContacts } = useQuery({
+    queryKey: ['/supabase/dashboard-crm-contacts'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contacts').select('id, payment_method, created_at')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { data: unassignedCount } = useQuery({
+    queryKey: ['/supabase/dashboard-unassigned'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('properties').select('id', { count: 'exact', head: true }).is('contact_id', null)
+      if (error) return 0
+      return (data as any)?.length ?? 0
+    },
+  })
+
+  const crmStats = useMemo(() => {
+    if (!crmContacts) return { total: 0, new30: 0, paymentBreakdown: [] as { method: string; count: number }[] }
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const new30 = crmContacts.filter(c => c.created_at >= thirtyDaysAgo).length
+    const payMap: Record<string, number> = {}
+    for (const c of crmContacts) {
+      const m = c.payment_method || 'Unknown'
+      payMap[m] = (payMap[m] || 0) + 1
+    }
+    const paymentBreakdown = Object.entries(payMap).map(([method, count]) => ({ method, count })).sort((a, b) => b.count - a.count)
+    return { total: crmContacts.length, new30, paymentBreakdown }
+  }, [crmContacts])
 
   const stageMap = stages?.reduce((acc: Record<number, any>, s: any) => ({ ...acc, [s.id]: s }), {}) || {}
 
@@ -479,6 +511,61 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* CRM Overview */}
+      <Card className="border-card-border">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <Users className="w-4 h-4 text-primary" /> CRM Overview
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid grid-cols-3 gap-4 mb-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Total Contacts</p>
+              <p className="text-lg font-semibold tabular-nums">{crmStats.total}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">New (30 days)</p>
+              <p className="text-lg font-semibold tabular-nums">
+                {crmStats.new30}
+                {crmStats.new30 > 0 && <span className="text-xs font-normal text-green-600 ml-1">+{crmStats.new30}</span>}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Unassigned Properties</p>
+              <p
+                className="text-lg font-semibold tabular-nums cursor-pointer hover:text-primary transition-colors"
+                onClick={() => navigate('/property-list')}
+              >
+                {unassignedCount ?? 0}
+              </p>
+            </div>
+          </div>
+          {crmStats.paymentBreakdown.length > 0 && (
+            <div>
+              <p className="text-xs text-muted-foreground mb-2">Payment Methods</p>
+              <div className="space-y-1.5">
+                {crmStats.paymentBreakdown.map((pm, i) => {
+                  const pct = crmStats.total > 0 ? (pm.count / crmStats.total * 100) : 0
+                  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280']
+                  return (
+                    <div key={pm.method}>
+                      <div className="flex justify-between text-xs mb-0.5">
+                        <span className="text-muted-foreground">{pm.method}</span>
+                        <span className="font-medium tabular-nums">{pm.count}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: colors[i % colors.length] }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }
