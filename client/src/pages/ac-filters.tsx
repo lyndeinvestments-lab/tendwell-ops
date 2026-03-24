@@ -224,9 +224,14 @@ export default function AcFiltersPage() {
                       />
                     </td>
                     <td className="py-2 px-3">
-                      {dueStatus && (
-                        <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} aria-label={dueStatus.label} />
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {dueStatus && (
+                          <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} aria-label={dueStatus.label} />
+                        )}
+                        {dueStatus?.label === 'Overdue' && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">OVERDUE</span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2 px-3">
                       <InlineEdit

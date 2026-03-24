@@ -71,6 +71,7 @@ export function useAuth() {
 export const VIEW_ACCESS: Record<string, UserRole[]> = {
   dashboard: ['admin', 'viewer'],
   pipeline: ['admin', 'viewer'],
+  contacts: ['admin', 'viewer'],
   'quote-sheet': ['admin'],
   'cost-tracking': ['admin', 'viewer'],
   'property-list': ['admin', 'operations', 'viewer'],

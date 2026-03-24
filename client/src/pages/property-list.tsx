@@ -23,6 +23,7 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
   const { mutate: changeStage } = useMutation({
     mutationFn: async (stageId: string) => {
       const fromStage = stages.find((s: any) => s.name === currentStageName)
+      const toStage = stages.find((s: any) => s.id === stageId)
       const { error } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propertyId)
       if (error) throw error
       await supabase.from('stage_transitions').insert({
@@ -31,6 +32,15 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
         to_stage_id: stageId,
         changed_by: 'ops-user',
       })
+      // Log stage change to property_edit_log
+      try {
+        await supabase.from('property_edit_log').insert({
+          property_id: propertyId,
+          field_name: 'stage_id',
+          old_value: currentStageName || '',
+          new_value: toStage?.name || '',
+        })
+      } catch { /* silent */ }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
@@ -47,7 +57,7 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
       <PopoverTrigger asChild>
         <button
           onClick={e => { e.stopPropagation(); setOpen(true) }}
-          className="text-xs px-1.5 py-0.5 rounded font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all"
+          className="text-xs px-1.5 py-0.5 rounded font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all duration-300"
           style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
           title="Click to change stage"
         >
