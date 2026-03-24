@@ -8,7 +8,8 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings
+  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
+  BarChart3, ClipboardCheck, Users2, Bell
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccess } from '@/lib/auth'
@@ -43,12 +44,16 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Linen Tracker', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
+      { title: 'Inspections', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
+      { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
     ],
   },
   {
     label: 'Admin',
     items: [
       { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
+      { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
+      { title: 'Alerts', href: '/alerts', view: 'alerts', icon: Bell },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },

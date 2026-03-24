@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
-import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind } from 'lucide-react'
+import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, ClipboardCheck, GripVertical, Plus, Pencil, Check, X } from 'lucide-react'
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -144,6 +144,122 @@ function AppSettingsSection() {
               Save
             </Button>
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OnboardingTemplateSection() {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [newTask, setNewTask] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+
+  const { data: templates, isLoading } = useQuery({
+    queryKey: ['/supabase/onboarding-templates'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('onboarding_task_templates')
+        .select('*')
+        .order('sort_order')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { mutate: addTemplate } = useMutation({
+    mutationFn: async (taskName: string) => {
+      const maxOrder = (templates || []).reduce((m: number, t: any) => Math.max(m, t.sort_order || 0), 0)
+      const { error } = await supabase.from('onboarding_task_templates').insert({ task_name: taskName, sort_order: maxOrder + 1 })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
+      setNewTask('')
+      toast({ title: 'Template task added' })
+    },
+  })
+
+  const { mutate: updateTemplate } = useMutation({
+    mutationFn: async ({ id, task_name }: { id: string; task_name: string }) => {
+      const { error } = await supabase.from('onboarding_task_templates').update({ task_name }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
+      setEditingId(null)
+      toast({ title: 'Template updated' })
+    },
+  })
+
+  const { mutate: deleteTemplate } = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('onboarding_task_templates').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
+      toast({ title: 'Template task removed' })
+    },
+  })
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-base font-medium flex items-center gap-2">
+        <ClipboardCheck className="w-4 h-4" />
+        Onboarding Checklist
+      </h2>
+      <p className="text-xs text-muted-foreground">Default tasks assigned to new onboarding properties</p>
+      <div className="rounded-lg border border-border p-4 space-y-2">
+        {isLoading ? (
+          [...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)
+        ) : (
+          (templates || []).map((t: any) => (
+            <div key={t.id} className="flex items-center gap-2 group">
+              <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40" />
+              {editingId === t.id ? (
+                <>
+                  <Input
+                    value={editValue}
+                    onChange={e => setEditValue(e.target.value)}
+                    className="h-7 text-xs flex-1"
+                    autoFocus
+                    onKeyDown={e => e.key === 'Enter' && updateTemplate({ id: t.id, task_name: editValue })}
+                  />
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => updateTemplate({ id: t.id, task_name: editValue })}>
+                    <Check className="w-3 h-3 text-green-600" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)}>
+                    <X className="w-3 h-3" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm flex-1">{t.task_name}</span>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100" onClick={() => { setEditingId(t.id); setEditValue(t.task_name) }}>
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600" onClick={() => deleteTemplate(t.id)}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </>
+              )}
+            </div>
+          ))
+        )}
+        <div className="flex items-center gap-2 pt-2 border-t border-border/50">
+          <Input
+            value={newTask}
+            onChange={e => setNewTask(e.target.value)}
+            placeholder="Add template task…"
+            className="h-7 text-xs flex-1"
+            onKeyDown={e => e.key === 'Enter' && newTask.trim() && addTemplate(newTask.trim())}
+          />
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={!newTask.trim()} onClick={() => addTemplate(newTask.trim())}>
+            <Plus className="w-3 h-3" /> Add
+          </Button>
         </div>
       </div>
     </div>
@@ -293,6 +409,7 @@ export default function SettingsPage() {
       </div>
 
       <AppSettingsSection />
+      <OnboardingTemplateSection />
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-sm">
