@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes'
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
-  SidebarHeader, SidebarFooter, SidebarSeparator,
+  SidebarHeader, SidebarFooter, SidebarSeparator, useSidebar,
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
@@ -60,6 +60,7 @@ export function AppSidebar() {
   const { user, logout } = useAuth()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
+  const { isMobile, setOpenMobile } = useSidebar()
 
   if (!user) return null
 
@@ -102,7 +103,11 @@ export function AppSidebar() {
                           tooltip={item.title}
                           data-testid={`nav-${item.view}`}
                         >
-                          <Link href={item.href} className="flex items-center gap-2.5 px-3 py-2">
+                          <Link
+                            href={item.href}
+                            className="flex items-center gap-2.5 px-3 py-2"
+                            onClick={() => isMobile && setOpenMobile(false)}
+                          >
                             <item.icon className="w-4 h-4 flex-shrink-0" />
                             <span className="text-sm">{item.title}</span>
                           </Link>
