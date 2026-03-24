@@ -14,7 +14,7 @@ import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2
 import { formatDistanceToNow, format } from 'date-fns'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
-const PAYMENT_OPTIONS = ['Ramp', 'BuildComm', 'QuickBooks', 'Check', 'ACH', 'Other']
+const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
 const INTERACTION_TYPES = ['Call', 'Email', 'Meeting', 'Note', 'Text']
 
 const TYPE_ICONS: Record<string, typeof Phone> = {
