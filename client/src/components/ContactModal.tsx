@@ -423,7 +423,22 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
               </Button>
             </>
           ) : (
-            <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+            <div className="flex items-center gap-2 w-full">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs mr-auto"
+                onClick={() => {
+                  if (confirm('Deactivate this contact? They will be hidden from the active list.')) {
+                    saveField({ field: 'is_active', value: false })
+                    onClose()
+                  }
+                }}
+              >
+                Deactivate Contact
+              </Button>
+              <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+            </div>
           )}
         </DialogFooter>
       </DialogContent>

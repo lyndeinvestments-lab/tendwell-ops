@@ -55,6 +55,73 @@ function fmt(n: number | null | undefined) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+function AssignCleanerInline({ propertyId }: { propertyId: string }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [date, setDate] = useState('')
+  const [cleanerId, setCleanerId] = useState('')
+
+  const { data: cleaners } = useQuery({
+    queryKey: ['/supabase/cleaners-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cleaners').select('id, full_name').eq('is_active', true).order('full_name')
+      if (error) throw error
+      return data || []
+    },
+    staleTime: 60_000,
+  })
+
+  const { mutate: addAssignment, isPending } = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('clean_assignments').insert({
+        property_id: propertyId,
+        cleaner_id: cleanerId,
+        scheduled_date: date,
+        status: 'scheduled',
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
+      toast({ title: 'Assignment added' })
+      setDate('')
+      setCleanerId('')
+    },
+    onError: () => toast({ title: 'Failed to add assignment', variant: 'destructive' }),
+  })
+
+  return (
+    <div className="mt-3 pt-2 border-t border-border/40">
+      <span className="text-muted-foreground block mb-1 text-xs">Assign Cleaner</span>
+      <div className="flex items-center gap-2">
+        <select
+          value={cleanerId}
+          onChange={e => setCleanerId(e.target.value)}
+          className="h-6 text-xs border border-input rounded px-1 bg-background flex-1"
+        >
+          <option value="">Select cleaner…</option>
+          {(cleaners || []).map((c: any) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+        </select>
+        <input
+          type="date"
+          value={date}
+          onChange={e => setDate(e.target.value)}
+          className="h-6 text-xs border border-input rounded px-1 bg-background"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-xs px-2"
+          disabled={!cleanerId || !date || isPending}
+          onClick={() => addAssignment()}
+        >
+          Add
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export default function CostTrackingPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -351,6 +418,7 @@ export default function CostTrackingPage() {
                           testId={`inline-notes-${p.id}`}
                         />
                       </div>
+                      <AssignCleanerInline propertyId={p.id} />
                     </td>
                   </tr>
                 )}

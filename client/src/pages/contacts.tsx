@@ -11,7 +11,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { EmptyState } from '@/components/EmptyState'
 import { ContactModal } from '@/components/ContactModal'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge } from 'lucide-react'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -66,6 +66,8 @@ export default function ContactsPage() {
   const [modalMode, setModalMode] = useState<'view' | 'create'>('view')
   const [modalOpen, setModalOpen] = useState(false)
   const [sourceReportOpen, setSourceReportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+  const [duplicateOpen, setDuplicateOpen] = useState(false)
 
   const { data: contacts, isLoading } = useQuery({
     queryKey: ['/supabase/contacts'],
@@ -213,6 +215,12 @@ export default function ContactsPage() {
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setImportOpen(true)}>
+            <Import className="w-3.5 h-3.5" /> Import from Properties
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)}>
+            <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
+          </Button>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
             <Plus className="w-3.5 h-3.5" /> Add Contact
           </Button>
@@ -356,6 +364,235 @@ export default function ContactsPage() {
           )}
         </DialogContent>
       </Dialog>
+      {/* Import from Properties Modal */}
+      <ImportFromPropertiesModal open={importOpen} onClose={() => setImportOpen(false)} />
+
+      {/* Duplicate Detection Modal */}
+      <DuplicateDetectionModal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} contacts={contacts || []} />
     </div>
+  )
+}
+
+// ── Import from Properties ──────────────────────────────────────────────
+function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [importing, setImporting] = useState(false)
+
+  const { data: unlinkedClients } = useQuery({
+    queryKey: ['/supabase/unlinked-clients'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('client')
+        .is('contact_id', null)
+      if (error) throw error
+      const counts: Record<string, number> = {}
+      for (const p of (data || [])) {
+        const name = p.client?.trim()
+        if (name) counts[name] = (counts[name] || 0) + 1
+      }
+      return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name))
+    },
+    enabled: open,
+  })
+
+  async function handleImport() {
+    if (selected.size === 0) return
+    setImporting(true)
+    try {
+      let imported = 0
+      let linked = 0
+      for (const name of selected) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from('contacts')
+          .insert({ full_name: name, company: name })
+          .select('id')
+          .single()
+        if (insertErr || !inserted) continue
+        imported++
+        const { data: updated } = await supabase
+          .from('properties')
+          .update({ contact_id: inserted.id })
+          .eq('client', name)
+          .is('contact_id', null)
+          .select('id')
+        linked += updated?.length || 0
+      }
+      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/unlinked-clients'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      toast({ title: `${imported} contacts imported, ${linked} properties linked.` })
+      onClose()
+    } catch {
+      toast({ title: 'Import failed', variant: 'destructive' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const allSelected = unlinkedClients && unlinkedClients.length > 0 && selected.size === unlinkedClients.length
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Import Contacts from Properties</DialogTitle></DialogHeader>
+        {!unlinkedClients ? (
+          <div className="space-y-2 py-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
+        ) : unlinkedClients.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">All properties already have contacts linked.</p>
+        ) : (
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={() => {
+                  if (allSelected) setSelected(new Set())
+                  else setSelected(new Set(unlinkedClients.map(c => c.name)))
+                }}
+                className="rounded"
+              />
+              Select All ({unlinkedClients.length})
+            </label>
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {unlinkedClients.map(c => (
+                <label key={c.name} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.name)}
+                    onChange={() => {
+                      const next = new Set(selected)
+                      if (next.has(c.name)) next.delete(c.name)
+                      else next.add(c.name)
+                      setSelected(next)
+                    }}
+                    className="rounded"
+                  />
+                  <span className="flex-1">{c.name}</span>
+                  <span className="text-muted-foreground">{c.count} properties</span>
+                </label>
+              ))}
+            </div>
+            <Button size="sm" className="w-full text-xs" disabled={selected.size === 0 || importing} onClick={handleImport}>
+              {importing ? 'Importing…' : `Import ${selected.size} Selected`}
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ── Duplicate Detection ──────────────────────────────────────────────────
+function levenshtein(a: string, b: string): number {
+  const an = a.length, bn = b.length
+  if (an === 0) return bn
+  if (bn === 0) return an
+  const matrix = Array.from({ length: bn + 1 }, (_, i) => [i])
+  for (let j = 0; j <= an; j++) matrix[0][j] = j
+  for (let i = 1; i <= bn; i++) {
+    for (let j = 1; j <= an; j++) {
+      matrix[i][j] = b[i - 1] === a[j - 1]
+        ? matrix[i - 1][j - 1]
+        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+    }
+  }
+  return matrix[bn][an]
+}
+
+function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: any[] }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [merging, setMerging] = useState(false)
+
+  const duplicates = useMemo(() => {
+    if (!contacts || contacts.length < 2) return []
+    const pairs: { primary: any; secondary: any; reason: string }[] = []
+    const seen = new Set<string>()
+    for (let i = 0; i < contacts.length; i++) {
+      for (let j = i + 1; j < contacts.length; j++) {
+        const a = contacts[i], b = contacts[j]
+        const key = [a.id, b.id].sort().join('_')
+        if (seen.has(key)) continue
+        // Check name similarity
+        const nameA = (a.full_name || '').toLowerCase()
+        const nameB = (b.full_name || '').toLowerCase()
+        if (nameA && nameB && levenshtein(nameA, nameB) <= 2) {
+          seen.add(key)
+          pairs.push({ primary: a, secondary: b, reason: 'Similar name' })
+          continue
+        }
+        // Check email match
+        if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) {
+          seen.add(key)
+          pairs.push({ primary: a, secondary: b, reason: 'Same email' })
+        }
+      }
+    }
+    return pairs
+  }, [contacts])
+
+  async function handleMerge(primary: any, secondary: any) {
+    setMerging(true)
+    try {
+      // Copy non-null fields from secondary to primary
+      const updates: Record<string, any> = {}
+      const fields = ['company', 'email', 'phone', 'secondary_phone', 'mailing_address', 'source', 'payment_method', 'client_since', 'notes']
+      for (const f of fields) {
+        if (!primary[f] && secondary[f]) updates[f] = secondary[f]
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('contacts').update(updates).eq('id', primary.id)
+      }
+      // Reassign properties
+      await supabase.from('properties').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
+      // Reassign interactions
+      await supabase.from('contact_interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
+      // Delete secondary
+      await supabase.from('contacts').delete().eq('id', secondary.id)
+      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      toast({ title: 'Contacts merged successfully.' })
+    } catch {
+      toast({ title: 'Merge failed', variant: 'destructive' })
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Duplicate Review</DialogTitle></DialogHeader>
+        {duplicates.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No duplicates detected.</p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">{duplicates.length} potential duplicate pair(s) found</p>
+            {duplicates.map(({ primary, secondary, reason }, i) => (
+              <div key={i} className="border border-border rounded-md p-3">
+                <p className="text-xs text-muted-foreground mb-2">{reason}</p>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="font-medium">{primary.full_name}</p>
+                    <p className="text-muted-foreground">{primary.email || '—'}</p>
+                    <p className="text-muted-foreground">{primary.properties?.length || 0} properties</p>
+                  </div>
+                  <div>
+                    <p className="font-medium">{secondary.full_name}</p>
+                    <p className="text-muted-foreground">{secondary.email || '—'}</p>
+                    <p className="text-muted-foreground">{secondary.properties?.length || 0} properties</p>
+                  </div>
+                </div>
+                <Button size="sm" variant="outline" className="mt-2 text-xs w-full" disabled={merging} onClick={() => handleMerge(primary, secondary)}>
+                  Merge → Keep {primary.full_name}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

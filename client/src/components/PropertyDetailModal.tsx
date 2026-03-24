@@ -12,7 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check, Users, ExternalLink } from 'lucide-react'
+import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 
 // ── Access code reveal cell ──────────────────────────────────────────────────
 function RevealCell({ value, field, id }: { value: string | null; field: string; id: string }) {
@@ -63,6 +64,442 @@ function RevealCell({ value, field, id }: { value: string | null; field: string;
       <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground" title={copied ? 'Copied!' : 'Copy'}>
         {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
       </button>
+    </div>
+  )
+}
+
+// ── Onboarding Checklist ──────────────────────────────────────────────────────
+function OnboardingChecklist({ propertyId }: { propertyId: string }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [newTask, setNewTask] = useState('')
+
+  const { data: tasks, isLoading } = useQuery({
+    queryKey: ['/supabase/onboarding-tasks', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('onboarding_tasks')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('sort_order')
+      if (error) throw error
+      if (data && data.length === 0) {
+        // Auto-create from templates
+        const { data: templates } = await supabase
+          .from('onboarding_task_templates')
+          .select('task_name, sort_order')
+          .eq('is_active', true)
+          .order('sort_order')
+        if (templates && templates.length > 0) {
+          const rows = templates.map(t => ({
+            property_id: propertyId,
+            task_name: t.task_name,
+            sort_order: t.sort_order,
+          }))
+          await supabase.from('onboarding_tasks').insert(rows)
+          const { data: created } = await supabase
+            .from('onboarding_tasks')
+            .select('*')
+            .eq('property_id', propertyId)
+            .order('sort_order')
+          return created || []
+        }
+      }
+      return data || []
+    },
+  })
+
+  const { mutate: toggleTask } = useMutation({
+    mutationFn: async ({ id, complete }: { id: string; complete: boolean }) => {
+      const { error } = await supabase
+        .from('onboarding_tasks')
+        .update({ is_complete: complete, completed_at: complete ? new Date().toISOString() : null })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks', propertyId] })
+    },
+  })
+
+  const { mutate: addTask } = useMutation({
+    mutationFn: async (taskName: string) => {
+      const maxOrder = (tasks || []).reduce((m: number, t: any) => Math.max(m, t.sort_order || 0), 0)
+      const { error } = await supabase.from('onboarding_tasks').insert({
+        property_id: propertyId,
+        task_name: taskName,
+        sort_order: maxOrder + 1,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks', propertyId] })
+      setNewTask('')
+    },
+  })
+
+  if (isLoading) return <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
+
+  const completed = (tasks || []).filter((t: any) => t.is_complete).length
+  const total = (tasks || []).length
+  const pct = total > 0 ? (completed / total) * 100 : 0
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="flex items-center justify-between text-xs mb-1">
+          <span className="text-muted-foreground">{completed} of {total} complete</span>
+          <span className="font-medium">{pct.toFixed(0)}%</span>
+        </div>
+        <div className="h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-300 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      </div>
+      <div className="space-y-1">
+        {(tasks || []).map((t: any) => (
+          <label
+            key={t.id}
+            className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer ${t.is_complete ? 'opacity-60' : ''}`}
+          >
+            <button
+              onClick={() => toggleTask({ id: t.id, complete: !t.is_complete })}
+              className="flex-shrink-0"
+            >
+              {t.is_complete ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground" />}
+            </button>
+            <span className={`text-sm ${t.is_complete ? 'line-through text-muted-foreground' : ''}`}>{t.task_name}</span>
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={newTask}
+          onChange={e => setNewTask(e.target.value)}
+          placeholder="Add a task…"
+          className="h-7 text-xs flex-1"
+          onKeyDown={e => e.key === 'Enter' && newTask.trim() && addTask(newTask.trim())}
+        />
+        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!newTask.trim()} onClick={() => addTask(newTask.trim())}>
+          <Plus className="w-3 h-3" />
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ── Inspections Tab ──────────────────────────────────────────────────────────
+function InspectionsTab({ propertyId }: { propertyId: string }) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [showForm, setShowForm] = useState(false)
+  const [form, setInspForm] = useState({ overall: 5, cleanliness: 5, linens: 5, supplies: 5, exterior: 5, notes: '' })
+  const [photos, setPhotos] = useState<File[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+
+  const { data: inspections, isLoading } = useQuery({
+    queryKey: ['/supabase/inspections', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('inspections')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('inspected_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { mutate: logInspection, isPending } = useMutation({
+    mutationFn: async () => {
+      let photoUrls: string[] = []
+      if (photos.length > 0) {
+        setUploading(true)
+        for (const file of photos.slice(0, 5)) {
+          const path = `inspections/${propertyId}/${Date.now()}_${file.name}`
+          const { error: uploadError } = await supabase.storage.from('inspections').upload(path, file)
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('inspections').getPublicUrl(path)
+            if (urlData?.publicUrl) photoUrls.push(urlData.publicUrl)
+          }
+        }
+        setUploading(false)
+      }
+      const { error } = await supabase.from('inspections').insert({
+        property_id: propertyId,
+        overall_score: form.overall,
+        cleanliness_score: form.cleanliness,
+        linens_score: form.linens,
+        supplies_score: form.supplies,
+        exterior_score: form.exterior,
+        notes: form.notes || null,
+        photos_url: photoUrls.length > 0 ? photoUrls : null,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/inspections', propertyId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
+      toast({ title: 'Inspection logged' })
+      setShowForm(false)
+      setInspForm({ overall: 5, cleanliness: 5, linens: 5, supplies: 5, exterior: 5, notes: '' })
+      setPhotos([])
+    },
+    onError: () => toast({ title: 'Failed to log inspection', variant: 'destructive' }),
+  })
+
+  function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground w-20">{label}</span>
+        <input type="range" min={1} max={10} value={value} onChange={e => onChange(parseInt(e.target.value))} className="flex-1 h-1.5 accent-primary" />
+        <span className={`text-xs font-medium w-6 text-center ${value >= 8 ? 'text-green-600' : value >= 6 ? 'text-amber-600' : 'text-red-600'}`}>{value}</span>
+      </div>
+    )
+  }
+
+  function ScoreBadge({ score }: { score: number }) {
+    const cls = score >= 8 ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' :
+                score >= 6 ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800' :
+                'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800'
+    return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{score}/10</span>
+  }
+
+  if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+
+  const chartData = (inspections || []).slice().reverse().map((i: any) => ({
+    date: new Date(i.inspected_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    score: i.overall_score,
+  }))
+
+  return (
+    <div className="space-y-3">
+      {chartData.length >= 2 && (
+        <ResponsiveContainer width="100%" height={120}>
+          <AreaChart data={chartData}>
+            <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+            <YAxis domain={[0, 10]} tick={{ fontSize: 10 }} />
+            <RechartsTooltip />
+            <Area type="monotone" dataKey="score" stroke="#3b82f6" fill="#3b82f680" />
+          </AreaChart>
+        </ResponsiveContainer>
+      )}
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{(inspections || []).length} inspection(s)</span>
+        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={() => setShowForm(f => !f)}>
+          <Plus className="w-3 h-3" /> Log Inspection
+        </Button>
+      </div>
+
+      {showForm && (
+        <div className="border border-border rounded-md p-3 space-y-2 bg-muted/20">
+          <ScoreSlider label="Overall" value={form.overall} onChange={v => setInspForm(f => ({ ...f, overall: v }))} />
+          <ScoreSlider label="Cleanliness" value={form.cleanliness} onChange={v => setInspForm(f => ({ ...f, cleanliness: v }))} />
+          <ScoreSlider label="Linens" value={form.linens} onChange={v => setInspForm(f => ({ ...f, linens: v }))} />
+          <ScoreSlider label="Supplies" value={form.supplies} onChange={v => setInspForm(f => ({ ...f, supplies: v }))} />
+          <ScoreSlider label="Exterior" value={form.exterior} onChange={v => setInspForm(f => ({ ...f, exterior: v }))} />
+          <textarea
+            value={form.notes}
+            onChange={e => setInspForm(f => ({ ...f, notes: e.target.value }))}
+            placeholder="Notes…"
+            className="w-full h-16 rounded-md border border-input bg-background px-2 py-1 text-xs resize-none"
+          />
+          <div>
+            <label className="text-xs text-muted-foreground">Photos (max 5)</label>
+            <input type="file" accept="image/*" multiple onChange={e => setPhotos(Array.from(e.target.files || []).slice(0, 5))} className="text-xs mt-1" />
+            {uploading && <div className="h-1.5 bg-muted rounded-full mt-1 overflow-hidden"><div className="h-full bg-primary rounded-full animate-pulse w-2/3" /></div>}
+          </div>
+          <Button size="sm" className="text-xs" disabled={isPending || uploading} onClick={() => logInspection()}>
+            {isPending ? 'Saving…' : 'Save Inspection'}
+          </Button>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {(inspections || []).map((insp: any) => (
+          <div key={insp.id} className="border border-border/50 rounded p-2 space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">{new Date(insp.inspected_at).toLocaleDateString()}</span>
+              <ScoreBadge score={insp.overall_score} />
+            </div>
+            <div className="flex gap-2 text-xs text-muted-foreground">
+              <span>Clean: {insp.cleanliness_score}</span>
+              <span>Linen: {insp.linens_score}</span>
+              <span>Supply: {insp.supplies_score}</span>
+              <span>Ext: {insp.exterior_score}</span>
+            </div>
+            {insp.notes && <p className="text-xs">{insp.notes}</p>}
+            {insp.photos_url && insp.photos_url.length > 0 && (
+              <div className="flex gap-1 mt-1">
+                {insp.photos_url.map((url: string, i: number) => (
+                  <button key={i} onClick={() => setLightboxUrl(url)} className="w-12 h-12 rounded border border-border overflow-hidden hover:opacity-80">
+                    <img src={url} alt="" className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Lightbox */}
+      <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
+        <DialogContent className="max-w-3xl p-2">
+          {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" className="w-full rounded" />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+// ── Assignments Tab ──────────────────────────────────────────────────────────
+function AssignmentsTab({ propertyId }: { propertyId: string }) {
+  const { data: assignments, isLoading } = useQuery({
+    queryKey: ['/supabase/assignments', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clean_assignments')
+        .select('*, cleaners(full_name)')
+        .eq('property_id', propertyId)
+        .order('scheduled_date', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
+
+  if (!assignments || assignments.length === 0) {
+    return <p className="text-xs text-muted-foreground text-center py-4">No cleaning assignments yet.</p>
+  }
+
+  return (
+    <div className="space-y-1">
+      {assignments.map((a: any) => (
+        <div key={a.id} className="flex items-center justify-between px-2 py-1.5 border-b border-border/40 text-xs">
+          <div>
+            <span className="font-medium">{(a.cleaners as any)?.full_name || '—'}</span>
+            <span className="text-muted-foreground ml-2">{a.scheduled_date}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {a.pay_amount != null && <span className="tabular-nums">${Number(a.pay_amount).toFixed(2)}</span>}
+            <span className={`px-1.5 py-0.5 rounded text-xs ${
+              a.status === 'completed' ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400' :
+              a.status === 'cancelled' ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+              'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+            }`}>{a.status}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ── Financials Enhancement: Profit History + vs. Portfolio Avg ──
+function FinancialsEnhancement({ property }: { property: any }) {
+  const { data: editHistory } = useQuery({
+    queryKey: ['/supabase/property-edit-history', property.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_edit_log')
+        .select('field_name, old_value, new_value, created_at')
+        .eq('property_id', property.id)
+        .in('field_name', ['ce_charged', 'cleaner_pay'])
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { data: allProperties } = useQuery({
+    queryKey: ['/supabase/portfolio-averages'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('operational_properties')
+        .select('est_laundry, est_consumables, inspection_cost, trash_cost')
+      if (error) throw error
+      return data || []
+    },
+    staleTime: 60_000,
+  })
+
+  const chartData = useMemo(() => {
+    if (!editHistory || editHistory.length === 0) return []
+    let ce = property.ce_charged || 0
+    let pay = property.cleaner_pay || 0
+    const points: { date: string; pct: number }[] = []
+    for (const log of editHistory) {
+      if (log.field_name === 'ce_charged') ce = parseFloat(log.new_value || '0')
+      if (log.field_name === 'cleaner_pay') pay = parseFloat(log.new_value || '0')
+      const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
+      points.push({ date: new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
+    }
+    return points
+  }, [editHistory, property])
+
+  const portfolioAvg = useMemo(() => {
+    if (!allProperties || allProperties.length === 0) return null
+    const avg = (field: string) => {
+      const vals = allProperties.filter((p: any) => p[field] != null).map((p: any) => Number(p[field]))
+      return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0
+    }
+    return {
+      laundry: avg('est_laundry'),
+      consumables: avg('est_consumables'),
+      inspection: avg('inspection_cost'),
+      trash: avg('trash_cost'),
+    }
+  }, [allProperties])
+
+  function DeltaIndicator({ current, avg, label }: { current: number; avg: number; label: string }) {
+    const delta = current - avg
+    const isAbove = delta > 0.01
+    return (
+      <span className={`text-xs ${isAbove ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+        {isAbove ? '+' : ''}{delta.toFixed(2)}
+      </span>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {chartData.length >= 2 ? (
+        <div>
+          <span className="text-xs text-muted-foreground block mb-1">Profit % History</span>
+          <ResponsiveContainer width="100%" height={100}>
+            <AreaChart data={chartData}>
+              <XAxis dataKey="date" tick={{ fontSize: 9 }} />
+              <YAxis tick={{ fontSize: 9 }} />
+              <Area type="monotone" dataKey="pct" stroke="#22c55e" fill="#22c55e40" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">Not enough history yet</p>
+      )}
+
+      {portfolioAvg && (
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground block">vs. Portfolio Average</span>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { label: 'Laundry', current: property.est_laundry || 0, avg: portfolioAvg.laundry },
+              { label: 'Consumables', current: property.est_consumables || 0, avg: portfolioAvg.consumables },
+              { label: 'Inspection', current: property.inspection_cost || 15, avg: portfolioAvg.inspection },
+              { label: 'Trash', current: property.trash_cost || 5, avg: portfolioAvg.trash },
+            ].map(item => (
+              <div key={item.label} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1">
+                <span className="text-muted-foreground">{item.label}</span>
+                <DeltaIndicator current={item.current} avg={item.avg} label={item.label} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -324,6 +761,9 @@ export function PropertyDetailModal() {
               {canViewAccess && <TabsTrigger value="access" className="text-xs">Access</TabsTrigger>}
               {canViewAccess && <TabsTrigger value="ac-filter" className="text-xs">AC Filter</TabsTrigger>}
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
+              {stageName === 'Onboarding' && <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>}
+              <TabsTrigger value="inspections" className="text-xs">Inspections</TabsTrigger>
+              <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>
             </TabsList>
 
             {/* ── Overview Tab ── */}
@@ -525,6 +965,7 @@ export function PropertyDetailModal() {
                     </span>
                   </div>
                 </div>
+                <FinancialsEnhancement property={property} />
               </TabsContent>
             )}
 
@@ -598,6 +1039,23 @@ export function PropertyDetailModal() {
               ) : (
                 <p className="text-sm whitespace-pre-wrap">{property.notes || <span className="text-muted-foreground italic">No notes</span>}</p>
               )}
+            </TabsContent>
+
+            {/* ── Onboarding Tab ── */}
+            {stageName === 'Onboarding' && (
+              <TabsContent value="onboarding" className="mt-3">
+                <OnboardingChecklist propertyId={property.id} />
+              </TabsContent>
+            )}
+
+            {/* ── Inspections Tab ── */}
+            <TabsContent value="inspections" className="mt-3">
+              <InspectionsTab propertyId={property.id} />
+            </TabsContent>
+
+            {/* ── Assignments Tab ── */}
+            <TabsContent value="assignments" className="mt-3">
+              <AssignmentsTab propertyId={property.id} />
             </TabsContent>
           </Tabs>
         )}
