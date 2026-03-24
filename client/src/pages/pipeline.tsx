@@ -494,31 +494,31 @@ export default function PipelinePage() {
 
   return (
     <div className="p-5 h-full flex flex-col">
-      <div className="mb-3 flex items-center justify-between flex-wrap gap-2 flex-shrink-0">
+      <div className="mb-3 flex flex-col gap-2 flex-shrink-0 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
           <p className="text-sm text-muted-foreground">Drag properties between stages</p>
         </div>
-        <div className="relative w-64">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search properties..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-8 h-8 text-sm"
-            data-testid="input-search-pipeline"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 sm:flex-none sm:w-56">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search properties..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 pr-8 h-8 text-sm w-full"
+              data-testid="input-search-pipeline"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           <Button size="sm" variant="outline" onClick={() => setAddLeadOpen(true)} data-testid="button-add-lead">
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Lead
           </Button>
