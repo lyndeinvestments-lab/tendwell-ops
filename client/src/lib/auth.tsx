@@ -82,6 +82,10 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   'pro-forma': ['admin', 'viewer'],
   'previous-properties': ['admin', 'viewer'],
   settings: ['admin'],
+  'revenue-report': ['admin', 'viewer'],
+  inspections: ['admin', 'operations', 'viewer'],
+  cleaners: ['admin', 'operations'],
+  alerts: ['admin', 'operations', 'viewer'],
 }
 
 export function canAccess(view: string, role: UserRole): boolean {

@@ -67,7 +67,7 @@ function StageHistoryTooltip({ transitions, children }: { transitions: any[]; ch
 }
 
 // ── Droppable column ──────────────────────────────────────────────────────────
-function StageColumn({ stage, properties, onNameClick, compact, collapsed, onToggleCollapse, onFollowUpChange }: {
+function StageColumn({ stage, properties, onNameClick, compact, collapsed, onToggleCollapse, onFollowUpChange, onboardingProgress }: {
   stage: any
   properties: any[]
   onNameClick: (p: any) => void
@@ -76,6 +76,7 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
   onToggleCollapse: () => void
   onFollowUpChange: (propId: string, date: string) => void
   transitionsByProperty?: Record<string, any[]>
+  onboardingProgress?: Record<string, { completed: number; total: number }>
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: stage.id })
   const color = STAGE_COLORS[stage.name] || '#6b7280'
@@ -119,6 +120,7 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
               onNameClick={() => onNameClick(p)}
               compact={compact}
               onFollowUpChange={(date) => onFollowUpChange(p.id, date)}
+              onboardingProgress={stage.name === 'Onboarding' ? onboardingProgress?.[p.id] : undefined}
             />
           ))
         )}
@@ -128,9 +130,10 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
 }
 
 // ── Draggable card ─────────────────────────────────────────────────────────────
-function DraggableCard({ property, stageName, stageColor, onNameClick, compact, onFollowUpChange }: {
+function DraggableCard({ property, stageName, stageColor, onNameClick, compact, onFollowUpChange, onboardingProgress }: {
   property: any; stageName: string; stageColor: string; onNameClick: () => void; compact: boolean
   onFollowUpChange: (date: string) => void
+  onboardingProgress?: { completed: number; total: number }
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: property.id })
   const showFollowUp = FOLLOW_UP_STAGES.has(stageName)
@@ -236,6 +239,26 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           </div>
         </StageHistoryTooltip>
       )}
+      {stageName === 'Onboarding' && (
+        <div className="mt-1.5 pt-1.5 border-t border-border/40">
+          {onboardingProgress && onboardingProgress.total > 0 ? (
+            <>
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    onboardingProgress.completed === onboardingProgress.total ? 'bg-green-500' :
+                    onboardingProgress.completed / onboardingProgress.total >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
+                  }`}
+                  style={{ width: `${(onboardingProgress.completed / onboardingProgress.total) * 100}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground mt-0.5 block">{onboardingProgress.completed} of {onboardingProgress.total} tasks</span>
+            </>
+          ) : (
+            <button onClick={handleNameClick} className="text-xs text-primary hover:underline">Setup checklist →</button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -326,6 +349,36 @@ export default function PipelinePage() {
     }
     return map
   }, [allTransitions])
+
+  // Onboarding tasks progress
+  const onboardingPropertyIds = useMemo(() => {
+    if (!properties || !stages) return []
+    const onboardingStageId = stages.find((s: any) => s.name === 'Onboarding')?.id
+    return properties.filter((p: any) => p.stage_id === onboardingStageId).map((p: any) => p.id)
+  }, [properties, stages])
+
+  const { data: onboardingTasksData } = useQuery({
+    queryKey: ['/supabase/onboarding-tasks-pipeline', onboardingPropertyIds.join(',')],
+    enabled: onboardingPropertyIds.length > 0,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('onboarding_tasks')
+        .select('property_id, is_complete')
+        .in('property_id', onboardingPropertyIds)
+      return data ?? []
+    },
+    staleTime: 30_000,
+  })
+
+  const onboardingProgress = useMemo(() => {
+    const map: Record<string, { completed: number; total: number }> = {}
+    for (const t of (onboardingTasksData ?? [])) {
+      if (!map[t.property_id]) map[t.property_id] = { completed: 0, total: 0 }
+      map[t.property_id].total++
+      if (t.is_complete) map[t.property_id].completed++
+    }
+    return map
+  }, [onboardingTasksData])
 
   // Sync localProperties from server when not dragging
   useEffect(() => {
@@ -577,6 +630,7 @@ export default function PipelinePage() {
                     collapsed={collapsedStages.has(String(stage.id))}
                     onToggleCollapse={() => toggleCollapse(String(stage.id))}
                     onFollowUpChange={handleFollowUpChange}
+                    onboardingProgress={onboardingProgress}
                   />
                 )
               })}

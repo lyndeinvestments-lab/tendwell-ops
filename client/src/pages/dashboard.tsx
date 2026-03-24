@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users } from 'lucide-react'
+import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
@@ -121,6 +121,40 @@ export default function DashboardPage() {
         .lte('created_at', untilDate)
         .order('created_at', { ascending: false })
       if (error) throw error
+      return data || []
+    },
+  })
+
+  // Inspections data for Quality widgets
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+  const { data: recentInspections } = useQuery({
+    queryKey: ['/supabase/dashboard-inspections'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('inspections')
+        .select('property_id, overall_score, inspected_at, properties!inspections_property_id_fkey(name)')
+        .gte('inspected_at', ninetyDaysAgo)
+        .order('inspected_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Scheduled this week
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  const { data: scheduledThisWeek } = useQuery({
+    queryKey: ['/supabase/dashboard-scheduled-week'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('clean_assignments')
+        .select('id')
+        .gte('scheduled_date', weekStart.toISOString().split('T')[0])
+        .lte('scheduled_date', weekEnd.toISOString().split('T')[0])
+        .eq('status', 'scheduled')
+      if (error) return []
       return data || []
     },
   })
@@ -273,6 +307,7 @@ export default function DashboardPage() {
           subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
           icon={DollarSign}
           loading={isLoading}
+          onClick={() => navigate('/revenue-report')}
         />
         <KpiCard
           title="Avg Profit %"
@@ -280,6 +315,7 @@ export default function DashboardPage() {
           icon={TrendingUp}
           loading={isLoading}
           alert={avgProfit < 15}
+          onClick={() => navigate('/revenue-report')}
         />
       </div>
 
@@ -506,6 +542,110 @@ export default function DashboardPage() {
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Activity className="w-8 h-8 text-muted-foreground/40 mb-2" />
                 <p className="text-sm text-muted-foreground">No transitions in this period</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quality Leaderboard + Scheduled This Week */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="border-card-border">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <ClipboardCheck className="w-4 h-4 text-primary" /> Quality Leaderboard
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {(() => {
+              if (!recentInspections || recentInspections.length < 3) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <ClipboardCheck className="w-8 h-8 text-muted-foreground/40 mb-2" />
+                    <p className="text-sm text-muted-foreground">No inspections logged yet</p>
+                    <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => navigate('/inspections')}>
+                      Log First Inspection
+                    </Button>
+                  </div>
+                )
+              }
+              // Compute averages per property
+              const avgByProp: Record<string, { name: string; sum: number; count: number; propId: string }> = {}
+              for (const i of recentInspections) {
+                const pid = String(i.property_id)
+                if (!avgByProp[pid]) avgByProp[pid] = { name: (i.properties as any)?.name || '—', sum: 0, count: 0, propId: pid }
+                avgByProp[pid].sum += i.overall_score || 0
+                avgByProp[pid].count++
+              }
+              const sorted = Object.values(avgByProp).map(p => ({ ...p, avg: p.sum / p.count })).sort((a, b) => b.avg - a.avg)
+              const top = sorted.slice(0, 3)
+              const bottom = sorted.slice(-3).reverse()
+
+              function ScorePill({ avg }: { avg: number }) {
+                const cls = avg >= 8 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                            avg >= 6 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
+                            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                return <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${cls}`}>{avg.toFixed(1)}</span>
+              }
+
+              return (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Top Performers</p>
+                    {top.map(p => (
+                      <div key={p.propId} className="flex items-center justify-between text-xs py-1">
+                        <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
+                        <div className="flex items-center gap-1">
+                          <ScorePill avg={p.avg} />
+                          <span className="text-muted-foreground text-xs">({p.count})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-2">Needs Attention</p>
+                    {bottom.map(p => (
+                      <div key={p.propId} className="flex items-center justify-between text-xs py-1">
+                        <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
+                        <div className="flex items-center gap-1">
+                          <ScorePill avg={p.avg} />
+                          <span className="text-muted-foreground text-xs">({p.count})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+          </CardContent>
+        </Card>
+
+        <Card className="border-card-border">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Scheduled This Week</p>
+                <p className="text-xl font-semibold mt-1">{scheduledThisWeek?.length ?? 0}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">cleaning assignments</p>
+              </div>
+              <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
+                <CalendarDays className="w-4 h-4 text-primary" />
+              </div>
+            </div>
+            {/* Quality Alerts - properties with recent low scores */}
+            {recentInspections && recentInspections.filter((i: any) => (i.overall_score || 10) < 7).length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/40">
+                <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-red-500" /> Quality Alerts
+                </p>
+                {recentInspections.filter((i: any) => (i.overall_score || 10) < 7).slice(0, 3).map((i: any) => (
+                  <div key={i.property_id + i.inspected_at} className="flex items-center justify-between text-xs py-0.5">
+                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(i.property_id)}>
+                      {(i.properties as any)?.name}
+                    </span>
+                    <span className="text-red-600 font-medium">{i.overall_score}/10</span>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
