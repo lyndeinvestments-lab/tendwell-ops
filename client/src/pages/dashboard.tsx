@@ -229,7 +229,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Date Range Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 -mt-1">
         {(['7d', '30d', '90d', 'custom'] as Preset[]).map((p) => (
           <Button
             key={p}
@@ -520,7 +520,7 @@ export default function DashboardPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
               <p className="text-xs text-muted-foreground">Total Contacts</p>
               <p className="text-lg font-semibold tabular-nums">{crmStats.total}</p>
