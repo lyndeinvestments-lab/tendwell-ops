@@ -17,7 +17,7 @@ import { format } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
-const PAYMENT_OPTIONS = ['Ramp', 'BuildComm', 'QuickBooks', 'Check', 'ACH', 'Other']
+const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6']
 
 type SortKey = 'full_name' | 'client_since' | 'properties'
