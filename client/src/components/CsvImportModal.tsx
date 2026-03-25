@@ -4,8 +4,9 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
-import { Upload, AlertTriangle, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, PlusCircle } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,7 +18,6 @@ interface ParsedRecord {
   rawPropertyName: string
   cleanDate: Date
   cleanerName: string | null
-  cleanCost: number | null
 }
 
 interface PropertyGroup {
@@ -27,8 +27,8 @@ interface PropertyGroup {
   firstClean: Date
   lastClean: Date
   cleansPerMonth: number
-  avgCost: number | null
   inferredFrequency: string
+  isNew: boolean
 }
 
 interface MatchEntry {
@@ -36,6 +36,8 @@ interface MatchEntry {
   propertyId: string | null
   propertyName: string | null
   records: ParsedRecord[]
+  isNew: boolean
+  newPropertyName: string
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
@@ -68,10 +70,18 @@ function normalize(s: string) {
 }
 
 function matchScore(csvName: string, propName: string): number {
-  const csvWords = normalize(csvName).split(' ').filter(Boolean)
-  if (csvWords.length === 0) return 0
+  const csvNorm = normalize(csvName)
   const propNorm = normalize(propName)
-  return csvWords.filter(w => propNorm.includes(w)).length / csvWords.length
+  const csvWords = csvNorm.split(' ').filter(Boolean)
+  const propWords = propNorm.split(' ').filter(Boolean)
+  if (csvWords.length === 0 || propWords.length === 0) return 0
+
+  // Bidirectional: how many CSV words appear in property name, and vice versa
+  const csvInProp = csvWords.filter(w => propNorm.includes(w)).length / csvWords.length
+  const propInCsv = propWords.filter(w => csvNorm.includes(w)).length / propWords.length
+
+  // Take the max of both directions to handle partial name variations
+  return Math.max(csvInProp, propInCsv)
 }
 
 function findBestMatch(csvName: string, properties: any[]): { id: string; name: string } | null {
@@ -84,7 +94,7 @@ function findBestMatch(csvName: string, properties: any[]): { id: string; name: 
       best = { id: p.id, name: p.name }
     }
   }
-  return bestScore >= 0.5 ? best : null
+  return bestScore >= 0.4 ? best : null
 }
 
 function calcCleansPerMonth(dates: Date[]): number {
@@ -115,9 +125,10 @@ function fmtDate(d: Date) {
 const STEPS = ['Upload', 'Map Columns', 'Match Properties', 'Summary']
 
 function StepIndicator({ current }: { current: number }) {
+  const visibleSteps = STEPS
   return (
     <div className="flex items-center gap-0 mb-5">
-      {STEPS.map((label, i) => (
+      {visibleSteps.map((label, i) => (
         <div key={i} className="flex items-center">
           <div className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded ${i === current ? 'text-primary' : i < current ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
             <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-semibold ${i === current ? 'bg-primary text-primary-foreground' : i < current ? 'bg-muted text-muted-foreground' : 'bg-muted/40 text-muted-foreground/40'}`}>
@@ -125,7 +136,7 @@ function StepIndicator({ current }: { current: number }) {
             </span>
             {label}
           </div>
-          {i < STEPS.length - 1 && (
+          {i < visibleSteps.length - 1 && (
             <div className={`w-6 h-px ${i < current ? 'bg-border' : 'bg-border/30'}`} />
           )}
         </div>
@@ -154,19 +165,21 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
   const [allRows, setAllRows] = useState<CsvRow[]>([])
   const [parseError, setParseError] = useState('')
 
-  // Column mapping
+  // Column mapping (no cost column)
   const [colPropName, setColPropName] = useState('')
   const [colCleanDate, setColCleanDate] = useState('')
   const [colCleanerName, setColCleanerName] = useState('')
-  const [colCleanCost, setColCleanCost] = useState('')
 
-  // Property matching: csvName → { propertyId, propertyName }
+  // Property matching
   const [matchEntries, setMatchEntries] = useState<MatchEntry[]>([])
   const [matchErrors, setMatchErrors] = useState<string[]>([])
 
   // Import summary
   const [propertyGroups, setPropertyGroups] = useState<PropertyGroup[]>([])
   const [importing, setImporting] = useState(false)
+
+  // New properties created in step 4
+  const [createdNewProperties, setCreatedNewProperties] = useState<string[]>([])
 
   // ─── Step 0: File upload ────────────────────────────────────────────────────
 
@@ -189,15 +202,13 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         setHeaders(hs)
         setAllRows(result.data)
         setPreview(result.data.slice(0, 5))
-        // Auto-detect columns
+        // Auto-detect columns (no cost)
         const propCol = hs.find(h => /prop|property|name|address/i.test(h)) || ''
         const dateCol = hs.find(h => /date|clean.*date|service/i.test(h)) || ''
         const cleanerCol = hs.find(h => /cleaner|worker|employee|staff/i.test(h)) || ''
-        const costCol = hs.find(h => /cost|charge|amount|price|pay/i.test(h)) || ''
         setColPropName(propCol)
         setColCleanDate(dateCol)
         setColCleanerName(cleanerCol)
-        setColCleanCost(costCol)
         setStep(1)
       },
       error: (err) => setParseError('Parse error: ' + err.message),
@@ -241,11 +252,9 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
       }
 
       const cleanerName = colCleanerName ? (row[colCleanerName] || '').trim() || null : null
-      const rawCost = colCleanCost ? (row[colCleanCost] || '').trim() : ''
-      const cleanCost = rawCost ? parseFloat(rawCost.replace(/[$,]/g, '')) || null : null
 
       if (!byName[rawProp]) byName[rawProp] = []
-      byName[rawProp].push({ rawPropertyName: rawProp, cleanDate: date, cleanerName, cleanCost })
+      byName[rawProp].push({ rawPropertyName: rawProp, cleanDate: date, cleanerName })
     }
 
     if (Object.keys(byName).length === 0) {
@@ -260,6 +269,8 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         propertyId: match?.id || null,
         propertyName: match?.name || null,
         records,
+        isNew: false,
+        newPropertyName: '',
       }
     })
 
@@ -271,10 +282,20 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
   // ─── Step 2 → 3: Build property groups + summary ───────────────────────────
 
   function proceedToSummary() {
+    if (parseError) setParseError('')
+
+    // Validate new property names
+    const invalidNew = matchEntries.filter(e => e.isNew && !e.newPropertyName.trim())
+    if (invalidNew.length > 0) {
+      setParseError(`Please enter a name for ${invalidNew.length} new ${invalidNew.length === 1 ? 'property' : 'properties'}.`)
+      return
+    }
+
     const groups: PropertyGroup[] = []
 
     for (const entry of matchEntries) {
-      if (!entry.propertyId) continue // skip unmatched
+      // Skip entries that are neither matched nor flagged as new
+      if (!entry.propertyId && !entry.isNew) continue
 
       const dates = entry.records.map(r => r.cleanDate)
       const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime())
@@ -282,23 +303,20 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
       const lastClean = sorted[sorted.length - 1]
       const cpm = calcCleansPerMonth(dates)
 
-      const costs = entry.records.map(r => r.cleanCost).filter((c): c is number => c !== null)
-      const avgCost = costs.length > 0 ? Math.round((costs.reduce((s, c) => s + c, 0) / costs.length) * 100) / 100 : null
-
       groups.push({
-        matchedPropertyId: entry.propertyId,
-        matchedPropertyName: entry.propertyName,
+        matchedPropertyId: entry.isNew ? null : entry.propertyId,
+        matchedPropertyName: entry.isNew ? entry.newPropertyName.trim() : entry.propertyName,
         records: entry.records,
         firstClean,
         lastClean,
         cleansPerMonth: cpm,
-        avgCost,
         inferredFrequency: inferFrequency(cpm),
+        isNew: entry.isNew,
       })
     }
 
     if (groups.length === 0) {
-      setParseError('No matched properties to import. Please match at least one property.')
+      setParseError('No matched or new properties to import. Please match at least one property.')
       return
     }
 
@@ -313,57 +331,89 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     setImporting(true)
     let successCount = 0
     const errors: string[] = []
+    const newlyCreated: string[] = []
+
+    // Fetch Active stage ID once if we have new properties to create
+    let activeStageId: string | null = null
+    if (propertyGroups.some(g => g.isNew)) {
+      const { data: stages } = await supabase
+        .from('pipeline_stages')
+        .select('id, name')
+        .ilike('name', 'active')
+        .limit(1)
+      activeStageId = stages?.[0]?.id || null
+    }
 
     for (const group of propertyGroups) {
-      if (!group.matchedPropertyId) continue
       try {
-        // Insert cleaning history records
-        const historyRows = group.records.map(r => ({
-          property_id: group.matchedPropertyId!,
-          clean_date: fmtDate(r.cleanDate),
-          cleaner_name: r.cleanerName,
-          clean_cost: r.cleanCost,
-        }))
-        const { error: histError } = await supabase
-          .from('cleaning_history')
-          .insert(historyRows)
-        if (histError) {
-          // If table doesn't exist yet, note but continue with property updates
-          if (!histError.message.includes('does not exist')) {
-            errors.push(`History insert failed for ${group.matchedPropertyName}: ${histError.message}`)
+        let propertyId = group.matchedPropertyId
+
+        // ── Create new property ──
+        if (group.isNew) {
+          const { data: newProp, error: createError } = await supabase
+            .from('properties')
+            .insert({
+              name: group.matchedPropertyName!,
+              stage_id: activeStageId,
+              cleaning_frequency: group.inferredFrequency,
+              first_clean_date: fmtDate(group.firstClean),
+              avg_cleans_per_month: group.cleansPerMonth,
+            })
+            .select('id')
+            .single()
+
+          if (createError) {
+            // Retry without avg_cleans_per_month in case column doesn't exist yet
+            const { data: newProp2, error: createError2 } = await supabase
+              .from('properties')
+              .insert({
+                name: group.matchedPropertyName!,
+                stage_id: activeStageId,
+                cleaning_frequency: group.inferredFrequency,
+                first_clean_date: fmtDate(group.firstClean),
+              })
+              .select('id')
+              .single()
+
+            if (createError2) {
+              errors.push(`Failed to create "${group.matchedPropertyName}": ${createError2.message}`)
+              continue
+            }
+            propertyId = newProp2.id
+          } else {
+            propertyId = newProp.id
           }
+
+          newlyCreated.push(group.matchedPropertyName!)
+          successCount++
+          continue
         }
 
-        // Update property fields
+        // ── Update existing property ──
+        if (!propertyId) continue
+
         const updates: Record<string, any> = {
           first_clean_date: fmtDate(group.firstClean),
           cleaning_frequency: group.inferredFrequency,
+          avg_cleans_per_month: group.cleansPerMonth,
         }
-        // Only update avg_cleans_per_month if the column exists on the properties table
-        // The view may compute it, but we try to persist it too
-        try {
-          const { error: propError } = await supabase
+
+        const { error: propError } = await supabase
+          .from('properties')
+          .update(updates)
+          .eq('id', propertyId)
+
+        if (propError) {
+          // Retry without avg_cleans_per_month if column doesn't exist
+          const { error: propError2 } = await supabase
             .from('properties')
-            .update({ ...updates, avg_cleans_per_month: group.cleansPerMonth })
-            .eq('id', group.matchedPropertyId!)
-          if (propError) {
-            // Retry without avg_cleans_per_month if that column causes issues
-            const { error: propError2 } = await supabase
-              .from('properties')
-              .update(updates)
-              .eq('id', group.matchedPropertyId!)
-            if (propError2) {
-              errors.push(`Property update failed for ${group.matchedPropertyName}: ${propError2.message}`)
-              continue
-            }
-          }
-        } catch {
-          const { error: propError } = await supabase
-            .from('properties')
-            .update(updates)
-            .eq('id', group.matchedPropertyId!)
-          if (propError) {
-            errors.push(`Property update failed for ${group.matchedPropertyName}: ${propError.message}`)
+            .update({
+              first_clean_date: fmtDate(group.firstClean),
+              cleaning_frequency: group.inferredFrequency,
+            })
+            .eq('id', propertyId)
+          if (propError2) {
+            errors.push(`Update failed for ${group.matchedPropertyName}: ${propError2.message}`)
             continue
           }
         }
@@ -375,6 +425,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     }
 
     setImporting(false)
+    setCreatedNewProperties(newlyCreated)
 
     if (errors.length > 0) {
       toast({
@@ -386,13 +437,18 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
       toast({ title: `Imported ${successCount} ${successCount === 1 ? 'property' : 'properties'} successfully` })
     }
 
-    onImportComplete()
+    if (newlyCreated.length > 0) {
+      setStep(4) // Show new properties confirmation step
+    } else {
+      onImportComplete()
+    }
   }
 
   // ─── Render helpers ─────────────────────────────────────────────────────────
 
-  const unmatchedCount = matchEntries.filter(e => !e.propertyId).length
-  const matchedCount = matchEntries.filter(e => e.propertyId).length
+  const matchedCount = matchEntries.filter(e => e.propertyId && !e.isNew).length
+  const unmatchedCount = matchEntries.filter(e => !e.propertyId && !e.isNew).length
+  const newCount = matchEntries.filter(e => e.isNew).length
 
   const summaryFirstClean = propertyGroups.length > 0
     ? propertyGroups.reduce((min, g) => g.firstClean < min ? g.firstClean : min, propertyGroups[0].firstClean)
@@ -400,8 +456,9 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
   const summaryLastClean = propertyGroups.length > 0
     ? propertyGroups.reduce((max, g) => g.lastClean > max ? g.lastClean : max, propertyGroups[0].lastClean)
     : null
-  const minCpm = propertyGroups.length > 0 ? Math.min(...propertyGroups.map(g => g.cleansPerMonth)) : 0
-  const maxCpm = propertyGroups.length > 0 ? Math.max(...propertyGroups.map(g => g.cleansPerMonth)) : 0
+
+  const existingGroups = propertyGroups.filter(g => !g.isNew)
+  const newGroups = propertyGroups.filter(g => g.isNew)
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
@@ -410,7 +467,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           <DialogTitle>Import Cleaning History</DialogTitle>
         </DialogHeader>
 
-        <StepIndicator current={step} />
+        {step < 4 && <StepIndicator current={step} />}
 
         {/* ── Step 0: Upload ── */}
         {step === 0 && (
@@ -454,7 +511,6 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                 { label: 'Property Name *', value: colPropName, setter: setColPropName },
                 { label: 'Clean Date *', value: colCleanDate, setter: setColCleanDate },
                 { label: 'Cleaner Name', value: colCleanerName, setter: setColCleanerName },
-                { label: 'Clean Cost', value: colCleanCost, setter: setColCleanCost },
               ].map(({ label, value, setter }) => (
                 <div key={label}>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">{label}</label>
@@ -510,15 +566,21 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         {/* ── Step 2: Match properties ── */}
         {step === 2 && (
           <div className="space-y-4">
-            <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-4 text-xs flex-wrap">
               <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400">
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 {matchedCount} matched
               </span>
+              {newCount > 0 && (
+                <span className="flex items-center gap-1.5 text-primary">
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  {newCount} new {newCount === 1 ? 'property' : 'properties'}
+                </span>
+              )}
               {unmatchedCount > 0 && (
                 <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  {unmatchedCount} unmatched — assign or skip
+                  {unmatchedCount} unmatched — assign, create new, or skip
                 </span>
               )}
             </div>
@@ -531,38 +593,78 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               </div>
             )}
 
-            <div className="max-h-64 overflow-y-auto space-y-1.5">
+            <div className="max-h-72 overflow-y-auto space-y-1.5">
               {matchEntries.map((entry, i) => (
                 <div key={i} className="flex items-center gap-3 rounded border border-border/50 px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{entry.csvName}</p>
                     <p className="text-xs text-muted-foreground">{entry.records.length} records</p>
                   </div>
-                  <div className="w-52 shrink-0">
-                    <Select
-                      value={entry.propertyId || '__none__'}
-                      onValueChange={v => {
-                        const pid = v === '__none__' ? null : v
-                        const pname = pid ? properties.find(p => p.id === pid)?.name || null : null
-                        setMatchEntries(prev => prev.map((e, j) =>
-                          j === i ? { ...e, propertyId: pid, propertyName: pname } : e
-                        ))
-                      }}
-                    >
-                      <SelectTrigger className={`h-7 text-xs ${!entry.propertyId ? 'border-amber-400 text-amber-600' : ''}`}>
-                        <SelectValue placeholder="— skip —" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__none__" className="text-xs">— skip —</SelectItem>
-                        {properties.map((p: any) => (
-                          <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="w-56 shrink-0">
+                    {entry.isNew ? (
+                      <div className="flex items-center gap-1">
+                        <Input
+                          className="h-7 text-xs flex-1"
+                          placeholder="New property name…"
+                          value={entry.newPropertyName}
+                          onChange={e => {
+                            const val = e.target.value
+                            setMatchEntries(prev => prev.map((me, j) =>
+                              j === i ? { ...me, newPropertyName: val } : me
+                            ))
+                          }}
+                        />
+                        <button
+                          className="text-muted-foreground hover:text-foreground shrink-0"
+                          title="Cancel new property"
+                          onClick={() => setMatchEntries(prev => prev.map((me, j) =>
+                            j === i ? { ...me, isNew: false, newPropertyName: '' } : me
+                          ))}
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <Select
+                        value={entry.propertyId || '__none__'}
+                        onValueChange={v => {
+                          if (v === '__new__') {
+                            setMatchEntries(prev => prev.map((me, j) =>
+                              j === i ? { ...me, propertyId: null, propertyName: null, isNew: true, newPropertyName: me.csvName } : me
+                            ))
+                          } else {
+                            const pid = v === '__none__' ? null : v
+                            const pname = pid ? properties.find(p => p.id === pid)?.name || null : null
+                            setMatchEntries(prev => prev.map((me, j) =>
+                              j === i ? { ...me, propertyId: pid, propertyName: pname, isNew: false } : me
+                            ))
+                          }
+                        }}
+                      >
+                        <SelectTrigger className={`h-7 text-xs ${!entry.propertyId ? 'border-amber-400 text-amber-600' : ''}`}>
+                          <SelectValue placeholder="— skip —" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__" className="text-xs text-muted-foreground">— skip —</SelectItem>
+                          <SelectItem value="__new__" className="text-xs text-primary font-medium">
+                            <span className="flex items-center gap-1.5">
+                              <PlusCircle className="w-3 h-3" />
+                              New Property
+                            </span>
+                          </SelectItem>
+                          <div className="h-px bg-border my-1" />
+                          {properties.map((p: any) => (
+                            <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
-                  {entry.propertyId
-                    ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                    : <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                  {entry.isNew
+                    ? <PlusCircle className="w-4 h-4 text-primary shrink-0" />
+                    : entry.propertyId
+                      ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+                      : <XCircle className="w-4 h-4 text-muted-foreground/40 shrink-0" />
                   }
                 </div>
               ))}
@@ -582,25 +684,24 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-sm">
               <p>
-                This will update <strong>{propertyGroups.length}</strong> {propertyGroups.length === 1 ? 'property' : 'properties'}
-                {unmatchedCount > 0 && <span className="text-muted-foreground"> ({unmatchedCount} skipped — unmatched)</span>}.
+                This will update <strong>{existingGroups.length}</strong> existing {existingGroups.length === 1 ? 'property' : 'properties'}
+                {newGroups.length > 0 && <span> and create <strong>{newGroups.length}</strong> new {newGroups.length === 1 ? 'property' : 'properties'}</span>}
+                {unmatchedCount > 0 && <span className="text-muted-foreground"> ({unmatchedCount} skipped)</span>}.
               </p>
               {summaryFirstClean && summaryLastClean && (
                 <p className="text-muted-foreground text-xs">
-                  First cleans range: <strong className="text-foreground">{fmtDate(summaryFirstClean)}</strong> to <strong className="text-foreground">{fmtDate(summaryLastClean)}</strong>
+                  Clean date range: <strong className="text-foreground">{fmtDate(summaryFirstClean)}</strong> to <strong className="text-foreground">{fmtDate(summaryLastClean)}</strong>
                 </p>
               )}
-              <p className="text-muted-foreground text-xs">
-                Average cleans/month range: <strong className="text-foreground">{minCpm}</strong> to <strong className="text-foreground">{maxCpm}</strong>
-              </p>
             </div>
 
             <div className="max-h-52 overflow-y-auto space-y-1">
               {propertyGroups.map((g, i) => (
                 <div key={i} className="flex items-center gap-3 text-xs px-2 py-1.5 rounded hover:bg-muted/30">
+                  {g.isNew && <PlusCircle className="w-3 h-3 text-primary shrink-0" />}
                   <span className="flex-1 font-medium truncate">{g.matchedPropertyName}</span>
                   <span className="text-muted-foreground">{g.records.length} cleans</span>
-                  <span className="text-muted-foreground">{g.cleansPerMonth}/mo</span>
+                  <span className="tabular-nums text-muted-foreground">{g.cleansPerMonth}/mo</span>
                   <span className="text-muted-foreground">→ {g.inferredFrequency.replace('_', ' ')}</span>
                   <span className="text-muted-foreground">first: {fmtDate(g.firstClean)}</span>
                 </div>
@@ -608,21 +709,52 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
             </div>
 
             <p className="text-xs text-muted-foreground">
-              For each property: <strong>first clean date</strong>, <strong>avg cleans/month</strong>, and <strong>frequency</strong> will be updated. Raw records will be stored in cleaning history.
+              For each property: <strong>first clean date</strong>, <strong>cleans/month</strong> (exact from CSV), and <strong>frequency</strong> will be updated.
+              {newGroups.length > 0 && ' New properties will be added as Active.'}
             </p>
           </div>
         )}
 
+        {/* ── Step 4: New properties created ── */}
+        {step === 4 && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+              <CheckCircle2 className="w-5 h-5 shrink-0" />
+              <p className="text-sm font-medium">Import complete</p>
+            </div>
+
+            {createdNewProperties.length > 0 && (
+              <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
+                <p className="text-sm font-medium">
+                  {createdNewProperties.length} new {createdNewProperties.length === 1 ? 'property was' : 'properties were'} created:
+                </p>
+                <ul className="space-y-1">
+                  {createdNewProperties.map((name, i) => (
+                    <li key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <PlusCircle className="w-3 h-3 text-primary shrink-0" />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                  These properties have been added with the cleaning frequency inferred from your CSV. Open them from the Pipeline or Property List to fill in CE charged, costs, contact info, and other details.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         <DialogFooter className="gap-2 mt-2">
-          {step > 0 && !importing && (
+          {step > 0 && step < 4 && !importing && (
             <Button variant="outline" size="sm" onClick={() => { setParseError(''); setStep(s => s - 1) }}>
               Back
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={onClose} disabled={importing}>
-            Cancel
-          </Button>
-          {step === 0 && null}
+          {step < 4 && (
+            <Button variant="outline" size="sm" onClick={onClose} disabled={importing}>
+              Cancel
+            </Button>
+          )}
           {step === 1 && (
             <Button size="sm" onClick={proceedToMatch}>
               Next: Match Properties
@@ -640,6 +772,11 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               ) : (
                 `Import ${propertyGroups.length} ${propertyGroups.length === 1 ? 'Property' : 'Properties'}`
               )}
+            </Button>
+          )}
+          {step === 4 && (
+            <Button size="sm" onClick={onImportComplete}>
+              Done
             </Button>
           )}
         </DialogFooter>
