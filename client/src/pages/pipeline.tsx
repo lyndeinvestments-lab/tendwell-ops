@@ -17,8 +17,10 @@ import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink } from 'lucide-react'
 import { format } from 'date-fns'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
@@ -294,6 +296,8 @@ export default function PipelinePage() {
   const [addLeadOpen, setAddLeadOpen] = useState(false)
   const [newLeadName, setNewLeadName] = useState('')
   const [newLeadClient, setNewLeadClient] = useState('')
+  const [detailPanel, setDetailPanel] = useState<any | null>(null)
+  const [panelNotes, setPanelNotes] = useState('')
 
   const { data: stages, isLoading: stagesLoading } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -436,6 +440,45 @@ export default function PipelinePage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] }),
     onError: () => toast({ title: 'Failed to save follow-up date', variant: 'destructive' }),
   })
+
+  // Panel: onboarding tasks for detail panel
+  const { data: panelTasks, refetch: refetchPanelTasks } = useQuery({
+    queryKey: ['/supabase/panel-onboarding-tasks', detailPanel?.id],
+    enabled: !!detailPanel?.id,
+    queryFn: async () => {
+      const { data } = await supabase.from('onboarding_tasks').select('id, task_name, is_complete').eq('property_id', detailPanel.id).order('id')
+      return data ?? []
+    },
+    staleTime: 10_000,
+  })
+
+  const { mutate: toggleTask } = useMutation({
+    mutationFn: async ({ taskId, is_complete }: { taskId: string; is_complete: boolean }) => {
+      const { error } = await supabase.from('onboarding_tasks').update({ is_complete }).eq('id', taskId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      refetchPanelTasks()
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks-pipeline'] })
+    },
+  })
+
+  const { mutate: saveNotes } = useMutation({
+    mutationFn: async ({ propId, notes }: { propId: string; notes: string }) => {
+      const { error } = await supabase.from('properties').update({ notes }).eq('id', propId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      toast({ title: 'Notes saved' })
+    },
+    onError: () => toast({ title: 'Failed to save notes', variant: 'destructive' }),
+  })
+
+  function openDetailPanel(p: any) {
+    setDetailPanel(p)
+    setPanelNotes(p.notes ?? '')
+  }
 
   const leadStage = stages?.find((s: any) => s.name === 'Lead')
 
@@ -625,7 +668,7 @@ export default function PipelinePage() {
                     key={stage.id}
                     stage={stage}
                     properties={stageProps}
-                    onNameClick={(p) => openPropertyModal(p.id, 'pipeline')}
+                    onNameClick={(p) => openDetailPanel(p)}
                     compact={compact}
                     collapsed={collapsedStages.has(String(stage.id))}
                     onToggleCollapse={() => toggleCollapse(String(stage.id))}
@@ -663,6 +706,141 @@ export default function PipelinePage() {
           isPending={isMoving}
         />
       )}
+
+      <Sheet open={!!detailPanel} onOpenChange={(open) => { if (!open) setDetailPanel(null) }}>
+        <SheetContent side="right" className="w-[400px] overflow-y-auto flex flex-col gap-0 p-0">
+          {detailPanel && (() => {
+            const stageName = detailPanel.pipeline_stages?.name ?? ''
+            const color = STAGE_COLORS[stageName] || '#6b7280'
+            const isOnboarding = stageName === 'Onboarding'
+            return (
+              <>
+                <SheetHeader className="px-5 pt-5 pb-3 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                    <SheetTitle className="text-base font-semibold leading-tight">{detailPanel.name}</SheetTitle>
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-4 mt-0.5">{stageName}</span>
+                </SheetHeader>
+
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+                  {/* Financial summary */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Financials</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-muted/40 rounded p-2.5 text-center">
+                        <p className="text-xs text-muted-foreground">CE Charged</p>
+                        <p className="text-sm font-semibold">{detailPanel.ce_charged != null ? `$${detailPanel.ce_charged}` : '—'}</p>
+                      </div>
+                      <div className="bg-muted/40 rounded p-2.5 text-center">
+                        <p className="text-xs text-muted-foreground">Cleaner Pay</p>
+                        <p className="text-sm font-semibold">{detailPanel.cleaner_pay != null ? `$${detailPanel.cleaner_pay}` : '—'}</p>
+                      </div>
+                      <div className="bg-muted/40 rounded p-2.5 text-center">
+                        <p className="text-xs text-muted-foreground">Profit %</p>
+                        <p className={`text-sm font-semibold ${detailPanel.profit_percentage == null ? 'text-muted-foreground' : detailPanel.profit_percentage >= 20 ? 'text-green-600' : detailPanel.profit_percentage >= 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {detailPanel.profit_percentage != null ? `${detailPanel.profit_percentage.toFixed(1)}%` : '—'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Onboarding checklist */}
+                  {isOnboarding && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Onboarding Checklist</p>
+                      {(panelTasks ?? []).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No tasks — open full details to add.</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {(panelTasks ?? []).map((task: any) => (
+                            <button
+                              key={task.id}
+                              onClick={() => toggleTask({ taskId: task.id, is_complete: !task.is_complete })}
+                              className="flex items-center gap-2 w-full text-left py-1 px-1.5 rounded hover:bg-muted transition-colors"
+                            >
+                              {task.is_complete
+                                ? <CheckSquare className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                : <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              }
+                              <span className={`text-xs ${task.is_complete ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{task.task_name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Notes</p>
+                    <textarea
+                      value={panelNotes}
+                      onChange={e => setPanelNotes(e.target.value)}
+                      className="w-full min-h-[80px] text-xs border border-input rounded p-2 bg-background resize-none focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Add notes…"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-1 h-7 text-xs"
+                      onClick={() => saveNotes({ propId: detailPanel.id, notes: panelNotes })}
+                    >
+                      Save Notes
+                    </Button>
+                  </div>
+
+                  {/* Move Stage */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Move Stage</p>
+                    <Select
+                      value={detailPanel.stage_id}
+                      onValueChange={(toStageId) => {
+                        if (toStageId === detailPanel.stage_id) return
+                        const toStage = stages?.find((s: any) => s.id === toStageId)
+                        if (!toStage) return
+                        const reqFields: string[] = Array.isArray(toStage.requires_fields) ? toStage.requires_fields : []
+                        const missing = reqFields.filter((f: string) => {
+                          const val = detailPanel[f]
+                          return val === null || val === undefined || val === ''
+                        })
+                        setLocalProperties(prev => prev
+                          ? prev.map(p => p.id === detailPanel.id ? { ...p, stage_id: toStageId } : p)
+                          : prev
+                        )
+                        if (missing.length > 0) {
+                          setTransition({ property: detailPanel, fromStageId: detailPanel.stage_id, toStageId, toStageName: toStage.name, missing })
+                        } else {
+                          moveProperty({ propId: detailPanel.id, stageId: toStageId, fromStageId: detailPanel.stage_id })
+                        }
+                        setDetailPanel((prev: any) => prev ? { ...prev, stage_id: toStageId, pipeline_stages: toStage } : prev)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select stage…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(stages ?? []).map((s: any) => (
+                          <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="border-t border-border px-5 py-3 flex-shrink-0">
+                  <Button
+                    className="w-full gap-1.5 text-xs h-8"
+                    onClick={() => { openPropertyModal(detailPanel.id, 'pipeline'); setDetailPanel(null) }}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Open Full Details
+                  </Button>
+                </div>
+              </>
+            )
+          })()}
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={addLeadOpen} onOpenChange={setAddLeadOpen}>
         <DialogContent>

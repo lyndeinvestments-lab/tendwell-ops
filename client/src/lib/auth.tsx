@@ -86,6 +86,7 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   inspections: ['admin', 'operations', 'viewer'],
   cleaners: ['admin', 'operations'],
   alerts: ['admin', 'operations', 'viewer'],
+  activity: ['admin', 'viewer'],
 }
 
 export function canAccess(view: string, role: UserRole): boolean {

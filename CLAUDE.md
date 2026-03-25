@@ -94,6 +94,11 @@ tendwell-ops/
 | `/pro-forma` | `pro-forma.tsx` | admin, viewer |
 | `/previous-properties` | `previous-properties.tsx` | admin, viewer |
 | `/settings` | `settings.tsx` | admin |
+| `/revenue-report` | `revenue-report.tsx` | admin, viewer |
+| `/inspections` | `inspections.tsx` | admin, operations, viewer |
+| `/cleaners` | `cleaners.tsx` | admin, operations |
+| `/alerts` | `alerts.tsx` | admin, operations, viewer |
+| `/activity` | `activity.tsx` | admin, viewer |
 
 ---
 
@@ -123,6 +128,12 @@ Key tables:
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
+New tables (migration `20260324_round6_features.sql`):
+- `contact_notes` — notes attached to CRM contacts (contact_id, content, created_by)
+- `inspection_photos` — photos attached to inspections
+- `property_photos` — photo gallery per property (photo_url, sort_order) — stored in Supabase Storage bucket `property-photos`
+- `property_supplies` — supply checklist per property (item_name, par_level, current_qty, last_restocked)
+
 ### SQLite (Fallback via Drizzle)
 
 Simple `users` table only. Schema in `shared/schema.ts`. Config in `drizzle.config.ts`.
@@ -131,6 +142,7 @@ Simple `users` table only. Schema in `shared/schema.ts`. Config in `drizzle.conf
 
 - `20260323_add_follow_up_date.sql` — adds `follow_up_date` to properties
 - `20260324_add_app_settings.sql` — creates `app_settings` KV table with defaults
+- `20260324_round6_features.sql` — adds contact_notes, inspection_photos, property_photos, property_supplies
 
 ---
 
@@ -202,6 +214,14 @@ npm run db:push    # Push Drizzle schema to SQLite
 - Cmd+K command palette
 - App settings page with configurable cost thresholds
 - Follow-up date tracking on Lead/Quote/Onboarding pipeline cards
+- Cleaner calendar: drag-and-drop assignments, "+Assign" per cell, color legend, cleaner-based reconciliation tab
+- Inspection form: right slide-over for logging + row detail panel
+- Contact modal: converted to Sheet slide-over, Notes tab with `contact_notes` table, Send Email button
+- Activity Feed page (`/activity`): field-level edit log with filters, search, revert button
+- Revenue Report: Forecast tab with occupancy input, 6-month projections, Best/Worst Case toggles, CSV export
+- Property modal: Photos tab (Supabase Storage upload/delete) + Supplies tab (par levels, restock badges)
+- Cost Tracking: optimistic updates, green flash on save, right-click context menu "Reset Row", Laundry/Consumables now editable
+- Pipeline: card click opens right-side slide-over with financials, onboarding checklist, notes, Move Stage dropdown
 
 ---
 
