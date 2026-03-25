@@ -39,6 +39,7 @@ const RevenueReportPage = lazy(() => import("@/pages/revenue-report"));
 const InspectionsPage = lazy(() => import("@/pages/inspections"));
 const CleanersPage = lazy(() => import("@/pages/cleaners"));
 const AlertsPage = lazy(() => import("@/pages/alerts"));
+const ActivityFeedPage = lazy(() => import("@/pages/activity"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
@@ -158,6 +159,7 @@ function AppRoutes() {
         <Route path="/inspections" component={InspectionsPage} />
         <Route path="/cleaners" component={CleanersPage} />
         <Route path="/alerts" component={AlertsPage} />
+        <Route path="/activity" component={ActivityFeedPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

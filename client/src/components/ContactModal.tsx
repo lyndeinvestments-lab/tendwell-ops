@@ -3,14 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X } from 'lucide-react'
+import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
@@ -40,6 +40,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   const [tagInput, setTagInput] = useState('')
   const [interactionType, setInteractionType] = useState('Note')
   const [interactionSummary, setInteractionSummary] = useState('')
+  const [noteInput, setNoteInput] = useState('')
 
   const isCreate = mode === 'create'
 
@@ -75,6 +76,20 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contact_interactions')
+        .select('*')
+        .eq('contact_id', contactId!)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!contactId && !isCreate,
+  })
+
+  const { data: contactNotes } = useQuery({
+    queryKey: ['/supabase/contact-notes', contactId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contact_notes')
         .select('*')
         .eq('contact_id', contactId!)
         .order('created_at', { ascending: false })
@@ -167,6 +182,23 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
     onError: () => toast({ title: 'Failed to log interaction', variant: 'destructive' }),
   })
 
+  // Add note
+  const { mutate: addNote, isPending: addingNote } = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('contact_notes').insert({
+        contact_id: contactId,
+        content: noteInput.trim(),
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/contact-notes', contactId] })
+      toast({ title: 'Note added' })
+      setNoteInput('')
+    },
+    onError: () => toast({ title: 'Failed to add note', variant: 'destructive' }),
+  })
+
   function handleFieldBlur(field: string) {
     if (isCreate || !contactId) return
     const newValue = field === 'tags' ? form.tags : (form[field]?.trim() || null)
@@ -236,26 +268,27 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   }
 
   return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="contact-modal">
-        <DialogHeader>
-          <DialogTitle className="text-base">
+    <Sheet open={open} onOpenChange={v => !v && onClose()}>
+      <SheetContent side="right" className="w-[480px] overflow-y-auto" data-testid="contact-modal">
+        <SheetHeader>
+          <SheetTitle className="text-base">
             {isCreate ? 'New Contact' : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || 'Contact')}
-          </DialogTitle>
+          </SheetTitle>
           {!isCreate && contact?.updated_at && (
             <p className="text-xs text-muted-foreground">Updated {formatDistanceToNow(new Date(contact.updated_at), { addSuffix: true })}</p>
           )}
-        </DialogHeader>
+        </SheetHeader>
 
         {!isCreate && isLoading ? (
           <div className="space-y-3 py-4">
             {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
           </div>
         ) : (
-          <Tabs defaultValue="details" className="mt-2">
+          <Tabs defaultValue="details" className="mt-4">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
               <TabsTrigger value="details" className="text-xs">Details</TabsTrigger>
               {!isCreate && <TabsTrigger value="properties" className="text-xs">Properties</TabsTrigger>}
+              {!isCreate && <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>}
               {!isCreate && <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>}
             </TabsList>
 
@@ -266,7 +299,28 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                 <Field label="Company" field="company" placeholder="Company name" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Email" field="email" type="email" placeholder="email@example.com" />
+                <div>
+                  <Label className="text-xs text-muted-foreground">Email</Label>
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <Input
+                      type="email"
+                      value={form.email ?? ''}
+                      onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                      onBlur={() => handleFieldBlur('email')}
+                      className="h-7 text-xs flex-1"
+                      placeholder="email@example.com"
+                    />
+                    {form.email && (
+                      <button
+                        onClick={() => window.open(`mailto:${form.email}`, '_blank')}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        title="Send email"
+                      >
+                        <Send className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <Field label="Phone" field="phone" type="tel" placeholder="(555) 123-4567" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -312,6 +366,31 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                   placeholder="Additional notes..."
                 />
               </div>
+              {isCreate ? (
+                <div className="flex gap-2 pt-2">
+                  <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                  <Button size="sm" onClick={() => createContact()} disabled={!form.full_name?.trim() || creating} data-testid="button-save-contact">
+                    {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Contact'}
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 pt-2 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
+                    onClick={() => {
+                      if (confirm('Deactivate this contact? They will be hidden from the active list.')) {
+                        saveField({ field: 'is_active', value: false })
+                        onClose()
+                      }
+                    }}
+                  >
+                    Deactivate
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={onClose} className="ml-auto">Close</Button>
+                </div>
+              )}
             </TabsContent>
 
             {/* Properties Tab */}
@@ -351,6 +430,45 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                         </div>
                       )
                     })}
+                  </div>
+                )}
+              </TabsContent>
+            )}
+
+            {/* Notes Tab */}
+            {!isCreate && (
+              <TabsContent value="notes" className="mt-3 space-y-3">
+                <div className="flex gap-2">
+                  <textarea
+                    value={noteInput}
+                    onChange={e => setNoteInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && noteInput.trim()) addNote() }}
+                    placeholder="Add a note… (⌘+Enter to save)"
+                    rows={2}
+                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  <Button
+                    size="sm"
+                    className="self-end h-8 text-xs"
+                    disabled={!noteInput.trim() || addingNote}
+                    onClick={() => addNote()}
+                  >
+                    {addingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Add'}
+                  </Button>
+                </div>
+                {!contactNotes || contactNotes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No notes yet</p>
+                ) : (
+                  <div className="space-y-2">
+                    {contactNotes.map((n: any) => (
+                      <div key={n.id} className="py-2 border-b border-border/50 last:border-0">
+                        <p className="text-xs">{n.content}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
+                          {n.created_by && ` · ${n.created_by}`}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </TabsContent>
@@ -413,35 +531,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
             )}
           </Tabs>
         )}
-
-        <DialogFooter className="flex items-center gap-2 pt-2">
-          {isCreate ? (
-            <>
-              <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-              <Button size="sm" onClick={() => createContact()} disabled={!form.full_name?.trim() || creating} data-testid="button-save-contact">
-                {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Contact'}
-              </Button>
-            </>
-          ) : (
-            <div className="flex items-center gap-2 w-full">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs mr-auto"
-                onClick={() => {
-                  if (confirm('Deactivate this contact? They will be hidden from the active list.')) {
-                    saveField({ field: 'is_active', value: false })
-                    onClose()
-                  }
-                }}
-              >
-                Deactivate Contact
-              </Button>
-              <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-            </div>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
