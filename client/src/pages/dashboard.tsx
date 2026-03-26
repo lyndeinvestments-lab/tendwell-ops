@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLocation, Link } from 'wouter'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays } from 'lucide-react'
+import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
@@ -49,9 +49,26 @@ export default function DashboardPage() {
   usePageTitle('Dashboard')
 
   type Preset = '7d' | '30d' | '90d' | 'custom'
-  const [preset, setPreset] = useState<Preset>('30d')
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+  const [preset, setPreset] = useState<Preset>(() => {
+    try { return (localStorage.getItem('tendwell-dash-preset') as Preset) || '30d' } catch { return '30d' }
+  })
+  const [customFrom, setCustomFrom] = useState(() => {
+    try { return localStorage.getItem('tendwell-dash-from') || '' } catch { return '' }
+  })
+  const [customTo, setCustomTo] = useState(() => {
+    try { return localStorage.getItem('tendwell-dash-to') || '' } catch { return '' }
+  })
+
+  const [missingCollapsed, setMissingCollapsed] = useState(false)
+
+  // Persist filter selection
+  useEffect(() => {
+    try {
+      localStorage.setItem('tendwell-dash-preset', preset)
+      localStorage.setItem('tendwell-dash-from', customFrom)
+      localStorage.setItem('tendwell-dash-to', customTo)
+    } catch { /* ignore */ }
+  }, [preset, customFrom, customTo])
 
   const { sinceDate, untilDate, periodLabel } = useMemo(() => {
     if (preset === 'custom') {
@@ -361,14 +378,19 @@ export default function DashboardPage() {
             ) : offboarded30Deduped.length === 0 ? (
               <p className="text-xs text-muted-foreground">No offboarded properties in this period</p>
             ) : (
-              <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                {offboarded30Deduped.map((t: any) => (
-                  <div key={t.property_id} className="flex justify-between text-xs">
-                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/previous-properties')}>{t.properties?.name}</span>
-                    <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                  {offboarded30Deduped.map((t: any) => (
+                    <div key={t.property_id} className="flex justify-between text-xs">
+                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/previous-properties')}>{t.properties?.name}</span>
+                      <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => navigate('/previous-properties')} className="text-xs text-primary hover:underline mt-2 block">
+                  View All →
+                </button>
+              </>
             )}
           </CardContent>
         </Card>
@@ -399,11 +421,14 @@ export default function DashboardPage() {
           {missingData.length > 0 && (
             <Card className="border-amber-500/30 bg-amber-500/5">
               <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-2">
+                <button className="flex items-center gap-2 mb-2 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
                   <AlertCircle className="w-4 h-4 text-amber-500" />
                   <span className="text-sm font-medium text-amber-600 dark:text-amber-400">{missingData.length} Properties Missing Data<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
-                </div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  <span className="ml-auto text-muted-foreground">
+                    {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                  </span>
+                </button>
+                {!missingCollapsed && <div className="space-y-1 max-h-32 overflow-y-auto">
                   {missingData.slice(0, 8).map((p: any) => {
                     const missingFields: string[] = []
                     if (!p.ce_charged) missingFields.push('ce_charged')
@@ -432,7 +457,7 @@ export default function DashboardPage() {
                     )
                   })}
                   {missingData.length > 8 && <p className="text-xs text-muted-foreground">+{missingData.length - 8} more</p>}
-                </div>
+                </div>}
               </CardContent>
             </Card>
           )}
@@ -563,6 +588,7 @@ export default function DashboardPage() {
                   <div className="flex flex-col items-center justify-center py-6 text-center">
                     <ClipboardCheck className="w-8 h-8 text-muted-foreground/40 mb-2" />
                     <p className="text-sm text-muted-foreground">No inspections logged yet</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Log at least 3 inspections to see your top and bottom performing properties ranked by score.</p>
                     <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => navigate('/inspections')}>
                       Log First Inspection
                     </Button>
@@ -627,6 +653,12 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Scheduled This Week</p>
                 <p className="text-xl font-semibold mt-1">{scheduledThisWeek?.length ?? 0}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">cleaning assignments</p>
+                {(scheduledThisWeek?.length ?? 0) === 0 && active > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" />
+                    <button onClick={() => navigate('/cleaners')} className="hover:underline">Set up assignments →</button>
+                  </p>
+                )}
               </div>
               <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
                 <CalendarDays className="w-4 h-4 text-primary" />
@@ -682,6 +714,12 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+          {crmStats.total === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No contacts yet.{' '}
+              <button onClick={() => navigate('/contacts')} className="text-primary hover:underline">Import from Properties →</button>
+            </p>
+          )}
           {crmStats.paymentBreakdown.length > 0 && (
             <div>
               <p className="text-xs text-muted-foreground mb-2">Payment Methods</p>
