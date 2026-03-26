@@ -39,7 +39,7 @@
 tendwell-ops/
 ├── client/src/
 │   ├── App.tsx                  # Router + auth context wiring
-│   ├── pages/                   # 14 feature pages (see below)
+│   ├── pages/                   # 20 feature pages (see below)
 │   ├── components/              # Shared components + Shadcn ui/
 │   │   ├── AppSidebar.tsx       # Nav sidebar (role-based menu items)
 │   │   ├── PropertyDetailModal.tsx  # Universal property modal (~630 LOC)
@@ -92,6 +92,7 @@ tendwell-ops/
 | `/quote-sheet` | `quote-sheet.tsx` | admin |
 | `/master-list` | `master-list.tsx` | admin, viewer |
 | `/pro-forma` | `pro-forma.tsx` | admin, viewer |
+| `/financial-dashboard` | `financial-dashboard.tsx` | admin, viewer |
 | `/previous-properties` | `previous-properties.tsx` | admin, viewer |
 | `/settings` | `settings.tsx` | admin |
 | `/revenue-report` | `revenue-report.tsx` | admin, viewer |
@@ -222,6 +223,11 @@ npm run db:push    # Push Drizzle schema to SQLite
 - Property modal: Photos tab (Supabase Storage upload/delete) + Supplies tab (par levels, restock badges)
 - Cost Tracking: optimistic updates, green flash on save, right-click context menu "Reset Row", Laundry/Consumables now editable
 - Pipeline: card click opens right-side slide-over with financials, onboarding checklist, notes, Move Stage dropdown
+- 100-point audit fixes: critical bugs, accessibility (skip nav, aria-labels, focus rings, keyboard sort), SEO (meta tags, OG, canonical), security (30-min session timeout), dashboard improvements (filter persistence, collapsible sections)
+- Financial Dashboard (`/financial-dashboard`): 6 KPI cards, scenario simulator (global CPM selector with current vs scenario), negative profit & near break-even alerts, profitability distribution chart, per-property profit bar chart
+- Pro Forma enhancements: Custom frequency option, per-property scenario overrides (blue columns), filter controls (frequency/profitability/missing data), inline what-if calculator popover, duplicate detection, CSV export with Frequency Type column
+- CSV Import: ±0.25 tolerance frequency mapping, non-matching → 'Custom', new property creation for unmatched imports
+- Access Codes: removed auto-hide masked reveal, codes show directly with one-click copy
 
 ---
 
