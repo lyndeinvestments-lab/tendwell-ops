@@ -56,6 +56,9 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
+                  required
+                  minLength={4}
+                  maxLength={128}
                   autoFocus
                   disabled={isLoading}
                   className="h-9"

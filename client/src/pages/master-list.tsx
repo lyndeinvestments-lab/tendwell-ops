@@ -40,6 +40,10 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
     <th
       className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
       onClick={() => onSort(sortKey)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(sortKey) } }}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={active ? (currentDir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
       <span className="flex items-center gap-1">
         {label}
@@ -370,8 +374,9 @@ export default function MasterListPage() {
               <SortHeader label="Pay" sortKey="cleaner_pay" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Profit %" sortKey="profit_percentage" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Stage" sortKey="stage" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-12" title="Data completeness">
-                <AlertCircle className="w-3 h-3" />
+              <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-12" aria-label="Data completeness">
+                <AlertCircle className="w-3 h-3" aria-hidden="true" />
+                <span className="sr-only">Data completeness</span>
               </th>
             </tr>
           </thead>

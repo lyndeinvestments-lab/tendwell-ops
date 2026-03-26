@@ -301,7 +301,7 @@ export default function AlertsPage() {
                       <Button
                         variant="ghost" size="sm" className="h-6 w-6 p-0"
                         onClick={() => openPropertyModal(alert.propertyId!)}
-                        title="View property"
+                        aria-label={`View property: ${alert.title}`}
                       >
                         <ExternalLink className="w-3 h-3" />
                       </Button>
@@ -318,7 +318,7 @@ export default function AlertsPage() {
                       <>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="Snooze">
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={`Snooze alert: ${alert.title}`}>
                               <Clock className="w-3 h-3" />
                             </Button>
                           </PopoverTrigger>
@@ -334,7 +334,7 @@ export default function AlertsPage() {
                             ))}
                           </PopoverContent>
                         </Popover>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} title="Dismiss">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} aria-label={`Dismiss alert: ${alert.title}`}>
                           <X className="w-3 h-3" />
                         </Button>
                       </>

@@ -192,26 +192,31 @@ function AppLayout() {
   return (
     <PropertyModalProvider>
       <SidebarProvider style={sidebarStyle}>
+        <a href="#main-content" className="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:text-sm focus:font-medium">
+          Skip to main content
+        </a>
         <div className="flex h-screen w-full overflow-hidden">
           <AppSidebar />
           <div className="flex flex-col flex-1 overflow-hidden">
             <header className="flex items-center h-11 px-3 border-b border-border/60 bg-background/95 flex-shrink-0 gap-2">
               <SidebarTrigger data-testid="button-sidebar-toggle" className="h-8 w-8" />
               <div className="ml-auto flex items-center gap-1">
-                <button
-                  onClick={() => setCmdOpen(true)}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-muted"
-                  data-testid="button-command-palette"
-                  title="Search (⌘K)"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Search</span>
-                  <kbd className="hidden sm:inline bg-muted border border-border rounded px-1 py-0.5 text-xs">⌘K</kbd>
-                </button>
+                <div role="search">
+                  <button
+                    onClick={() => setCmdOpen(true)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-muted"
+                    data-testid="button-command-palette"
+                    aria-label="Search (⌘K)"
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Search</span>
+                    <kbd className="hidden sm:inline bg-muted border border-border rounded px-1 py-0.5 text-xs">⌘K</kbd>
+                  </button>
+                </div>
                 <AlertBellButton />
               </div>
             </header>
-            <main className="flex-1 overflow-auto">
+            <main id="main-content" className="flex-1 overflow-auto">
               <ErrorBoundary>
                 <AppRoutes />
               </ErrorBoundary>
