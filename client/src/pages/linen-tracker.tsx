@@ -221,6 +221,7 @@ export default function LinenTrackerPage() {
                 : 'border-border text-muted-foreground hover:bg-muted'
             }`}
             data-testid="button-toggle-recommended"
+            title="Show recommended linen quantities based on bed count and property size"
           >
             {showRecommended ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
             Show Recommended

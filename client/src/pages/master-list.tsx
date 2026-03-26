@@ -409,9 +409,9 @@ export default function MasterListPage() {
                     </button>
                   </td>
                   <td className="py-1.5 px-3 text-muted-foreground">{p.client || '—'}</td>
-                  <td className="py-1.5 px-3 text-muted-foreground text-xs max-w-[140px] truncate">{p.address || '—'}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground text-xs max-w-[140px] truncate" title={p.address || undefined}>{p.address || '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.bedrooms ?? '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{p.full_baths != null ? `${p.full_baths}${p.half_baths ? ` / ${p.half_baths}h` : ''}` : '—'}</td>
+                  <td className="py-1.5 px-3 tabular-nums" title={p.full_baths != null ? `${p.full_baths} full${p.half_baths ? `, ${p.half_baths} half` : ''}` : undefined}>{p.full_baths != null ? `${p.full_baths}${p.half_baths ? ` / ${p.half_baths}h` : ''}` : '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit

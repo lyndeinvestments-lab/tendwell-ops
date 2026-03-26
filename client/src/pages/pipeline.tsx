@@ -183,6 +183,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
               type="date"
               value={property.follow_up_date || ''}
               onChange={handleDateChange}
+              min={new Date().toISOString().split('T')[0]}
               className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
               aria-label={`Follow-up date for ${property.name}`}
             />
@@ -236,6 +237,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
               type="date"
               value={property.follow_up_date || ''}
               onChange={handleDateChange}
+              min={new Date().toISOString().split('T')[0]}
               className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
               placeholder="Add follow-up"
               aria-label={`Follow-up date for ${property.name}`}
@@ -286,9 +288,13 @@ export default function PipelinePage() {
   const [showScrollTop, setShowScrollTop] = useState(false)
 
   const [activeProperty, setActiveProperty] = useState<any>(null)
-  const [compact, setCompact] = useState(false)
+  const [compact, setCompact] = useState(() => {
+    try { return localStorage.getItem('tendwell-pipeline-compact') === 'true' } catch { return false }
+  })
   const [collapsedStages, setCollapsedStages] = useState<Set<string>>(new Set())
-  const [hideEmpty, setHideEmpty] = useState(false)
+  const [hideEmpty, setHideEmpty] = useState(() => {
+    try { return localStorage.getItem('tendwell-pipeline-hide-empty') === 'true' } catch { return false }
+  })
   const [transition, setTransition] = useState<{
     property: any; fromStageId: string; toStageId: string; toStageName: string; missing: string[]
   } | null>(null)
@@ -595,7 +601,20 @@ export default function PipelinePage() {
       <div className="mb-3 flex flex-col gap-2 flex-shrink-0 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
-          <p className="text-sm text-muted-foreground">Drag properties between stages</p>
+          <p className="text-sm text-muted-foreground">
+            Drag properties between stages
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="ml-1.5 text-xs text-muted-foreground/60 cursor-help underline decoration-dotted">profit legend</span>
+              </TooltipTrigger>
+              <TooltipContent className="text-xs space-y-1">
+                <p><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5" />High: 30%+</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-yellow-500 mr-1.5" />Mid: 15-30%</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1.5" />Low: 0-15%</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />Negative: &lt;0%</p>
+              </TooltipContent>
+            </Tooltip>
+          </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 sm:flex-none sm:w-56">
@@ -622,13 +641,18 @@ export default function PipelinePage() {
             <Plus className="w-3.5 h-3.5 mr-1" /> Add Lead
           </Button>
           <div className="flex items-center gap-2">
-            <Switch id="compact-mode" checked={compact} onCheckedChange={setCompact} data-testid="switch-compact" />
-            <Label htmlFor="compact-mode" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
-              <Minimize2 className="w-3 h-3" /> Compact
-            </Label>
+            <Switch id="compact-mode" checked={compact} onCheckedChange={v => { setCompact(v); try { localStorage.setItem('tendwell-pipeline-compact', String(v)) } catch {} }} data-testid="switch-compact" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Label htmlFor="compact-mode" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
+                  <Minimize2 className="w-3 h-3" /> Compact
+                </Label>
+              </TooltipTrigger>
+              <TooltipContent>Show cards with less detail</TooltipContent>
+            </Tooltip>
           </div>
           <div className="flex items-center gap-2">
-            <Switch id="hide-empty" checked={hideEmpty} onCheckedChange={setHideEmpty} data-testid="switch-hide-empty" />
+            <Switch id="hide-empty" checked={hideEmpty} onCheckedChange={v => { setHideEmpty(v); try { localStorage.setItem('tendwell-pipeline-hide-empty', String(v)) } catch {} }} data-testid="switch-hide-empty" />
             <Label htmlFor="hide-empty" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
               {hideEmpty ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} Hide empty
             </Label>
