@@ -183,7 +183,7 @@ export default function AccessCodesPage() {
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Access Codes</h1>
-          <p className="text-sm text-muted-foreground">Hover masked fields to reveal — click to edit</p>
+          <p className="text-sm text-muted-foreground">Click any field to edit — use copy icon for clipboard</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">

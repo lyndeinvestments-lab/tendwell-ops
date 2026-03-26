@@ -443,6 +443,7 @@ export default function RevenueReportPage() {
                   <XAxis dataKey="label" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
                   <Tooltip formatter={(v: number) => fmt(v)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
                   <Bar dataKey="projected" name="Projected Revenue" radius={[4,4,0,0]}>
                     {forecastChartData.map((_, i) => (
                       <Cell key={i} fill={`hsl(${220 + i * 10}, 80%, 55%)`} />
@@ -524,7 +525,7 @@ export default function RevenueReportPage() {
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
               <th className={thCls} onClick={() => toggleSort('profit')}>Profit <SortIcon col="profit" /></th>
               <th className={thCls} onClick={() => toggleSort('profit_pct')}>Profit % <SortIcon col="profit_pct" /></th>
-              {viewMode === 'property' && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Trend</th>}
+              {/* Trend column hidden — requires edit history data to populate */}
               {viewMode === 'client' && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Health</th>}
             </tr>
           </thead>
@@ -550,7 +551,7 @@ export default function RevenueReportPage() {
                     <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.cleaner_pay)}</td>
                     <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
                     <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
-                    <td className="py-2 px-3"><MiniSparkline data={sparkData} color={sparkColor} /></td>
+                    {/* Trend column hidden */}
                   </tr>
                 )
               })

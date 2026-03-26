@@ -42,7 +42,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, address, owner_name, owner_email, owner_phone, pipeline_stages!properties_stage_id_fkey(name, color)')
+        .select('id, name, address, contacts(full_name, email, phone), pipeline_stages!properties_stage_id_fkey(name, color)')
         .order('name')
       if (error) throw error
       return data ?? []
@@ -84,9 +84,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       .filter((p: any) =>
         p.name?.toLowerCase().includes(q) ||
         p.address?.toLowerCase().includes(q) ||
-        p.owner_name?.toLowerCase().includes(q) ||
-        p.owner_email?.toLowerCase().includes(q) ||
-        p.owner_phone?.toLowerCase().includes(q)
+        p.contacts?.full_name?.toLowerCase().includes(q) ||
+        p.contacts?.email?.toLowerCase().includes(q) ||
+        p.contacts?.phone?.toLowerCase().includes(q)
       )
       .slice(0, 8)
   }, [q, properties])
