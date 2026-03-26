@@ -269,9 +269,17 @@ export default function AlertsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {warningCount > 3 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+              alerts.filter(a => a.severity === 'warning' && !isDismissed(a.id) && !isSnoozed(a.id)).forEach(a => dismissAlert(a.id))
+              forceUpdate(n => n + 1)
+            }}>
+              Dismiss All Warnings ({warningCount})
+            </Button>
+          )}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-            Show dismissed
+            Show dismissed ({alerts.filter(a => isDismissed(a.id) || isSnoozed(a.id)).length})
           </label>
         </div>
       </div>
