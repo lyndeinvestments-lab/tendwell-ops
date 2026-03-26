@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -7,6 +8,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Loader2, Sparkles } from 'lucide-react'
 
 export default function LoginPage() {
+  usePageTitle('Sign In')
   const { login, isLoading } = useAuth()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -56,6 +58,9 @@ export default function LoginPage() {
                   onChange={e => setPassword(e.target.value)}
                   placeholder="Enter your password"
                   autoComplete="current-password"
+                  required
+                  minLength={4}
+                  maxLength={128}
                   autoFocus
                   disabled={isLoading}
                   className="h-9"

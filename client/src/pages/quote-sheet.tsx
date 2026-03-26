@@ -227,15 +227,15 @@ export default function QuoteSheetPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">CE Charged</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Cleaning Estimate Charged">CE Charged</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner Pay</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Bedrooms</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Beds</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Full Baths</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Half Baths</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sq Ft</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Est Laundry</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Est Consumables</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Estimated Laundry Cost">Est Laundry</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Estimated Consumables Cost">Est Consumables</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspection</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Trash</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Profit %</th>

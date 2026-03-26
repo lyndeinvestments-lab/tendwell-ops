@@ -20,16 +20,18 @@ type ViewMode = 'property' | 'client' | 'forecast'
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
   const isHigh = pct >= 30, isMid = pct >= 15, isPos = pct >= 0
+  const tier = isHigh ? 'High' : isMid ? 'Mid' : isPos ? 'Low' : 'Negative'
   const cls = isHigh ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
               isMid ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
               isPos ? 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' :
               'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{pct.toFixed(1)}%</span>
+  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{pct.toFixed(1)}%<span className="sr-only"> ({tier} profit)</span></span>
 }
 
 function HealthDot({ pct }: { pct: number }) {
+  const tier = pct >= 30 ? 'High' : pct >= 15 ? 'Mid' : 'Low'
   const color = pct >= 30 ? 'bg-green-500' : pct >= 15 ? 'bg-amber-500' : 'bg-red-500'
-  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${color}`} title={`${pct.toFixed(1)}%`} />
+  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${color}`} role="img" aria-label={`${tier} profit: ${pct.toFixed(1)}%`} />
 }
 
 function fmt(n: number | null | undefined) {

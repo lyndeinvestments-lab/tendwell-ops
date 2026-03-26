@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global focus-visible ring for keyboard accessibility */
+*:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
 /* Tendwell Ops — Brand Palette
    Primary: Teal-green #3f7a63 → HSL ≈ 155 33% 36%
    Warm off-white background: 40 20% 97%

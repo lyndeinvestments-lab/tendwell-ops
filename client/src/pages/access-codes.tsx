@@ -48,7 +48,7 @@ function CopyButton({ value, field, id }: { value: string; field: string; id: st
     <button
       onClick={handleCopy}
       className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-      title={copied ? 'Copied!' : 'Copy to clipboard'}
+      aria-label={copied ? 'Copied!' : `Copy ${field} to clipboard`}
       data-testid={`copy-${field}-${id}`}
     >
       {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
@@ -86,8 +86,9 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
           onClick={() => { setRevealed(true); logAccessEvent(id, field, 'reveal') }}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
           data-testid={`reveal-${field}-${id}`}
+          aria-label={`Reveal ${field}`}
         >
-          <span className="tracking-widest">••••••</span>
+          <span aria-hidden="true" className="tracking-widest">••••••</span>
           <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
         </button>
         {value && <CopyButton value={value} field={field} id={id} />}
@@ -109,6 +110,7 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
         onClick={() => setRevealed(false)}
         className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
         data-testid={`hide-${field}-${id}`}
+        aria-label={`Hide ${field}`}
       >
         <EyeOff className="w-3 h-3" />
       </button>
@@ -134,7 +136,7 @@ function CopyAllButton({ p }: { p: any }) {
     <button
       onClick={handleCopy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
-      title="Copy all codes"
+      aria-label={copied ? 'Copied!' : `Copy all codes for ${p.name}`}
       data-testid={`copy-all-${p.id}`}
     >
       {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
@@ -238,7 +240,7 @@ export default function AccessCodesPage() {
               className="pl-8 pr-7 h-8 w-56 text-sm"
             />
             {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -299,7 +301,7 @@ export default function AccessCodesPage() {
                       </div>
                     </td>
                     {ACCESS_COLS.map(c => (
-                      <td key={c.key} className="py-2 px-3">
+                      <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
                         <MaskedCell
                           value={p[c.key]}
                           field={c.key}
@@ -309,7 +311,11 @@ export default function AccessCodesPage() {
                         />
                       </td>
                     ))}
-                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
+                    <td className={`py-2 px-3 text-xs whitespace-nowrap ${
+                      p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
+                        ? 'text-amber-600 dark:text-amber-400 font-medium'
+                        : 'text-muted-foreground'
+                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago — codes may have changed' : undefined}>
                       {p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'}
                     </td>
                     <td className="py-2 px-3">

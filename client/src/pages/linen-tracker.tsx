@@ -221,6 +221,7 @@ export default function LinenTrackerPage() {
                 : 'border-border text-muted-foreground hover:bg-muted'
             }`}
             data-testid="button-toggle-recommended"
+            title="Show recommended linen quantities based on bed count and property size"
           >
             {showRecommended ? <ToggleRight className="w-3.5 h-3.5" /> : <ToggleLeft className="w-3.5 h-3.5" />}
             Show Recommended
@@ -289,8 +290,8 @@ export default function LinenTrackerPage() {
                   <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${flaggedZero ? 'bg-red-50/40 dark:bg-red-900/10' : flaggedRestock ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs">
                       <div className="flex items-center gap-1.5">
-                        {flaggedZero && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data recorded" />}
-                        {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" title="Below restock threshold" />}
+                        {flaggedZero && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" role="img" aria-label="No linen data recorded" />}
+                        {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" role="img" aria-label="Below restock threshold" />}
                         <button
                           onClick={() => handlePropertyClick(p)}
                           className="text-primary hover:underline text-left"

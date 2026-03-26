@@ -71,7 +71,7 @@ export function AppSidebar() {
   if (!user) return null
 
   return (
-    <Sidebar>
+    <Sidebar role="navigation" aria-label="Main navigation">
       {/* Brand header */}
       <SidebarHeader className="px-4 py-3 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">

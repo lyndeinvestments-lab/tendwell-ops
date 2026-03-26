@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
@@ -42,7 +42,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, pipeline_stages!properties_stage_id_fkey(name, color)')
+        .select('id, name, address, owner_name, owner_email, owner_phone, pipeline_stages!properties_stage_id_fkey(name, color)')
         .order('name')
       if (error) throw error
       return data ?? []
@@ -50,11 +50,12 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     staleTime: 30_000,
   })
 
-  // Focus input when opened
+  // Focus input when opened — use requestAnimationFrame instead of setTimeout
+  // to avoid stray keystrokes landing in the input before it's focused
   useEffect(() => {
     if (open) {
       setQuery('')
-      setTimeout(() => inputRef.current?.focus(), 50)
+      requestAnimationFrame(() => inputRef.current?.focus())
     }
   }, [open])
 
@@ -80,8 +81,14 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const matchedProperties = useMemo(() => {
     if (!q || !properties) return []
     return properties
-      .filter((p: any) => p.name?.toLowerCase().includes(q))
-      .slice(0, 6)
+      .filter((p: any) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.address?.toLowerCase().includes(q) ||
+        p.owner_name?.toLowerCase().includes(q) ||
+        p.owner_email?.toLowerCase().includes(q) ||
+        p.owner_phone?.toLowerCase().includes(q)
+      )
+      .slice(0, 8)
   }, [q, properties])
 
   function handleSelectProperty(id: string) {
@@ -98,7 +105,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-lg p-0 overflow-hidden" data-testid="command-palette">
+      <DialogContent className="max-w-lg p-0 overflow-hidden" data-testid="command-palette" onKeyDown={e => e.stopPropagation()}>
+        <DialogTitle className="sr-only">Search</DialogTitle>
+        <DialogDescription className="sr-only">Search properties or navigate to a page</DialogDescription>
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <Input
@@ -172,7 +181,10 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                       className="w-full flex items-center justify-between px-4 py-2 text-sm hover:bg-muted transition-colors text-left"
                       data-testid={`cmd-property-${p.id}`}
                     >
-                      <span className="font-medium truncate">{p.name}</span>
+                      <div className="min-w-0 flex-1">
+                        <span className="font-medium truncate block">{p.name}</span>
+                        {p.address && <span className="text-xs text-muted-foreground truncate block">{p.address}</span>}
+                      </div>
                       {stageName && (
                         <span
                           className="text-xs ml-2 px-1.5 py-0.5 rounded flex-shrink-0"
