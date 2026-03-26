@@ -20,6 +20,7 @@ function fmt(n: number | null | undefined) {
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
+  const tier = pct >= 30 ? 'High' : pct >= 15 ? 'Mid' : 'Low'
   const cls = pct >= 30
     ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
     : pct >= 15
@@ -27,7 +28,7 @@ function ProfitBadge({ pct }: { pct: number | null }) {
     : 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
   return (
     <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>
-      {pct.toFixed(1)}%
+      {pct.toFixed(1)}%<span className="sr-only"> ({tier} profit)</span>
     </span>
   )
 }

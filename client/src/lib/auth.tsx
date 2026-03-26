@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes of inactivity
 
 export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer'
 
@@ -50,9 +52,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function logout() {
+  const logout = useCallback(() => {
     setUser(null)
-  }
+  }, [])
+
+  // Session timeout — auto-logout after inactivity
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+
+    function resetTimer() {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(logout, SESSION_TIMEOUT_MS)
+    }
+
+    const events = ['mousedown', 'keydown', 'scroll', 'touchstart'] as const
+    events.forEach(e => window.addEventListener(e, resetTimer))
+    resetTimer()
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      events.forEach(e => window.removeEventListener(e, resetTimer))
+    }
+  }, [user, logout])
 
   return (
     <AuthContext.Provider value={{ user, login, logout, isLoading }}>

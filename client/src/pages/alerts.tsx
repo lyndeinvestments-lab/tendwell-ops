@@ -269,9 +269,17 @@ export default function AlertsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {warningCount > 3 && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
+              alerts.filter(a => a.severity === 'warning' && !isDismissed(a.id) && !isSnoozed(a.id)).forEach(a => dismissAlert(a.id))
+              forceUpdate(n => n + 1)
+            }}>
+              Dismiss All Warnings ({warningCount})
+            </Button>
+          )}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-            Show dismissed
+            Show dismissed ({alerts.filter(a => isDismissed(a.id) || isSnoozed(a.id)).length})
           </label>
         </div>
       </div>
@@ -301,7 +309,7 @@ export default function AlertsPage() {
                       <Button
                         variant="ghost" size="sm" className="h-6 w-6 p-0"
                         onClick={() => openPropertyModal(alert.propertyId!)}
-                        title="View property"
+                        aria-label={`View property: ${alert.title}`}
                       >
                         <ExternalLink className="w-3 h-3" />
                       </Button>
@@ -318,7 +326,7 @@ export default function AlertsPage() {
                       <>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" title="Snooze">
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={`Snooze alert: ${alert.title}`}>
                               <Clock className="w-3 h-3" />
                             </Button>
                           </PopoverTrigger>
@@ -334,7 +342,7 @@ export default function AlertsPage() {
                             ))}
                           </PopoverContent>
                         </Popover>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} title="Dismiss">
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} aria-label={`Dismiss alert: ${alert.title}`}>
                           <X className="w-3 h-3" />
                         </Button>
                       </>
