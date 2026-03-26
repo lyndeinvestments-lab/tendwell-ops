@@ -32,6 +32,7 @@ const AcFiltersPage = lazy(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazy(() => import("@/pages/quote-sheet"));
 const MasterListPage = lazy(() => import("@/pages/master-list"));
 const ProFormaPage = lazy(() => import("@/pages/pro-forma"));
+const FinancialDashboardPage = lazy(() => import("@/pages/financial-dashboard"));
 const ContactsPage = lazy(() => import("@/pages/contacts"))
 const PreviousPropertiesPage = lazy(() => import("@/pages/previous-properties"))
 const SettingsPage = lazy(() => import("@/pages/settings"));
@@ -153,6 +154,7 @@ function AppRoutes() {
         <Route path="/quote-sheet" component={QuoteSheetPage} />
         <Route path="/master-list" component={MasterListPage} />
         <Route path="/pro-forma" component={ProFormaPage} />
+        <Route path="/financial-dashboard" component={FinancialDashboardPage} />
         <Route path="/previous-properties" component={PreviousPropertiesPage} />
         <Route path="/settings" component={SettingsPage} />
         <Route path="/revenue-report" component={RevenueReportPage} />

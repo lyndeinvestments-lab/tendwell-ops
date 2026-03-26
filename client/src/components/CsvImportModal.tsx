@@ -110,10 +110,11 @@ function calcCleansPerMonth(dates: Date[]): number {
 }
 
 function inferFrequency(cpm: number): string {
-  if (cpm >= 3.5) return 'weekly'
-  if (cpm >= 1.8) return 'biweekly'
-  if (cpm >= 0.8) return 'monthly'
-  return 'as_needed'
+  if (cpm === 0) return 'as_needed'
+  if (Math.abs(cpm - 4.33) <= 0.25) return 'weekly'
+  if (Math.abs(cpm - 2.17) <= 0.25) return 'biweekly'
+  if (Math.abs(cpm - 1) <= 0.25) return 'monthly'
+  return 'custom'
 }
 
 function fmtDate(d: Date) {

@@ -103,6 +103,7 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   'ac-filters': ['admin', 'operations', 'viewer'],
   'master-list': ['admin', 'viewer'],
   'pro-forma': ['admin', 'viewer'],
+  'financial-dashboard': ['admin', 'viewer'],
   'previous-properties': ['admin', 'viewer'],
   settings: ['admin'],
   'revenue-report': ['admin', 'viewer'],
