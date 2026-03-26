@@ -301,7 +301,7 @@ export default function AccessCodesPage() {
                       </div>
                     </td>
                     {ACCESS_COLS.map(c => (
-                      <td key={c.key} className="py-2 px-3">
+                      <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
                         <MaskedCell
                           value={p[c.key]}
                           field={c.key}
@@ -311,7 +311,11 @@ export default function AccessCodesPage() {
                         />
                       </td>
                     ))}
-                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
+                    <td className={`py-2 px-3 text-xs whitespace-nowrap ${
+                      p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
+                        ? 'text-amber-600 dark:text-amber-400 font-medium'
+                        : 'text-muted-foreground'
+                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago — codes may have changed' : undefined}>
                       {p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'}
                     </td>
                     <td className="py-2 px-3">

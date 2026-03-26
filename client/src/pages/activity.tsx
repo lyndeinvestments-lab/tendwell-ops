@@ -52,7 +52,10 @@ export default function ActivityFeedPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
-  const [dateFrom, setDateFrom] = useState('')
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 7)
+    return d.toISOString().split('T')[0]
+  })
   const [dateTo, setDateTo] = useState('')
   const [reverting, setReverting] = useState<string | null>(null)
 
