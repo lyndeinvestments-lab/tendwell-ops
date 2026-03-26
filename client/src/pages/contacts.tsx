@@ -268,8 +268,8 @@ export default function ContactsPage() {
                     <EmptyState
                       icon={Users}
                       title="No contacts yet"
-                      description="Add your first contact to start managing client relationships."
-                      action={{ label: 'Add Contact', onClick: openCreateContact }}
+                      description="Import contacts from your existing properties, or add one manually."
+                      action={{ label: 'Import from Properties', onClick: () => setImportOpen(true) }}
                     />
                   ) : (
                     <div className="text-center py-12 text-muted-foreground text-sm">No contacts match your filters</div>

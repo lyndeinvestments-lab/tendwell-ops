@@ -64,18 +64,31 @@ export default function MasterListPage() {
   usePageTitle('Master List')
   const [search, setSearch] = useState('')
 
-  // Parse URL params for stage filter and sort
-  const urlParams = useMemo(() => {
+  const [stageFilter, setStageFilter] = useState(() => {
+    // Check URL params first, then localStorage
     const hash = window.location.hash || ''
     const qIdx = hash.indexOf('?')
-    return qIdx === -1 ? new URLSearchParams() : new URLSearchParams(hash.slice(qIdx))
-  }, [])
-
-  const [stageFilter, setStageFilter] = useState(() => {
-    const urlStage = urlParams.get('stage')
-    if (urlStage) return urlStage
+    if (qIdx !== -1) {
+      const urlStage = new URLSearchParams(hash.slice(qIdx)).get('stage')
+      if (urlStage) return urlStage
+    }
     try { return localStorage.getItem('ml-stage-filter') || 'all' } catch { return 'all' }
   })
+
+  // Reactively apply ?stage= param on navigation (e.g. from dashboard stat cards)
+  useEffect(() => {
+    const hash = window.location.hash || ''
+    const qIdx = hash.indexOf('?')
+    if (qIdx === -1) return
+    const params = new URLSearchParams(hash.slice(qIdx))
+    const urlStage = params.get('stage')
+    if (urlStage) {
+      setStageFilter(urlStage)
+      setPage(1)
+      // Strip the query param to prevent it persisting in the URL
+      window.history.replaceState(null, '', window.location.pathname + hash.slice(0, qIdx))
+    }
+  }, [location])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkStage, setBulkStage] = useState('')
   const [assignClient, setAssignClient] = useState('')
@@ -288,6 +301,7 @@ export default function MasterListPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'tendwell-properties.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: `Exported ${filtered.length} properties` })
   }
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
@@ -411,7 +425,7 @@ export default function MasterListPage() {
                   <td className="py-1.5 px-3 text-muted-foreground">{p.client || '—'}</td>
                   <td className="py-1.5 px-3 text-muted-foreground text-xs max-w-[140px] truncate" title={p.address || undefined}>{p.address || '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.bedrooms ?? '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums" title={p.full_baths != null ? `${p.full_baths} full${p.half_baths ? `, ${p.half_baths} half` : ''}` : undefined}>{p.full_baths != null ? `${p.full_baths}${p.half_baths ? ` / ${p.half_baths}h` : ''}` : '—'}</td>
+                  <td className="py-1.5 px-3 tabular-nums" title={p.full_baths != null ? `${p.full_baths} full${p.half_baths ? `, ${p.half_baths} half` : ''}` : undefined}>{p.full_baths != null ? (p.half_baths ? `${p.full_baths + p.half_baths * 0.5}` : `${p.full_baths}`) : '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit

@@ -11,10 +11,10 @@ import { Input } from '@/components/ui/input'
 import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 
-function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }: {
+function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
   icon: React.ComponentType<{ className?: string }>; loading: boolean; alert?: boolean
-  onClick?: () => void
+  onClick?: () => void; hint?: string
 }) {
   return (
     <Card
@@ -24,7 +24,7 @@ function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick }
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide" title={hint}>{title}</p>
             {loading ? (
               <Skeleton className="h-7 w-16 mt-1.5" />
             ) : (
@@ -310,6 +310,11 @@ export default function DashboardPage() {
             />
           </>
         )}
+        {preset === 'custom' && customFrom && customTo && (
+          <span className="text-xs text-primary font-medium">
+            Showing {format(new Date(customFrom), 'MMM d')}–{format(new Date(customTo), 'MMM d, yyyy')}
+          </span>
+        )}
       </div>
 
       {/* KPI Cards */}
@@ -324,6 +329,7 @@ export default function DashboardPage() {
           subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
           icon={DollarSign}
           loading={isLoading}
+          hint="Sum of monthly CE estimates (CE charged × cleans/mo) for all active properties"
           onClick={() => navigate('/revenue-report')}
         />
         <KpiCard
