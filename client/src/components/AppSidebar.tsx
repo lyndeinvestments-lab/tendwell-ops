@@ -56,6 +56,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Alerts', href: '/alerts', view: 'alerts', icon: Bell },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
+      { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],

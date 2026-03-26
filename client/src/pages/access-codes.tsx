@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Search, Eye, EyeOff, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 
 const ACCESS_COLS = [
@@ -60,40 +60,9 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
   value: string | null; field: string; id: string; sensitive: boolean
   onSave: (v: string) => void
 }) {
-  const [revealed, setRevealed] = useState(false)
-
   const handleSave = (v: string) => {
     onSave(v)
     logAccessEvent(id, field, 'update')
-  }
-
-  if (!sensitive || !value) {
-    return (
-      <InlineEdit
-        value={value}
-        type="text"
-        onSave={handleSave}
-        testId={`inline-${field}-${id}`}
-        placeholder="—"
-      />
-    )
-  }
-
-  if (!revealed) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <button
-          onClick={() => { setRevealed(true); logAccessEvent(id, field, 'reveal') }}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors group"
-          data-testid={`reveal-${field}-${id}`}
-          aria-label={`Reveal ${field}`}
-        >
-          <span aria-hidden="true" className="tracking-widest">••••••</span>
-          <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
-        {value && <CopyButton value={value} field={field} id={id} />}
-      </div>
-    )
   }
 
   return (
@@ -105,15 +74,7 @@ function MaskedCell({ value, field, id, sensitive, onSave }: {
         testId={`inline-${field}-${id}`}
         placeholder="—"
       />
-      <CopyButton value={value} field={field} id={id} />
-      <button
-        onClick={() => setRevealed(false)}
-        className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-        data-testid={`hide-${field}-${id}`}
-        aria-label={`Hide ${field}`}
-      >
-        <EyeOff className="w-3 h-3" />
-      </button>
+      {value && <CopyButton value={value} field={field} id={id} />}
     </div>
   )
 }
