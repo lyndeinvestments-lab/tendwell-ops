@@ -349,6 +349,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       {/* Lightbox */}
       <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
         <DialogContent className="max-w-3xl p-2">
+          <DialogTitle className="sr-only">Photo preview</DialogTitle>
           {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" className="w-full rounded" />}
         </DialogContent>
       </Dialog>

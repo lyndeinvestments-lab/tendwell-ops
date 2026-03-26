@@ -31,6 +31,10 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
     <th
       className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
       onClick={() => onSort(sortKey)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(sortKey) } }}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={active ? (currentDir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
       <span className="flex items-center gap-1">
         {label}
