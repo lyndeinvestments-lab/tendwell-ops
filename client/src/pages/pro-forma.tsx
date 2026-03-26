@@ -7,9 +7,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, FlaskConical, X } from 'lucide-react'
 import Papa from 'papaparse'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { TablePagination } from '@/components/TablePagination'
@@ -19,6 +20,7 @@ const FREQ_OPTIONS = [
   { value: 'biweekly', label: 'Biweekly', cleans: 2.17 },
   { value: 'monthly', label: 'Monthly', cleans: 1 },
   { value: 'as_needed', label: 'As Needed', cleans: 2 },
+  { value: 'custom', label: 'Custom', cleans: null },
 ]
 
 const BREAK_EVEN_MARGIN = 0.20
@@ -28,12 +30,16 @@ function fmt(n: number | null | undefined, prefix = '$') {
   return `${prefix}${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function FrequencyCell({ id, value }: { id: string; value: string }) {
+function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; avgCleans: number | null }) {
   const qc = useQueryClient()
   const { toast } = useToast()
+  const [customCleans, setCustomCleans] = useState<string>(avgCleans != null ? String(avgCleans) : '')
+
   const { mutate } = useMutation({
-    mutationFn: async (freq: string) => {
-      const { error } = await supabase.from('properties').update({ cleaning_frequency: freq }).eq('id', id)
+    mutationFn: async ({ freq, cleans }: { freq: string; cleans?: number | null }) => {
+      const update: Record<string, unknown> = { cleaning_frequency: freq }
+      if (cleans != null) update.avg_cleans_per_month = cleans
+      const { error } = await supabase.from('properties').update(update).eq('id', id)
       if (error) throw error
     },
     onSuccess: () => {
@@ -47,18 +53,151 @@ function FrequencyCell({ id, value }: { id: string; value: string }) {
   const labelColor = value === 'as_needed' ? 'text-amber-600 dark:text-amber-400' : ''
 
   return (
-    <Select value={value || 'as_needed'} onValueChange={mutate}>
-      <SelectTrigger data-testid={`select-freq-${id}`} className={`h-6 w-28 text-xs border-0 p-0 bg-transparent focus:ring-0 hover:bg-muted transition-colors ${labelColor}`}>
-        <SelectValue placeholder="—" />
-      </SelectTrigger>
-      <SelectContent>
-        {FREQ_OPTIONS.map(f => (
-          <SelectItem key={f.value} value={f.value} className="text-xs">
-            {f.label} ({f.cleans}/mo)
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex items-center gap-1.5">
+      <Select
+        value={value || 'as_needed'}
+        onValueChange={(freq) => {
+          if (freq !== 'custom') {
+            mutate({ freq })
+          } else {
+            mutate({ freq: 'custom', cleans: customCleans ? parseFloat(customCleans) : null })
+          }
+        }}
+      >
+        <SelectTrigger data-testid={`select-freq-${id}`} className={`h-6 w-28 text-xs border-0 p-0 bg-transparent focus:ring-0 hover:bg-muted transition-colors ${labelColor}`}>
+          <SelectValue placeholder="—" />
+        </SelectTrigger>
+        <SelectContent>
+          {FREQ_OPTIONS.map(f => (
+            <SelectItem key={f.value} value={f.value} className="text-xs">
+              {f.label}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {value === 'custom' && (
+        <Input
+          type="number"
+          min="0"
+          step="0.1"
+          value={customCleans}
+          onChange={e => setCustomCleans(e.target.value)}
+          onBlur={() => {
+            const n = parseFloat(customCleans)
+            if (!isNaN(n)) mutate({ freq: 'custom', cleans: n })
+          }}
+          className="h-6 w-16 text-xs px-1"
+          placeholder="cleans/mo"
+        />
+      )}
+    </div>
+  )
+}
+
+function WhatIfPopover({
+  id,
+  field,
+  currentValue,
+  ceCharged,
+  totalCost,
+  cpm,
+}: {
+  id: string
+  field: 'ce_charged' | 'total_estimated_cost'
+  currentValue: number | null
+  ceCharged: number | null
+  totalCost: number | null
+  cpm: number | null
+}) {
+  const qc = useQueryClient()
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [val, setVal] = useState<string>(currentValue != null ? String(currentValue) : '')
+
+  const parsed = parseFloat(val)
+  const isValid = !isNaN(parsed) && parsed >= 0
+
+  const previewCe = field === 'ce_charged' ? (isValid ? parsed : ceCharged) : ceCharged
+  const previewCost = field === 'total_estimated_cost' ? (isValid ? parsed : totalCost) : totalCost
+  const profitPerClean = previewCe != null && previewCost != null ? previewCe - previewCost : null
+  const moProfitPreview = profitPerClean != null && cpm != null ? profitPerClean * cpm : null
+  const breakEvenCe = previewCost != null ? previewCost / (1 - BREAK_EVEN_MARGIN) : null
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ [field]: parsed })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      toast({ title: 'Saved' })
+      setOpen(false)
+    },
+    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+  })
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="text-xs tabular-nums underline-offset-2 hover:underline cursor-pointer text-left w-full">
+          {fmt(currentValue)}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3 space-y-3" side="right">
+        <p className="text-xs font-semibold text-foreground">
+          What-If: {field === 'ce_charged' ? 'CE/Clean' : 'Cost/Clean'}
+        </p>
+        <Input
+          type="number"
+          min="0"
+          step="0.01"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          className="h-7 text-xs"
+          placeholder="Enter value…"
+          autoFocus
+        />
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <div className="flex justify-between">
+            <span>Profit/Clean</span>
+            <span className={profitPerClean != null && profitPerClean < 0 ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
+              {fmt(profitPerClean)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>Mo Profit</span>
+            <span className={moProfitPreview != null && moProfitPreview < 0 ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
+              {fmt(moProfitPreview)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span>Break-Even CE</span>
+            <span className="text-foreground font-medium">{fmt(breakEvenCe)}</span>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            className="h-6 text-xs flex-1"
+            disabled={!isValid || isPending}
+            onClick={() => mutate()}
+          >
+            {isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-xs"
+            onClick={() => { setOpen(false); setVal(currentValue != null ? String(currentValue) : '') }}
+          >
+            Cancel
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -72,6 +211,18 @@ export default function ProFormaPage() {
   const [showImport, setShowImport] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+
+  // Feature 2: Scenario overrides
+  const [scenarioOverrides, setScenarioOverrides] = useState<Record<string, number>>({})
+  const [scenarioEnabled, setScenarioEnabled] = useState<Set<string>>(new Set())
+
+  // Feature 3: Filter controls
+  const [freqFilter, setFreqFilter] = useState('all')
+  const [profitFilter, setProfitFilter] = useState('all')
+  const [missingDataFilter, setMissingDataFilter] = useState(false)
+
+  // Feature 5: Dismissed duplicates
+  const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set())
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/pro-forma'],
@@ -114,24 +265,82 @@ export default function ProFormaPage() {
     onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
   })
 
+  // Feature 3 + search filtering
   const filtered = useMemo(() => {
     if (!properties) return []
-    if (!search) return properties
-    return properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
-  }, [properties, search])
+    return properties.filter((p: any) => {
+      if (search && !p.name?.toLowerCase().includes(search.toLowerCase())) return false
+      if (freqFilter !== 'all' && p.cleaning_frequency !== freqFilter) return false
+      if (missingDataFilter && p.first_clean_date != null) return false
+      if (profitFilter === 'profitable') {
+        const pct = p.profit_percentage ?? 0
+        if (pct <= 5) return false
+      } else if (profitFilter === 'near_break_even') {
+        const pct = p.profit_percentage ?? 0
+        if (pct <= 0 || pct > 5) return false
+      } else if (profitFilter === 'unprofitable') {
+        const pct = p.profit_percentage ?? 0
+        if (pct > 0) return false
+      }
+      return true
+    })
+  }, [properties, search, freqFilter, profitFilter, missingDataFilter])
+
+  // Feature 5: Duplicate detection
+  const duplicatePairs = useMemo(() => {
+    if (!filtered.length) return []
+    const pairs: Array<{ a: any; b: any; key: string }> = []
+    const seen = new Set<string>()
+    for (let i = 0; i < filtered.length; i++) {
+      for (let j = i + 1; j < filtered.length; j++) {
+        const a = filtered[i] as any
+        const b = filtered[j] as any
+        const aPrefix = (a.name || '').slice(0, 3).toLowerCase()
+        const bPrefix = (b.name || '').slice(0, 3).toLowerCase()
+        if (aPrefix !== bPrefix || aPrefix === '') continue
+        const ceSimilar = a.ce_charged != null && b.ce_charged != null && Math.abs(a.ce_charged - b.ce_charged) <= 1
+        const costSimilar = a.total_estimated_cost != null && b.total_estimated_cost != null && Math.abs(a.total_estimated_cost - b.total_estimated_cost) <= 1
+        if (ceSimilar && costSimilar) {
+          const key = [a.id, b.id].sort().join('::')
+          if (!seen.has(key)) {
+            seen.add(key)
+            pairs.push({ a, b, key })
+          }
+        }
+      }
+    }
+    return pairs
+  }, [filtered])
+
+  const visibleDuplicatePairs = duplicatePairs.filter(p => !dismissedDuplicates.has(p.key))
+
+  // IDs of properties in undismissed duplicate pairs — excluded from totals
+  const duplicateExcludedIds = useMemo(() => {
+    const ids = new Set<string>()
+    visibleDuplicatePairs.forEach(pair => {
+      ids.add(pair.a.id)
+      ids.add(pair.b.id)
+    })
+    return ids
+  }, [visibleDuplicatePairs])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
+  // Feature 5: Totals exclude dismissed duplicates
   const totals = useMemo(() => {
     if (!filtered?.length) return null
+    const forTotals = filtered.filter((p: any) => !duplicateExcludedIds.has(p.id))
     return {
-      revenue: filtered.reduce((s: number, p: any) => s + (p.monthly_revenue_estimate || 0), 0),
-      cost: filtered.reduce((s: number, p: any) => s + (p.monthly_cost_estimate || 0), 0),
-      profit: filtered.reduce((s: number, p: any) => s + (p.monthly_profit_estimate || 0), 0),
+      revenue: forTotals.reduce((s: number, p: any) => s + (p.monthly_revenue_estimate || 0), 0),
+      cost: forTotals.reduce((s: number, p: any) => s + (p.monthly_cost_estimate || 0), 0),
+      profit: forTotals.reduce((s: number, p: any) => s + (p.monthly_profit_estimate || 0), 0),
     }
-  }, [filtered])
+  }, [filtered, duplicateExcludedIds])
 
   const asNeededCount = filtered?.filter((p: any) => p.cleaning_frequency === 'as_needed').length ?? 0
+
+  // Feature 2: Scenario columns visibility
+  const hasScenarios = Object.keys(scenarioOverrides).length > 0
 
   function toggleSelect(id: string) {
     setSelected(prev => {
@@ -149,6 +358,24 @@ export default function ProFormaPage() {
     }
   }
 
+  function toggleScenario(id: string) {
+    setScenarioEnabled(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+        setScenarioOverrides(o => {
+          const n = { ...o }
+          delete n[id]
+          return n
+        })
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  // Feature 6: CSV export with Frequency Type column
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
       'Property': p.name || '',
@@ -156,6 +383,7 @@ export default function ProFormaPage() {
       'Cost/Clean': p.total_estimated_cost != null ? `$${p.total_estimated_cost.toFixed(2)}` : '',
       'Profit/Clean': p.estimated_profit != null ? `$${p.estimated_profit.toFixed(2)}` : '',
       'Frequency': FREQ_OPTIONS.find(f => f.value === p.cleaning_frequency)?.label || p.cleaning_frequency || '',
+      'Frequency Type': p.cleaning_frequency === 'custom' ? 'Custom' : 'Standard',
       'Cleans/Mo': p.avg_cleans_per_month ?? '',
       'First Clean': p.first_clean_date ? p.first_clean_date.slice(0, 10) : '',
       'Mo Revenue': p.monthly_revenue_estimate != null ? `$${p.monthly_revenue_estimate.toFixed(2)}` : '',
@@ -174,6 +402,11 @@ export default function ProFormaPage() {
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
   const someSelected = selected.size > 0 && selected.size < filtered.length
+
+  // Total col count for colSpan calculations
+  const baseColCount = 13 // checkbox + 11 data cols + scenario toggle col
+  const scenarioColCount = hasScenarios ? 3 : 0
+  const totalColCount = baseColCount + scenarioColCount
 
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
@@ -224,6 +457,91 @@ export default function ProFormaPage() {
         </div>
       </div>
 
+      {/* Feature 3: Filter bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground font-medium">Frequency:</span>
+          <Select value={freqFilter} onValueChange={v => { setFreqFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-7 w-36 text-xs" data-testid="select-filter-freq">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">All</SelectItem>
+              {FREQ_OPTIONS.map(f => (
+                <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground font-medium">Profitability:</span>
+          <Select value={profitFilter} onValueChange={v => { setProfitFilter(v); setPage(1) }}>
+            <SelectTrigger className="h-7 w-44 text-xs" data-testid="select-filter-profit">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">All</SelectItem>
+              <SelectItem value="profitable" className="text-xs">Profitable (&gt;5%)</SelectItem>
+              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (&lt;5%)</SelectItem>
+              <SelectItem value="unprofitable" className="text-xs">Unprofitable</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Checkbox
+            id="missing-data-filter"
+            checked={missingDataFilter}
+            onCheckedChange={v => { setMissingDataFilter(!!v); setPage(1) }}
+            data-testid="checkbox-missing-data"
+          />
+          <label htmlFor="missing-data-filter" className="text-xs text-muted-foreground cursor-pointer select-none">
+            Missing first clean date only
+          </label>
+        </div>
+        {(freqFilter !== 'all' || profitFilter !== 'all' || missingDataFilter) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground gap-1"
+            onClick={() => { setFreqFilter('all'); setProfitFilter('all'); setMissingDataFilter(false); setPage(1) }}
+          >
+            <X className="w-3 h-3" />
+            Clear filters
+          </Button>
+        )}
+      </div>
+
+      {/* Feature 5: Duplicate warning banner */}
+      {visibleDuplicatePairs.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              {visibleDuplicatePairs.length} potential duplicate{visibleDuplicatePairs.length > 1 ? 's' : ''} detected
+            </span>
+          </div>
+          <ul className="space-y-1">
+            {visibleDuplicatePairs.map(pair => (
+              <li key={pair.key} className="flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-400">
+                <span>
+                  <span className="font-medium">{pair.a.name}</span>
+                  {' '}&amp;{' '}
+                  <span className="font-medium">{pair.b.name}</span>
+                  {' — '}CE: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, Cost: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
+                </span>
+                <button
+                  className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
+                  onClick={() => setDismissedDuplicates(prev => { const n = new Set(prev); n.add(pair.key); return n })}
+                  title="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className={`overflow-auto flex-1 rounded-lg border border-border ${selected.size > 0 ? 'pb-16' : ''}`}>
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
@@ -247,22 +565,40 @@ export default function ProFormaPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Cost</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Profit</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap" title={`CE needed to break even at ${BREAK_EVEN_MARGIN * 100}% margin`}>Break-Even CE</th>
+              {/* Scenario toggle column */}
+              <th className="py-2 px-2 w-8" title="Enable scenario mode for this row">
+                <FlaskConical className="w-3.5 h-3.5 text-muted-foreground mx-auto" />
+              </th>
+              {hasScenarios && (
+                <>
+                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Rev</th>
+                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Cost</th>
+                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Profit</th>
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(12)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(totalColCount)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !filtered || filtered.length === 0 ? (
               <tr>
-                <td colSpan={12} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
+                <td colSpan={totalColCount} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
               </tr>
             ) : (
               paged.map((p: any) => {
                 const profitNeg = (p.monthly_profit_estimate || 0) < 0
+                const scenarioOn = scenarioEnabled.has(p.id)
+                const scenarioCpm = scenarioOverrides[p.id] ?? null
+                const scenarioRev = p.ce_charged != null && scenarioCpm != null ? p.ce_charged * scenarioCpm : null
+                const scenarioCost = p.total_estimated_cost != null && scenarioCpm != null ? p.total_estimated_cost * scenarioCpm : null
+                const scenarioProfit = p.ce_charged != null && p.total_estimated_cost != null && scenarioCpm != null
+                  ? (p.ce_charged - p.total_estimated_cost) * scenarioCpm
+                  : null
                 return (
                   <tr key={p.id} data-testid={`row-proforma-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${profitNeg ? 'bg-destructive/5' : ''}`}>
                     <td className="py-2 px-3">
@@ -273,11 +609,32 @@ export default function ProFormaPage() {
                       />
                     </td>
                     <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.ce_charged)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.total_estimated_cost)}</td>
+                    {/* Feature 4: What-If Popover for CE/Clean */}
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <WhatIfPopover
+                        id={p.id}
+                        field="ce_charged"
+                        currentValue={p.ce_charged}
+                        ceCharged={p.ce_charged}
+                        totalCost={p.total_estimated_cost}
+                        cpm={p.avg_cleans_per_month}
+                      />
+                    </td>
+                    {/* Feature 4: What-If Popover for Cost/Clean */}
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <WhatIfPopover
+                        id={p.id}
+                        field="total_estimated_cost"
+                        currentValue={p.total_estimated_cost}
+                        ceCharged={p.ce_charged}
+                        totalCost={p.total_estimated_cost}
+                        cpm={p.avg_cleans_per_month}
+                      />
+                    </td>
                     <td className={`py-2 px-3 text-xs tabular-nums font-medium ${(p.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>{fmt(p.estimated_profit)}</td>
                     <td className="py-2 px-3">
-                      <FrequencyCell id={p.id} value={p.cleaning_frequency} />
+                      {/* Feature 1: Custom frequency with inline input */}
+                      <FrequencyCell id={p.id} value={p.cleaning_frequency} avgCleans={p.avg_cleans_per_month} />
                     </td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.avg_cleans_per_month ?? '—'}</td>
                     <td className="py-2 px-3">
@@ -296,6 +653,50 @@ export default function ProFormaPage() {
                         ? fmt(p.total_estimated_cost / (1 - BREAK_EVEN_MARGIN))
                         : '—'}
                     </td>
+                    {/* Feature 2: Scenario toggle button */}
+                    <td className="py-2 px-2 text-center">
+                      <button
+                        title={scenarioOn ? 'Disable scenario mode' : 'Enable scenario mode'}
+                        onClick={() => toggleScenario(p.id)}
+                        className={`p-0.5 rounded transition-colors ${scenarioOn ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/40' : 'text-muted-foreground hover:text-blue-500'}`}
+                      >
+                        <FlaskConical className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                    {/* Feature 2: Scenario columns */}
+                    {hasScenarios && (
+                      <>
+                        <td className="py-2 px-3 text-xs tabular-nums text-blue-600 dark:text-blue-400">
+                          {scenarioOn ? (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={scenarioOverrides[p.id] ?? ''}
+                                onChange={e => {
+                                  const v = parseFloat(e.target.value)
+                                  if (!isNaN(v)) {
+                                    setScenarioOverrides(o => ({ ...o, [p.id]: v }))
+                                  } else {
+                                    setScenarioOverrides(o => { const n = { ...o }; delete n[p.id]; return n })
+                                  }
+                                }}
+                                className="h-6 w-16 text-xs px-1"
+                                placeholder="cpm"
+                              />
+                              {scenarioRev != null && <span>{fmt(scenarioRev)}</span>}
+                            </div>
+                          ) : '—'}
+                        </td>
+                        <td className="py-2 px-3 text-xs tabular-nums text-blue-600 dark:text-blue-400">
+                          {scenarioOn && scenarioCost != null ? fmt(scenarioCost) : '—'}
+                        </td>
+                        <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${scenarioProfit != null && scenarioProfit < 0 ? 'text-destructive' : 'text-blue-600 dark:text-blue-400'}`}>
+                          {scenarioOn && scenarioProfit != null ? fmt(scenarioProfit) : '—'}
+                        </td>
+                      </>
+                    )}
                   </tr>
                 )
               })
@@ -303,11 +704,20 @@ export default function ProFormaPage() {
             {totals && !isLoading && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold">
                 <td className="py-2 px-3" />
-                <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={7}>Monthly Totals ({filtered?.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={7}>
+                  Monthly Totals ({filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length})
+                  {duplicateExcludedIds.size > 0 && (
+                    <span className="ml-1 font-normal text-amber-600 dark:text-amber-400">
+                      (excl. {duplicateExcludedIds.size} suspected dupes)
+                    </span>
+                  )}
+                </td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.revenue)}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.cost)}</td>
                 <td className={`py-2 px-3 text-xs tabular-nums ${totals.profit < 0 ? 'text-destructive' : 'text-primary'}`}>{fmt(totals.profit)}</td>
-              <td className="py-2 px-3" />
+                <td className="py-2 px-3" />
+                <td className="py-2 px-3" />
+                {hasScenarios && <><td /><td /><td /></>}
               </tr>
             )}
           </tbody>
@@ -332,7 +742,7 @@ export default function ProFormaPage() {
               <SelectContent>
                 {FREQ_OPTIONS.map(f => (
                   <SelectItem key={f.value} value={f.value} className="text-xs">
-                    {f.label} ({f.cleans}/mo)
+                    {f.label}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
