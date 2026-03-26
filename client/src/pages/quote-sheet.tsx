@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
@@ -83,6 +83,7 @@ export default function QuoteSheetPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
+  const [search, setSearch] = useState('')
 
   const { data: stages } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -108,6 +109,14 @@ export default function QuoteSheetPage() {
     },
     enabled: !!quoteStage,
   })
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return properties || []
+    return (properties || []).filter((p: any) =>
+      [p.name, p.client, p.address].some(v => v && v.toLowerCase().includes(q))
+    )
+  }, [properties, search])
 
   const { mutate: addProperty, isPending: addPending } = useMutation({
     mutationFn: async () => {
@@ -215,6 +224,21 @@ export default function QuoteSheetPage() {
             <Printer className="w-3.5 h-3.5" />
             Print
           </Button>
+          <div className="relative no-print">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="pl-8 pr-7 h-8 w-48 text-sm"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
           <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
             <Plus className="w-3.5 h-3.5" />
             New Quote
@@ -252,11 +276,17 @@ export default function QuoteSheetPage() {
             ) : !properties || properties.length === 0 ? (
               <tr>
                 <td colSpan={14}>
-                <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
-              </td>
+                  <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={14}>
+                  <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
+                </td>
               </tr>
             ) : (
-              properties.map((p: any) => {
+              filtered.map((p: any) => {
                 const { laundry, consumables } = getEstimates(p)
                 return (
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
