@@ -179,6 +179,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         {showFollowUp && (
           <div className="flex items-center gap-1 mt-0.5" onClick={handleDateClick}>
             <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground/70 shrink-0">Follow-up:</span>
             <input
               type="date"
               value={property.follow_up_date || ''}
@@ -233,6 +234,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         <StageHistoryTooltip transitions={transitions}>
           <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/40" onClick={handleDateClick}>
             <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+            <span className="text-xs text-muted-foreground/70 shrink-0">Follow-up:</span>
             <input
               type="date"
               value={property.follow_up_date || ''}
@@ -321,12 +323,12 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, stage_id, ce_charged, profit_percentage, follow_up_date, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, follow_up_date, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
-            .select('id, name, client, stage_id, ce_charged, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
           if (fallbackError) throw fallbackError
           return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
         }

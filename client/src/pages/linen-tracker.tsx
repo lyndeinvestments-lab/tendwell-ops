@@ -245,6 +245,23 @@ export default function LinenTrackerPage() {
         </div>
       </div>
 
+      {(zeroCount > 0 || restockCount > 0) && (
+        <div className="flex items-center gap-4 text-xs text-muted-foreground -mt-1 mb-1">
+          {restockCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+              Below restock threshold
+            </span>
+          )}
+          {zeroCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+              No linen data recorded
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">

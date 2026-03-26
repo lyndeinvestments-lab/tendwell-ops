@@ -121,6 +121,7 @@ export function useAlerts() {
           title: `Missing Data: ${p.name}`,
           description: `Missing: ${missing.join(', ')}`,
           propertyId: p.id,
+          actionRoute: '/master-list',
         })
       }
 
