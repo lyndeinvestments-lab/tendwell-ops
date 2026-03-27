@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -73,12 +73,14 @@ export default function LinenTrackerPage() {
   })
 
   const { mutate: updateLinen } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: any }) => {
+    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: any; oldValue?: any }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
+      logPropertyEdit(id, field, oldValue, value)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
@@ -341,7 +343,8 @@ export default function LinenTrackerPage() {
                                 onSave={v => updateLinen({
                                   id: p.id,
                                   field: c.key,
-                                  value: v ? parseInt(v) : null
+                                  value: v ? parseInt(v) : null,
+                                  oldValue: p[c.key],
                                 })}
                                 testId={`inline-${c.key}-${p.id}`}
                                 className={meetsMin ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}
@@ -357,7 +360,8 @@ export default function LinenTrackerPage() {
                               onSave={v => updateLinen({
                                 id: p.id,
                                 field: c.key,
-                                value: isNumeric ? (v ? parseInt(v) : null) : v
+                                value: isNumeric ? (v ? parseInt(v) : null) : v,
+                                oldValue: p[c.key],
                               })}
                               testId={`inline-${c.key}-${p.id}`}
                             />

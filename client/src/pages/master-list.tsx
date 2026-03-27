@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, logPropertyEdit } from '@/lib/supabase'
 import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -228,10 +228,11 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: (_, { id, field, value }) => {
+      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
+      logPropertyEdit(id, field, prev, value)
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      // Show undo toast — find prev value from current data
-      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({
         title: 'Updated',
         description: `${field === 'ce_charged' ? 'CE' : 'Pay'} updated`,

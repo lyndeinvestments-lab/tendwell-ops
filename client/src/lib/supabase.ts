@@ -20,6 +20,25 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
+// Audit logging utility — inserts into property_edit_log
+export async function logPropertyEdit(
+  propertyId: string,
+  fieldName: string,
+  oldValue: string | number | null | undefined,
+  newValue: string | number | null | undefined,
+) {
+  try {
+    await supabase.from('property_edit_log').insert({
+      property_id: propertyId,
+      field_name: fieldName,
+      old_value: oldValue != null ? String(oldValue) : null,
+      new_value: newValue != null ? String(newValue) : null,
+    })
+  } catch {
+    // Silently fail — don't block UI for audit logging
+  }
+}
+
 // Stage colors matching database values
 export const STAGE_COLORS: Record<string, string> = {
   'Lead': '#6b7280',

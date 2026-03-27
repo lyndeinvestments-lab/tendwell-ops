@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
@@ -73,12 +73,14 @@ export default function AcFiltersPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: string }) => {
+    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
       const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
       if (error) throw error
+      logPropertyEdit(id, field, oldValue, value)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
@@ -93,6 +95,7 @@ export default function AcFiltersPage() {
   function markChangedToday(id: string) {
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
+    const prop = properties?.find((p: any) => p.id === id)
     supabase.from('properties').update({
       last_filter_changed: today,
       next_filter_due: nextDue,
@@ -100,7 +103,10 @@ export default function AcFiltersPage() {
       if (error) {
         toast({ title: 'Update failed', variant: 'destructive' })
       } else {
+        logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
+        logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+        qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
         toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
         setJustSavedId(id)
         setTimeout(() => setJustSavedId(null), 1500)
@@ -264,7 +270,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.filter_size}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size })}
                         testId={`inline-filter-size-${p.id}`}
                         placeholder="Add size…"
                       />
@@ -274,9 +280,9 @@ export default function AcFiltersPage() {
                         value={p.last_filter_changed ? p.last_filter_changed.slice(0, 10) : ''}
                         type="date"
                         onSave={v => {
-                          updateField({ id: p.id, field: 'last_filter_changed', value: v })
+                          updateField({ id: p.id, field: 'last_filter_changed', value: v, oldValue: p.last_filter_changed })
                           if (v) {
-                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v) })
+                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v), oldValue: p.next_filter_due })
                           }
                         }}
                         testId={`inline-last-changed-${p.id}`}
@@ -286,7 +292,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.next_filter_due ? p.next_filter_due.slice(0, 10) : ''}
                         type="date"
-                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v, oldValue: p.next_filter_due })}
                         testId={`inline-next-due-${p.id}`}
                       />
                     </td>
@@ -304,7 +310,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.notes}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'notes', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes })}
                         testId={`inline-notes-${p.id}`}
                         placeholder="Add notes…"
                         className="w-full min-w-[150px]"
