@@ -292,7 +292,7 @@ export default function PreviousPropertiesPage() {
               >
                 Date Offboarded<SortIcon col="offboarded_at" />
               </th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -333,11 +333,11 @@ export default function PreviousPropertiesPage() {
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
                     {datesLoading ? <Skeleton className="h-3 w-20" /> : formatOffboardDate(p.id)}
                   </td>
-                  <td className="py-2 px-3">
+                  <td className="py-2 px-3 whitespace-nowrap">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-6 gap-1 text-xs"
+                      className="h-6 gap-1 text-xs whitespace-nowrap"
                       onClick={() => setReactivateProperty(p)}
                       data-testid={`button-reactivate-${p.id}`}
                     >
