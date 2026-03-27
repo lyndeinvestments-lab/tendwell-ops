@@ -222,6 +222,20 @@ npm run db:push    # Push Drizzle schema to SQLite
 - Property modal: Photos tab (Supabase Storage upload/delete) + Supplies tab (par levels, restock badges)
 - Cost Tracking: optimistic updates, green flash on save, right-click context menu "Reset Row", Laundry/Consumables now editable
 - Pipeline: card click opens right-side slide-over with financials, onboarding checklist, notes, Move Stage dropdown
+- **Overnight improvements (2026-03-27):**
+  - Audit logging: `logPropertyEdit()` utility wired into all inline edits across 6 pages + stage transitions; Activity Feed now auto-populates
+  - Revenue Report: 12-month chart uses `stage_transitions` for historical accuracy; By Client view falls back to name-based contact matching for payment method
+  - Cleaners: reconciliation tab shows pay rate vs expected pay variance, summary KPIs
+  - Property Modal: tabs grouped into Operations (Linens, AC Filter, Supplies) and Setup (Access Codes, Onboarding)
+  - Pipeline: cards show first line of notes as stage note; mobile stage selector with vertical stacking
+  - Mobile: sticky first column on all table pages (Master List, Cost Tracking, Access Codes, Pro Forma)
+  - AC Filters: bulk edit mode (multi-select + bulk set size / mark changed today), CSV import
+  - Data integrity: duplicate detection on Add Lead, `exclude_from_financials` flag for SCounty properties, auto `offboarded_at` timestamp
+  - UX polish: `?` shortcuts button in header, CSV export toast on all pages, KPI tooltip explanations, sidebar `⌘K` / `?` hints
+
+### Recent Migrations
+
+- `20260327_exclude_from_financials.sql` — adds `exclude_from_financials` boolean + `offboarded_at` timestamp to properties
 
 ---
 
