@@ -73,9 +73,9 @@ export default function RevenueReportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, contact_id, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, pipeline_stages(name)')
+        .select('id, name, client, contact_id, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, exclude_from_financials, pipeline_stages(name)')
       if (error) throw error
-      return data || []
+      return (data || []).filter((p: any) => !p.exclude_from_financials)
     },
   })
 
