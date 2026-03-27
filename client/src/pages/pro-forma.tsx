@@ -588,7 +588,7 @@ export default function ProFormaPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="py-2 px-3 w-8">
+              <th className="py-2 px-3 w-8 sticky left-0 z-20 bg-muted/80 backdrop-blur">
                 <Checkbox
                   checked={allSelected}
                   data-state={someSelected ? 'indeterminate' : allSelected ? 'checked' : 'unchecked'}
@@ -599,7 +599,7 @@ export default function ProFormaPage() {
               <th
                 role="columnheader"
                 aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[140px] cursor-pointer select-none hover:text-foreground transition-colors group"
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[140px] cursor-pointer select-none hover:text-foreground transition-colors group sticky left-[44px] z-20 bg-muted/80 backdrop-blur"
                 onClick={() => toggleSort('name')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('name') } }}
@@ -743,14 +743,14 @@ export default function ProFormaPage() {
                   : null
                 return (
                   <tr key={p.id} data-testid={`row-proforma-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${profitNeg ? 'bg-destructive/5' : ''}`}>
-                    <td className="py-2 px-3">
+                    <td className="py-2 px-3 sticky left-0 z-10 bg-card">
                       <Checkbox
                         checked={selected.has(p.id)}
                         onCheckedChange={() => toggleSelect(p.id)}
                         data-testid={`checkbox-${p.id}`}
                       />
                     </td>
-                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate" title={p.name}>{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate sticky left-[44px] z-10 bg-card" title={p.name}>{p.name}</td>
                     {/* Feature 4: What-If Popover for CE/Clean */}
                     <td className="py-2 px-3 text-xs tabular-nums">
                       <WhatIfPopover

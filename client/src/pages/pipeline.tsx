@@ -345,6 +345,7 @@ export default function PipelinePage() {
   const [newLeadNotes, setNewLeadNotes] = useState('')
   const [detailPanel, setDetailPanel] = useState<any | null>(null)
   const [panelNotes, setPanelNotes] = useState('')
+  const [mobileStage, setMobileStage] = useState<string | null>(null)
 
   const { data: stages, isLoading: stagesLoading } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -742,13 +743,27 @@ export default function PipelinePage() {
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-auto relative">
+          {/* Mobile stage selector */}
+          <div className="md:hidden mb-3 px-1">
+            <select
+              value={mobileStage || visibleStages[0]?.id || ''}
+              onChange={e => setMobileStage(e.target.value)}
+              className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
+            >
+              {visibleStages.map((stage: any) => {
+                const count = displayProperties?.filter((p: any) => p.stage_id === stage.id).length ?? 0
+                return <option key={stage.id} value={stage.id}>{stage.name} ({count})</option>
+              })}
+            </select>
+          </div>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex gap-3 pb-4 items-stretch min-h-full">
+            {/* Desktop: horizontal columns */}
+            <div className="hidden md:flex gap-3 pb-4 items-stretch min-h-full">
               {visibleStages.map((stage: any) => {
                 const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
                   .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
@@ -766,6 +781,29 @@ export default function PipelinePage() {
                   />
                 )
               })}
+            </div>
+            {/* Mobile: single stage vertical list */}
+            <div className="md:hidden pb-4">
+              {visibleStages
+                .filter((stage: any) => !mobileStage || stage.id === mobileStage || (!mobileStage && stage.id === visibleStages[0]?.id))
+                .slice(0, 1)
+                .map((stage: any) => {
+                  const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
+                    .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
+                  return (
+                    <StageColumn
+                      key={stage.id}
+                      stage={stage}
+                      properties={stageProps}
+                      onNameClick={(p) => openDetailPanel(p)}
+                      compact={compact}
+                      collapsed={false}
+                      onToggleCollapse={() => {}}
+                      onFollowUpChange={handleFollowUpChange}
+                      onboardingProgress={onboardingProgress}
+                    />
+                  )
+                })}
             </div>
             <DragOverlay>
               {activeProperty ? <PropertyCardOverlay property={activeProperty} /> : null}
