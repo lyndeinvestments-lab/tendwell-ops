@@ -103,6 +103,28 @@ export default function RevenueReportPage() {
     },
   })
 
+  // Fetch stage transitions to know when properties became Active
+  const { data: stageTransitions } = useQuery({
+    queryKey: ['/supabase/revenue-report-transitions'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('stage_transitions')
+        .select('property_id, to_stage_id, created_at, pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Fetch pipeline stages for name lookup
+  const { data: pipelineStages } = useQuery({
+    queryKey: ['/supabase/pipeline_stages'],
+    queryFn: async () => {
+      const { data } = await supabase.from('pipeline_stages').select('id, name')
+      return data || []
+    },
+  })
+
   // Active properties only
   const activeProperties = useMemo(() => {
     if (!properties) return []
@@ -112,19 +134,45 @@ export default function RevenueReportPage() {
     })
   }, [properties])
 
-  // Build 12-month chart data
+  // Build map of when each property became Active (earliest transition to Active stage)
+  const activeSinceMap = useMemo(() => {
+    const map: Record<string, string> = {} // propertyId -> ISO date string
+    if (!stageTransitions || !pipelineStages) return map
+    const activeStageIds = new Set(
+      pipelineStages.filter((s: any) => s.name === 'Active').map((s: any) => s.id)
+    )
+    for (const t of stageTransitions) {
+      const stageName = (t.pipeline_stages as any)?.name
+      if (stageName === 'Active' || activeStageIds.has(t.to_stage_id)) {
+        if (!map[t.property_id] || t.created_at < map[t.property_id]) {
+          map[t.property_id] = t.created_at
+        }
+      }
+    }
+    return map
+  }, [stageTransitions, pipelineStages])
+
+  // Build 12-month chart data using stage transitions for historical accuracy
   const chartData = useMemo(() => {
     const months: { label: string; ce: number; pay: number; profit: number }[] = []
     for (let i = 11; i >= 0; i--) {
       const d = new Date(year, month - i, 1)
       const label = `${MONTHS[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`
-      // Use current snapshot for all months (historical data from edit_log is sparse)
-      const ce = activeProperties.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0)
-      const pay = activeProperties.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0)
+      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString()
+      // Sum only properties that were Active during this month
+      let ce = 0, pay = 0
+      for (const p of activeProperties) {
+        const activeSince = activeSinceMap[p.id]
+        // If we have transition data, only count if property was active by month end
+        // If no transition data, include it (assume it's been active)
+        if (activeSince && activeSince > monthEnd) continue
+        ce += (p as any).ce_charged || 0
+        pay += (p as any).cleaner_pay || 0
+      }
       months.push({ label, ce, pay, profit: ce - pay })
     }
     return months
-  }, [activeProperties, month, year])
+  }, [activeProperties, activeSinceMap, month, year])
 
   // KPI totals
   const totals = useMemo(() => {
@@ -187,10 +235,18 @@ export default function RevenueReportPage() {
   // Client grouping for "By Client" view
   const clientGroups = useMemo(() => {
     const contactMap = new Map((contacts || []).map((c: any) => [c.id, c]))
+    // Build a name-based lookup for properties without contact_id
+    const contactByName = new Map(
+      (contacts || []).map((c: any) => [(c.full_name || '').toLowerCase(), c])
+    )
     const groups: Record<string, { name: string; paymentMethod: string | null; contactId: string | null; properties: any[] }> = {}
 
     for (const p of sorted) {
-      const contact = p.contact_id ? contactMap.get(p.contact_id) : null
+      let contact = p.contact_id ? contactMap.get(p.contact_id) : null
+      // Fallback: try matching by client name to contact name
+      if (!contact && p.client) {
+        contact = contactByName.get((p.client || '').toLowerCase()) || null
+      }
       const key = contact ? `contact_${contact.id}` : `client_${p.client || 'Unknown'}`
       if (!groups[key]) {
         groups[key] = {
