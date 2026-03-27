@@ -220,7 +220,7 @@ export default function AccessCodesPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground group"
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground group sticky left-0 z-20 bg-muted/80 backdrop-blur"
                 onClick={toggleSort}
               >
                 <span className="flex items-center gap-1">
@@ -253,11 +253,12 @@ export default function AccessCodesPage() {
                 const isMissing = SENSITIVE_KEYS.every(k => !p[k])
                 return (
                   <tr key={p.id} data-testid={`row-access-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 text-xs">
+                    <td className="py-2 px-3 text-xs sticky left-0 z-10 bg-card">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => openPropertyModal(p.id, 'access-codes')}
-                          className="font-medium text-primary hover:underline"
+                          className="font-medium text-primary hover:underline max-w-[200px] truncate"
+                          title={p.name}
                           data-testid={`link-property-${p.id}`}
                         >
                           {p.name}
