@@ -231,6 +231,7 @@ export default function ProFormaPage() {
         .from('operational_properties')
         .select('id, name, ce_charged, total_estimated_cost, estimated_profit, profit_percentage, cleaning_frequency, first_clean_date, avg_cleans_per_month, monthly_revenue_estimate, monthly_cost_estimate, monthly_profit_estimate, stage_name')
         .eq('stage_name', 'Active')
+        .order('name')
         .limit(5000)
       if (error) throw error
       return data || []

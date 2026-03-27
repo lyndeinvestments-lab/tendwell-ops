@@ -463,13 +463,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
   return (
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import Cleaning History</DialogTitle>
         </DialogHeader>
 
         {step < 4 && <StepIndicator current={step} />}
 
+        <div className="flex-1 overflow-y-auto overflow-x-auto min-h-0">
         {/* ── Step 0: Upload ── */}
         {step === 0 && (
           <div className="space-y-4">
@@ -601,13 +602,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                     <p className="text-xs font-medium truncate">{entry.csvName}</p>
                     <p className="text-xs text-muted-foreground">{entry.records.length} records</p>
                   </div>
-                  <div className="w-56 shrink-0">
+                  <div className="w-64 shrink-0">
                     {entry.isNew ? (
                       <div className="flex items-center gap-1">
                         <Input
                           className="h-7 text-xs flex-1"
-                          placeholder="New property name…"
+                          placeholder="Enter property name…"
                           value={entry.newPropertyName}
+                          autoFocus
                           onChange={e => {
                             const val = e.target.value
                             setMatchEntries(prev => prev.map((me, j) =>
@@ -654,7 +656,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                             </span>
                           </SelectItem>
                           <div className="h-px bg-border my-1" />
-                          {properties.map((p: any) => (
+                          {[...properties].sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).map((p: any) => (
                             <SelectItem key={p.id} value={p.id} className="text-xs">{p.name}</SelectItem>
                           ))}
                         </SelectContent>
@@ -683,7 +685,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         {/* ── Step 3: Summary ── */}
         {step === 3 && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-sm">
+            <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-xs">
               <p>
                 This will update <strong>{existingGroups.length}</strong> existing {existingGroups.length === 1 ? 'property' : 'properties'}
                 {newGroups.length > 0 && <span> and create <strong>{newGroups.length}</strong> new {newGroups.length === 1 ? 'property' : 'properties'}</span>}
@@ -745,7 +747,9 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           </div>
         )}
 
-        <DialogFooter className="gap-2 mt-2">
+        </div>
+
+        <DialogFooter className="gap-2 mt-2 flex-shrink-0 border-t border-border pt-3">
           {step > 0 && step < 4 && !importing && (
             <Button variant="outline" size="sm" onClick={() => { setParseError(''); setStep(s => s - 1) }}>
               Back

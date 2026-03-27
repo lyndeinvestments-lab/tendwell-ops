@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
-import { Search, Download, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2 } from 'lucide-react'
+import { Search, Download, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2 } from 'lucide-react'
 import { InlineEdit } from '@/components/InlineEdit'
 import { TablePagination } from '@/components/TablePagination'
 
@@ -177,6 +177,25 @@ export default function MasterListPage() {
       toast({ title: `Updated ${selected.size} properties` })
     },
     onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
+  })
+
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { mutate: bulkDelete, isPending: deletePending } = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase.from('properties').delete().in('id', ids)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      const count = selected.size
+      setSelected(new Set())
+      setConfirmDelete(false)
+      toast({ title: `Deleted ${count} ${count === 1 ? 'property' : 'properties'}` })
+    },
+    onError: (e: any) => toast({ title: 'Delete failed: ' + (e.message || 'Unknown error'), variant: 'destructive' }),
   })
 
   // Detail panel save
@@ -349,6 +368,21 @@ export default function MasterListPage() {
                 }}>
                 <Download className="w-3 h-3" /> Export Selected
               </Button>
+              {!confirmDelete ? (
+                <Button variant="destructive" size="sm" className="h-7 text-xs gap-1" onClick={() => setConfirmDelete(true)}>
+                  <Trash2 className="w-3 h-3" /> Delete
+                </Button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <Button variant="destructive" size="sm" className="h-7 text-xs" disabled={deletePending}
+                    onClick={() => bulkDelete(Array.from(selected))}>
+                    {deletePending ? 'Deleting…' : `Confirm Delete (${selected.size})`}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setConfirmDelete(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
           )}
           <div className="relative">
