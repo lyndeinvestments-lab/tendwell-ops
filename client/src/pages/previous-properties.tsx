@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Search, Download, RotateCcw, Archive, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
@@ -41,6 +40,7 @@ export default function PreviousPropertiesPage() {
   const [sortKey, setSortKey] = useState<string | null>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [reactivateProperty, setReactivateProperty] = useState<any>(null)
+  const [confirmReactivateId, setConfirmReactivateId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
@@ -89,17 +89,19 @@ export default function PreviousPropertiesPage() {
         })
       if (transitionError) throw transitionError
     },
-    onSuccess: () => {
+    onSuccess: (_data, property) => {
       queryClient.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
       queryClient.invalidateQueries({ queryKey: ['/supabase/offboard-dates'] })
       queryClient.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       queryClient.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       queryClient.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      toast({ title: 'Property re-activated', description: `${reactivateProperty?.name} has been moved to Active.` })
+      toast({ title: 'Property re-activated', description: `${property?.name} has been moved to Active.` })
+      setConfirmReactivateId(null)
       setReactivateProperty(null)
     },
     onError: () => {
       toast({ title: 'Re-activation failed', variant: 'destructive' })
+      setConfirmReactivateId(null)
       setReactivateProperty(null)
     },
   })
@@ -334,16 +336,42 @@ export default function PreviousPropertiesPage() {
                     {datesLoading ? <Skeleton className="h-3 w-20" /> : formatOffboardDate(p.id)}
                   </td>
                   <td className="py-2 px-3 whitespace-nowrap">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-6 gap-1 text-xs whitespace-nowrap"
-                      onClick={() => setReactivateProperty(p)}
-                      data-testid={`button-reactivate-${p.id}`}
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Re-activate
-                    </Button>
+                    {confirmReactivateId === p.id ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-foreground mr-1">Re-activate <strong>{p.name}</strong>?</span>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-6 text-xs"
+                          disabled={reactivating}
+                          onClick={() => { setReactivateProperty(p); reactivate(p) }}
+                          data-testid={`button-confirm-reactivate-${p.id}`}
+                        >
+                          {reactivating ? 'Re-activating…' : 'Confirm'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 text-xs"
+                          disabled={reactivating}
+                          onClick={() => setConfirmReactivateId(null)}
+                          data-testid={`button-cancel-reactivate-${p.id}`}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 gap-1 text-xs whitespace-nowrap"
+                        onClick={() => setConfirmReactivateId(p.id)}
+                        data-testid={`button-reactivate-${p.id}`}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Re-activate
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -356,26 +384,6 @@ export default function PreviousPropertiesPage() {
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      <AlertDialog open={!!reactivateProperty} onOpenChange={v => !v && setReactivateProperty(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Re-activate Property</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to re-activate <strong>{reactivateProperty?.name}</strong>? This will move it back to the Active stage.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={reactivating}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={reactivating}
-              onClick={() => reactivateProperty && reactivate(reactivateProperty)}
-              data-testid="button-confirm-reactivate"
-            >
-              {reactivating ? 'Re-activating…' : 'Re-activate'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
