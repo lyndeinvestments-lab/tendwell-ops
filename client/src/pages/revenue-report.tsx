@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowUpDown, Download, DollarSign, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { EmptyState } from '@/components/EmptyState'
+import { useToast } from '@/hooks/use-toast'
 import Papa from 'papaparse'
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -55,6 +56,7 @@ function MiniSparkline({ data, color }: { data: number[]; color: string }) {
 
 export default function RevenueReportPage() {
   usePageTitle('Revenue Report')
+  const { toast } = useToast()
   const { openPropertyModal } = usePropertyModal()
   const now = new Date()
   const [month, setMonth] = useState(now.getMonth())
@@ -301,6 +303,7 @@ export default function RevenueReportPage() {
     const a = document.createElement('a')
     a.href = url; a.download = `revenue-report-${MONTHS[month]}-${year}.csv`; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   // Forecast calculations
@@ -345,6 +348,7 @@ export default function RevenueReportPage() {
     const a = document.createElement('a')
     a.href = url; a.download = `forecast-${MONTHS[month]}-${year}.csv`; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'Forecast CSV exported', description: `${rows.length} rows exported` })
   }
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)

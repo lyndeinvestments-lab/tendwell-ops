@@ -131,6 +131,12 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="px-3 py-3 border-t border-sidebar-border space-y-1">
+        <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground/60 mb-1">
+          <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">⌘K</kbd>
+          <span>Search</span>
+          <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">?</kbd>
+          <span>Shortcuts</span>
+        </div>
         <Button
           variant="ghost"
           size="sm"

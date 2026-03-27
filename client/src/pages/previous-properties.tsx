@@ -222,6 +222,7 @@ export default function PreviousPropertiesPage() {
     a.download = 'previous-properties.csv'
     a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   return (

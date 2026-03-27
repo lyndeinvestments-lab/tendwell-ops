@@ -252,6 +252,7 @@ export default function CostTrackingPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'cost-tracking.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   async function bulkSaveAll() {

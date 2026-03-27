@@ -436,6 +436,7 @@ export default function ProFormaPage() {
     a.download = 'pro-forma.csv'
     a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
