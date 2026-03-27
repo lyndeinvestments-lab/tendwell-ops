@@ -218,15 +218,17 @@ export default function CostTrackingPage() {
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
   const totals = useMemo(() => {
-    if (!filtered.length) return null
-    return {
-      ce: filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0),
-      pay: filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0),
-      laundry: filtered.reduce((s: number, p: any) => s + (p.est_laundry || 0), 0),
-      consumables: filtered.reduce((s: number, p: any) => s + (p.est_consumables || 0), 0),
-      total: filtered.reduce((s: number, p: any) => s + (p.total_estimated_cost || 0), 0),
-      profit: filtered.reduce((s: number, p: any) => s + (p.estimated_profit || 0), 0),
-    }
+    if (!filtered?.length) return null
+    const ceTotal = filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0)
+    const payTotal = filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0)
+    const laundryTotal = filtered.reduce((s: number, p: any) => s + (p.est_laundry || 0), 0)
+    const consumablesTotal = filtered.reduce((s: number, p: any) => s + (p.est_consumables || 0), 0)
+    const costTotal = filtered.reduce((s: number, p: any) => s + (p.total_estimated_cost || 0), 0)
+    const profitTotal = filtered.reduce((s: number, p: any) => s + (p.estimated_profit || 0), 0)
+    const avgProfitPct = filtered.length > 0
+      ? filtered.reduce((s: number, p: any) => s + (p.profit_percentage || 0), 0) / filtered.length
+      : 0
+    return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct }
   }, [filtered])
 
   function exportCsv() {
@@ -480,19 +482,17 @@ export default function CostTrackingPage() {
               ))
             )}
             {totals && !isLoading && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={2}>Totals ({filtered.length})</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ce)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.pay)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundry)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.consumables)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(filtered.length * 15)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(filtered.length * 5)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.total)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profit)}</td>
-                <td className="py-2 px-3 text-xs text-muted-foreground">
-                  {totals.ce > 0 ? `${((totals.profit / totals.ce) * 100).toFixed(1)}%` : '—'}
-                </td>
+              <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
+                <td colSpan={2} className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * 15)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * 5)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
               </tr>
             )}
           </tbody>
