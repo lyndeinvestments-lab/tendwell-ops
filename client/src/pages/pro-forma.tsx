@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download, FlaskConical, X } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import Papa from 'papaparse'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { TablePagination } from '@/components/TablePagination'
@@ -212,6 +212,11 @@ export default function ProFormaPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
+  type SortKey = 'name' | 'ce_charged' | 'total_estimated_cost' | 'estimated_profit' | 'cleaning_frequency' | 'avg_cleans_per_month' | 'first_clean_date' | 'monthly_revenue_estimate' | 'monthly_cost_estimate' | 'monthly_profit_estimate' | null
+  type SortDir = 'asc' | 'desc'
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
   // Feature 2: Scenario overrides
   const [scenarioOverrides, setScenarioOverrides] = useState<Record<string, number>>({})
   const [scenarioEnabled, setScenarioEnabled] = useState<Set<string>>(new Set())
@@ -231,6 +236,7 @@ export default function ProFormaPage() {
         .from('operational_properties')
         .select('id, name, ce_charged, total_estimated_cost, estimated_profit, profit_percentage, cleaning_frequency, first_clean_date, avg_cleans_per_month, monthly_revenue_estimate, monthly_cost_estimate, monthly_profit_estimate, stage_name')
         .eq('stage_name', 'Active')
+        .order('name')
         .limit(5000)
       if (error) throw error
       return data || []
@@ -265,10 +271,24 @@ export default function ProFormaPage() {
     onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
   })
 
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+    return sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+  }
+
   // Feature 3 + search filtering
   const filtered = useMemo(() => {
     if (!properties) return []
-    return properties.filter((p: any) => {
+    const result = properties.filter((p: any) => {
       if (search && !p.name?.toLowerCase().includes(search.toLowerCase())) return false
       if (freqFilter !== 'all' && p.cleaning_frequency !== freqFilter) return false
       if (missingDataFilter && p.first_clean_date != null) return false
@@ -284,7 +304,25 @@ export default function ProFormaPage() {
       }
       return true
     })
-  }, [properties, search, freqFilter, profitFilter, missingDataFilter])
+    if (!sortKey) return result
+    return [...result].sort((a: any, b: any) => {
+      const aVal = a[sortKey]
+      const bVal = b[sortKey]
+      // Nulls always last
+      if (aVal == null && bVal == null) return 0
+      if (aVal == null) return 1
+      if (bVal == null) return -1
+      let cmp = 0
+      if (sortKey === 'name' || sortKey === 'cleaning_frequency') {
+        cmp = String(aVal).localeCompare(String(bVal))
+      } else if (sortKey === 'first_clean_date') {
+        cmp = new Date(aVal).getTime() - new Date(bVal).getTime()
+      } else {
+        cmp = (aVal as number) - (bVal as number)
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [properties, search, freqFilter, profitFilter, missingDataFilter, sortKey, sortDir])
 
   // Feature 5: Duplicate detection
   const duplicatePairs = useMemo(() => {
@@ -554,17 +592,117 @@ export default function ProFormaPage() {
                   data-testid="checkbox-select-all"
                 />
               </th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[140px]">Property</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">CE/Clean</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cost/Clean</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Profit/Clean</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Frequency</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleans/Mo</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">First Clean</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Revenue</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Cost</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Mo Profit</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap" title={`CE needed to break even at ${BREAK_EVEN_MARGIN * 100}% margin`}>Break-Even CE</th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[140px] cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('name')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('name') } }}
+              >
+                <span className="flex items-center gap-1">Property <SortIcon col="name" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'ce_charged' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('ce_charged')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('ce_charged') } }}
+              >
+                <span className="flex items-center gap-1">CE/Clean <SortIcon col="ce_charged" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'total_estimated_cost' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('total_estimated_cost')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
+              >
+                <span className="flex items-center gap-1">Cost/Clean <SortIcon col="total_estimated_cost" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'estimated_profit' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('estimated_profit')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('estimated_profit') } }}
+              >
+                <span className="flex items-center gap-1">Profit/Clean <SortIcon col="estimated_profit" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'cleaning_frequency' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('cleaning_frequency')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('cleaning_frequency') } }}
+              >
+                <span className="flex items-center gap-1">Frequency <SortIcon col="cleaning_frequency" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'avg_cleans_per_month' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('avg_cleans_per_month')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('avg_cleans_per_month') } }}
+              >
+                <span className="flex items-center gap-1">Cleans/Mo <SortIcon col="avg_cleans_per_month" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'first_clean_date' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('first_clean_date')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('first_clean_date') } }}
+              >
+                <span className="flex items-center gap-1">First Clean <SortIcon col="first_clean_date" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'monthly_revenue_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('monthly_revenue_estimate')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_revenue_estimate') } }}
+              >
+                <span className="flex items-center gap-1">Mo Revenue <SortIcon col="monthly_revenue_estimate" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'monthly_cost_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('monthly_cost_estimate')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_cost_estimate') } }}
+              >
+                <span className="flex items-center gap-1">Mo Cost <SortIcon col="monthly_cost_estimate" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'monthly_profit_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                onClick={() => toggleSort('monthly_profit_estimate')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_profit_estimate') } }}
+              >
+                <span className="flex items-center gap-1">Mo Profit <SortIcon col="monthly_profit_estimate" /></span>
+              </th>
+              <th
+                role="columnheader"
+                aria-sort={sortKey === 'total_estimated_cost' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors group"
+                title={`CE needed to break even at ${BREAK_EVEN_MARGIN * 100}% margin`}
+                onClick={() => toggleSort('total_estimated_cost')}
+                tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
+              >
+                <span className="flex items-center gap-1">Break-Even CE <SortIcon col="total_estimated_cost" /></span>
+              </th>
               {/* Scenario toggle column */}
               <th className="py-2 px-2 w-8" title="Enable scenario mode for this row">
                 <FlaskConical className="w-3.5 h-3.5 text-muted-foreground mx-auto" />

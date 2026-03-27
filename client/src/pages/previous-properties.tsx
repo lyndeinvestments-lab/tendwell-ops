@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, Download, RotateCcw, Archive } from 'lucide-react'
+import { Search, Download, RotateCcw, Archive, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
@@ -38,9 +38,27 @@ export default function PreviousPropertiesPage() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<string | null>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [reactivateProperty, setReactivateProperty] = useState<any>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline w-3 h-3 ml-1" />
+      : <ArrowDown className="inline w-3 h-3 ml-1" />
+  }
 
   const { data: stages } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -146,21 +164,38 @@ export default function PreviousPropertiesPage() {
   const filtered = useMemo(() => {
     if (!properties) return []
     const q = search.toLowerCase()
-    return [...properties]
-      .filter((p: any) =>
-        p.name?.toLowerCase().includes(q) ||
-        p.client?.toLowerCase().includes(q) ||
-        p.address?.toLowerCase().includes(q)
-      )
-      .sort((a: any, b: any) => {
+    const base = [...properties].filter((p: any) =>
+      p.name?.toLowerCase().includes(q) ||
+      p.client?.toLowerCase().includes(q) ||
+      p.address?.toLowerCase().includes(q)
+    )
+
+    return base.sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      const key = sortKey ?? 'offboarded_at'
+
+      if (key === 'offboarded_at') {
         const dateA = offboardDates?.[a.id]
         const dateB = offboardDates?.[b.id]
         if (!dateA && !dateB) return (a.name || '').localeCompare(b.name || '')
         if (!dateA) return 1
         if (!dateB) return -1
-        return new Date(dateB).getTime() - new Date(dateA).getTime()
-      })
-  }, [properties, search, offboardDates])
+        return (new Date(dateA).getTime() - new Date(dateB).getTime()) * dir
+      }
+
+      const av = a[key]
+      const bv = b[key]
+
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir
+      }
+      return (av - bv) * dir
+    })
+  }, [properties, search, offboardDates, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -224,16 +259,39 @@ export default function PreviousPropertiesPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px]">Property</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Client</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Address</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Beds</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Baths</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">CE/Clean</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner Pay</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Profit %</th>
+              {([
+                { col: 'name', label: 'Property', extraClass: 'min-w-[160px]' },
+                { col: 'client', label: 'Client' },
+                { col: 'address', label: 'Address' },
+                { col: 'bedrooms', label: 'Beds' },
+                { col: 'full_baths', label: 'Baths' },
+                { col: 'ce_charged', label: 'CE/Clean' },
+                { col: 'cleaner_pay', label: 'Cleaner Pay' },
+                { col: 'profit_percentage', label: 'Profit %' },
+              ] as { col: string; label: string; extraClass?: string }[]).map(({ col, label, extraClass }) => (
+                <th
+                  key={col}
+                  className={`text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap${extraClass ? ` ${extraClass}` : ''}`}
+                  tabIndex={0}
+                  role="columnheader"
+                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  onClick={() => toggleSort(col)}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                >
+                  {label}<SortIcon col={col} />
+                </th>
+              ))}
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Date Offboarded</th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                tabIndex={0}
+                role="columnheader"
+                aria-sort={sortKey === 'offboarded_at' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                onClick={() => toggleSort('offboarded_at')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('offboarded_at')}
+              >
+                Date Offboarded<SortIcon col="offboarded_at" />
+              </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
             </tr>
           </thead>

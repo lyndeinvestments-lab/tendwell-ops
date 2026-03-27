@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 
 function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
@@ -24,6 +24,16 @@ function getDueStatus(nextDue: string | null, intervalDays: number): { label: st
 
 const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding']
 
+type SortKey = 'name' | 'filter_size' | 'last_filter_changed' | 'next_filter_due'
+type SortDir = 'asc' | 'desc'
+
+function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: SortKey | null; sortDir: SortDir }) {
+  if (sortKey !== column) return <ArrowUpDown className="w-3 h-3 ml-1 opacity-40 shrink-0" />
+  return sortDir === 'asc'
+    ? <ArrowUp className="w-3 h-3 ml-1 shrink-0" />
+    : <ArrowDown className="w-3 h-3 ml-1 shrink-0" />
+}
+
 export default function AcFiltersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -35,6 +45,20 @@ export default function AcFiltersPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [justSavedId, setJustSavedId] = useState<string | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey | null>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+
+  const toggleSort = useCallback((key: SortKey) => {
+    setSortKey(prev => {
+      if (prev === key) {
+        setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+        return key
+      }
+      setSortDir('asc')
+      return key
+    })
+    setPage(1)
+  }, [])
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/ac-filters'],
@@ -86,12 +110,23 @@ export default function AcFiltersPage() {
 
   const filtered = useMemo(() => {
     if (!properties) return []
-    return properties.filter((p: any) => {
+    const base = properties.filter((p: any) => {
       const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase())
       const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
       return matchSearch && matchStatus
     })
-  }, [properties, search, statusFilter])
+    if (!sortKey) return base
+    return [...base].sort((a: any, b: any) => {
+      const av = a[sortKey] ?? null
+      const bv = b[sortKey] ?? null
+      // Nulls always last regardless of direction
+      if (av === null && bv === null) return 0
+      if (av === null) return 1
+      if (bv === null) return -1
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [properties, search, statusFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -157,11 +192,43 @@ export default function AcFiltersPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px]">Property</th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground"
+                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                tabIndex={0}
+                onClick={() => toggleSort('name')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
+              >
+                <span className="inline-flex items-center">Property <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
+              </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Filter Size</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Last Changed</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Next Due</th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
+                aria-sort={sortKey === 'filter_size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                tabIndex={0}
+                onClick={() => toggleSort('filter_size')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('filter_size')}
+              >
+                <span className="inline-flex items-center">Filter Size <SortIcon column="filter_size" sortKey={sortKey} sortDir={sortDir} /></span>
+              </th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
+                aria-sort={sortKey === 'last_filter_changed' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                tabIndex={0}
+                onClick={() => toggleSort('last_filter_changed')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('last_filter_changed')}
+              >
+                <span className="inline-flex items-center">Last Changed <SortIcon column="last_filter_changed" sortKey={sortKey} sortDir={sortDir} /></span>
+              </th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
+                aria-sort={sortKey === 'next_filter_due' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                tabIndex={0}
+                onClick={() => toggleSort('next_filter_due')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('next_filter_due')}
+              >
+                <span className="inline-flex items-center">Next Due <SortIcon column="next_filter_due" sortKey={sortKey} sortDir={sortDir} /></span>
+              </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8">Due</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Notes</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Actions</th>
