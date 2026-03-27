@@ -20,7 +20,12 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('tendwell_user')
+      return saved ? JSON.parse(saved) : null
+    } catch { return null }
+  })
   const [isLoading, setIsLoading] = useState(false)
 
   async function login(password: string) {
@@ -40,11 +45,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json()
 
-      setUser({
+      const userData = {
         role: data.role as UserRole,
         label: data.label,
         allowedViews: data.allowedViews || [],
-      })
+      }
+      setUser(userData)
+      try { sessionStorage.setItem('tendwell_user', JSON.stringify(userData)) } catch {}
     } catch (e: any) {
       throw new Error(e.message || 'Invalid password')
     } finally {
@@ -54,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     setUser(null)
+    try { sessionStorage.removeItem('tendwell_user') } catch {}
   }, [])
 
   // Session timeout — auto-logout after inactivity
