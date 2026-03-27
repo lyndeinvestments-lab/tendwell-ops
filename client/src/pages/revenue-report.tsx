@@ -544,7 +544,7 @@ export default function RevenueReportPage() {
                 const sparkColor = getSparklineColor(sparkData)
                 return (
                   <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="py-2 px-3 font-medium text-xs">
+                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate" title={p.name}>
                       <button onClick={() => openPropertyModal(p.id)} className="hover:underline text-left">{p.name}</button>
                     </td>
                     <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.ce_charged)}</td>

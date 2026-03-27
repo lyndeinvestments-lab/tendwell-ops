@@ -18,7 +18,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
-type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage'
+type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage' | 'break_even_ce'
 
 const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding', 'Offboarded']
 
@@ -342,20 +342,21 @@ export default function CostTrackingPage() {
               <th className={thCls} onClick={() => toggleSort('total_estimated_cost')}>Total Cost <SortIcon col="total_estimated_cost" /></th>
               <th className={thCls} onClick={() => toggleSort('estimated_profit')}>Profit <SortIcon col="estimated_profit" /></th>
               <th className={thCls} onClick={() => toggleSort('profit_percentage')}>Profit % <SortIcon col="profit_percentage" /></th>
+              <th className={thCls} onClick={() => toggleSort('break_even_ce')} title="CE needed to break even at 20% margin">Break-Even CE <SortIcon col="break_even_ce" /></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(10)].map((_, j) => (
+                  {[...Array(12)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={11}>
+                <td colSpan={12}>
                   <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
                 </td>
               </tr>
@@ -388,7 +389,13 @@ export default function CostTrackingPage() {
                     <InlineEdit
                       value={p.ce_charged}
                       type="number"
-                      onSave={v => updateProperty({ id: p.id, field: 'ce_charged', value: v ? parseFloat(v) : null })}
+                      onSave={v => {
+                        const parsed = v ? parseFloat(v) : null
+                        if ((parsed === 0 || parsed === null) && p.stage_name === 'Active') {
+                          toast({ title: 'Warning: $0 CE will show as negative profit', description: 'This property will appear in Missing Financial Data alerts.', variant: 'destructive' })
+                        }
+                        updateProperty({ id: p.id, field: 'ce_charged', value: parsed })
+                      }}
                       testId={`inline-ce-${p.id}`}
                     />
                   </td>
@@ -431,6 +438,9 @@ export default function CostTrackingPage() {
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.total_estimated_cost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
                   <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">
+                    {p.total_estimated_cost != null ? '$' + (p.total_estimated_cost / 0.80).toFixed(2) : '—'}
+                  </td>
                 </tr>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
@@ -441,7 +451,7 @@ export default function CostTrackingPage() {
                 </ContextMenu>
                 {expandedRow === p.id && (
                   <tr className="bg-muted/20 border-b border-border/50">
-                    <td colSpan={11} className="py-3 px-6">
+                    <td colSpan={12} className="py-3 px-6">
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-xs mb-3">
                         <div>
                           <span className="text-muted-foreground block">Est Laundry</span>
@@ -493,6 +503,7 @@ export default function CostTrackingPage() {
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
+                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / 0.80)}</td>
               </tr>
             )}
           </tbody>

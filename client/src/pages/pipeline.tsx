@@ -144,6 +144,15 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
   const showFollowUp = FOLLOW_UP_STAGES.has(stageName)
   const transitions: any[] = property._transitions ?? []
 
+  const isStale = useMemo(() => {
+    if (stageName !== 'Lead' && stageName !== 'Quote') return false
+    if (property.follow_up_date) return false
+    if (transitions.length === 0) return false
+    const latestTransitionDate = new Date(transitions[0].created_at)
+    const daysSince = (Date.now() - latestTransitionDate.getTime()) / (1000 * 60 * 60 * 24)
+    return daysSince >= 14
+  }, [stageName, property.follow_up_date, transitions])
+
   function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
     e.stopPropagation()
     onFollowUpChange(e.target.value)
@@ -175,7 +184,14 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           >
             {property.name}
           </button>
-          <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {isStale && (
+              <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+                Stale
+              </span>
+            )}
+            <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
+          </div>
         </div>
         {showFollowUp && (
           <div className="flex items-center gap-1 mt-0.5" onClick={handleDateClick}>
@@ -230,7 +246,14 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         {property.ce_charged != null ? (
           <span className="text-xs text-foreground/80">${property.ce_charged}</span>
         ) : <span className="text-xs text-muted-foreground">—</span>}
-        <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {isStale && (
+            <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+              Stale
+            </span>
+          )}
+          <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
+        </div>
       </div>
       {showFollowUp && (
         <StageHistoryTooltip transitions={transitions}>
