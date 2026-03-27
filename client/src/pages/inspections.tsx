@@ -221,7 +221,12 @@ export default function InspectionsPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={9}>
-                  <EmptyState icon={ClipboardCheck} title="No inspections" description="No inspections have been logged yet." />
+                  <EmptyState
+                    icon={ClipboardCheck}
+                    title="No inspections"
+                    description="Log property inspections to track cleanliness, linens, supplies, and exterior condition. Each inspection scores properties on a 1-10 scale."
+                    action={{ label: 'Log First Inspection', onClick: () => setLogOpen(true) }}
+                  />
                 </td>
               </tr>
             ) : (

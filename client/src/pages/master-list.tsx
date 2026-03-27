@@ -23,9 +23,9 @@ function fmt(n: number | null | undefined) {
   return n.toFixed(2)
 }
 
-const REQUIRED_FIELDS = ['ce_charged', 'cleaner_pay', 'square_footage', 'bedrooms', 'address']
+const REQUIRED_FIELDS = ['name', 'address', 'bedrooms', 'full_baths', 'square_footage', 'ce_charged', 'cleaner_pay']
 function completeness(p: any): number {
-  const filled = REQUIRED_FIELDS.filter(f => p[f] != null && p[f] !== '' && p[f] !== 0).length
+  const filled = REQUIRED_FIELDS.filter(f => p[f] != null && p[f] !== '').length
   return Math.round((filled / REQUIRED_FIELDS.length) * 100)
 }
 
@@ -506,7 +506,7 @@ export default function MasterListPage() {
                             className="h-full rounded-full transition-all"
                             style={{
                               width: `${comp}%`,
-                              backgroundColor: comp === 100 ? '#22c55e' : comp >= 60 ? '#f59e0b' : '#ef4444'
+                              backgroundColor: comp >= 90 ? '#22c55e' : comp >= 50 ? '#f59e0b' : '#ef4444'
                             }}
                           />
                         </div>
