@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
@@ -84,6 +84,24 @@ export default function QuoteSheetPage() {
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
   const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<string | null>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline w-3 h-3 ml-1" />
+      : <ArrowDown className="inline w-3 h-3 ml-1" />
+  }
 
   const { data: stages } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -112,11 +130,52 @@ export default function QuoteSheetPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return properties || []
-    return (properties || []).filter((p: any) =>
-      [p.name, p.client, p.address].some(v => v && v.toLowerCase().includes(q))
-    )
-  }, [properties, search])
+    const base = q
+      ? (properties || []).filter((p: any) =>
+          [p.name, p.client, p.address].some((v: any) => v && v.toLowerCase().includes(q))
+        )
+      : (properties || [])
+
+    if (!sortKey) return base
+
+    return [...base].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+
+      // Columns that use computed laundry/consumables values
+      if (sortKey === 'est_laundry' || sortKey === 'est_consumables') {
+        const getVal = (p: any) => {
+          const beds = p.number_of_beds || 0
+          const fullBaths = p.full_baths || 0
+          const kitchens = p.number_of_kitchens ?? 1
+          const hotTubCount = p.hot_tub ? 1 : 0
+          if (sortKey === 'est_laundry') return p.est_laundry ?? calcLaundry(beds)
+          return p.est_consumables ?? calcConsumables(fullBaths, beds, kitchens, hotTubCount)
+        }
+        const av = getVal(a)
+        const bv = getVal(b)
+        if (av == null && bv == null) return 0
+        if (av == null) return 1
+        if (bv == null) return -1
+        return (av - bv) * dir
+      }
+
+      // Hardcoded numeric columns
+      if (sortKey === 'inspection_cost') return 0
+      if (sortKey === 'trash_cost') return 0
+
+      const av = a[sortKey]
+      const bv = b[sortKey]
+
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir
+      }
+      return (av - bv) * dir
+    })
+  }, [properties, search, sortKey, sortDir])
 
   const { mutate: addProperty, isPending: addPending } = useMutation({
     mutationFn: async () => {
@@ -250,19 +309,34 @@ export default function QuoteSheetPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Cleaning Estimate Charged">CE Charged</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner Pay</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Bedrooms</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Beds</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Full Baths</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Half Baths</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sq Ft</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Estimated Laundry Cost">Est Laundry</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" title="Estimated Consumables Cost">Est Consumables</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspection</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Trash</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Profit %</th>
+              {([
+                { col: 'name', label: 'Name' },
+                { col: 'ce_charged', label: 'CE Charged', title: 'Cleaning Estimate Charged' },
+                { col: 'cleaner_pay', label: 'Cleaner Pay' },
+                { col: 'bedrooms', label: 'Bedrooms' },
+                { col: 'number_of_beds', label: 'Beds' },
+                { col: 'full_baths', label: 'Full Baths' },
+                { col: 'half_baths', label: 'Half Baths' },
+                { col: 'square_footage', label: 'Sq Ft' },
+                { col: 'est_laundry', label: 'Est Laundry', title: 'Estimated Laundry Cost' },
+                { col: 'est_consumables', label: 'Est Consumables', title: 'Estimated Consumables Cost' },
+                { col: 'inspection_cost', label: 'Inspection' },
+                { col: 'trash_cost', label: 'Trash' },
+                { col: 'profit_percentage', label: 'Profit %' },
+              ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
+                <th
+                  key={col}
+                  className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                  title={title}
+                  tabIndex={0}
+                  role="columnheader"
+                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  onClick={() => toggleSort(col)}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                >
+                  {label}<SortIcon col={col} />
+                </th>
+              ))}
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3"></th>
             </tr>
           </thead>

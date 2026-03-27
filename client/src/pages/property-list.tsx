@@ -9,7 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
-import { Search, X, Download, Building2 } from 'lucide-react'
+import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 
@@ -83,6 +83,25 @@ export default function PropertyListPage() {
   usePageTitle('Property List')
   const { openPropertyModal } = usePropertyModal()
   const [search, setSearch] = useState('')
+  const [sortKey, setSortKey] = useState<string | null>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline w-3 h-3 ml-1" />
+      : <ArrowDown className="inline w-3 h-3 ml-1" />
+  }
+
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }
   })
@@ -112,13 +131,32 @@ export default function PropertyListPage() {
 
   const filtered = useMemo(() => {
     if (!properties) return []
-    return properties.filter((p: any) => {
+    const base = properties.filter((p: any) => {
       const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase()) ||
         p.address?.toLowerCase().includes(search.toLowerCase())
       const matchStatus = !statusFilter || statusFilter === 'all' || p.stage_name === statusFilter
       return matchSearch && matchStatus
     })
-  }, [properties, search, statusFilter])
+
+    if (!sortKey) return base
+
+    return [...base].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+
+      // Status sorts by the stage_name string
+      const av = sortKey === 'stage_name' ? (a.stage_name ?? null) : a[sortKey]
+      const bv = sortKey === 'stage_name' ? (b.stage_name ?? null) : b[sortKey]
+
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir
+      }
+      return (av - bv) * dir
+    })
+  }, [properties, search, statusFilter, sortKey, sortDir])
 
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
@@ -194,13 +232,27 @@ export default function PropertyListPage() {
         <table className="w-full text-sm">
           <thead className="bg-muted/80 border-b border-border">
             <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Property</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Address</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Beds</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Baths</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Guests</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sq Ft</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
+              {([
+                { col: 'name', label: 'Property' },
+                { col: 'address', label: 'Address' },
+                { col: 'bedrooms', label: 'Beds' },
+                { col: 'full_baths', label: 'Baths' },
+                { col: 'guest_count', label: 'Guests' },
+                { col: 'square_footage', label: 'Sq Ft' },
+                { col: 'stage_name', label: 'Status' },
+              ] as { col: string; label: string }[]).map(({ col, label }) => (
+                <th
+                  key={col}
+                  className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                  tabIndex={0}
+                  role="columnheader"
+                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  onClick={() => toggleSort(col)}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                >
+                  {label}<SortIcon col={col} />
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
