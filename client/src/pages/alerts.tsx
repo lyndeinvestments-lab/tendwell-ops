@@ -96,14 +96,27 @@ export function useAlerts() {
       const stageName = (p.pipeline_stages as any)?.name
       if (stageName === 'Offboarded' || stageName === 'Lead' || stageName === 'Quote') continue
 
-      // Critical: Negative Profit
-      if ((p.profit_percentage || 0) < 0) {
+      // Critical: Negative Profit — skip $0 CE properties (those are missing data, not truly negative)
+      if ((p.profit_percentage || 0) < 0 && (p.ce_charged || 0) > 0) {
         result.push({
           id: `negative_profit_${p.id}`,
           severity: 'critical',
           category: 'Financial',
           title: `Negative Profit: ${p.name}`,
           description: `Profit is ${(p.profit_percentage || 0).toFixed(1)}% — losing money on this property.`,
+          actionRoute: '/cost-tracking',
+          propertyId: p.id,
+        })
+      }
+
+      // Warning: Missing financial data ($0 CE for active properties)
+      if (stageName === 'Active' && (p.ce_charged == null || p.ce_charged === 0)) {
+        result.push({
+          id: `missing_financial_${p.id}`,
+          severity: 'warning',
+          category: 'Data Quality',
+          title: `Missing Financial Data: ${p.name}`,
+          description: 'CE Charged is $0 — profit calculations are unreliable until this is set.',
           actionRoute: '/cost-tracking',
           propertyId: p.id,
         })

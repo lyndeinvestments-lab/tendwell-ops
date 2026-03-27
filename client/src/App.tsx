@@ -151,6 +151,7 @@ function AppRoutes() {
 
 function AppLayout() {
   const { user } = useAuth();
+  const [location] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -200,7 +201,7 @@ function AppLayout() {
               </div>
             </header>
             <main id="main-content" className="flex-1 overflow-auto">
-              <ErrorBoundary>
+              <ErrorBoundary resetKey={location}>
                 <AppRoutes />
               </ErrorBoundary>
             </main>

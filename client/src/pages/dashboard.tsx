@@ -226,8 +226,8 @@ export default function DashboardPage() {
     ? activeProps.reduce((sum: number, p: any) => sum + (p.profit_percentage || 0), 0) / activeProps.length
     : 0
 
-  // Negative profit properties
-  const negativeProfit = activeProps.filter((p: any) => (p.estimated_profit || 0) < 0)
+  // Negative profit properties — exclude $0 CE (those are missing data, not truly negative)
+  const negativeProfit = activeProps.filter((p: any) => (p.estimated_profit || 0) < 0 && (p.ce_charged || 0) > 0)
 
   // Missing data detection — exclude Lead, Quote, Offboarded
   const missingData = properties?.filter((p: any) => {
@@ -419,7 +419,11 @@ export default function DashboardPage() {
                       <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${p.estimated_profit?.toFixed(2)}</span>
                     </div>
                   ))}
-                  {negativeProfit.length > 8 && <p className="text-xs text-muted-foreground">+{negativeProfit.length - 8} more</p>}
+                  {negativeProfit.length > 8 && (
+                    <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline mt-1">
+                      View all {negativeProfit.length} →
+                    </button>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -462,7 +466,11 @@ export default function DashboardPage() {
                       </div>
                     )
                   })}
-                  {missingData.length > 8 && <p className="text-xs text-muted-foreground">+{missingData.length - 8} more</p>}
+                  {missingData.length > 8 && (
+                    <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline mt-1">
+                      View all {missingData.length} →
+                    </button>
+                  )}
                 </div>}
               </CardContent>
             </Card>
