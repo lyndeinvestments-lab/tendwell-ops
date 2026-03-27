@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
@@ -1012,15 +1013,12 @@ export function PropertyDetailModal() {
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
               <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
               {canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
-              <TabsTrigger value="linens" className="text-xs">Linens</TabsTrigger>
-              {canViewAccess && <TabsTrigger value="access" className="text-xs">Access</TabsTrigger>}
-              {canViewAccess && <TabsTrigger value="ac-filter" className="text-xs">AC Filter</TabsTrigger>}
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-              {stageName === 'Onboarding' && <TabsTrigger value="onboarding" className="text-xs">Onboarding</TabsTrigger>}
+              <TabsTrigger value="operations" className="text-xs">Operations</TabsTrigger>
+              {canViewAccess && <TabsTrigger value="setup" className="text-xs">Setup</TabsTrigger>}
               <TabsTrigger value="inspections" className="text-xs">Inspections</TabsTrigger>
               <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>
               <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
-              <TabsTrigger value="supplies" className="text-xs">Supplies</TabsTrigger>
             </TabsList>
 
             {/* ── Overview Tab ── */}
@@ -1226,44 +1224,28 @@ export function PropertyDetailModal() {
               </TabsContent>
             )}
 
-            {/* ── Linens Tab ── */}
-            <TabsContent value="linens" className="mt-3">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {LINEN_COLS.map(col => (
-                  <div key={col.key} className="bg-muted/40 rounded p-2">
-                    <span className="text-xs text-muted-foreground block">{col.label}</span>
-                    <span className="text-sm font-medium">{property[col.key] ?? '—'}</span>
-                  </div>
-                ))}
-              </div>
-              {property.linen_notes && (
-                <div className="mt-3">
-                  <span className="text-xs text-muted-foreground block">Notes</span>
-                  <p className="text-sm mt-0.5">{property.linen_notes}</p>
+            {/* ── Operations Tab (Linens, AC Filter, Supplies) ── */}
+            <TabsContent value="operations" className="mt-3 space-y-4">
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Linens</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {LINEN_COLS.map(col => (
+                    <div key={col.key} className="bg-muted/40 rounded p-2">
+                      <span className="text-xs text-muted-foreground block">{col.label}</span>
+                      <span className="text-sm font-medium">{property[col.key] ?? '—'}</span>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </TabsContent>
-
-            {/* ── Access Tab ── */}
-            {canViewAccess && (
-              <TabsContent value="access" className="mt-3 space-y-3">
-                {[
-                  { key: 'auto_code', label: 'Auto Code' },
-                  { key: 'door_code', label: 'Door Code' },
-                  { key: 'other_codes', label: 'Other Codes' },
-                  { key: 'wifi_info', label: 'WiFi Info' },
-                ].map(col => (
-                  <div key={col.key}>
-                    <span className="text-xs text-muted-foreground block mb-0.5">{col.label}</span>
-                    <RevealCell value={property[col.key]} field={col.key} id={property.id} />
+                {property.linen_notes && (
+                  <div className="mt-2">
+                    <span className="text-xs text-muted-foreground block">Notes</span>
+                    <p className="text-sm mt-0.5">{property.linen_notes}</p>
                   </div>
-                ))}
-              </TabsContent>
-            )}
-
-            {/* ── AC Filter Tab ── */}
-            {canViewAccess && (
-              <TabsContent value="ac-filter" className="mt-3 space-y-3">
+                )}
+              </div>
+              <Separator />
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">AC Filter</h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <span className="text-xs text-muted-foreground block">Filter Size</span>
@@ -1278,6 +1260,42 @@ export function PropertyDetailModal() {
                     <span className="text-sm">{property.next_filter_due ? property.next_filter_due.slice(0, 10) : '—'}</span>
                   </div>
                 </div>
+              </div>
+              <Separator />
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Supplies</h4>
+                <SuppliesTab propertyId={property.id} />
+              </div>
+            </TabsContent>
+
+            {/* ── Setup Tab (Access Codes, Onboarding) ── */}
+            {canViewAccess && (
+              <TabsContent value="setup" className="mt-3 space-y-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access Codes</h4>
+                  <div className="space-y-3">
+                    {[
+                      { key: 'auto_code', label: 'Auto Code' },
+                      { key: 'door_code', label: 'Door Code' },
+                      { key: 'other_codes', label: 'Other Codes' },
+                      { key: 'wifi_info', label: 'WiFi Info' },
+                    ].map(col => (
+                      <div key={col.key}>
+                        <span className="text-xs text-muted-foreground block mb-0.5">{col.label}</span>
+                        <RevealCell value={property[col.key]} field={col.key} id={property.id} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {stageName === 'Onboarding' && (
+                  <>
+                    <Separator />
+                    <div>
+                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Onboarding Checklist</h4>
+                      <OnboardingChecklist propertyId={property.id} />
+                    </div>
+                  </>
+                )}
               </TabsContent>
             )}
 
@@ -1298,13 +1316,6 @@ export function PropertyDetailModal() {
               )}
             </TabsContent>
 
-            {/* ── Onboarding Tab ── */}
-            {stageName === 'Onboarding' && (
-              <TabsContent value="onboarding" className="mt-3">
-                <OnboardingChecklist propertyId={property.id} />
-              </TabsContent>
-            )}
-
             {/* ── Inspections Tab ── */}
             <TabsContent value="inspections" className="mt-3">
               <InspectionsTab propertyId={property.id} />
@@ -1320,10 +1331,7 @@ export function PropertyDetailModal() {
               <PhotosTab propertyId={property.id} />
             </TabsContent>
 
-            {/* ── Supplies Tab ── */}
-            <TabsContent value="supplies" className="mt-3">
-              <SuppliesTab propertyId={property.id} />
-            </TabsContent>
+            {/* Supplies is now inside Operations tab */}
           </Tabs>
         )}
 
