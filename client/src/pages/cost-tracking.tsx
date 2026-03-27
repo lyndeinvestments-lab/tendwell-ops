@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
@@ -168,12 +168,15 @@ export default function CostTrackingPage() {
     },
     onMutate: ({ id, field, value }) => {
       const snapshot = localProperties ? [...localProperties] : null
+      const oldValue = snapshot?.find(p => p.id === id)?.[field] ?? null
       setLocalProperties(prev => prev ? prev.map(p => p.id === id ? { ...p, [field]: value } : p) : prev)
-      return { snapshot }
+      return { snapshot, oldValue }
     },
-    onSuccess: (_, { id, field }) => {
+    onSuccess: (_, { id, field, value }, ctx: any) => {
+      logPropertyEdit(id, field, ctx?.oldValue, value)
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       flashCell(`${id}-${field}`)
       toast({ title: 'Saved' })
     },
@@ -249,6 +252,7 @@ export default function CostTrackingPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'cost-tracking.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   async function bulkSaveAll() {
@@ -331,7 +335,7 @@ export default function CostTrackingPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={thCls} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
+              <th className={`${thCls} sticky left-0 z-20 bg-muted/80 backdrop-blur`} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>CE Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
@@ -366,7 +370,7 @@ export default function CostTrackingPage() {
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
                 <tr data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                  <td className="py-2 px-3 font-medium text-xs">
+                  <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-card">
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => setExpandedRow(prev => prev === p.id ? null : p.id)}
@@ -377,7 +381,8 @@ export default function CostTrackingPage() {
                       </button>
                       <button
                         onClick={() => openPropertyModal(p.id)}
-                        className="hover:underline text-left"
+                        className="hover:underline text-left max-w-[200px] truncate"
+                        title={p.name}
                         data-testid={`link-property-${p.id}`}
                       >
                         {p.name}

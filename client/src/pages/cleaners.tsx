@@ -123,15 +123,28 @@ export default function CleanersPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, pipeline_stages!properties_stage_id_fkey(name)')
+        .select('id, name, cleaner_pay, pipeline_stages!properties_stage_id_fkey(name)')
       if (error) throw error
       return (data || []).filter((p: any) => {
         const sn = (p.pipeline_stages as any)?.name
         return sn === 'Active' || sn === 'Onboarding'
       })
     },
-    enabled: assignOpen,
   })
+
+  // Distinct cleaner names from properties (for pre-populating roster)
+  const suggestedCleaners = useMemo(() => {
+    if (!activeProps) return []
+    // Extract unique client-style cleaner identifiers from notes or use property data
+    // Since there's no cleaner_name field, suggest based on assignments
+    const existingNames = new Set((cleaners || []).map((c: any) => (c.full_name || '').toLowerCase()))
+    // Show properties with cleaner_pay that have no assignment yet
+    const unassigned = (activeProps || []).filter((p: any) =>
+      p.cleaner_pay && p.cleaner_pay > 0 &&
+      !(assignments || []).some((a: any) => a.property_id === p.id)
+    )
+    return unassigned
+  }, [activeProps, cleaners, assignments])
 
   const { mutate: addCleaner, isPending: adding } = useMutation({
     mutationFn: async () => {
@@ -321,7 +334,9 @@ export default function CleanersPage() {
               {isLoading ? (
                 [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7}><EmptyState icon={Users2} title="No cleaners" description="Add your first cleaner to get started." /></td></tr>
+                <tr><td colSpan={7}>
+                  <EmptyState icon={Users2} title="No cleaners" description={`Add your first cleaner to get started.${suggestedCleaners.length > 0 ? ` ${suggestedCleaners.length} active properties have cleaner pay set but no assignments.` : ''}`} />
+                </td></tr>
               ) : (
                 filtered.map((c: any) => {
                   const stats = cleanerStats[c.id] || { total: 0, totalPay: 0 }
@@ -415,37 +430,66 @@ export default function CleanersPage() {
 
       {/* Reconciliation View — cleaner-based */}
       {viewMode === 'reconciliation' && (
-        <div className="overflow-auto flex-1 rounded-lg border border-border">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
-              <tr>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleans This Month</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Total Pay</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay / Clean</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reconciliationData.length === 0 ? (
-                <tr><td colSpan={5}><EmptyState icon={Users2} title="No cleaners" description="Add cleaners to see reconciliation." /></td></tr>
-              ) : (
-                reconciliationData.map((c: any) => (
-                  <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailCleaner(c)}>
-                    <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
-                    <td className="py-2 px-3">
-                      <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-gray-600 bg-gray-50 border-gray-200'}`}>
-                        {c.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-xs tabular-nums font-medium">{c.cleans}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{c.totalPay > 0 ? fmt(c.totalPay) : '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{c.avgPay > 0 ? fmt(c.avgPay) : '—'}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <div className="space-y-3 flex-1 flex flex-col">
+          {/* Summary KPIs */}
+          {reconciliationData.length > 0 && (
+            <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <span>Total cleans: <strong className="text-foreground">{reconciliationData.reduce((s: number, c: any) => s + c.cleans, 0)}</strong></span>
+              <span>Total pay: <strong className="text-foreground">{fmt(reconciliationData.reduce((s: number, c: any) => s + c.totalPay, 0))}</strong></span>
+              <span>Active cleaners: <strong className="text-foreground">{reconciliationData.filter((c: any) => c.is_active && c.cleans > 0).length}</strong></span>
+            </div>
+          )}
+          <div className="overflow-auto flex-1 rounded-lg border border-border">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+                <tr>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Pay Rate</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleans This Month</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Total Pay</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay / Clean</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Expected (Rate x Cleans)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reconciliationData.length === 0 ? (
+                  <tr><td colSpan={7}><EmptyState icon={Users2} title="No cleaners" description="Add cleaners to see reconciliation." /></td></tr>
+                ) : (
+                  reconciliationData.map((c: any) => {
+                    const expected = c.pay_rate && c.cleans > 0 ? c.pay_rate * c.cleans : null
+                    const diff = expected && c.totalPay > 0 ? c.totalPay - expected : null
+                    return (
+                      <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailCleaner(c)}>
+                        <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
+                        <td className="py-2 px-3">
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-gray-600 bg-gray-50 border-gray-200'}`}>
+                            {c.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums font-medium">{c.cleans}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{c.totalPay > 0 ? fmt(c.totalPay) : '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{c.avgPay > 0 ? fmt(c.avgPay) : '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">
+                          {expected ? (
+                            <span>
+                              {fmt(expected)}
+                              {diff != null && Math.abs(diff) > 0.01 && (
+                                <span className={`ml-1 ${diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                  ({diff > 0 ? '+' : ''}{fmt(diff)})
+                                </span>
+                              )}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

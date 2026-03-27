@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS, STAGE_ORDER } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
@@ -242,6 +242,12 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           </TooltipContent>
         </Tooltip>
       )}
+      {/* Stage note — first line of notes field */}
+      {property.notes && (
+        <p className="text-xs text-muted-foreground/80 mt-1 truncate italic" title={property.notes.split('\n')[0]}>
+          {property.notes.split('\n')[0].slice(0, 60)}{property.notes.split('\n')[0].length > 60 ? '…' : ''}
+        </p>
+      )}
       <div className="flex items-center justify-between mt-2 gap-1">
         {property.ce_charged != null ? (
           <span className="text-xs text-foreground/80">${property.ce_charged}</span>
@@ -339,6 +345,7 @@ export default function PipelinePage() {
   const [newLeadNotes, setNewLeadNotes] = useState('')
   const [detailPanel, setDetailPanel] = useState<any | null>(null)
   const [panelNotes, setPanelNotes] = useState('')
+  const [mobileStage, setMobileStage] = useState<string | null>(null)
 
   const { data: stages, isLoading: stagesLoading } = useQuery({
     queryKey: ['/supabase/pipeline_stages'],
@@ -354,12 +361,12 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, follow_up_date, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, follow_up_date, notes, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
-            .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, notes, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
           if (fallbackError) throw fallbackError
           return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
         }
@@ -451,12 +458,22 @@ export default function PipelinePage() {
       })
     },
     onSuccess: (_data, variables) => {
+      const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)
+      const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null)
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
 
-      const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      // Auto-set offboarded_at timestamp when moving to Offboarded
+      if (toStage?.name === 'Offboarded') {
+        supabase.from('properties').update({ offboarded_at: new Date().toISOString() }).eq('id', variables.propId).then(() => {
+          qc.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
+        })
+      }
+
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
         if (prop && !prop.follow_up_date) {
@@ -734,13 +751,27 @@ export default function PipelinePage() {
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-auto relative">
+          {/* Mobile stage selector */}
+          <div className="md:hidden mb-3 px-1">
+            <select
+              value={mobileStage || visibleStages[0]?.id || ''}
+              onChange={e => setMobileStage(e.target.value)}
+              className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
+            >
+              {visibleStages.map((stage: any) => {
+                const count = displayProperties?.filter((p: any) => p.stage_id === stage.id).length ?? 0
+                return <option key={stage.id} value={stage.id}>{stage.name} ({count})</option>
+              })}
+            </select>
+          </div>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
-            <div className="flex gap-3 pb-4 items-stretch min-h-full">
+            {/* Desktop: horizontal columns */}
+            <div className="hidden md:flex gap-3 pb-4 items-stretch min-h-full">
               {visibleStages.map((stage: any) => {
                 const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
                   .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
@@ -758,6 +789,29 @@ export default function PipelinePage() {
                   />
                 )
               })}
+            </div>
+            {/* Mobile: single stage vertical list */}
+            <div className="md:hidden pb-4">
+              {visibleStages
+                .filter((stage: any) => !mobileStage || stage.id === mobileStage || (!mobileStage && stage.id === visibleStages[0]?.id))
+                .slice(0, 1)
+                .map((stage: any) => {
+                  const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
+                    .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
+                  return (
+                    <StageColumn
+                      key={stage.id}
+                      stage={stage}
+                      properties={stageProps}
+                      onNameClick={(p) => openDetailPanel(p)}
+                      compact={compact}
+                      collapsed={false}
+                      onToggleCollapse={() => {}}
+                      onFollowUpChange={handleFollowUpChange}
+                      onboardingProgress={onboardingProgress}
+                    />
+                  )
+                })}
             </div>
             <DragOverlay>
               {activeProperty ? <PropertyCardOverlay property={activeProperty} /> : null}
@@ -940,6 +994,16 @@ export default function PipelinePage() {
                   onChange={(e) => setNewLeadName(e.target.value)}
                   data-testid="input-lead-name"
                 />
+                {newLeadName.trim().length >= 3 && (() => {
+                  const q = newLeadName.trim().toLowerCase()
+                  const match = properties?.find((p: any) => p.name?.toLowerCase().includes(q) || q.includes(p.name?.toLowerCase()))
+                  return match ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      A property named "{match.name}" already exists. Create anyway?
+                    </p>
+                  ) : null
+                })()}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lead-client">Client Name</Label>

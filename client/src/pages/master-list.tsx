@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, logPropertyEdit } from '@/lib/supabase'
 import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -228,10 +228,11 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: (_, { id, field, value }) => {
+      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
+      logPropertyEdit(id, field, prev, value)
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      // Show undo toast — find prev value from current data
-      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({
         title: 'Updated',
         description: `${field === 'ce_charged' ? 'CE' : 'Pay'} updated`,
@@ -413,10 +414,23 @@ export default function MasterListPage() {
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="py-2 px-3 w-8">
+              <th className="py-2 px-3 w-8 sticky left-0 z-20 bg-muted/80 backdrop-blur">
                 <Checkbox checked={allSelected} onCheckedChange={toggleAll} data-testid="checkbox-select-all" />
               </th>
-              <SortHeader label="Name" sortKey="name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <th
+                className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group sticky left-[44px] z-20 bg-muted/80 backdrop-blur"
+                onClick={() => handleSort('name')}
+                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span className="flex items-center gap-1">
+                  Name
+                  {sortKey === 'name' ? (
+                    sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+                  )}
+                </span>
+              </th>
               <SortHeader label="Client" sortKey="client" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Address</th>
               <SortHeader label="Beds" sortKey="bedrooms" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
@@ -444,17 +458,18 @@ export default function MasterListPage() {
               const comp = completeness(p)
               return (
                 <tr key={p.id} data-testid={`row-master-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                  <td className="py-1.5 px-3">
+                  <td className="py-1.5 px-3 sticky left-0 z-10 bg-card">
                     <Checkbox
                       checked={selected.has(p.id)}
                       onCheckedChange={() => toggleSelect(p.id)}
                       data-testid={`checkbox-${p.id}`}
                     />
                   </td>
-                  <td className="py-1.5 px-3">
+                  <td className="py-1.5 px-3 sticky left-[44px] z-10 bg-card">
                     <button
                       onClick={() => setDetailProperty(p)}
-                      className="font-medium text-primary hover:underline cursor-pointer text-left"
+                      className="font-medium text-primary hover:underline cursor-pointer text-left max-w-[200px] truncate"
+                      title={p.name}
                       data-testid={`link-property-${p.id}`}
                     >
                       {p.name}

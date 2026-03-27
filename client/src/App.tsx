@@ -16,7 +16,7 @@ import { useAlerts } from "@/pages/alerts";
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, HelpCircle } from 'lucide-react';
 import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -197,6 +197,14 @@ function AppLayout() {
                     <kbd className="hidden sm:inline bg-muted border border-border rounded px-1 py-0.5 text-xs">⌘K</kbd>
                   </button>
                 </div>
+                <button
+                  onClick={() => setShortcutsOpen(true)}
+                  className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted"
+                  aria-label="Keyboard shortcuts (?)"
+                  title="Keyboard shortcuts"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </button>
                 <AlertBellButton />
               </div>
             </header>

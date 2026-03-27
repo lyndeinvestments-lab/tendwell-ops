@@ -1,16 +1,19 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3 } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
+import Papa from 'papaparse'
 
 function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
   if (!nextDue) return null
@@ -47,6 +50,12 @@ export default function AcFiltersPage() {
   const [justSavedId, setJustSavedId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey | null>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [bulkMode, setBulkMode] = useState(false)
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set())
+  const [bulkFilterSize, setBulkFilterSize] = useState('')
+  const [csvOpen, setCsvOpen] = useState(false)
+  const [csvData, setCsvData] = useState<any[]>([])
+  const csvInputRef = useRef<HTMLInputElement>(null)
 
   const toggleSort = useCallback((key: SortKey) => {
     setSortKey(prev => {
@@ -73,12 +82,14 @@ export default function AcFiltersPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: string }) => {
+    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
       const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
       if (error) throw error
+      logPropertyEdit(id, field, oldValue, value)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
@@ -93,6 +104,7 @@ export default function AcFiltersPage() {
   function markChangedToday(id: string) {
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
+    const prop = properties?.find((p: any) => p.id === id)
     supabase.from('properties').update({
       last_filter_changed: today,
       next_filter_due: nextDue,
@@ -100,12 +112,107 @@ export default function AcFiltersPage() {
       if (error) {
         toast({ title: 'Update failed', variant: 'destructive' })
       } else {
+        logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
+        logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+        qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
         toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
         setJustSavedId(id)
         setTimeout(() => setJustSavedId(null), 1500)
       }
     })
+  }
+
+  function toggleBulkSelect(id: string) {
+    setBulkSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
+
+  function toggleBulkAll() {
+    if (bulkSelected.size === paged.length) setBulkSelected(new Set())
+    else setBulkSelected(new Set(paged.map((p: any) => p.id)))
+  }
+
+  async function bulkSetFilterSize() {
+    if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
+    const ids = Array.from(bulkSelected)
+    const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids)
+    if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
+    ids.forEach(id => {
+      const prop = properties?.find((p: any) => p.id === id)
+      logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim())
+    })
+    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+    toast({ title: `Updated filter size for ${ids.length} properties` })
+    setBulkSelected(new Set())
+    setBulkFilterSize('')
+  }
+
+  async function bulkMarkChangedToday() {
+    if (bulkSelected.size === 0) return
+    const ids = Array.from(bulkSelected)
+    const today = new Date().toISOString().slice(0, 10)
+    const nextDue = calcNextDue(today)
+    const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids)
+    if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
+    ids.forEach(id => {
+      const prop = properties?.find((p: any) => p.id === id)
+      logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
+      logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
+    })
+    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+    toast({ title: `Marked ${ids.length} filters as changed today` })
+    setBulkSelected(new Set())
+  }
+
+  function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    Papa.parse(file, {
+      header: true,
+      complete: (results) => {
+        setCsvData(results.data.filter((r: any) => r.Property || r.property || r.Name || r.name))
+        setCsvOpen(true)
+      },
+      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+    })
+    e.target.value = ''
+  }
+
+  async function importCsv() {
+    if (!csvData.length || !properties) return
+    let updated = 0
+    for (const row of csvData) {
+      const name = row.Property || row.property || row.Name || row.name
+      if (!name) continue
+      const match = properties.find((p: any) => p.name?.toLowerCase() === name.toLowerCase())
+      if (!match) continue
+      const updates: Record<string, any> = {}
+      const filterSize = row['Filter Size'] || row.filter_size || row.FilterSize
+      const lastChanged = row['Last Changed'] || row.last_filter_changed || row.LastChanged
+      if (filterSize) updates.filter_size = filterSize
+      if (lastChanged) {
+        updates.last_filter_changed = lastChanged
+        updates.next_filter_due = calcNextDue(lastChanged)
+      }
+      if (Object.keys(updates).length === 0) continue
+      const { error } = await supabase.from('properties').update(updates).eq('id', match.id)
+      if (!error) {
+        updated++
+        if (filterSize) logPropertyEdit(match.id, 'filter_size', match.filter_size, filterSize)
+        if (lastChanged) logPropertyEdit(match.id, 'last_filter_changed', match.last_filter_changed, lastChanged)
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+    toast({ title: `Imported ${updated} of ${csvData.length} rows` })
+    setCsvOpen(false)
+    setCsvData([])
   }
 
   const filtered = useMemo(() => {
@@ -184,14 +291,49 @@ export default function AcFiltersPage() {
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
+            <Edit3 className="w-3.5 h-3.5" />
+            {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
+          </Button>
+          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
           </div>
         </div>
       </div>
+
+      {/* Bulk action bar */}
+      {bulkMode && bulkSelected.size > 0 && (
+        <div className="flex items-center gap-3 p-2 bg-primary/5 border border-primary/20 rounded-lg text-xs">
+          <span className="font-medium">{bulkSelected.size} selected</span>
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={bulkFilterSize}
+              onChange={e => setBulkFilterSize(e.target.value)}
+              placeholder="Filter size…"
+              className="h-7 w-32 text-xs"
+            />
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={bulkSetFilterSize} disabled={!bulkFilterSize.trim()}>
+              Set Size
+            </Button>
+          </div>
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={bulkMarkChangedToday}>
+            <CalendarCheck className="w-3 h-3" /> Mark Changed Today
+          </Button>
+        </div>
+      )}
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
+              {bulkMode && (
+                <th className="py-2 px-3 w-8">
+                  <Checkbox checked={bulkSelected.size === paged.length && paged.length > 0} onCheckedChange={toggleBulkAll} />
+                </th>
+              )}
               <th
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground"
                 aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
@@ -258,13 +400,18 @@ export default function AcFiltersPage() {
                 const justSaved = justSavedId === p.id
                 return (
                   <tr key={p.id} data-testid={`row-filter-${p.id}`} data-just-saved={justSaved || undefined} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass} ${justSaved ? 'animate-pulse bg-green-100 dark:bg-green-900/30' : ''}`}>
-                    <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                    {bulkMode && (
+                      <td className="py-2 px-3">
+                        <Checkbox checked={bulkSelected.has(p.id)} onCheckedChange={() => toggleBulkSelect(p.id)} />
+                      </td>
+                    )}
+                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate" title={p.name}>{p.name}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.stage_name || '—'}</td>
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.filter_size}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size })}
                         testId={`inline-filter-size-${p.id}`}
                         placeholder="Add size…"
                       />
@@ -274,9 +421,9 @@ export default function AcFiltersPage() {
                         value={p.last_filter_changed ? p.last_filter_changed.slice(0, 10) : ''}
                         type="date"
                         onSave={v => {
-                          updateField({ id: p.id, field: 'last_filter_changed', value: v })
+                          updateField({ id: p.id, field: 'last_filter_changed', value: v, oldValue: p.last_filter_changed })
                           if (v) {
-                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v) })
+                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v), oldValue: p.next_filter_due })
                           }
                         }}
                         testId={`inline-last-changed-${p.id}`}
@@ -286,7 +433,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.next_filter_due ? p.next_filter_due.slice(0, 10) : ''}
                         type="date"
-                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v, oldValue: p.next_filter_due })}
                         testId={`inline-next-due-${p.id}`}
                       />
                     </td>
@@ -304,7 +451,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.notes}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'notes', value: v })}
+                        onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes })}
                         testId={`inline-notes-${p.id}`}
                         placeholder="Add notes…"
                         className="w-full min-w-[150px]"
@@ -333,6 +480,33 @@ export default function AcFiltersPage() {
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
+
+      {/* CSV Import Dialog */}
+      <Dialog open={csvOpen} onOpenChange={setCsvOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Import AC Filter Data</DialogTitle></DialogHeader>
+          <div className="text-xs text-muted-foreground space-y-2">
+            <p>Found {csvData.length} rows. Columns: Property, Filter Size, Last Changed</p>
+            <p>Matching is by exact property name. Unmatched rows will be skipped.</p>
+            {csvData.length > 0 && (
+              <div className="max-h-40 overflow-auto border rounded p-2 space-y-1">
+                {csvData.slice(0, 10).map((row, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="font-medium">{row.Property || row.property || row.Name || row.name}</span>
+                    <span className="text-muted-foreground">—</span>
+                    <span>{row['Filter Size'] || row.filter_size || '—'}</span>
+                  </div>
+                ))}
+                {csvData.length > 10 && <p className="text-muted-foreground">…and {csvData.length - 10} more</p>}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setCsvOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={importCsv}>Import {csvData.length} Rows</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -128,12 +128,14 @@ export default function AccessCodesPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: string }) => {
+    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
+      logPropertyEdit(id, field, oldValue, value)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
@@ -170,6 +172,7 @@ export default function AccessCodesPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'access-codes-export.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   const SortIcon = () => {
@@ -218,7 +221,7 @@ export default function AccessCodesPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground group"
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground group sticky left-0 z-20 bg-muted/80 backdrop-blur"
                 onClick={toggleSort}
               >
                 <span className="flex items-center gap-1">
@@ -251,11 +254,12 @@ export default function AccessCodesPage() {
                 const isMissing = SENSITIVE_KEYS.every(k => !p[k])
                 return (
                   <tr key={p.id} data-testid={`row-access-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 text-xs">
+                    <td className="py-2 px-3 text-xs sticky left-0 z-10 bg-card">
                       <div className="flex items-center gap-1.5">
                         <button
                           onClick={() => openPropertyModal(p.id, 'access-codes')}
-                          className="font-medium text-primary hover:underline"
+                          className="font-medium text-primary hover:underline max-w-[200px] truncate"
+                          title={p.name}
                           data-testid={`link-property-${p.id}`}
                         >
                           {p.name}
@@ -272,7 +276,7 @@ export default function AccessCodesPage() {
                           field={c.key}
                           id={p.id}
                           sensitive={c.sensitive}
-                          onSave={v => updateField({ id: p.id, field: c.key, value: v })}
+                          onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key] })}
                         />
                       </td>
                     ))}
