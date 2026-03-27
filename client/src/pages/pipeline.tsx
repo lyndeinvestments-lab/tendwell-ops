@@ -16,11 +16,12 @@ import { Label } from '@/components/ui/label'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical } from 'lucide-react'
 import { format } from 'date-fns'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
@@ -202,8 +203,9 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       data-testid={`card-property-${property.id}`}
       data-property-id={property.id}
       onClick={handleNameClick}
-      className={`bg-card border border-card-border rounded-md p-2.5 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
+      className={`relative group bg-card border border-card-border rounded-md p-2.5 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
     >
+      <GripVertical className="w-3 h-3 text-muted-foreground/40 absolute top-2 left-1 group-hover:text-muted-foreground transition-opacity" />
       <span className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full block">
         {property.name}
       </span>
@@ -306,6 +308,12 @@ export default function PipelinePage() {
   const [addLeadOpen, setAddLeadOpen] = useState(false)
   const [newLeadName, setNewLeadName] = useState('')
   const [newLeadClient, setNewLeadClient] = useState('')
+  const [newLeadAddress, setNewLeadAddress] = useState('')
+  const [newLeadEmail, setNewLeadEmail] = useState('')
+  const [newLeadPhone, setNewLeadPhone] = useState('')
+  const [newLeadBedrooms, setNewLeadBedrooms] = useState('')
+  const [newLeadSource, setNewLeadSource] = useState('')
+  const [newLeadNotes, setNewLeadNotes] = useState('')
   const [detailPanel, setDetailPanel] = useState<any | null>(null)
   const [panelNotes, setPanelNotes] = useState('')
 
@@ -492,13 +500,35 @@ export default function PipelinePage() {
 
   const leadStage = stages?.find((s: any) => s.name === 'Lead')
 
+  function resetAddLeadForm() {
+    setNewLeadName('')
+    setNewLeadClient('')
+    setNewLeadAddress('')
+    setNewLeadEmail('')
+    setNewLeadPhone('')
+    setNewLeadBedrooms('')
+    setNewLeadSource('')
+    setNewLeadNotes('')
+  }
+
   const { mutate: addLead, isPending: addLeadPending } = useMutation({
     mutationFn: async () => {
       if (!leadStage) throw new Error('No Lead stage found')
+      // Build the notes field by combining contact info + free-form notes
+      const contactLines: string[] = []
+      if (newLeadEmail.trim()) contactLines.push(`Email: ${newLeadEmail.trim()}`)
+      if (newLeadPhone.trim()) contactLines.push(`Phone: ${newLeadPhone.trim()}`)
+      if (newLeadSource.trim()) contactLines.push(`Source: ${newLeadSource.trim()}`)
+      if (newLeadNotes.trim()) contactLines.push(newLeadNotes.trim())
+      const combinedNotes = contactLines.join('\n') || null
+
       const { error } = await supabase.from('properties').insert({
         name: newLeadName.trim(),
         client: newLeadClient.trim() || null,
         stage_id: leadStage.id,
+        address: newLeadAddress.trim() || null,
+        bedrooms: newLeadBedrooms ? Number(newLeadBedrooms) : null,
+        notes: combinedNotes,
       })
       if (error) throw error
     },
@@ -506,8 +536,7 @@ export default function PipelinePage() {
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: 'Lead added to pipeline' })
       setAddLeadOpen(false)
-      setNewLeadName('')
-      setNewLeadClient('')
+      resetAddLeadForm()
     },
     onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to add lead'), variant: 'destructive' }),
   })
@@ -871,35 +900,117 @@ export default function PipelinePage() {
         </SheetContent>
       </Sheet>
 
-      <Dialog open={addLeadOpen} onOpenChange={setAddLeadOpen}>
-        <DialogContent>
+      <Dialog open={addLeadOpen} onOpenChange={(open) => { setAddLeadOpen(open); if (!open) resetAddLeadForm() }}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add New Lead</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {/* Row 1: Property Name + Client Name */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="lead-name">Property Name *</Label>
+                <Input
+                  id="lead-name"
+                  placeholder="Enter property name"
+                  value={newLeadName}
+                  onChange={(e) => setNewLeadName(e.target.value)}
+                  data-testid="input-lead-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lead-client">Client Name</Label>
+                <Input
+                  id="lead-client"
+                  placeholder="Optional"
+                  value={newLeadClient}
+                  onChange={(e) => setNewLeadClient(e.target.value)}
+                  data-testid="input-lead-client"
+                />
+              </div>
+            </div>
+            {/* Row 2: Property Address (full width) */}
             <div className="space-y-2">
-              <Label htmlFor="lead-name">Property Name *</Label>
+              <Label htmlFor="lead-address">Property Address</Label>
               <Input
-                id="lead-name"
-                placeholder="Enter property name"
-                value={newLeadName}
-                onChange={(e) => setNewLeadName(e.target.value)}
-                data-testid="input-lead-name"
+                id="lead-address"
+                placeholder="Enter property address"
+                value={newLeadAddress}
+                onChange={(e) => setNewLeadAddress(e.target.value)}
+                data-testid="input-lead-address"
               />
             </div>
+            {/* Row 3: Email + Phone */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="lead-email">Email</Label>
+                <Input
+                  id="lead-email"
+                  type="email"
+                  placeholder="owner@example.com"
+                  value={newLeadEmail}
+                  onChange={(e) => setNewLeadEmail(e.target.value)}
+                  data-testid="input-lead-email"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lead-phone">Phone</Label>
+                <Input
+                  id="lead-phone"
+                  type="tel"
+                  placeholder="(555) 000-0000"
+                  value={newLeadPhone}
+                  onChange={(e) => setNewLeadPhone(e.target.value)}
+                  data-testid="input-lead-phone"
+                />
+              </div>
+            </div>
+            {/* Row 4: Estimated Bedrooms + Source */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="lead-bedrooms">Estimated Bedrooms</Label>
+                <Input
+                  id="lead-bedrooms"
+                  type="number"
+                  min={0}
+                  placeholder="e.g. 3"
+                  value={newLeadBedrooms}
+                  onChange={(e) => setNewLeadBedrooms(e.target.value)}
+                  data-testid="input-lead-bedrooms"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="lead-source">Source</Label>
+                <Select value={newLeadSource} onValueChange={setNewLeadSource}>
+                  <SelectTrigger id="lead-source" data-testid="select-lead-source">
+                    <SelectValue placeholder="Select source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Referral">Referral</SelectItem>
+                    <SelectItem value="Website">Website</SelectItem>
+                    <SelectItem value="Cold Outreach">Cold Outreach</SelectItem>
+                    <SelectItem value="Word of Mouth">Word of Mouth</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {/* Row 5: Notes (full width) */}
             <div className="space-y-2">
-              <Label htmlFor="lead-client">Client Name</Label>
-              <Input
-                id="lead-client"
-                placeholder="Enter client name (optional)"
-                value={newLeadClient}
-                onChange={(e) => setNewLeadClient(e.target.value)}
-                data-testid="input-lead-client"
+              <Label htmlFor="lead-notes">Notes</Label>
+              <Textarea
+                id="lead-notes"
+                placeholder="Any additional notes..."
+                rows={2}
+                value={newLeadNotes}
+                onChange={(e) => setNewLeadNotes(e.target.value)}
+                data-testid="input-lead-notes"
+                className="resize-none"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAddLeadOpen(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAddLeadOpen(false); resetAddLeadForm() }}>Cancel</Button>
             <Button size="sm" onClick={() => addLead()} disabled={!newLeadName.trim() || addLeadPending} data-testid="button-save-lead">
               {addLeadPending ? 'Saving...' : 'Add Lead'}
             </Button>
