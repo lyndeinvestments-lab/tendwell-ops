@@ -89,7 +89,7 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="py-2">
+      <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
           const visibleItems = section.items.filter(item => canAccess(item.view, user.role))
           if (visibleItems.length === 0) return null
@@ -127,6 +127,7 @@ export function AppSidebar() {
             </SidebarGroup>
           )
         })}
+        <div className="sticky bottom-0 h-6 bg-gradient-to-t from-sidebar to-transparent pointer-events-none" />
       </SidebarContent>
 
       <SidebarFooter className="px-3 py-3 border-t border-sidebar-border space-y-1">
