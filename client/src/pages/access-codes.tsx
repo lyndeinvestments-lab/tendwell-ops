@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -128,12 +128,14 @@ export default function AccessCodesPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: string }) => {
+    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
+      logPropertyEdit(id, field, oldValue, value)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
@@ -272,7 +274,7 @@ export default function AccessCodesPage() {
                           field={c.key}
                           id={p.id}
                           sensitive={c.sensitive}
-                          onSave={v => updateField({ id: p.id, field: c.key, value: v })}
+                          onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key] })}
                         />
                       </td>
                     ))}

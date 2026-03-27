@@ -1,6 +1,6 @@
 import { useState, useMemo, Fragment, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
@@ -168,12 +168,15 @@ export default function CostTrackingPage() {
     },
     onMutate: ({ id, field, value }) => {
       const snapshot = localProperties ? [...localProperties] : null
+      const oldValue = snapshot?.find(p => p.id === id)?.[field] ?? null
       setLocalProperties(prev => prev ? prev.map(p => p.id === id ? { ...p, [field]: value } : p) : prev)
-      return { snapshot }
+      return { snapshot, oldValue }
     },
-    onSuccess: (_, { id, field }) => {
+    onSuccess: (_, { id, field, value }, ctx: any) => {
+      logPropertyEdit(id, field, ctx?.oldValue, value)
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       flashCell(`${id}-${field}`)
       toast({ title: 'Saved' })
     },

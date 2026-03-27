@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS, STAGE_ORDER } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -451,12 +451,14 @@ export default function PipelinePage() {
       })
     },
     onSuccess: (_data, variables) => {
+      const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)
+      const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null)
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
-
-      const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
         if (prop && !prop.follow_up_date) {
