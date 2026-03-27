@@ -172,6 +172,7 @@ export default function AccessCodesPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'access-codes-export.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   const SortIcon = () => {

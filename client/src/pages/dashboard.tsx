@@ -330,7 +330,7 @@ export default function DashboardPage() {
           subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
           icon={DollarSign}
           loading={isLoading}
-          hint="Sum of monthly CE estimates (CE charged × cleans/mo) for all active properties"
+          hint="Includes all active properties × estimated cleans/month. See Revenue Report for actual CE charged totals."
           onClick={() => navigate('/revenue-report')}
         />
         <KpiCard
@@ -339,6 +339,7 @@ export default function DashboardPage() {
           icon={TrendingUp}
           loading={isLoading}
           alert={avgProfit < 15}
+          hint="Average profit margin across active properties. Numbers may differ from Revenue Report which uses actual CE charged totals."
           onClick={() => navigate('/revenue-report')}
         />
       </div>

@@ -133,6 +133,7 @@ export default function LinenTrackerPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'linen-tracker.csv'; a.click()
     URL.revokeObjectURL(url)
+    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
   const SortIcon = () => {
@@ -313,7 +314,8 @@ export default function LinenTrackerPage() {
                         {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" role="img" aria-label="Below restock threshold" />}
                         <button
                           onClick={() => handlePropertyClick(p)}
-                          className="text-primary hover:underline text-left"
+                          className="text-primary hover:underline text-left max-w-[200px] truncate"
+                          title={p.name}
                           data-testid={`link-property-${p.id}`}
                         >
                           {p.name}
