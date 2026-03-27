@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth, type UserRole } from '@/lib/auth'
@@ -9,7 +9,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, ClipboardCheck, GripVertical, Plus, Pencil, Check, X } from 'lucide-react'
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
@@ -38,20 +37,49 @@ function AppSettingsSection() {
   const { toast } = useToast()
   const { get, saveSetting } = useAppSettings()
 
-  const COST_FIELDS = [
-    { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15' },
-    { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5' },
-    { key: 'cost_consumables', label: 'Consumables Base Rate ($)', placeholder: '30' },
+  const ALL_FIELDS = [
+    { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15', section: 'cost' },
+    { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5', section: 'cost' },
+    { key: 'cost_consumables', label: 'Consumables Base Rate ($)', placeholder: '30', section: 'cost' },
+    { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30', section: 'profit' },
+    { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15', section: 'profit' },
+    { key: 'ac_filter_interval', label: 'Replacement Interval (days)', placeholder: '90', section: 'ac' },
   ]
 
-  const PROFIT_FIELDS = [
-    { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30' },
-    { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15' },
-  ]
+  // Track live input values so "Save All" can read them
+  const [localValues, setLocalValues] = useState<Record<string, string>>(
+    () => Object.fromEntries(ALL_FIELDS.map(f => [f.key, get(f.key, f.placeholder)]))
+  )
 
-  function handleSave(key: string, value: string) {
+  function handleBlurSave(key: string, value: string) {
     saveSetting({ key, value })
-    toast({ title: 'Setting saved' })
+    toast({ title: 'Setting saved', description: `${ALL_FIELDS.find(f => f.key === key)?.label} updated.` })
+  }
+
+  function handleSaveAll() {
+    ALL_FIELDS.forEach(f => saveSetting({ key: f.key, value: localValues[f.key] ?? f.placeholder }))
+    toast({ title: 'All settings saved' })
+  }
+
+  const COST_FIELDS = ALL_FIELDS.filter(f => f.section === 'cost')
+  const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
+  const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
+
+  function FieldRow({ f }: { f: typeof ALL_FIELDS[number] }) {
+    return (
+      <div key={f.key} className="grid grid-cols-[180px_1fr] items-center gap-2">
+        <label className="text-xs text-muted-foreground">{f.label}</label>
+        <Input
+          type="number"
+          value={localValues[f.key] ?? f.placeholder}
+          placeholder={f.placeholder}
+          className="h-7 text-xs"
+          data-testid={`input-setting-${f.key}`}
+          onChange={e => setLocalValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+          onBlur={e => handleBlurSave(f.key, e.target.value)}
+        />
+      </div>
+    )
   }
 
   return (
@@ -64,26 +92,7 @@ function AppSettingsSection() {
         </h2>
         <p className="text-xs text-muted-foreground">Default costs used in Quote Sheet calculations</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
-          {COST_FIELDS.map(f => (
-            <div key={f.key} className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
-              <label className="text-xs text-muted-foreground">{f.label}</label>
-              <Input
-                type="number"
-                defaultValue={get(f.key, f.placeholder)}
-                placeholder={f.placeholder}
-                className="h-7 text-xs"
-                data-testid={`input-setting-${f.key}`}
-                onBlur={e => handleSave(f.key, e.target.value)}
-              />
-              <Button size="sm" variant="outline" className="h-7 text-xs"
-                onClick={e => {
-                  const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
-                  handleSave(f.key, input.value)
-                }}>
-                Save
-              </Button>
-            </div>
-          ))}
+          {COST_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
       </div>
 
@@ -95,26 +104,7 @@ function AppSettingsSection() {
         </h2>
         <p className="text-xs text-muted-foreground">Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
-          {PROFIT_FIELDS.map(f => (
-            <div key={f.key} className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
-              <label className="text-xs text-muted-foreground">{f.label}</label>
-              <Input
-                type="number"
-                defaultValue={get(f.key, f.placeholder)}
-                placeholder={f.placeholder}
-                className="h-7 text-xs"
-                data-testid={`input-setting-${f.key}`}
-                onBlur={e => handleSave(f.key, e.target.value)}
-              />
-              <Button size="sm" variant="outline" className="h-7 text-xs"
-                onClick={e => {
-                  const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
-                  handleSave(f.key, input.value)
-                }}>
-                Save
-              </Button>
-            </div>
-          ))}
+          {PROFIT_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
       </div>
 
@@ -125,26 +115,17 @@ function AppSettingsSection() {
           AC Filter Schedule
         </h2>
         <p className="text-xs text-muted-foreground">Default interval for AC filter replacement reminders</p>
-        <div className="rounded-lg border border-border p-4">
-          <div className="grid grid-cols-[180px_1fr_80px] items-center gap-2">
-            <label className="text-xs text-muted-foreground">Replacement Interval (days)</label>
-            <Input
-              type="number"
-              defaultValue={get('ac_filter_interval', '90')}
-              placeholder="90"
-              className="h-7 text-xs"
-              data-testid="input-setting-ac_filter_interval"
-              onBlur={e => handleSave('ac_filter_interval', e.target.value)}
-            />
-            <Button size="sm" variant="outline" className="h-7 text-xs"
-              onClick={e => {
-                const input = (e.currentTarget.previousElementSibling as HTMLInputElement)
-                handleSave('ac_filter_interval', input.value)
-              }}>
-              Save
-            </Button>
-          </div>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {AC_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
+      </div>
+
+      {/* Single Save All button */}
+      <div className="flex justify-end pt-1">
+        <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleSaveAll} data-testid="button-save-all-settings">
+          <Check className="w-3.5 h-3.5" />
+          Save All Settings
+        </Button>
       </div>
     </div>
   )
@@ -272,7 +253,7 @@ export default function SettingsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<any>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [newLabel, setNewLabel] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('operations')
   const [newPassword, setNewPassword] = useState('')
@@ -318,11 +299,11 @@ export default function SettingsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
       toast({ title: 'User removed' })
-      setDeleteTarget(null)
+      setConfirmDeleteId(null)
     },
     onError: () => {
       toast({ title: 'Failed to remove user', variant: 'destructive' })
-      setDeleteTarget(null)
+      setConfirmDeleteId(null)
     },
   })
 
@@ -389,16 +370,41 @@ export default function SettingsPage() {
                     <td className="py-2 px-3 font-medium text-xs">{u.label}</td>
                     <td className="py-2 px-3"><RoleBadge role={u.role} /></td>
                     <td className="py-2 px-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
-                        onClick={() => setDeleteTarget(u)}
-                        aria-label={`Remove ${u.label}`}
-                        data-testid={`button-delete-user-${u.id}`}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
+                      {confirmDeleteId === u.id ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <span className="text-xs text-muted-foreground">Are you sure?</span>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            disabled={deleting}
+                            onClick={() => deleteUser(u.id)}
+                            data-testid={`button-confirm-delete-user-${u.id}`}
+                          >
+                            {deleting ? 'Removing…' : 'Confirm'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            disabled={deleting}
+                            onClick={() => setConfirmDeleteId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                          onClick={() => setConfirmDeleteId(u.id)}
+                          aria-label={`Remove ${u.label}`}
+                          data-testid={`button-delete-user-${u.id}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -464,27 +470,6 @@ export default function SettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      <AlertDialog open={!!deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove User</AlertDialogTitle>
-            <AlertDialogDescription>
-              Are you sure you want to remove <strong>{deleteTarget?.label}</strong>? This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={deleting}
-              onClick={() => deleteTarget && deleteUser(deleteTarget.id)}
-              data-testid="button-confirm-delete-user"
-            >
-              {deleting ? 'Removing…' : 'Remove'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
