@@ -580,6 +580,10 @@ export default function ProFormaPage() {
         </div>
       )}
 
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+
       <div className={`overflow-auto flex-1 rounded-lg border border-border ${selected.size > 0 ? 'pb-16' : ''}`}>
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
@@ -746,7 +750,7 @@ export default function ProFormaPage() {
                         data-testid={`checkbox-${p.id}`}
                       />
                     </td>
-                    <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate" title={p.name}>{p.name}</td>
                     {/* Feature 4: What-If Popover for CE/Clean */}
                     <td className="py-2 px-3 text-xs tabular-nums">
                       <WhatIfPopover
