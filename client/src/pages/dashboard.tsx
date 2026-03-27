@@ -98,7 +98,7 @@ export default function DashboardPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, stage_id, ce_charged, cleaner_pay, monthly_revenue_estimate, monthly_profit_estimate, profit_percentage, estimated_profit, bedrooms, full_baths, square_footage, address, cleaning_frequency')
+        .select('id, name, stage_id, ce_charged, cleaner_pay, monthly_revenue_estimate, monthly_profit_estimate, profit_percentage, estimated_profit, bedrooms, full_baths, square_footage, address, cleaning_frequency, exclude_from_financials')
       if (error) throw error
       return data || []
     },
@@ -220,14 +220,15 @@ export default function DashboardPage() {
   const onboarding = properties?.filter((p: any) => p.stage_id === onboardingStage?.id).length ?? 0
   const offboarding = properties?.filter((p: any) => p.stage_id === offboardingStage?.id).length ?? 0
 
-  const totalRevenue = activeProps.reduce((sum: number, p: any) => sum + (p.monthly_revenue_estimate || 0), 0)
-  const totalProfit = activeProps.reduce((sum: number, p: any) => sum + (p.monthly_profit_estimate || 0), 0)
-  const avgProfit = activeProps.length
-    ? activeProps.reduce((sum: number, p: any) => sum + (p.profit_percentage || 0), 0) / activeProps.length
+  const financialProps = activeProps.filter((p: any) => !p.exclude_from_financials)
+  const totalRevenue = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_revenue_estimate || 0), 0)
+  const totalProfit = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_profit_estimate || 0), 0)
+  const avgProfit = financialProps.length
+    ? financialProps.reduce((sum: number, p: any) => sum + (p.profit_percentage || 0), 0) / financialProps.length
     : 0
 
-  // Negative profit properties — exclude $0 CE (those are missing data, not truly negative)
-  const negativeProfit = activeProps.filter((p: any) => (p.estimated_profit || 0) < 0 && (p.ce_charged || 0) > 0)
+  // Negative profit properties — exclude $0 CE (those are missing data, not truly negative) and excluded props
+  const negativeProfit = financialProps.filter((p: any) => (p.estimated_profit || 0) < 0 && (p.ce_charged || 0) > 0)
 
   // Missing data detection — exclude Lead, Quote, Offboarded
   const missingData = properties?.filter((p: any) => {

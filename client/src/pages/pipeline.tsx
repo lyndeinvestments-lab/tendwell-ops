@@ -21,7 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
@@ -466,6 +466,14 @@ export default function PipelinePage() {
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+
+      // Auto-set offboarded_at timestamp when moving to Offboarded
+      if (toStage?.name === 'Offboarded') {
+        supabase.from('properties').update({ offboarded_at: new Date().toISOString() }).eq('id', variables.propId).then(() => {
+          qc.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
+        })
+      }
+
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
         if (prop && !prop.follow_up_date) {
@@ -986,6 +994,16 @@ export default function PipelinePage() {
                   onChange={(e) => setNewLeadName(e.target.value)}
                   data-testid="input-lead-name"
                 />
+                {newLeadName.trim().length >= 3 && (() => {
+                  const q = newLeadName.trim().toLowerCase()
+                  const match = properties?.find((p: any) => p.name?.toLowerCase().includes(q) || q.includes(p.name?.toLowerCase()))
+                  return match ? (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      A property named "{match.name}" already exists. Create anyway?
+                    </p>
+                  ) : null
+                })()}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="lead-client">Client Name</Label>
