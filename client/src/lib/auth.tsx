@@ -22,7 +22,10 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      const saved = sessionStorage.getItem('tendwell_user')
+      // Use localStorage so login persists across tabs and page refreshes.
+      // sessionStorage was wiped on every new tab / refresh, causing users
+      // to see the login screen unexpectedly.
+      const saved = localStorage.getItem('tendwell_user')
       return saved ? JSON.parse(saved) : null
     } catch { return null }
   })
@@ -51,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         allowedViews: data.allowedViews || [],
       }
       setUser(userData)
-      try { sessionStorage.setItem('tendwell_user', JSON.stringify(userData)) } catch {}
+      try { localStorage.setItem('tendwell_user', JSON.stringify(userData)) } catch {}
     } catch (e: any) {
       throw new Error(e.message || 'Invalid password')
     } finally {
@@ -61,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     setUser(null)
-    try { sessionStorage.removeItem('tendwell_user') } catch {}
+    try { localStorage.removeItem('tendwell_user') } catch {}
   }, [])
 
   // Session timeout — auto-logout after inactivity

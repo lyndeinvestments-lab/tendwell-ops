@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logActivity } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -129,6 +129,24 @@ export default function InspectionsPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
       toast({ title: 'Inspection logged' })
       setLogOpen(false)
+      // Log to activity feed
+      const propName = (activeProps || []).find((p: any) => String(p.id) === form.property_id)?.name
+      logActivity({
+        entity_type: 'inspection',
+        entity_id: form.property_id,
+        entity_name: propName ?? null,
+        action: 'create',
+        field_name: 'overall_score',
+        new_value: String(overall),
+        changed_by: form.inspected_by.trim() || null,
+        metadata: {
+          cleanliness: form.cleanliness_score,
+          linens: form.linens_score,
+          supplies: form.supplies_score,
+          exterior: form.exterior_score,
+          date: form.inspected_at,
+        },
+      })
       setForm(defaultForm())
     },
     onError: (e: any) => toast({ title: 'Failed: ' + (e.message || 'Error'), variant: 'destructive' }),

@@ -5,10 +5,13 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
-import { Pencil, Search, X, RotateCcw, Activity } from 'lucide-react'
+import {
+  Pencil, Search, X, RotateCcw, Activity,
+  Building2, GitBranch, ClipboardCheck, UserCheck, Users,
+  Plus, Trash2, ArrowRight,
+} from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 
 type FilterType = 'all' | 'properties' | 'pipeline' | 'inspections' | 'cleaners' | 'contacts'
@@ -22,12 +25,41 @@ const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
   { key: 'contacts', label: 'Contacts' },
 ]
 
-// Map field names to filter categories
-function getCategory(fieldName: string): FilterType {
-  if (['stage_id'].includes(fieldName)) return 'pipeline'
-  if (['cleaner_pay', 'ce_charged', 'est_laundry', 'est_consumables'].includes(fieldName)) return 'properties'
-  if (['name', 'address', 'bedrooms', 'bathrooms', 'notes', 'client'].includes(fieldName)) return 'properties'
+// Map activity_log entity_type → filter category
+function entityTypeToFilter(entityType: string): FilterType {
+  switch (entityType) {
+    case 'property': return 'properties'
+    case 'pipeline': return 'pipeline'
+    case 'inspection': return 'inspections'
+    case 'cleaner': return 'cleaners'
+    case 'contact': return 'contacts'
+    default: return 'properties'
+  }
+}
+
+// Legacy: map property_edit_log field names → filter category
+function fieldToFilter(fieldName: string): FilterType {
+  if (['stage_id', 'stage_change'].includes(fieldName)) return 'pipeline'
   return 'properties'
+}
+
+function getActionIcon(action: string, entityType: string) {
+  if (action === 'create') return Plus
+  if (action === 'delete') return Trash2
+  if (action === 'stage_change') return ArrowRight
+  if (entityType === 'inspection') return ClipboardCheck
+  if (entityType === 'cleaner') return UserCheck
+  if (entityType === 'contact') return Users
+  if (entityType === 'pipeline') return GitBranch
+  if (entityType === 'property') return Building2
+  return Pencil
+}
+
+function getActionColor(action: string): string {
+  if (action === 'create') return 'bg-green-500/10 text-green-600 dark:text-green-400'
+  if (action === 'delete') return 'bg-red-500/10 text-red-600 dark:text-red-400'
+  if (action === 'stage_change') return 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+  return 'bg-primary/10 text-primary'
 }
 
 function dateGroupLabel(dateStr: string): string {
@@ -42,7 +74,40 @@ function dateGroupLabel(dateStr: string): string {
 }
 
 function formatFieldName(field: string) {
-  return field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return field
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase())
+}
+
+function formatEntityLabel(entry: any): string {
+  // New activity_log format
+  if (entry.entity_name) return entry.entity_name
+  // Legacy property_edit_log format
+  const propName = entry.properties?.name
+  if (propName) return propName
+  return 'Unknown'
+}
+
+// Normalise a row from either table into a unified shape
+function normaliseRow(row: any, source: 'activity_log' | 'property_edit_log'): any {
+  if (source === 'activity_log') return row
+  // property_edit_log → activity_log shape
+  return {
+    id: 'pel_' + row.id,
+    entity_type: 'property',
+    entity_id: String(row.property_id),
+    entity_name: row.properties?.name ?? null,
+    action: 'update',
+    field_name: row.field_name,
+    old_value: row.old_value,
+    new_value: row.new_value,
+    changed_by: row.changed_by ?? null,
+    created_at: row.created_at,
+    // Carry forward so revert still works
+    _property_id: row.property_id,
+    _properties: row.properties,
+    metadata: null,
+  }
 }
 
 export default function ActivityFeedPage() {
@@ -50,77 +115,130 @@ export default function ActivityFeedPage() {
   const { openPropertyModal } = usePropertyModal()
   const { toast } = useToast()
   const qc = useQueryClient()
+
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
   const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 7)
+    const d = new Date(); d.setDate(d.getDate() - 30)
     return d.toISOString().split('T')[0]
   })
   const [dateTo, setDateTo] = useState('')
   const [reverting, setReverting] = useState<string | null>(null)
 
-  const { data: editLog, isLoading } = useQuery({
+  // Primary source: activity_log (all entity types)
+  const { data: activityLog, isLoading: loadingActivity } = useQuery({
+    queryKey: ['/supabase/activity-log'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('activity_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (error) {
+        console.warn('activity_log query error:', error.message)
+        return []
+      }
+      return (data || []).map((r: any) => normaliseRow(r, 'activity_log'))
+    },
+    staleTime: 30_000,
+  })
+
+  // Fallback / supplement: legacy property_edit_log
+  const { data: editLog, isLoading: loadingEdit } = useQuery({
     queryKey: ['/supabase/activity-edit-log'],
     queryFn: async () => {
-      let q = supabase
+      const { data, error } = await supabase
         .from('property_edit_log')
         .select('*, properties!property_edit_log_property_id_fkey(id, name)')
         .order('created_at', { ascending: false })
         .limit(500)
-      const { data, error } = await q
-      if (error) throw error
-      return data || []
+      if (error) {
+        console.warn('property_edit_log query error:', error.message)
+        return []
+      }
+      return (data || []).map((r: any) => normaliseRow(r, 'property_edit_log'))
     },
+    staleTime: 30_000,
   })
 
+  const isLoading = loadingActivity || loadingEdit
+
+  // Merge both sources, deduplicate by id, sort newest first
+  const allEntries = useMemo(() => {
+    const seen = new Set<string>()
+    const combined = [...(activityLog || []), ...(editLog || [])]
+    return combined
+      .filter(e => {
+        if (seen.has(e.id)) return false
+        seen.add(e.id)
+        return true
+      })
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+  }, [activityLog, editLog])
+
   const filtered = useMemo(() => {
-    if (!editLog) return []
-    return editLog.filter((entry: any) => {
-      if (filter !== 'all' && getCategory(entry.field_name) !== filter) return false
+    return allEntries.filter(entry => {
+      // Category filter
+      if (filter !== 'all') {
+        const cat = entry.entity_type
+          ? entityTypeToFilter(entry.entity_type)
+          : fieldToFilter(entry.field_name ?? '')
+        if (cat !== filter) return false
+      }
+      // Date range
       if (dateFrom && entry.created_at < dateFrom) return false
       if (dateTo && entry.created_at > dateTo + 'T23:59:59') return false
+      // Text search
       if (search.trim()) {
         const q = search.toLowerCase()
-        const propName = (entry.properties as any)?.name?.toLowerCase() || ''
-        const field = entry.field_name?.toLowerCase() || ''
-        const oldVal = String(entry.old_value || '').toLowerCase()
-        const newVal = String(entry.new_value || '').toLowerCase()
-        if (!propName.includes(q) && !field.includes(q) && !oldVal.includes(q) && !newVal.includes(q)) return false
+        const name = formatEntityLabel(entry).toLowerCase()
+        const field = (entry.field_name ?? '').toLowerCase()
+        const oldVal = String(entry.old_value ?? '').toLowerCase()
+        const newVal = String(entry.new_value ?? '').toLowerCase()
+        const action = (entry.action ?? '').toLowerCase()
+        if (!name.includes(q) && !field.includes(q) && !oldVal.includes(q) && !newVal.includes(q) && !action.includes(q)) return false
       }
       return true
     })
-  }, [editLog, filter, search, dateFrom, dateTo])
+  }, [allEntries, filter, search, dateFrom, dateTo])
 
   // Group by date
   const grouped = useMemo(() => {
-    const groups: { label: string; dateKey: string; entries: any[] }[] = []
     const map: Record<string, any[]> = {}
     for (const entry of filtered) {
       const dateKey = entry.created_at?.slice(0, 10) || 'unknown'
       if (!map[dateKey]) map[dateKey] = []
       map[dateKey].push(entry)
     }
-    const sortedKeys = Object.keys(map).sort((a, b) => b.localeCompare(a))
-    for (const key of sortedKeys) {
-      groups.push({ label: dateGroupLabel(key + 'T12:00:00'), dateKey: key, entries: map[key] })
-    }
-    return groups
+    return Object.keys(map)
+      .sort((a, b) => b.localeCompare(a))
+      .map(key => ({
+        label: dateGroupLabel(key + 'T12:00:00'),
+        dateKey: key,
+        entries: map[key],
+      }))
   }, [filtered])
 
   async function handleRevert(entry: any) {
-    if (!entry.property_id || !entry.field_name || entry.old_value == null) return
+    // Only revert property field updates
+    const propertyId = entry._property_id ?? entry.entity_id
+    const fieldName = entry.field_name
+    const oldValue = entry.old_value
+    if (!propertyId || !fieldName || oldValue == null) return
+
     setReverting(entry.id)
     try {
-      const revertValue = isNaN(Number(entry.old_value)) ? entry.old_value : Number(entry.old_value)
+      const revertValue = isNaN(Number(oldValue)) ? oldValue : Number(oldValue)
       const { error } = await supabase
         .from('properties')
-        .update({ [entry.field_name]: revertValue })
-        .eq('id', entry.property_id)
+        .update({ [fieldName]: revertValue })
+        .eq('id', propertyId)
       if (error) throw error
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      toast({ title: `Reverted ${formatFieldName(entry.field_name)} to "${entry.old_value}"` })
+      toast({ title: `Reverted ${formatFieldName(fieldName)} to "${oldValue}"` })
     } catch {
       toast({ title: 'Revert failed', variant: 'destructive' })
     } finally {
@@ -130,6 +248,7 @@ export default function ActivityFeedPage() {
 
   return (
     <div className="p-5 h-full flex flex-col space-y-4">
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Activity Feed</h1>
@@ -146,7 +265,10 @@ export default function ActivityFeedPage() {
               className="pl-8 pr-8 h-8 w-56 text-sm"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -192,7 +314,7 @@ export default function ActivityFeedPage() {
       <div className="overflow-auto flex-1">
         {isLoading ? (
           <div className="space-y-3">
-            {[...Array(6)].map((_, i) => (
+            {[...Array(8)].map((_, i) => (
               <div key={i} className="flex gap-3">
                 <Skeleton className="h-8 w-8 rounded-full flex-shrink-0" />
                 <div className="flex-1 space-y-1">
@@ -203,58 +325,92 @@ export default function ActivityFeedPage() {
             ))}
           </div>
         ) : grouped.length === 0 ? (
-          <EmptyState icon={Activity} title="No activity" description="No changes match your current filters." />
+          <EmptyState
+            icon={Activity}
+            title="No activity"
+            description="No changes match your current filters. Try widening the date range or clearing the search."
+          />
         ) : (
           <div className="space-y-6">
             {grouped.map(group => (
               <div key={group.dateKey}>
                 <div className="sticky top-0 z-10 bg-background/95 backdrop-blur py-1 mb-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group.label}</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    {group.label}
+                  </h3>
                 </div>
                 <div className="space-y-0 border border-border rounded-lg overflow-hidden">
                   {group.entries.map((entry: any, idx: number) => {
-                    const propName = (entry.properties as any)?.name
-                    const propId = entry.property_id || (entry.properties as any)?.id
-                    const canRevert = entry.old_value != null && entry.field_name && propId
+                    const entityLabel = formatEntityLabel(entry)
+                    const entityType = entry.entity_type ?? 'property'
+                    const action = entry.action ?? 'update'
+                    const propertyId = entry._property_id ?? (entityType === 'property' ? entry.entity_id : null)
+                    const canRevert = action === 'update' && entry.old_value != null && entry.field_name && propertyId
+                    const Icon = getActionIcon(action, entityType)
+                    const iconColor = getActionColor(action)
+
                     return (
                       <div
                         key={entry.id}
-                        className={`flex items-start gap-3 px-4 py-3 text-xs transition-colors hover:bg-muted/30 ${idx > 0 ? 'border-t border-border/60' : ''}`}
+                        className={`flex items-start gap-3 px-4 py-3 text-xs transition-colors hover:bg-muted/30 ${
+                          idx > 0 ? 'border-t border-border/60' : ''
+                        }`}
                       >
-                        <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <Pencil className="w-3.5 h-3.5 text-primary" />
+                        {/* Icon */}
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${iconColor}`}>
+                          <Icon className="w-3.5 h-3.5" />
                         </div>
+
+                        {/* Body */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            {propName ? (
+                            {propertyId ? (
                               <button
-                                onClick={() => openPropertyModal(propId)}
+                                onClick={() => openPropertyModal(propertyId)}
                                 className="font-medium hover:underline text-foreground"
                               >
-                                {propName}
+                                {entityLabel}
                               </button>
                             ) : (
-                              <span className="font-medium text-muted-foreground">Unknown property</span>
+                              <span className="font-medium text-foreground">{entityLabel}</span>
                             )}
-                            <span className="text-muted-foreground">·</span>
-                            <span className="text-muted-foreground">{formatFieldName(entry.field_name || '')}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            {entry.old_value != null && (
+                            {entry.field_name && (
                               <>
-                                <span className="line-through text-muted-foreground/70">{String(entry.old_value)}</span>
-                                <span className="text-muted-foreground">→</span>
+                                <span className="text-muted-foreground">·</span>
+                                <span className="text-muted-foreground">{formatFieldName(entry.field_name)}</span>
                               </>
                             )}
-                            {entry.new_value != null && (
-                              <span className="font-medium text-foreground">{String(entry.new_value)}</span>
+                            {!entry.field_name && action !== 'update' && (
+                              <>
+                                <span className="text-muted-foreground">·</span>
+                                <span className="text-muted-foreground capitalize">{action.replace('_', ' ')}</span>
+                              </>
                             )}
                           </div>
+
+                          {/* Value change */}
+                          {(entry.old_value != null || entry.new_value != null) && (
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {entry.old_value != null && (
+                                <>
+                                  <span className="line-through text-muted-foreground/70">{String(entry.old_value)}</span>
+                                  <span className="text-muted-foreground">→</span>
+                                </>
+                              )}
+                              {entry.new_value != null && (
+                                <span className="font-medium text-foreground">{String(entry.new_value)}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Timestamp + user */}
                           <p className="text-muted-foreground mt-0.5">
                             {format(parseISO(entry.created_at), 'h:mm a')}
-                            {entry.changed_by && ` · ${entry.changed_by}`}
+                            {entry.changed_by ? ` · ${entry.changed_by}` : ''}
                           </p>
                         </div>
+
+                        {/* Revert button — only for property field updates */}
                         {canRevert && (
                           <button
                             onClick={() => handleRevert(entry)}

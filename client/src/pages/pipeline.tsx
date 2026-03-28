@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -460,7 +460,17 @@ export default function PipelinePage() {
     onSuccess: (_data, variables) => {
       const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
+      const prop = displayProperties?.find((p: any) => p.id === variables.propId)
       logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null)
+      logActivity({
+        entity_type: 'pipeline',
+        entity_id: variables.propId,
+        entity_name: prop?.name ?? prop?.client_name ?? null,
+        action: 'stage_change',
+        field_name: 'stage',
+        old_value: fromStage?.name ?? null,
+        new_value: toStage?.name ?? null,
+      })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
@@ -573,6 +583,13 @@ export default function PipelinePage() {
       if (error) throw error
     },
     onSuccess: () => {
+      logActivity({
+        entity_type: 'pipeline',
+        entity_name: newLeadName.trim() || null,
+        action: 'create',
+        new_value: 'Lead',
+        metadata: { client: newLeadClient.trim() || null, address: newLeadAddress.trim() || null },
+      })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: 'Lead added to pipeline' })
       setAddLeadOpen(false)

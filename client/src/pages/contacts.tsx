@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logActivity } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -422,6 +422,13 @@ function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: 
           .single()
         if (insertErr || !inserted) continue
         imported++
+        logActivity({
+          entity_type: 'contact',
+          entity_id: inserted.id,
+          entity_name: name,
+          action: 'create',
+          new_value: name,
+        })
         const { data: updated } = await supabase
           .from('properties')
           .update({ contact_id: inserted.id })
@@ -562,6 +569,16 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
       await supabase.from('contact_interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
       // Delete secondary
       await supabase.from('contacts').delete().eq('id', secondary.id)
+      logActivity({
+        entity_type: 'contact',
+        entity_id: primary.id,
+        entity_name: primary.full_name,
+        action: 'delete',
+        field_name: 'merge',
+        old_value: secondary.full_name,
+        new_value: primary.full_name,
+        metadata: { merged_from_id: secondary.id },
+      })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
       toast({ title: 'Contacts merged successfully.' })
     } catch {

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logActivity } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -159,6 +159,12 @@ export default function CleanersPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+      logActivity({
+        entity_type: 'cleaner',
+        entity_name: newForm.full_name,
+        action: 'create',
+        new_value: newForm.full_name,
+      })
       toast({ title: 'Cleaner added' })
       setAddOpen(false)
       setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
@@ -178,6 +184,17 @@ export default function CleanersPage() {
       if (error) throw error
     },
     onSuccess: () => {
+      const cleanerName = (cleaners || []).find((c: any) => c.id === assignCleanerId)?.full_name ?? null
+      const propName = (activeProps || []).find((p: any) => String(p.id) === assignPropertyId)?.name ?? null
+      logActivity({
+        entity_type: 'cleaner',
+        entity_id: assignCleanerId,
+        entity_name: cleanerName,
+        action: 'update',
+        field_name: 'assignment',
+        new_value: propName ?? assignPropertyId,
+        metadata: { property_id: assignPropertyId, scheduled_date: assignDate, pay_amount: assignPay || null },
+      })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
       toast({ title: 'Assignment added' })
       setAssignOpen(false)
@@ -194,7 +211,15 @@ export default function CleanersPage() {
       const { error } = await supabase.from('clean_assignments').update({ scheduled_date: newDate }).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      logActivity({
+        entity_type: 'cleaner',
+        entity_id: variables.id,
+        action: 'update',
+        field_name: 'scheduled_date',
+        new_value: variables.newDate,
+        metadata: { assignment_id: variables.id },
+      })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
       toast({ title: 'Assignment moved' })
     },
