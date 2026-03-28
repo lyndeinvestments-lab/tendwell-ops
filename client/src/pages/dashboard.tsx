@@ -238,9 +238,9 @@ export default function DashboardPage() {
     return !p.ce_charged || !p.cleaner_pay || !p.square_footage || !p.bedrooms || !p.address
   }) || []
 
-  // Profit distribution buckets
+  // Profit distribution buckets (exclude SCounty/excluded properties)
   const profitBuckets = { high: 0, mid: 0, low: 0, negative: 0 }
-  activeProps.forEach((p: any) => {
+  financialProps.forEach((p: any) => {
     const pct = p.profit_percentage || 0
     if (pct >= 30) profitBuckets.high++
     else if (pct >= 15) profitBuckets.mid++

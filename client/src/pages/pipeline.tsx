@@ -453,11 +453,12 @@ export default function PipelinePage() {
     mutationFn: async ({ propId, stageId, fromStageId }: { propId: string; stageId: string; fromStageId: string }) => {
       const { error: updateErr } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propId)
       if (updateErr) throw updateErr
-      await supabase.from('stage_transitions').insert({
+      const { error: transitionErr } = await supabase.from('stage_transitions').insert({
         property_id: propId,
         from_stage_id: fromStageId || null,
         to_stage_id: stageId,
       })
+      if (transitionErr) throw transitionErr
     },
     onSuccess: (_data, variables) => {
       const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)

@@ -235,9 +235,14 @@ export default function CostTrackingPage() {
     const consumablesTotal = filtered.reduce((s: number, p: any) => s + (p.est_consumables || 0), 0)
     const costTotal = filtered.reduce((s: number, p: any) => s + (p.total_estimated_cost || 0), 0)
     const profitTotal = filtered.reduce((s: number, p: any) => s + (p.estimated_profit || 0), 0)
-    const avgProfitPct = filtered.length > 0
-      ? filtered.reduce((s: number, p: any) => s + (p.profit_percentage || 0), 0) / filtered.length
-      : 0
+    const avgProfitPct = ceTotal > 0
+      ? filtered.reduce((s: number, p: any) => {
+          const w = (p.ce_charged || 0) / ceTotal
+          return s + (p.profit_percentage || 0) * w
+        }, 0)
+      : filtered.length > 0
+        ? filtered.reduce((s: number, p: any) => s + (p.profit_percentage || 0), 0) / filtered.length
+        : 0
     return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct }
   }, [filtered])
 

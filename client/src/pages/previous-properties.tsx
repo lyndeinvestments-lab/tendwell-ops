@@ -121,7 +121,7 @@ export default function PreviousPropertiesPage() {
       if (offboardedStage) {
         const { data, error } = await supabase
           .from('properties')
-          .select('id, name, client, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage')
+          .select('id, name, client, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage, offboarded_at')
           .eq('stage_id', offboardedStage.id)
         if (error) throw error
         return (data || []).map((p: any) => ({ ...p, stage_name: 'Offboarded' }))
@@ -158,7 +158,9 @@ export default function PreviousPropertiesPage() {
   })
 
   function formatOffboardDate(propId: string) {
-    const date = offboardDates?.[propId]
+    // Prefer offboarded_at from property, fall back to stage_transitions
+    const prop = properties?.find((p: any) => p.id === propId)
+    const date = prop?.offboarded_at || offboardDates?.[propId]
     if (!date) return '—'
     try { return format(new Date(date), 'MMM d, yyyy') } catch { return '—' }
   }
