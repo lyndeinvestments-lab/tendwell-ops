@@ -421,31 +421,67 @@ export default function QuoteSheetPage() {
             <DialogTitle className="text-base">Add New Quote</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            {/* Text/number fields */}
-            {([
-              { key: 'name', label: 'Property Name *', type: 'text' },
-              { key: 'client_name', label: 'Client Name', type: 'text' },
-              { key: 'ce_charged', label: 'CE Charged ($)', type: 'number' },
-              { key: 'cleaner_pay', label: 'Cleaner Pay ($)', type: 'number' },
-              { key: 'bedrooms', label: 'Number of Bedrooms', type: 'number' },
-              { key: 'number_of_beds', label: 'Number of Beds', type: 'number' },
-              { key: 'full_baths', label: 'Full Baths', type: 'number' },
-              { key: 'half_baths', label: 'Half Baths', type: 'number' },
-              { key: 'number_of_kitchens', label: 'Number of Kitchens', type: 'number' },
-              { key: 'sq_ft', label: 'Square Footage', type: 'number' },
-              { key: 'address', label: 'Address', type: 'text' },
-            ] as { key: keyof NewProp; label: string; type: string }[]).map(f => (
-              <div key={f.key} className="space-y-1">
-                <Label className="text-xs text-muted-foreground">{f.label}</Label>
+            {/* Property info */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Property Name *</Label>
+              <Input value={newProp.name} onChange={e => setNewProp(prev => ({ ...prev, name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-name" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Address</Label>
+              <Input value={newProp.address} onChange={e => setNewProp(prev => ({ ...prev, address: e.target.value }))} className="h-8 text-sm" data-testid="input-new-address" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Client Name</Label>
+              <Input value={newProp.client_name} onChange={e => setNewProp(prev => ({ ...prev, client_name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-client_name" />
+            </div>
+
+            {/* Property details grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Bedrooms</Label>
+                <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Number of Beds</Label>
+                <Input type="number" value={newProp.number_of_beds} onChange={e => setNewProp(prev => ({ ...prev, number_of_beds: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_beds" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Full Baths</Label>
+                <Input type="number" value={newProp.full_baths} onChange={e => setNewProp(prev => ({ ...prev, full_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-full_baths" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Half Baths</Label>
+                <Input type="number" value={newProp.half_baths} onChange={e => setNewProp(prev => ({ ...prev, half_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-half_baths" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Kitchens</Label>
+                <Input type="number" value={newProp.number_of_kitchens} onChange={e => setNewProp(prev => ({ ...prev, number_of_kitchens: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_kitchens" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Square Footage</Label>
                 <Input
-                  type={f.type}
-                  value={(newProp[f.key] as string)}
-                  onChange={e => setNewProp(prev => ({ ...prev, [f.key]: e.target.value }))}
-                  data-testid={`input-new-${f.key}`}
+                  type="number"
+                  value={newProp.sq_ft}
+                  onChange={e => {
+                    const sqft = e.target.value
+                    const updates: Partial<NewProp> = { sq_ft: sqft }
+                    // Auto-suggest CE at $0.14/sqft and cleaner pay at 50% of CE
+                    if (sqft && parseFloat(sqft) > 0) {
+                      const suggestedCe = (parseFloat(sqft) * 0.14).toFixed(2)
+                      const suggestedPay = (parseFloat(suggestedCe) * 0.5).toFixed(2)
+                      // Only auto-fill if user hasn't manually entered values
+                      if (!newProp.ce_charged || newProp.ce_charged === ((parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2))) {
+                        updates.ce_charged = suggestedCe
+                        updates.cleaner_pay = suggestedPay
+                      }
+                    }
+                    setNewProp(prev => ({ ...prev, ...updates }))
+                  }}
                   className="h-8 text-sm"
+                  data-testid="input-new-sq_ft"
                 />
               </div>
-            ))}
+            </div>
 
             {/* Hot Tub toggle */}
             <div className="space-y-1">
@@ -478,6 +514,48 @@ export default function QuoteSheetPage() {
               </div>
             </div>
 
+            {/* CE Charged and Cleaner Pay — with auto-suggestions */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">CE Charged ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newProp.ce_charged}
+                  onChange={e => {
+                    const ce = e.target.value
+                    const updates: Partial<NewProp> = { ce_charged: ce }
+                    // Auto-suggest cleaner pay at 50% of CE
+                    if (ce && parseFloat(ce) > 0) {
+                      updates.cleaner_pay = (parseFloat(ce) * 0.5).toFixed(2)
+                    }
+                    setNewProp(prev => ({ ...prev, ...updates }))
+                  }}
+                  className="h-8 text-sm"
+                  data-testid="input-new-ce_charged"
+                  placeholder={newProp.sq_ft ? `Suggested: $${(parseFloat(newProp.sq_ft) * 0.14).toFixed(2)}` : ''}
+                />
+                {newProp.sq_ft && !newProp.ce_charged && (
+                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2)} ($0.14/sqft)</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Cleaner Pay ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newProp.cleaner_pay}
+                  onChange={e => setNewProp(prev => ({ ...prev, cleaner_pay: e.target.value }))}
+                  className="h-8 text-sm"
+                  data-testid="input-new-cleaner_pay"
+                  placeholder={newProp.ce_charged ? `Suggested: $${(parseFloat(newProp.ce_charged) * 0.5).toFixed(2)}` : ''}
+                />
+                {newProp.ce_charged && !newProp.cleaner_pay && (
+                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)} (50% of CE)</p>
+                )}
+              </div>
+            </div>
+
             {/* Live estimate + profit % preview */}
             {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
               <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1 text-xs">
@@ -490,14 +568,20 @@ export default function QuoteSheetPage() {
                   const consumables = calcConsumables(fullBaths, beds, kitchens, newProp.hot_tub ? 1 : 0)
                   const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST
                   const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
-                  const profitPct = ce && ce > 0 ? ((ce - totalCost) / ce) * 100 : null
+                  const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
+                  const totalWithPay = totalCost + (pay || 0)
+                  const profitPct = ce && ce > 0 ? ((ce - totalWithPay) / ce) * 100 : null
                   return (
                     <>
+                      {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">Cleaner Pay</span><span className="tabular-nums">{fmt(pay)}</span></div>}
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">$15.00</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">$5.00</span></div>
-                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalCost)}</span></div>
+                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
+                      {ce != null && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">CE Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
+                      )}
                       {profitPct !== null && (
                         <div className="flex justify-between border-t border-border pt-1 font-semibold">
                           <span>Profit %</span>
