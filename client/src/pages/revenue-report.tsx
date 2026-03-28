@@ -75,9 +75,10 @@ export default function RevenueReportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, contact_id, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, exclude_from_financials, pipeline_stages(name)')
+        .select('id, name, client, contact_id, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, pipeline_stages(name)')
+        .or('exclude_from_financials.is.null,exclude_from_financials.eq.false')
       if (error) throw error
-      return (data || []).filter((p: any) => !p.exclude_from_financials)
+      return data || []
     },
   })
 
@@ -105,13 +106,18 @@ export default function RevenueReportPage() {
     },
   })
 
-  // Fetch stage transitions to know when properties became Active
+  // Fetch stage transitions to know when properties became Active (last 13 months)
+  const thirteenMonthsAgo = useMemo(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 13)
+    return d.toISOString()
+  }, [])
   const { data: stageTransitions } = useQuery({
     queryKey: ['/supabase/revenue-report-transitions'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('stage_transitions')
         .select('property_id, to_stage_id, created_at, pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
+        .gte('created_at', thirteenMonthsAgo)
         .order('created_at', { ascending: true })
       if (error) throw error
       return data || []

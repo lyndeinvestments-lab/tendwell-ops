@@ -137,6 +137,7 @@ export default function DashboardPage() {
         .gte('created_at', sinceDate)
         .lte('created_at', untilDate)
         .order('created_at', { ascending: false })
+        .limit(500)
       if (error) throw error
       return data || []
     },

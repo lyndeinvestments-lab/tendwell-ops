@@ -59,10 +59,11 @@ export function useAlerts() {
       const { data, error } = await supabase
         .from('properties')
         .select('id, name, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, bedrooms, address, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, next_filter_due, pipeline_stages!properties_stage_id_fkey(name)')
+        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote")')
       if (error) throw error
       return data || []
     },
-    staleTime: 30_000,
+    staleTime: 120_000,
   })
 
   const { data: onboardingTasks } = useQuery({
