@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -625,8 +625,8 @@ export default function RevenueReportPage() {
               clientGroups.length === 0 ? (
                 <tr><td colSpan={8}><EmptyState icon={DollarSign} title="No clients" description="No client data found." /></td></tr>
               ) : clientGroups.map(g => (
-                <>
-                  <tr key={g.key} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer bg-muted/10" onClick={() => toggleClientExpand(g.key)}>
+                <Fragment key={g.key}>
+                  <tr className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer bg-muted/10" onClick={() => toggleClientExpand(g.key)}>
                     <td className="py-2 px-3 font-medium text-xs">
                       <div className="flex items-center gap-1">
                         {expandedClients.has(g.key) ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -657,7 +657,7 @@ export default function RevenueReportPage() {
                       <td className="py-1.5 px-3" />
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))
             )}
           </tbody>
