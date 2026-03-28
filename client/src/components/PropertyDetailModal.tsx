@@ -1128,12 +1128,12 @@ export function PropertyDetailModal() {
                 </div>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms },
-                  { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null },
-                  { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString() },
-                  { label: 'Guests', field: 'guest_count', value: property.guest_count },
-                ].map(row => (
+                {([
+                  { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms, editable: true },
+                  { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false },
+                  { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true },
+                  { label: 'Guests', field: 'guest_count', value: property.guest_count, editable: true },
+                ] as { label: string; field: string; value: any; editable: boolean }[]).map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>
                     {isEditing && row.editable !== false && row.field !== 'full_baths' ? (

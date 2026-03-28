@@ -414,7 +414,7 @@ function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: 
     try {
       let imported = 0
       let linked = 0
-      for (const name of selected) {
+      for (const name of Array.from(selected)) {
         const { data: inserted, error: insertErr } = await supabase
           .from('contacts')
           .insert({ full_name: name, company: name })
