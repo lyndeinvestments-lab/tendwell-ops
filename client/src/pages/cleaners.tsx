@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { EmptyState } from '@/components/EmptyState'
 import {
-  DndContext, DragEndEvent, PointerSensor, useSensor, useSensors,
+  DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
 import { Users2, Plus, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -97,7 +97,10 @@ export default function CleanersPage() {
   const [assignDate, setAssignDate] = useState('')
   const [assignPay, setAssignPay] = useState('')
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
 
   const { data: cleaners, isLoading } = useQuery({
     queryKey: ['/supabase/cleaners'],

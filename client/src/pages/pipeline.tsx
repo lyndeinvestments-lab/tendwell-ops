@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
-  PointerSensor, useSensor, useSensors, closestCenter,
+  PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
 } from '@dnd-kit/core'
 import { useDroppable } from '@dnd-kit/core'
 import { useDraggable } from '@dnd-kit/core'
@@ -318,7 +318,10 @@ export default function PipelinePage() {
   const { openPropertyModal } = usePropertyModal()
   const { user } = useAuth()
   usePageTitle('Pipeline')
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
 
