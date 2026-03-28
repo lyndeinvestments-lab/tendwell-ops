@@ -190,9 +190,9 @@ export default function DashboardPage() {
   const { data: unassignedCount } = useQuery({
     queryKey: ['/supabase/dashboard-unassigned'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('properties').select('id', { count: 'exact', head: true }).is('contact_id', null)
+      const { count, error } = await supabase.from('properties').select('*', { count: 'exact', head: true }).is('contact_id', null)
       if (error) return 0
-      return (data as any)?.length ?? 0
+      return count ?? 0
     },
   })
 

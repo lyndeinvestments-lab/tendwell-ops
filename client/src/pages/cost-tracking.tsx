@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment, useCallback } from 'react'
+import { useState, useMemo, Fragment, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -151,8 +151,12 @@ export default function CostTrackingPage() {
       if (error) throw error
       return data || []
     },
-    onSuccess: (data: any[]) => setLocalProperties(data),
-  } as any)
+  })
+
+  // Sync local state from server data (replaces deprecated onSuccess)
+  useEffect(() => {
+    if (properties) setLocalProperties(properties as any[])
+  }, [properties])
 
   const displayProperties: any[] = localProperties ?? (properties as any[]) ?? []
 

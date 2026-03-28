@@ -22,11 +22,16 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
-      // Use localStorage so login persists across tabs and page refreshes.
-      // sessionStorage was wiped on every new tab / refresh, causing users
-      // to see the login screen unexpectedly.
       const saved = localStorage.getItem('tendwell_user')
-      return saved ? JSON.parse(saved) : null
+      if (!saved) return null
+      const parsed = JSON.parse(saved)
+      // Enforce max session age of 7 days
+      const MAX_SESSION_MS = 7 * 24 * 60 * 60 * 1000
+      if (parsed.loginAt && Date.now() - parsed.loginAt > MAX_SESSION_MS) {
+        localStorage.removeItem('tendwell_user')
+        return null
+      }
+      return parsed
     } catch { return null }
   })
   const [isLoading, setIsLoading] = useState(false)
@@ -52,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: data.role as UserRole,
         label: data.label,
         allowedViews: data.allowedViews || [],
+        loginAt: Date.now(),
       }
       setUser(userData)
       try { localStorage.setItem('tendwell_user', JSON.stringify(userData)) } catch {}

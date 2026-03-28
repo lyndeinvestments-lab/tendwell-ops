@@ -22,26 +22,37 @@ import { ThemeProvider } from 'next-themes';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcuts } from '@/components/KeyboardShortcuts';
 
-const DashboardPage = lazy(() => import("@/pages/dashboard"));
-const PipelinePage = lazy(() => import("@/pages/pipeline"));
-const CostTrackingPage = lazy(() => import("@/pages/cost-tracking"));
-const PropertyListPage = lazy(() => import("@/pages/property-list"));
-const LinenTrackerPage = lazy(() => import("@/pages/linen-tracker"));
-const AccessCodesPage = lazy(() => import("@/pages/access-codes"));
-const AcFiltersPage = lazy(() => import("@/pages/ac-filters"));
-const QuoteSheetPage = lazy(() => import("@/pages/quote-sheet"));
-const MasterListPage = lazy(() => import("@/pages/master-list"));
-const ProFormaPage = lazy(() => import("@/pages/pro-forma"));
-const FinancialDashboardPage = lazy(() => import("@/pages/financial-dashboard"));
-const ContactsPage = lazy(() => import("@/pages/contacts"))
-const PreviousPropertiesPage = lazy(() => import("@/pages/previous-properties"))
-const SettingsPage = lazy(() => import("@/pages/settings"));
-const RevenueReportPage = lazy(() => import("@/pages/revenue-report"));
-const InspectionsPage = lazy(() => import("@/pages/inspections"));
-const CleanersPage = lazy(() => import("@/pages/cleaners"));
-const AlertsPage = lazy(() => import("@/pages/alerts"));
-const ActivityFeedPage = lazy(() => import("@/pages/activity"));
-const NotFound = lazy(() => import("@/pages/not-found"));
+// Lazy load with automatic retry on chunk fetch failure (stale deployments)
+function lazyRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
+  return lazy(() =>
+    factory().catch(() =>
+      new Promise<{ default: React.ComponentType<any> }>(resolve =>
+        setTimeout(() => resolve(factory()), 1500)
+      )
+    )
+  )
+}
+
+const DashboardPage = lazyRetry(() => import("@/pages/dashboard"));
+const PipelinePage = lazyRetry(() => import("@/pages/pipeline"));
+const CostTrackingPage = lazyRetry(() => import("@/pages/cost-tracking"));
+const PropertyListPage = lazyRetry(() => import("@/pages/property-list"));
+const LinenTrackerPage = lazyRetry(() => import("@/pages/linen-tracker"));
+const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
+const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
+const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
+const MasterListPage = lazyRetry(() => import("@/pages/master-list"));
+const ProFormaPage = lazyRetry(() => import("@/pages/pro-forma"));
+const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
+const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
+const PreviousPropertiesPage = lazyRetry(() => import("@/pages/previous-properties"))
+const SettingsPage = lazyRetry(() => import("@/pages/settings"));
+const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
+const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
+const CleanersPage = lazyRetry(() => import("@/pages/cleaners"));
+const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
+const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
+const NotFound = lazyRetry(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
