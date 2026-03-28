@@ -154,7 +154,7 @@ export default function CostTrackingPage() {
     onSuccess: (data: any[]) => setLocalProperties(data),
   } as any)
 
-  const displayProperties = localProperties ?? properties ?? []
+  const displayProperties: any[] = localProperties ?? (properties as any[]) ?? []
 
   function flashCell(cellId: string) {
     setFlashedCells(prev => new Set(prev).add(cellId))
@@ -176,6 +176,7 @@ export default function CostTrackingPage() {
       logPropertyEdit(id, field, ctx?.oldValue, value)
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       flashCell(`${id}-${field}`)
       toast({ title: 'Saved' })

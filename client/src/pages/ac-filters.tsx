@@ -89,6 +89,7 @@ export default function AcFiltersPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
@@ -115,7 +116,8 @@ export default function AcFiltersPage() {
         logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
         logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
-        qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+        qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
         toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
         setJustSavedId(id)
         setTimeout(() => setJustSavedId(null), 1500)

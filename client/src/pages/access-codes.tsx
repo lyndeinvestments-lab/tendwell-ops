@@ -135,6 +135,7 @@ export default function AccessCodesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },

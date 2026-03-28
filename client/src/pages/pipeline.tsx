@@ -463,21 +463,12 @@ export default function PipelinePage() {
       const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
       const prop = displayProperties?.find((p: any) => p.id === variables.propId)
-      logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null)
-      logActivity({
-        entity_type: 'pipeline',
-        entity_id: variables.propId,
-        entity_name: prop?.name ?? prop?.client_name ?? null,
-        action: 'stage_change',
-        field_name: 'stage',
-        old_value: fromStage?.name ?? null,
-        new_value: toStage?.name ?? null,
-        changed_by: user?.label ?? null,
-      })
+      logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null, prop?.name ?? null, user?.label ?? null)
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
 
       // Auto-set offboarded_at timestamp when moving to Offboarded

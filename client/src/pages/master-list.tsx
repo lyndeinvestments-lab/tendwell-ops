@@ -232,6 +232,7 @@ export default function MasterListPage() {
       logPropertyEdit(id, field, prev, value)
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({
         title: 'Updated',

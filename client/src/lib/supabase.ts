@@ -85,28 +85,45 @@ export async function logPropertyEdit(
   propertyName?: string | null,
   changedBy?: string | null,
 ): Promise<void> {
+  // If no property name provided, try to look it up (best-effort)
+  let resolvedName = propertyName ?? null
+  if (!resolvedName) {
+    try {
+      const { data } = await supabase
+        .from('properties')
+        .select('name')
+        .eq('id', propertyId)
+        .single()
+      resolvedName = data?.name ?? null
+    } catch {
+      // ignore — we'll log without a name
+    }
+  }
+
   // New central log
   await logActivity({
     entity_type: 'property',
     entity_id: String(propertyId),
-    entity_name: propertyName ?? null,
-    action: 'update',
+    entity_name: resolvedName,
+    action: fieldName === 'stage' ? 'stage_change' : 'update',
     field_name: fieldName,
     old_value: oldValue != null ? String(oldValue) : null,
     new_value: newValue != null ? String(newValue) : null,
     changed_by: changedBy ?? null,
   })
 
-  // Legacy table — ignore errors so we never block the UI
+  // Legacy table — log errors but never throw
+  // Note: property_edit_log may not have changed_by column; keep insert minimal
   try {
-    await supabase.from('property_edit_log').insert({
+    const { error } = await supabase.from('property_edit_log').insert({
       property_id: propertyId,
       field_name: fieldName,
       old_value: oldValue != null ? String(oldValue) : null,
       new_value: newValue != null ? String(newValue) : null,
     })
-  } catch {
-    // ignore
+    if (error) console.warn('[logPropertyEdit] legacy insert failed:', error.message)
+  } catch (e) {
+    console.warn('[logPropertyEdit] legacy insert error:', e)
   }
 }
 

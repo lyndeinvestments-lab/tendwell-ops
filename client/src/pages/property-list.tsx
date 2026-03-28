@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -32,20 +32,15 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
         to_stage_id: stageId,
         changed_by: 'ops-user',
       })
-      // Log stage change to property_edit_log
-      try {
-        await supabase.from('property_edit_log').insert({
-          property_id: propertyId,
-          field_name: 'stage_id',
-          old_value: currentStageName || '',
-          new_value: toStage?.name || '',
-        })
-      } catch { /* silent */ }
     },
-    onSuccess: () => {
+    onSuccess: (_, stageId) => {
+      const toStage = stages?.find((s: any) => s.id === stageId)
+      logPropertyEdit(propertyId, 'stage', currentStageName, toStage?.name ?? null)
       qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Stage updated' })
       setOpen(false)
     },

@@ -80,6 +80,7 @@ export default function LinenTrackerPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
