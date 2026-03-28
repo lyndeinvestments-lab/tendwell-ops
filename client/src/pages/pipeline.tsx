@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -315,6 +316,7 @@ export default function PipelinePage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
+  const { user } = useAuth()
   usePageTitle('Pipeline')
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -470,6 +472,7 @@ export default function PipelinePage() {
         field_name: 'stage',
         old_value: fromStage?.name ?? null,
         new_value: toStage?.name ?? null,
+        changed_by: user?.label ?? null,
       })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
@@ -588,6 +591,7 @@ export default function PipelinePage() {
         entity_name: newLeadName.trim() || null,
         action: 'create',
         new_value: 'Lead',
+        changed_by: user?.label ?? null,
         metadata: { client: newLeadClient.trim() || null, address: newLeadAddress.trim() || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })

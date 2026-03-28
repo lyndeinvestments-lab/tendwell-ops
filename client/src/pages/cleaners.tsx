@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -81,6 +82,7 @@ export default function CleanersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
+  const { user } = useAuth()
   const [search, setSearch] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
@@ -164,6 +166,7 @@ export default function CleanersPage() {
         entity_name: newForm.full_name,
         action: 'create',
         new_value: newForm.full_name,
+        changed_by: user?.label ?? null,
       })
       toast({ title: 'Cleaner added' })
       setAddOpen(false)
@@ -193,6 +196,7 @@ export default function CleanersPage() {
         action: 'update',
         field_name: 'assignment',
         new_value: propName ?? assignPropertyId,
+        changed_by: user?.label ?? null,
         metadata: { property_id: assignPropertyId, scheduled_date: assignDate, pay_amount: assignPay || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
@@ -218,6 +222,7 @@ export default function CleanersPage() {
         action: 'update',
         field_name: 'scheduled_date',
         new_value: variables.newDate,
+        changed_by: user?.label ?? null,
         metadata: { assignment_id: variables.id },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })

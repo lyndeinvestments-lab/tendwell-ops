@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -36,6 +37,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
+  const { user } = useAuth()
   const [form, setForm] = useState<Record<string, any>>({})
   const [tagInput, setTagInput] = useState('')
   const [interactionType, setInteractionType] = useState('Note')
@@ -137,6 +139,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         field_name: variables.field,
         old_value: contact?.[variables.field] ?? null,
         new_value: variables.value != null ? String(variables.value) : null,
+        changed_by: user?.label ?? null,
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contact-detail', contactId] })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
@@ -171,6 +174,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         entity_name: form.full_name?.trim() ?? null,
         action: 'create',
         new_value: form.full_name?.trim() ?? null,
+        changed_by: user?.label ?? null,
         metadata: { company: form.company?.trim() || null, source: form.source || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
