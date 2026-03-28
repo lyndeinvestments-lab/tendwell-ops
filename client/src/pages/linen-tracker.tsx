@@ -73,10 +73,10 @@ export default function LinenTrackerPage() {
   })
 
   const { mutate: updateLinen } = useMutation({
-    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: any; oldValue?: any }) => {
+    mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: any; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
-      logPropertyEdit(id, field, oldValue, value)
+      logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
@@ -348,6 +348,7 @@ export default function LinenTrackerPage() {
                                   field: c.key,
                                   value: v ? parseInt(v) : null,
                                   oldValue: p[c.key],
+                                  propName: p.name,
                                 })}
                                 testId={`inline-${c.key}-${p.id}`}
                                 className={meetsMin ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}
@@ -365,6 +366,7 @@ export default function LinenTrackerPage() {
                                 field: c.key,
                                 value: isNumeric ? (v ? parseInt(v) : null) : v,
                                 oldValue: p[c.key],
+                                propName: p.name,
                               })}
                               testId={`inline-${c.key}-${p.id}`}
                             />

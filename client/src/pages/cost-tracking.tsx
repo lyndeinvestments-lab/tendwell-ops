@@ -168,12 +168,14 @@ export default function CostTrackingPage() {
     },
     onMutate: ({ id, field, value }) => {
       const snapshot = localProperties ? [...localProperties] : null
-      const oldValue = snapshot?.find(p => p.id === id)?.[field] ?? null
+      const oldProp = snapshot?.find(p => p.id === id)
+      const oldValue = oldProp?.[field] ?? null
+      const propName = oldProp?.name ?? null
       setLocalProperties(prev => prev ? prev.map(p => p.id === id ? { ...p, [field]: value } : p) : prev)
-      return { snapshot, oldValue }
+      return { snapshot, oldValue, propName }
     },
     onSuccess: (_, { id, field, value }, ctx: any) => {
-      logPropertyEdit(id, field, ctx?.oldValue, value)
+      logPropertyEdit(id, field, ctx?.oldValue, value, ctx?.propName)
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })

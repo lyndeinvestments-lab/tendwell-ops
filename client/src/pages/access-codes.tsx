@@ -128,10 +128,10 @@ export default function AccessCodesPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
+    mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
-      logPropertyEdit(id, field, oldValue, value)
+      logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
@@ -277,7 +277,7 @@ export default function AccessCodesPage() {
                           field={c.key}
                           id={p.id}
                           sensitive={c.sensitive}
-                          onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key] })}
+                          onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
                         />
                       </td>
                     ))}

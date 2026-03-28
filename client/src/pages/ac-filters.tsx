@@ -82,10 +82,10 @@ export default function AcFiltersPage() {
   })
 
   const { mutate: updateField } = useMutation({
-    mutationFn: async ({ id, field, value, oldValue }: { id: string; field: string; value: string; oldValue?: any }) => {
+    mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
       if (error) throw error
-      logPropertyEdit(id, field, oldValue, value)
+      logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
@@ -413,7 +413,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.filter_size}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size })}
+                        onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size, propName: p.name })}
                         testId={`inline-filter-size-${p.id}`}
                         placeholder="Add size…"
                       />
@@ -423,9 +423,9 @@ export default function AcFiltersPage() {
                         value={p.last_filter_changed ? p.last_filter_changed.slice(0, 10) : ''}
                         type="date"
                         onSave={v => {
-                          updateField({ id: p.id, field: 'last_filter_changed', value: v, oldValue: p.last_filter_changed })
+                          updateField({ id: p.id, field: 'last_filter_changed', value: v, oldValue: p.last_filter_changed, propName: p.name })
                           if (v) {
-                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v), oldValue: p.next_filter_due })
+                            updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v), oldValue: p.next_filter_due, propName: p.name })
                           }
                         }}
                         testId={`inline-last-changed-${p.id}`}
@@ -435,7 +435,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.next_filter_due ? p.next_filter_due.slice(0, 10) : ''}
                         type="date"
-                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v, oldValue: p.next_filter_due })}
+                        onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v, oldValue: p.next_filter_due, propName: p.name })}
                         testId={`inline-next-due-${p.id}`}
                       />
                     </td>
@@ -453,7 +453,7 @@ export default function AcFiltersPage() {
                       <InlineEdit
                         value={p.notes}
                         type="text"
-                        onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes })}
+                        onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes, propName: p.name })}
                         testId={`inline-notes-${p.id}`}
                         placeholder="Add notes…"
                         className="w-full min-w-[150px]"

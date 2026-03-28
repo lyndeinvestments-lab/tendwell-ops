@@ -228,8 +228,8 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: (_, { id, field, value }) => {
-      const prev = properties?.find((p: any) => p.id === id)?.[field] ?? null
-      logPropertyEdit(id, field, prev, value)
+      const prop = properties?.find((p: any) => p.id === id)
+      logPropertyEdit(id, field, prop?.[field] ?? null, value, prop?.name)
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
@@ -240,7 +240,7 @@ export default function MasterListPage() {
         action: (
           <button
             className="text-xs underline"
-            onClick={() => quickUpdate({ id, field, value: prev })}
+            onClick={() => quickUpdate({ id, field, value: prop?.[field] ?? null })}
           >
             Undo
           </button>
