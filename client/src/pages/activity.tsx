@@ -147,16 +147,25 @@ export default function ActivityFeedPage() {
   const { data: editLog, isLoading: loadingEdit } = useQuery({
     queryKey: ['/supabase/activity-edit-log'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Try with FK join first, fall back to plain query if FK name doesn't match
+      let result = await supabase
         .from('property_edit_log')
         .select('*, properties!property_edit_log_property_id_fkey(id, name)')
         .order('created_at', { ascending: false })
         .limit(500)
-      if (error) {
-        console.warn('property_edit_log query error:', error.message)
+      if (result.error) {
+        console.warn('property_edit_log FK join failed, trying without join:', result.error.message)
+        result = await supabase
+          .from('property_edit_log')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(500)
+      }
+      if (result.error) {
+        console.warn('property_edit_log query error:', result.error.message)
         return []
       }
-      return (data || []).map((r: any) => normaliseRow(r, 'property_edit_log'))
+      return (result.data || []).map((r: any) => normaliseRow(r, 'property_edit_log'))
     },
     staleTime: 30_000,
   })

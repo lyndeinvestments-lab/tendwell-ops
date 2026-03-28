@@ -113,8 +113,8 @@ export default function AcFiltersPage() {
       if (error) {
         toast({ title: 'Update failed', variant: 'destructive' })
       } else {
-        logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
-        logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
+        logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
+        logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
         qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
@@ -145,9 +145,10 @@ export default function AcFiltersPage() {
     if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
-      logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim())
+      logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim(), prop?.name)
     })
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
     toast({ title: `Updated filter size for ${ids.length} properties` })
     setBulkSelected(new Set())
@@ -163,10 +164,11 @@ export default function AcFiltersPage() {
     if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
-      logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today)
-      logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue)
+      logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
+      logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
     })
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
     toast({ title: `Marked ${ids.length} filters as changed today` })
     setBulkSelected(new Set())
@@ -206,8 +208,8 @@ export default function AcFiltersPage() {
       const { error } = await supabase.from('properties').update(updates).eq('id', match.id)
       if (!error) {
         updated++
-        if (filterSize) logPropertyEdit(match.id, 'filter_size', match.filter_size, filterSize)
-        if (lastChanged) logPropertyEdit(match.id, 'last_filter_changed', match.last_filter_changed, lastChanged)
+        if (filterSize) logPropertyEdit(match.id, 'filter_size', match.filter_size, filterSize, match.name)
+        if (lastChanged) logPropertyEdit(match.id, 'last_filter_changed', match.last_filter_changed, lastChanged, match.name)
       }
     }
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
