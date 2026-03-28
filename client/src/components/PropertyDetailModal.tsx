@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, STAGE_COLORS } from '@/lib/supabase'
+import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -864,6 +864,15 @@ export function PropertyDetailModal() {
       if (error) throw error
     },
     onSuccess: () => {
+      // Log each changed field to activity_log
+      const changedFields = ['address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', 'notes']
+      for (const field of changedFields) {
+        const oldVal = property?.[field] ?? null
+        const newVal = form[field] !== '' ? form[field] : null
+        if (String(oldVal ?? '') !== String(newVal ?? '')) {
+          logPropertyEdit(propertyId!, field, oldVal, newVal, property?.name ?? null, user?.label ?? null)
+        }
+      }
       qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
       qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
@@ -882,15 +891,15 @@ export function PropertyDetailModal() {
       const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
       const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', propertyId!)
       if (error) throw error
-      // Write to property_edit_log
-      try {
-        await supabase.from('property_edit_log').insert({
-          property_id: propertyId,
-          field_name: field,
-          old_value: String(property?.[field] ?? ''),
-          new_value: String(dbValue ?? ''),
-        })
-      } catch { /* silent */ }
+      // Write to activity_log + legacy property_edit_log
+      logPropertyEdit(
+        propertyId!,
+        field,
+        property?.[field] ?? null,
+        dbValue ?? null,
+        property?.name ?? null,
+        user?.label ?? null,
+      )
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
