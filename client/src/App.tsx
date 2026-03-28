@@ -132,7 +132,24 @@ function AppRoutes() {
   }
 
   return (
-    <Suspense fallback={<div className="p-5 space-y-3"><Skeleton className="h-8 w-48" /><Skeleton className="h-4 w-64" /></div>}>
+    <Suspense fallback={
+      <div className="p-5 space-y-4 animate-in fade-in duration-300">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-3 w-56" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-24 rounded-md" />
+            <Skeleton className="h-8 w-32 rounded-md" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 rounded-lg" />)}
+        </div>
+        <Skeleton className="h-64 rounded-lg" />
+      </div>
+    }>
       <Switch>
         <Route path="/" component={DashboardPage} />
         <Route path="/dashboard" component={DashboardPage} />
