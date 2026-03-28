@@ -891,7 +891,10 @@ export function PropertyDetailModal() {
       const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
       const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', propertyId!)
       if (error) throw error
-      // Write to activity_log + legacy property_edit_log
+      return { field, dbValue }
+    },
+    onSuccess: (result) => {
+      const { field, dbValue } = result as { field: string; dbValue: any }
       logPropertyEdit(
         propertyId!,
         field,
@@ -900,12 +903,11 @@ export function PropertyDetailModal() {
         property?.name ?? null,
         user?.label ?? null,
       )
-    },
-    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
       qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       toast({ title: 'Saved' })
       setInlineField(null)
     },

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Button } from '@/components/ui/button'
@@ -12,15 +12,22 @@ export default function LoginPage() {
   const { login, isLoading } = useAuth()
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     try {
       await login(password)
-    } catch {
-      setError('Incorrect password. Please try again.')
+    } catch (err: any) {
+      const msg = err?.message || ''
+      if (msg.includes('429') || msg.toLowerCase().includes('rate') || msg.toLowerCase().includes('too many')) {
+        setError('Too many attempts. Please wait a few minutes and try again.')
+      } else {
+        setError('Incorrect password. Please try again.')
+      }
       setPassword('')
+      setTimeout(() => inputRef.current?.focus(), 50)
     }
   }
 
@@ -51,6 +58,7 @@ export default function LoginPage() {
                   Password
                 </Label>
                 <Input
+                  ref={inputRef}
                   id="password"
                   data-testid="input-password"
                   type="password"

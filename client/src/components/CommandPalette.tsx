@@ -199,10 +199,6 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
               </>
             )}
 
-            {/* Pages group already rendered above */}
-            {false && matchedPages.length > 0 && (
-              <></>
-            )}
           </div>
         )}
 

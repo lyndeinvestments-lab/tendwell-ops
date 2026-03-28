@@ -199,7 +199,6 @@ function OnboardingTemplateSection() {
         ) : (
           (templates || []).map((t: any) => (
             <div key={t.id} className="flex items-center gap-2 group">
-              <GripVertical className="w-3.5 h-3.5 text-muted-foreground/40" />
               {editingId === t.id ? (
                 <>
                   <Input
