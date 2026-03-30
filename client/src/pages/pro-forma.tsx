@@ -242,7 +242,7 @@ export default function ProFormaPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('csv_import_log')
-        .select('id, file_name, imported_at, records_imported, records_skipped, properties_updated, imported_by')
+        .select('id, file_name, imported_at, rows_attempted, rows_inserted, rows_skipped, rows_errored, properties_updated, import_status, imported_by')
         .order('imported_at', { ascending: false })
         .limit(50)
       if (error) throw error
@@ -995,29 +995,44 @@ export default function ProFormaPage() {
               <p className="text-sm text-muted-foreground py-8 text-center">No imports yet</p>
             ) : (
               <div className="space-y-2">
-                {importLog.map((log: any) => (
-                  <div key={log.id} className="rounded-lg border border-border px-4 py-3 space-y-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium truncate">{log.file_name}</span>
-                      {log.imported_by && (
-                        <span className="text-xs text-muted-foreground shrink-0">{log.imported_by}</span>
-                      )}
+                {importLog.map((log: any) => {
+                  const statusCls =
+                    log.import_status === 'failed'  ? 'bg-destructive/10 text-destructive' :
+                    log.import_status === 'partial'  ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400' :
+                    'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  return (
+                    <div key={log.id} className="rounded-lg border border-border px-4 py-3 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium truncate">{log.file_name}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${statusCls}`}>
+                          {log.import_status ?? 'success'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {format(new Date(log.imported_at), 'MMM d, yyyy h:mm a')}
+                        </span>
+                        {log.imported_by && <span>{log.imported_by}</span>}
+                        <span>{log.properties_updated ?? 0} {(log.properties_updated ?? 0) === 1 ? 'property' : 'properties'} updated</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs flex-wrap">
+                        {(log.rows_inserted ?? 0) > 0 && (
+                          <span className="text-green-700 dark:text-green-400">{log.rows_inserted} inserted</span>
+                        )}
+                        {(log.rows_skipped ?? 0) > 0 && (
+                          <span className="text-amber-600 dark:text-amber-400">{log.rows_skipped} skipped (dupes)</span>
+                        )}
+                        {(log.rows_errored ?? 0) > 0 && (
+                          <span className="text-destructive">{log.rows_errored} errored</span>
+                        )}
+                        {(log.rows_attempted ?? 0) > 0 && (
+                          <span className="text-muted-foreground">{log.rows_attempted} attempted</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
-                      <span className="flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {format(new Date(log.imported_at), 'MMM d, yyyy h:mm a')}
-                      </span>
-                      <span>{log.properties_updated} {log.properties_updated === 1 ? 'property' : 'properties'} updated</span>
-                      {log.records_imported > 0 && (
-                        <span className="text-green-700 dark:text-green-400">{log.records_imported} new records</span>
-                      )}
-                      {log.records_skipped > 0 && (
-                        <span className="text-amber-600 dark:text-amber-400">{log.records_skipped} skipped (dupes)</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

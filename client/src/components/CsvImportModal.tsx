@@ -333,8 +333,10 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
   async function executeImport() {
     setImporting(true)
     let successCount = 0
-    let totalInserted = 0
-    let totalSkipped = 0
+    let rowsAttempted = 0
+    let rowsInserted = 0
+    let rowsSkipped = 0
+    let rowsErrored = 0
     const errors: string[] = []
     const newlyCreated: string[] = []
 
@@ -406,12 +408,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           .upsert(cleaningRows, { onConflict: 'property_id,clean_date', ignoreDuplicates: true })
           .select('id', { count: 'exact', head: true })
 
-        if (!histError) {
+        rowsAttempted += cleaningRows.length
+        if (histError) {
+          rowsErrored += cleaningRows.length
+        } else {
           // count may be null on older Supabase client versions — fallback to total
           const inserted = count ?? cleaningRows.length
-          const skipped = cleaningRows.length - inserted
-          totalInserted += inserted
-          totalSkipped += skipped
+          rowsInserted += inserted
+          rowsSkipped += cleaningRows.length - inserted
         }
 
         // ── Recompute avg_cleans_per_month from stored DB records (idempotent) ──
@@ -464,19 +468,27 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     }
 
     // ── Log this import run ──
+    const importStatus =
+      rowsErrored === 0 ? 'success' :
+      rowsInserted > 0 || rowsSkipped > 0 ? 'partial' : 'failed'
+
     await supabase.from('csv_import_log').insert({
       file_name: fileName,
-      records_imported: totalInserted,
-      records_skipped: totalSkipped,
+      rows_attempted: rowsAttempted,
+      rows_inserted: rowsInserted,
+      rows_skipped: rowsSkipped,
+      rows_errored: rowsErrored,
       properties_updated: successCount,
+      import_status: importStatus,
+      error_details: errors.length > 0 ? { errors: errors.slice(0, 20) } : null,
       imported_by: user?.label || null,
-    }).throwOnError().then(() => {}).catch(() => {}) // non-fatal
+    }).then(() => {}).catch(() => {}) // non-fatal
 
     setImporting(false)
     setCreatedNewProperties(newlyCreated)
 
-    const dedupNote = totalSkipped > 0 ? ` (${totalSkipped} duplicate${totalSkipped > 1 ? 's' : ''} skipped)` : ''
-    const recordNote = totalInserted > 0 ? ` · ${totalInserted} new clean records${dedupNote}` : dedupNote ? ` · ${dedupNote.trim()}` : ''
+    const dedupNote = rowsSkipped > 0 ? ` (${rowsSkipped} duplicate${rowsSkipped > 1 ? 's' : ''} skipped)` : ''
+    const recordNote = rowsInserted > 0 ? ` · ${rowsInserted} new clean records${dedupNote}` : dedupNote ? ` · ${dedupNote.trim()}` : ''
 
     if (errors.length > 0) {
       toast({
