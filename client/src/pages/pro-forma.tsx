@@ -8,10 +8,12 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History } from 'lucide-react'
 import Papa from 'papaparse'
+import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { TablePagination } from '@/components/TablePagination'
 
@@ -228,6 +230,39 @@ export default function ProFormaPage() {
 
   // Feature 5: Dismissed duplicates
   const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set())
+
+  // Import history panel
+  const [showHistory, setShowHistory] = useState(false)
+  // Per-property cleaning history
+  const [historyProperty, setHistoryProperty] = useState<{ id: string; name: string } | null>(null)
+
+  const { data: importLog } = useQuery({
+    queryKey: ['/supabase/csv-import-log'],
+    enabled: showHistory,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('csv_import_log')
+        .select('id, file_name, imported_at, records_imported, records_skipped, properties_updated, imported_by')
+        .order('imported_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { data: propertyCleanHistory, isLoading: cleanHistoryLoading } = useQuery({
+    queryKey: ['/supabase/cleaning-history', historyProperty?.id],
+    enabled: !!historyProperty,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cleaning_history')
+        .select('id, clean_date, cleaner_name, created_at')
+        .eq('property_id', historyProperty!.id)
+        .order('clean_date', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/pro-forma'],
@@ -461,6 +496,16 @@ export default function ProFormaPage() {
               <span>{asNeededCount} using default frequency (2/mo)</span>
             </div>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHistory(true)}
+            className="h-8 text-xs gap-1.5"
+            data-testid="button-import-history"
+          >
+            <History className="w-3.5 h-3.5" />
+            History
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -751,7 +796,16 @@ export default function ProFormaPage() {
                         data-testid={`checkbox-${p.id}`}
                       />
                     </td>
-                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate sticky left-[44px] z-10 bg-card" title={p.name}>{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate sticky left-[44px] z-10 bg-card">
+                      <button
+                        className="text-left hover:underline truncate max-w-full"
+                        title={`${p.name} — click to view cleaning history`}
+                        onClick={() => setHistoryProperty({ id: p.id, name: p.name })}
+                        data-testid={`btn-cleaning-history-${p.id}`}
+                      >
+                        {p.name}
+                      </button>
+                    </td>
                     {/* Feature 4: What-If Popover for CE/Clean */}
                     <td className="py-2 px-3 text-xs tabular-nums">
                       <WhatIfPopover
@@ -917,10 +971,107 @@ export default function ProFormaPage() {
           onImportComplete={() => {
             qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
             qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+            qc.invalidateQueries({ queryKey: ['/supabase/csv-import-log'] })
             setShowImport(false)
           }}
         />
       )}
+
+      {/* Import history slide-over */}
+      <Sheet open={showHistory} onOpenChange={setShowHistory}>
+        <SheetContent side="right" className="w-[480px] sm:w-[520px] flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2 text-base">
+              <History className="w-4 h-4" />
+              CSV Import History
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto mt-4">
+            {!importLog ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded" />)}
+              </div>
+            ) : importLog.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">No imports yet</p>
+            ) : (
+              <div className="space-y-2">
+                {importLog.map((log: any) => (
+                  <div key={log.id} className="rounded-lg border border-border px-4 py-3 space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium truncate">{log.file_name}</span>
+                      {log.imported_by && (
+                        <span className="text-xs text-muted-foreground shrink-0">{log.imported_by}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {format(new Date(log.imported_at), 'MMM d, yyyy h:mm a')}
+                      </span>
+                      <span>{log.properties_updated} {log.properties_updated === 1 ? 'property' : 'properties'} updated</span>
+                      {log.records_imported > 0 && (
+                        <span className="text-green-700 dark:text-green-400">{log.records_imported} new records</span>
+                      )}
+                      {log.records_skipped > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400">{log.records_skipped} skipped (dupes)</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Per-property cleaning history slide-over */}
+      <Sheet open={!!historyProperty} onOpenChange={open => { if (!open) setHistoryProperty(null) }}>
+        <SheetContent side="right" className="w-[480px] sm:w-[520px] flex flex-col">
+          <SheetHeader>
+            <SheetTitle className="text-base truncate">{historyProperty?.name} — Cleaning History</SheetTitle>
+          </SheetHeader>
+          <p className="text-xs text-muted-foreground mt-1">
+            Individual clean records imported from CSV. Duplicates are blocked at the database level.
+          </p>
+          <div className="flex-1 overflow-y-auto mt-4">
+            {cleanHistoryLoading ? (
+              <div className="space-y-2">
+                {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-full rounded" />)}
+              </div>
+            ) : !propertyCleanHistory || propertyCleanHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8 text-center">
+                No cleaning records found. Import a CSV to populate history.
+              </p>
+            ) : (
+              <div className="overflow-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/60 sticky top-0">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Clean Date</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Cleaner</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Imported</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {propertyCleanHistory.map((row: any) => (
+                      <tr key={row.id} className="border-t border-border/50 hover:bg-muted/20">
+                        <td className="px-3 py-2 tabular-nums font-medium">{row.clean_date}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{row.cleaner_name || '—'}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {row.created_at ? format(new Date(row.created_at), 'MMM d, yyyy') : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p className="text-xs text-muted-foreground text-right px-3 py-2 border-t border-border">
+                  {propertyCleanHistory.length} record{propertyCleanHistory.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
