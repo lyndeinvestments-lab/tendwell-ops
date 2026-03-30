@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import Papa from 'papaparse'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -156,6 +157,7 @@ interface CsvImportModalProps {
 
 export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImportModalProps) {
   const { toast } = useToast()
+  const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [step, setStep] = useState(0)
@@ -331,6 +333,8 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
   async function executeImport() {
     setImporting(true)
     let successCount = 0
+    let totalInserted = 0
+    let totalSkipped = 0
     const errors: string[] = []
     const newlyCreated: string[] = []
 
@@ -386,37 +390,71 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           }
 
           newlyCreated.push(group.matchedPropertyName!)
-          successCount++
-          continue
         }
 
-        // ── Update existing property ──
         if (!propertyId) continue
 
-        const updates: Record<string, any> = {
-          first_clean_date: fmtDate(group.firstClean),
-          cleaning_frequency: group.inferredFrequency,
-          avg_cleans_per_month: group.cleansPerMonth,
+        // ── Insert individual cleaning records (idempotent via unique constraint) ──
+        const cleaningRows = group.records.map(r => ({
+          property_id: propertyId,
+          clean_date: fmtDate(r.cleanDate),
+          cleaner_name: r.cleanerName || null,
+        }))
+
+        const { count, error: histError } = await supabase
+          .from('cleaning_history')
+          .upsert(cleaningRows, { onConflict: 'property_id,clean_date', ignoreDuplicates: true })
+          .select('id', { count: 'exact', head: true })
+
+        if (!histError) {
+          // count may be null on older Supabase client versions — fallback to total
+          const inserted = count ?? cleaningRows.length
+          const skipped = cleaningRows.length - inserted
+          totalInserted += inserted
+          totalSkipped += skipped
         }
 
-        const { error: propError } = await supabase
-          .from('properties')
-          .update(updates)
-          .eq('id', propertyId)
+        // ── Recompute avg_cleans_per_month from stored DB records (idempotent) ──
+        const { data: storedDates } = await supabase
+          .from('cleaning_history')
+          .select('clean_date')
+          .eq('property_id', propertyId)
 
-        if (propError) {
-          // Retry without avg_cleans_per_month if column doesn't exist
-          const { error: propError2 } = await supabase
+        const recomputedCpm = storedDates && storedDates.length > 0
+          ? calcCleansPerMonth(storedDates.map((r: any) => new Date(r.clean_date + 'T00:00:00')))
+          : group.cleansPerMonth
+
+        // ── Update property metadata ──
+        if (!group.isNew) {
+          const { error: propError } = await supabase
             .from('properties')
             .update({
               first_clean_date: fmtDate(group.firstClean),
               cleaning_frequency: group.inferredFrequency,
+              avg_cleans_per_month: recomputedCpm,
             })
             .eq('id', propertyId)
-          if (propError2) {
-            errors.push(`Update failed for ${group.matchedPropertyName}: ${propError2.message}`)
-            continue
+
+          if (propError) {
+            // Retry without avg_cleans_per_month if column doesn't exist
+            const { error: propError2 } = await supabase
+              .from('properties')
+              .update({
+                first_clean_date: fmtDate(group.firstClean),
+                cleaning_frequency: group.inferredFrequency,
+              })
+              .eq('id', propertyId)
+            if (propError2) {
+              errors.push(`Update failed for ${group.matchedPropertyName}: ${propError2.message}`)
+              continue
+            }
           }
+        } else {
+          // Update the avg for newly created property too
+          await supabase
+            .from('properties')
+            .update({ avg_cleans_per_month: recomputedCpm })
+            .eq('id', propertyId)
         }
 
         successCount++
@@ -425,8 +463,20 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
       }
     }
 
+    // ── Log this import run ──
+    await supabase.from('csv_import_log').insert({
+      file_name: fileName,
+      records_imported: totalInserted,
+      records_skipped: totalSkipped,
+      properties_updated: successCount,
+      imported_by: user?.label || null,
+    }).throwOnError().then(() => {}).catch(() => {}) // non-fatal
+
     setImporting(false)
     setCreatedNewProperties(newlyCreated)
+
+    const dedupNote = totalSkipped > 0 ? ` (${totalSkipped} duplicate${totalSkipped > 1 ? 's' : ''} skipped)` : ''
+    const recordNote = totalInserted > 0 ? ` · ${totalInserted} new clean records${dedupNote}` : dedupNote ? ` · ${dedupNote.trim()}` : ''
 
     if (errors.length > 0) {
       toast({
@@ -435,7 +485,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         variant: successCount === 0 ? 'destructive' : 'default',
       })
     } else {
-      toast({ title: `Imported ${successCount} ${successCount === 1 ? 'property' : 'properties'} successfully` })
+      toast({ title: `${successCount} ${successCount === 1 ? 'property' : 'properties'} updated${recordNote}` })
     }
 
     if (newlyCreated.length > 0) {

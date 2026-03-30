@@ -7,7 +7,9 @@ import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
+  pointerWithin,
 } from '@dnd-kit/core'
+import type { CollisionDetection } from '@dnd-kit/core'
 import { useDroppable } from '@dnd-kit/core'
 import { useDraggable } from '@dnd-kit/core'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +26,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, CheckSquare, Square, ExternalLink, GripVertical, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
+
+// Kanban-optimised collision: pointer-within first, fall back to closestCenter.
+// closestCenter alone misfires on horizontal boards when card centers don't
+// line up with column centers (e.g. tall columns, compact view).
+const kanbanCollision: CollisionDetection = (args) => {
+  const within = pointerWithin(args)
+  if (within.length > 0) return within
+  return closestCenter(args)
+}
+
+// Fields that should be present before moving to a given stage.
+// Merged with any `requires_fields` value stored on the pipeline_stages row.
+const STAGE_REQUIRED_FIELDS: Record<string, string[]> = {
+  Quote:       ['ce_charged', 'total_estimated_cost'],
+  Onboarding:  ['contact_id', 'ce_charged', 'total_estimated_cost'],
+  Active:      ['contact_id', 'first_clean_date', 'ce_charged', 'total_estimated_cost'],
+  Offboarding: ['contact_id'],
+}
 
 const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
 
@@ -366,12 +386,12 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, follow_up_date, notes, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
-            .select('id, name, client, stage_id, ce_charged, cleaner_pay, profit_percentage, notes, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
           if (fallbackError) throw fallbackError
           return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
         }
@@ -635,13 +655,26 @@ export default function PipelinePage() {
     const prop = displayProperties?.find((p: any) => p.id === active.id)
     if (!prop) return
     const fromStageId = prop.stage_id
-    const toStageId = over.id as string
-    if (fromStageId === toStageId) return
+    let toStageId = over.id as string
 
-    const toStage = stages?.find((s: any) => s.id === toStageId)
-    if (!toStage) return
+    // over.id is expected to be a stage column ID, but defensively handle the
+    // rare case where the pointer exits all droppables and dnd-kit returns a
+    // draggable card's ID instead.
+    let toStage = stages?.find((s: any) => String(s.id) === String(toStageId))
+    if (!toStage) {
+      const overProp = displayProperties?.find((p: any) => String(p.id) === String(toStageId))
+      if (overProp) {
+        toStageId = overProp.stage_id
+        toStage = stages?.find((s: any) => String(s.id) === String(toStageId))
+      }
+      if (!toStage) return
+    }
 
-    const reqFields: string[] = Array.isArray(toStage.requires_fields) ? toStage.requires_fields : []
+    if (String(fromStageId) === String(toStageId)) return
+
+    const dbReqFields: string[] = Array.isArray(toStage.requires_fields) ? toStage.requires_fields : []
+    const codeReqFields: string[] = STAGE_REQUIRED_FIELDS[toStage.name] ?? []
+    const reqFields = Array.from(new Set([...dbReqFields, ...codeReqFields]))
     const missing = reqFields.filter((f: string) => {
       const val = prop[f]
       return val === null || val === undefined || val === ''
@@ -782,7 +815,7 @@ export default function PipelinePage() {
           </div>
           <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={kanbanCollision}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
           >
