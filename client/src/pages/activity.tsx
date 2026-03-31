@@ -104,9 +104,17 @@ function formatFieldName(field: string) {
   return field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+const ENTITY_LABELS: Record<string, string> = {
+  role_permissions: 'Role Permissions',
+  custom_role: 'Custom Role',
+  view_as: 'View As Preview',
+  user_role: 'User Role',
+  user_access_override: 'User Access Override',
+}
+
 function formatEntityLabel(entry: any): string {
   // New activity_log format
-  if (entry.entity_name) return entry.entity_name
+  if (entry.entity_name) return ENTITY_LABELS[entry.entity_name] || entry.entity_name
   // Legacy property_edit_log format
   const propName = entry.properties?.name
   if (propName) return propName

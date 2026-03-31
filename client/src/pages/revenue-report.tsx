@@ -424,6 +424,7 @@ export default function RevenueReportPage() {
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Client Charged</p>
+            <p className="text-[10px] text-muted-foreground">Per-clean rate total</p>
             {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
               <p className="text-xl font-semibold mt-1">{fmt(totals.ce)}</p>
             )}
@@ -432,6 +433,7 @@ export default function RevenueReportPage() {
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Cleaner Pay</p>
+            <p className="text-[10px] text-muted-foreground">Per-clean rate total</p>
             {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
               <p className="text-xl font-semibold mt-1">{fmt(totals.pay)}</p>
             )}
