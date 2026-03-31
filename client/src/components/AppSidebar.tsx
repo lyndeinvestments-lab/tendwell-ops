@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'wouter'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canAccessView, type ViewId } from '@/lib/auth'
 import { useTheme } from 'next-themes'
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -12,7 +12,6 @@ import {
   BarChart3, ClipboardCheck, Users2, Bell, Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { canAccess } from '@/lib/auth'
 
 interface NavItem {
   title: string
@@ -64,12 +63,12 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
 ]
 
 export function AppSidebar() {
-  const { user, logout } = useAuth()
+  const { user, effectiveUser, logout } = useAuth()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
 
-  if (!user) return null
+  if (!user || !effectiveUser) return null
 
   return (
     <Sidebar role="navigation" aria-label="Main navigation">
@@ -84,14 +83,14 @@ export function AppSidebar() {
           </div>
           <div>
             <div className="text-sm font-semibold text-sidebar-foreground leading-none">Tendwell Ops</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{user.label}</div>
+            <div className="text-xs text-muted-foreground mt-0.5">{effectiveUser.label}</div>
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter(item => canAccess(item.view, user.role))
+          const visibleItems = section.items.filter(item => canAccessView(item.view as ViewId, effectiveUser))
           if (visibleItems.length === 0) return null
           return (
             <SidebarGroup key={section.label}>

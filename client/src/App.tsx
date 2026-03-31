@@ -9,6 +9,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { EmulationBanner } from "@/components/EmulationBanner";
 import { PropertyModalProvider } from "@/hooks/use-property-modal";
 import { PropertyDetailModal } from "@/components/PropertyDetailModal";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -122,12 +123,13 @@ function AlertBellButton() {
 }
 
 function AppRoutes() {
-  const { user, isLoading } = useAuth();
+  const { effectiveUser } = useAuth();
   const [location, setLocation] = useLocation();
 
-  // Redirect non-admin to their first allowed view when landing on /
-  if (user && location === "/" && user.role !== "admin") {
-    setLocation("/" + (user.allowedViews[0] || "linen-tracker"));
+  // Redirect non-admin effective user to their first allowed view when landing on /
+  if (effectiveUser && location === "/" && effectiveUser.role !== "admin") {
+    const first = effectiveUser.resolvedViews[0]
+    setLocation(first ? "/" + first : "/no-access");
     return null;
   }
 
@@ -171,6 +173,14 @@ function AppRoutes() {
         <Route path="/cleaners" component={CleanersPage} />
         <Route path="/alerts" component={AlertsPage} />
         <Route path="/activity" component={ActivityFeedPage} />
+        <Route path="/no-access" component={() => (
+          <div className="flex items-center justify-center h-full p-8 text-center">
+            <div>
+              <p className="text-base font-medium text-foreground mb-1">No page access configured</p>
+              <p className="text-sm text-muted-foreground">This user has no views assigned. Ask an admin to configure their access in Settings → Permissions.</p>
+            </div>
+          </div>
+        )} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -244,6 +254,7 @@ function AppLayout() {
                 <AlertBellButton />
               </div>
             </header>
+            <EmulationBanner />
             <main id="main-content" className="flex-1 overflow-auto">
               <ErrorBoundary resetKey={location}>
                 <AppRoutes />
