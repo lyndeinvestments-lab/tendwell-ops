@@ -77,7 +77,7 @@ export function PropertyEditDialog({ property, stageName, open, onClose }: Prope
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">CE Charged</Label>
+              <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Client Charged</Label>
               <Input
                 type="number"
                 value={ceCharged}

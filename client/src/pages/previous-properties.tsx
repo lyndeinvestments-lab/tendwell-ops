@@ -211,7 +211,7 @@ export default function PreviousPropertiesPage() {
       Address: p.address || '',
       Beds: p.bedrooms ?? '',
       Baths: p.full_baths ?? '',
-      'CE/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
+      'Client Charged/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
       'Cleaner Pay': p.cleaner_pay != null ? `$${p.cleaner_pay.toFixed(2)}` : '',
       'Profit %': p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
       Status: 'Offboarded',
@@ -271,7 +271,7 @@ export default function PreviousPropertiesPage() {
                 { col: 'address', label: 'Address' },
                 { col: 'bedrooms', label: 'Beds' },
                 { col: 'full_baths', label: 'Baths' },
-                { col: 'ce_charged', label: 'CE/Clean' },
+                { col: 'ce_charged', label: 'Client Charged/Clean' },
                 { col: 'cleaner_pay', label: 'Cleaner Pay' },
                 { col: 'profit_percentage', label: 'Profit %' },
               ] as { col: string; label: string; extraClass?: string }[]).map(({ col, label, extraClass }) => (

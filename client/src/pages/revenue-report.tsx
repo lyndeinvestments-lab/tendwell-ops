@@ -75,7 +75,7 @@ export default function RevenueReportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, contact_id, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, pipeline_stages(name)')
+        .select('id, name, client, contact_id, stage_id, created_at, ce_charged, cleaner_pay, estimated_profit, profit_percentage, pipeline_stages(name)')
         .or('exclude_from_financials.is.null,exclude_from_financials.eq.false')
       if (error) throw error
       return data || []
@@ -157,8 +157,16 @@ export default function RevenueReportPage() {
         }
       }
     }
+    // Fallback: for active properties not found in stage transitions, use their created_at
+    if (activeProperties) {
+      for (const p of activeProperties) {
+        if (!map[p.id] && (p as any).created_at) {
+          map[p.id] = (p as any).created_at
+        }
+      }
+    }
     return map
-  }, [stageTransitions, pipelineStages])
+  }, [stageTransitions, pipelineStages, activeProperties])
 
   // Build 12-month chart data using stage transitions for historical accuracy
   const chartData = useMemo(() => {
@@ -298,10 +306,10 @@ export default function RevenueReportPage() {
     const rows = sorted.map((p: any) => ({
       'Property': p.name || '',
       'Client': p.client || '',
-      'CE Charged': p.ce_charged ?? '',
+      'Client Charged': p.ce_charged ?? '',
       'Cleaner Pay': p.cleaner_pay ?? '',
-      'Profit': p.estimated_profit ?? '',
-      'Profit %': p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
+      'Gross Margin': p.estimated_profit ?? '',
+      'Gross Margin %': p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -340,10 +348,10 @@ export default function RevenueReportPage() {
   }, [forecastMonths, forecastData])
 
   function exportForecastCsv() {
-    const headers = ['Property', 'CE Charged', 'Occupancy %', ...forecastMonths.map(m => m.label), '6-Month Total']
+    const headers = ['Property', 'Client Charged', 'Occupancy %', ...forecastMonths.map(m => m.label), '6-Month Total']
     const rows = forecastData.map((p: any) => ({
       Property: p.name || '',
-      'CE Charged': p.ce_charged ?? '',
+      'Client Charged': p.ce_charged ?? '',
       'Occupancy %': p.occ,
       ...Object.fromEntries(forecastMonths.map(m => [m.label, p.monthlyProj.toFixed(2)])),
       '6-Month Total': p.sixMonthTotal.toFixed(2),
@@ -415,7 +423,7 @@ export default function RevenueReportPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total CE Charged</p>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Client Charged</p>
             {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
               <p className="text-xl font-semibold mt-1">{fmt(totals.ce)}</p>
             )}
@@ -431,7 +439,7 @@ export default function RevenueReportPage() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Profit</p>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Gross Margin</p>
             {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
               <p className={`text-xl font-semibold mt-1 ${totals.profit < 0 ? 'text-destructive' : ''}`}>{fmt(totals.profit)}</p>
             )}
@@ -439,7 +447,7 @@ export default function RevenueReportPage() {
         </Card>
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Avg Profit %</p>
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Avg Gross Margin %</p>
             {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
               <p className="text-xl font-semibold mt-1">{totals.avgPct.toFixed(1)}%</p>
             )}
@@ -459,9 +467,9 @@ export default function RevenueReportPage() {
                 <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} className="text-muted-foreground" />
                 <Tooltip formatter={(val: number) => fmt(val)} />
                 <Legend />
-                <Line type="monotone" dataKey="ce" name="CE Charged" stroke="#3b82f6" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="ce" name="Client Charged" stroke="#3b82f6" strokeWidth={2} dot={false} />
                 <Line type="monotone" dataKey="pay" name="Cleaner Pay" stroke="#ef4444" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="profit" name="Profit" stroke="#22c55e" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="profit" name="Gross Margin" stroke="#22c55e" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           )}
@@ -526,7 +534,7 @@ export default function RevenueReportPage() {
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
                 <tr>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Property</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">CE Charged</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Client Charged</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Occupancy %</th>
                   {forecastMonths.map(m => (
                     <th key={m.label} className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{m.label}</th>
@@ -587,10 +595,10 @@ export default function RevenueReportPage() {
               </th>
               {viewMode === 'client' && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Payment</th>}
               {viewMode === 'client' && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Properties</th>}
-              <th className={thCls} onClick={() => toggleSort('ce_charged')}>CE Charged <SortIcon col="ce_charged" /></th>
+              <th className={thCls} onClick={() => toggleSort('ce_charged')}>Client Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
-              <th className={thCls} onClick={() => toggleSort('profit')}>Profit <SortIcon col="profit" /></th>
-              <th className={thCls} onClick={() => toggleSort('profit_pct')}>Profit % <SortIcon col="profit_pct" /></th>
+              <th className={thCls} onClick={() => toggleSort('profit')}>Gross Margin <SortIcon col="profit" /></th>
+              <th className={thCls} onClick={() => toggleSort('profit_pct')}>Gross Margin % <SortIcon col="profit_pct" /></th>
               {/* Trend column hidden — requires edit history data to populate */}
               {viewMode === 'client' && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Health</th>}
             </tr>

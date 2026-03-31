@@ -632,7 +632,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
       { key: 'pet_friendly', label: 'Pet Friendly', type: 'select', options: ['Yes', 'No'] },
     ]},
     { section: 'Financial', fields: [
-      { key: 'ce_charged', label: 'CE Charged', type: 'number' },
+      { key: 'ce_charged', label: 'Client Charged', type: 'number' },
       { key: 'cleaner_pay', label: 'Cleaner Pay', type: 'number' },
     ]},
     { section: 'Operations', fields: [

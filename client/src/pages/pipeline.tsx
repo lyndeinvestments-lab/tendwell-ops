@@ -638,7 +638,7 @@ export default function PipelinePage() {
     if (!stages || !displayProperties) return []
     return stages.filter((s: any) => {
       if (!hideEmpty) return true
-      return displayProperties.filter((p: any) => p.stage_id === s.id).length > 0
+      return displayProperties.filter((p: any) => String(p.stage_id) === String(s.id)).length > 0
     })
   }, [stages, displayProperties, hideEmpty])
 
@@ -809,7 +809,7 @@ export default function PipelinePage() {
               className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
             >
               {visibleStages.map((stage: any) => {
-                const count = displayProperties?.filter((p: any) => p.stage_id === stage.id).length ?? 0
+                const count = displayProperties?.filter((p: any) => String(p.stage_id) === String(stage.id)).length ?? 0
                 return <option key={stage.id} value={stage.id}>{stage.name} ({count})</option>
               })}
             </select>
@@ -823,7 +823,7 @@ export default function PipelinePage() {
             {/* Desktop: horizontal columns */}
             <div className="hidden md:flex gap-3 pb-4 items-stretch min-h-full">
               {visibleStages.map((stage: any) => {
-                const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
+                const stageProps = (displayProperties?.filter((p: any) => String(p.stage_id) === String(stage.id)) || [])
                   .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
                 return (
                   <StageColumn
@@ -846,7 +846,7 @@ export default function PipelinePage() {
                 .filter((stage: any) => !mobileStage || stage.id === mobileStage || (!mobileStage && stage.id === visibleStages[0]?.id))
                 .slice(0, 1)
                 .map((stage: any) => {
-                  const stageProps = (displayProperties?.filter((p: any) => p.stage_id === stage.id) || [])
+                  const stageProps = (displayProperties?.filter((p: any) => String(p.stage_id) === String(stage.id)) || [])
                     .map((p: any) => ({ ...p, _transitions: transitionsByProperty[p.id] ?? [] }))
                   return (
                     <StageColumn
@@ -914,7 +914,7 @@ export default function PipelinePage() {
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Financials</p>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="bg-muted/40 rounded p-2.5 text-center">
-                        <p className="text-xs text-muted-foreground">CE Charged</p>
+                        <p className="text-xs text-muted-foreground">Client Charged</p>
                         <p className="text-sm font-semibold">{detailPanel.ce_charged != null ? `$${detailPanel.ce_charged}` : '—'}</p>
                       </div>
                       <div className="bg-muted/40 rounded p-2.5 text-center">

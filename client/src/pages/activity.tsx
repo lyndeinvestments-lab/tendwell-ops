@@ -73,10 +73,35 @@ function dateGroupLabel(dateStr: string): string {
   }
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  ce_charged: 'Client Charged',
+  cleaner_pay: 'Cleaner Pay',
+  sq_ft: 'Square Footage',
+  square_footage: 'Square Footage',
+  stage_id: 'Stage',
+  stage: 'Stage',
+  follow_up_date: 'Follow-up Date',
+  contact_id: 'Contact',
+  bedrooms: 'Bedrooms',
+  full_baths: 'Full Baths',
+  half_baths: 'Half Baths',
+  address: 'Address',
+  notes: 'Notes',
+  custom_cleans_per_month: 'Cleans/Month',
+  total_estimated_cost: 'Total Estimated Cost',
+  estimated_profit: 'Estimated Profit',
+  profit_percentage: 'Profit %',
+  exclude_from_financials: 'Exclude from Financials',
+  offboarded_at: 'Offboarded Date',
+  name: 'Property Name',
+  auto_code: 'Auto Code',
+  door_code: 'Door Code',
+  wifi_info: 'WiFi Info',
+}
+
 function formatFieldName(field: string) {
-  return field
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase())
+  if (FIELD_LABELS[field]) return FIELD_LABELS[field]
+  return field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function formatEntityLabel(entry: any): string {

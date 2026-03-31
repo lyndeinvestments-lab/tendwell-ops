@@ -218,15 +218,16 @@ export default function FinancialDashboardPage() {
       (s, p) => s + ((p.ce_charged ?? 0) - (p.total_estimated_cost ?? 0)) * scenarioCpm,
       0
     )
-    const avgProfitPerClean =
-      properties.reduce((s, p) => s + (p.estimated_profit ?? 0), 0) / properties.length
+    const avgProfitPerClean = scenarioCpm > 0
+      ? (totalRevenue - totalCost) / Math.max(1, properties.length) / scenarioCpm
+      : properties.reduce((s, p) => s + (p.estimated_profit ?? 0), 0) / properties.length
     const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
     return { totalRevenue, totalCost, totalProfit, avgProfitPerClean, avgMargin }
   }, [properties, scenarioCpm])
 
   // ── Alert panels ──
   const negativeProperties = useMemo(
-    () => properties?.filter((p) => (p.monthly_profit_estimate ?? 0) < 0) ?? [],
+    () => properties?.filter((p) => (p.estimated_profit ?? 0) < 0) ?? [],
     [properties]
   )
 
@@ -308,8 +309,9 @@ export default function FinancialDashboardPage() {
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard
-          title="Monthly Revenue"
+          title="Monthly Revenue (Est.)"
           value={fmt(actuals?.totalRevenue)}
+          subtitle="Active properties only"
           icon={DollarSign}
           loading={isLoading}
           scenario={hasScenario ? fmt(scenario?.totalRevenue) : null}
@@ -415,6 +417,9 @@ export default function FinancialDashboardPage() {
               </Button>
             )}
           </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Overrides each property's cleaning frequency for the scenario calculation.
+          </p>
 
           {hasScenario && actuals && scenario && (
             <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 p-3 rounded-lg bg-muted/30 border border-border/60">
@@ -617,11 +622,11 @@ export default function FinancialDashboardPage() {
               <p className="text-xs text-muted-foreground py-12 text-center">No data available</p>
             ) : (
               <div className="overflow-x-auto">
-                <div style={{ minWidth: Math.max(400, propertyChartData.length * 32) }}>
+                <div style={{ minWidth: Math.max(400, propertyChartData.length * 48) }}>
                   <ResponsiveContainer width="100%" height={260}>
                     <BarChart
                       data={propertyChartData}
-                      margin={{ top: 4, right: 8, left: 0, bottom: 60 }}
+                      margin={{ top: 4, right: 8, left: 0, bottom: 80 }}
                     >
                       <XAxis
                         dataKey="name"
@@ -631,6 +636,7 @@ export default function FinancialDashboardPage() {
                         angle={-45}
                         textAnchor="end"
                         interval={0}
+                        tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '...' : v}
                       />
                       <YAxis
                         tick={{ fontSize: 10 }}
