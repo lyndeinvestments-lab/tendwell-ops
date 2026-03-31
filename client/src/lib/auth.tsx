@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
+import { supabase } from '@/lib/supabase'
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes of inactivity
 
@@ -12,65 +13,105 @@ export interface AuthUser {
 
 interface AuthContextType {
   user: AuthUser | null
-  login: (password: string) => Promise<void>
+  loginWithGoogle: () => Promise<void>
   logout: () => void
   isLoading: boolean
+  authError: string | null
+}
+
+const ROLE_VIEWS: Record<string, string[]> = {
+  admin: [
+    'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
+    'property-list', 'linen-tracker', 'access-codes', 'ac-filters',
+    'master-list', 'pro-forma', 'previous-properties', 'settings',
+    'revenue-report', 'inspections', 'cleaners', 'alerts', 'activity',
+    'financial-dashboard',
+  ],
+  operations: ['property-list', 'linen-tracker', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'alerts'],
+  cleaning: ['linen-tracker'],
+  viewer: [
+    'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
+    'linen-tracker', 'ac-filters', 'master-list', 'pro-forma',
+    'previous-properties', 'revenue-report', 'inspections', 'alerts',
+    'activity', 'financial-dashboard',
+  ],
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
+  const { data, error } = await supabase
+    .from('app_users')
+    .select('role, label')
+    .eq('google_email', email.toLowerCase())
+    .single()
+  if (error || !data) return null
+  const role = data.role as UserRole
+  return {
+    role,
+    label: data.label,
+    allowedViews: ROLE_VIEWS[role] || [],
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    try {
-      const saved = localStorage.getItem('tendwell_user')
-      if (!saved) return null
-      const parsed = JSON.parse(saved)
-      // Enforce max session age of 7 days
-      const MAX_SESSION_MS = 7 * 24 * 60 * 60 * 1000
-      if (parsed.loginAt && Date.now() - parsed.loginAt > MAX_SESSION_MS) {
-        localStorage.removeItem('tendwell_user')
-        return null
-      }
-      return parsed
-    } catch { return null }
-  })
-  const [isLoading, setIsLoading] = useState(false)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [authError, setAuthError] = useState<string | null>(null)
 
-  async function login(password: string) {
+  useEffect(() => {
+    // Check for existing Supabase session on mount
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user?.email) {
+        const appUser = await resolveUserFromEmail(session.user.email)
+        if (appUser) {
+          setUser(appUser)
+        } else {
+          await supabase.auth.signOut()
+          setAuthError('Your Google account is not authorized. Contact an admin.')
+        }
+      }
+      setIsLoading(false)
+    })
+
+    // Listen for auth state changes (handles OAuth redirect callback)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user?.email) {
+        const appUser = await resolveUserFromEmail(session.user.email)
+        if (appUser) {
+          setUser(appUser)
+          setAuthError(null)
+        } else {
+          await supabase.auth.signOut()
+          setAuthError('Your Google account is not authorized. Contact an admin.')
+        }
+        setIsLoading(false)
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null)
+        setIsLoading(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function loginWithGoogle() {
     setIsLoading(true)
-    try {
-      // Authenticate via server-side endpoint (password never compared client-side)
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json()
-        throw new Error(err.error || 'Invalid password')
-      }
-
-      const data = await response.json()
-
-      const userData = {
-        role: data.role as UserRole,
-        label: data.label,
-        allowedViews: data.allowedViews || [],
-        loginAt: Date.now(),
-      }
-      setUser(userData)
-      try { localStorage.setItem('tendwell_user', JSON.stringify(userData)) } catch {}
-    } catch (e: any) {
-      throw new Error(e.message || 'Invalid password')
-    } finally {
+    setAuthError(null)
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin },
+    })
+    if (error) {
+      setAuthError(error.message)
       setIsLoading(false)
     }
+    // On success the browser redirects to Google — no further action needed here
   }
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut()
     setUser(null)
-    try { localStorage.removeItem('tendwell_user') } catch {}
   }, [])
 
   // Session timeout — auto-logout after inactivity
@@ -95,7 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, logout])
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, loginWithGoogle, logout, isLoading, authError }}>
       {children}
     </AuthContext.Provider>
   )

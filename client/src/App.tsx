@@ -122,7 +122,7 @@ function AlertBellButton() {
 }
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
 
   // Redirect non-admin to their first allowed view when landing on /
@@ -198,6 +198,10 @@ function AppLayout() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // While Supabase checks for an existing session, show a blank screen
+  // rather than flashing the login page.
+  if (isLoading) return null;
 
   if (!user) return <LoginPage />;
 
