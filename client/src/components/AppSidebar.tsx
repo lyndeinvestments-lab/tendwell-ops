@@ -12,7 +12,7 @@ import {
   BarChart3, ClipboardCheck, Users2, Bell, Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { canAccess } from '@/lib/auth'
+import { canAccessView } from '@/lib/auth'
 
 interface NavItem {
   title: string
@@ -64,7 +64,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
 ]
 
 export function AppSidebar() {
-  const { user, logout } = useAuth()
+  const { user, effectiveUser, logout } = useAuth()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
@@ -91,7 +91,7 @@ export function AppSidebar() {
 
       <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter(item => canAccess(item.view, user.role))
+          const visibleItems = section.items.filter(item => canAccessView(item.view, effectiveUser))
           if (visibleItems.length === 0) return null
           return (
             <SidebarGroup key={section.label}>

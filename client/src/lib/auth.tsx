@@ -3,23 +3,56 @@ import { supabase } from '@/lib/supabase'
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes of inactivity
 
+// ─── VIEW_DEFINITIONS: canonical registry of all views ──────────────────────
+export const VIEW_DEFINITIONS = [
+  { id: 'dashboard',           label: 'Dashboard',           group: 'Overview' },
+  { id: 'pipeline',            label: 'Pipeline',            group: 'Sales' },
+  { id: 'contacts',            label: 'Contacts',            group: 'Sales' },
+  { id: 'quote-sheet',         label: 'Quote Sheet',         group: 'Sales' },
+  { id: 'cost-tracking',       label: 'Cost Tracking',       group: 'Operations' },
+  { id: 'property-list',       label: 'Property List',       group: 'Operations' },
+  { id: 'linen-tracker',       label: 'Linen Tracker',       group: 'Operations' },
+  { id: 'access-codes',        label: 'Access Codes',        group: 'Operations' },
+  { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
+  { id: 'inspections',         label: 'Inspections',         group: 'Operations' },
+  { id: 'cleaners',            label: 'Cleaners',            group: 'Operations' },
+  { id: 'master-list',         label: 'Master List',         group: 'Admin' },
+  { id: 'revenue-report',      label: 'Revenue Report',      group: 'Admin' },
+  { id: 'alerts',              label: 'Alerts',              group: 'Admin' },
+  { id: 'activity',            label: 'Activity',            group: 'Admin' },
+  { id: 'pro-forma',           label: 'Pro Forma',           group: 'Admin' },
+  { id: 'financial-dashboard', label: 'Financial Dashboard', group: 'Admin' },
+  { id: 'previous-properties', label: 'Previous Properties', group: 'Admin' },
+  { id: 'settings',            label: 'Settings',            group: 'Admin' },
+] as const
+
+export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
+const VALID_VIEW_IDS = new Set<string>(VIEW_DEFINITIONS.map(v => v.id))
+
 export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer'
 
 export interface AuthUser {
-  role: UserRole
+  id: string
+  role: string          // UserRole or custom role id
   label: string
-  allowedViews: string[]
+  resolvedViews: ViewId[]
+  hasCustomViews: boolean
 }
 
 interface AuthContextType {
   user: AuthUser | null
+  viewAs: AuthUser | null
+  effectiveUser: AuthUser | null   // viewAs ?? user
+  isEmulating: boolean             // convenience: viewAs !== null
+  setViewAs: (u: AuthUser | null) => void
   loginWithGoogle: () => Promise<void>
   logout: () => void
   isLoading: boolean
   authError: string | null
 }
 
-const ROLE_VIEWS: Record<string, string[]> = {
+// ─── Hardcoded role defaults (final fallback) ────────────────────────────────
+export const ROLE_VIEWS: Record<string, string[]> = {
   admin: [
     'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
     'property-list', 'linen-tracker', 'access-codes', 'ac-filters',
@@ -37,41 +70,142 @@ const ROLE_VIEWS: Record<string, string[]> = {
   ],
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+export type RolePermissionsStore = Record<string, { label: string; views: ViewId[]; system?: boolean }>
 
-async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
-  const { data, error } = await supabase
-    .from('app_users')
-    .select('role, label')
-    .eq('google_email', email.toLowerCase())
-    .single()
-  if (error || !data) return null
-  const role = data.role as UserRole
+// ─── View ID validation ──────────────────────────────────────────────────────
+export function sanitizeViews(raw: unknown): ViewId[] {
+  if (!Array.isArray(raw)) return []
+  return (raw as unknown[]).filter(
+    (v): v is ViewId => typeof v === 'string' && VALID_VIEW_IDS.has(v)
+  )
+}
+
+// ─── Central access helper ───────────────────────────────────────────────────
+export function canAccessView(viewId: string, user: AuthUser | null): boolean {
+  if (!user) return false
+  return user.resolvedViews.includes(viewId as ViewId)
+}
+
+// Legacy compat — used by AppSidebar and other callers
+export function canAccess(view: string, role: string, effectiveUser?: AuthUser | null): boolean {
+  // If we have an effectiveUser, use resolvedViews
+  if (effectiveUser) return canAccessView(view, effectiveUser)
+  // Fallback to role-based check from ROLE_VIEWS
+  const views = ROLE_VIEWS[role]
+  return views ? views.includes(view) : false
+}
+
+// ─── Build default role_permissions from ROLE_VIEWS ──────────────────────────
+export function buildDefaultRolePermissions(): RolePermissionsStore {
   return {
-    role,
-    label: data.label,
-    allowedViews: ROLE_VIEWS[role] || [],
+    admin: { label: 'Admin', views: sanitizeViews(ROLE_VIEWS.admin), system: true },
+    operations: { label: 'Operations', views: sanitizeViews(ROLE_VIEWS.operations), system: true },
+    cleaning: { label: 'Cleaning', views: sanitizeViews(ROLE_VIEWS.cleaning), system: true },
+    viewer: { label: 'Viewer', views: sanitizeViews(ROLE_VIEWS.viewer), system: true },
   }
 }
 
+export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
+  if (!raw || typeof raw !== 'object') return buildDefaultRolePermissions()
+  const result: RolePermissionsStore = {}
+  for (const [key, val] of Object.entries(raw as Record<string, any>)) {
+    if (val && typeof val === 'object' && typeof val.label === 'string') {
+      result[key] = {
+        label: val.label,
+        views: sanitizeViews(val.views),
+        ...(val.system ? { system: true } : {}),
+      }
+    }
+  }
+  return result
+}
+
+// ─── Resolve user from DB ────────────────────────────────────────────────────
+async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
+  const { data, error } = await supabase
+    .from('app_users')
+    .select('id, role, label, custom_views')
+    .eq('google_email', email.toLowerCase())
+    .single()
+  if (error || !data) return null
+
+  const role = data.role as string
+  const customViews = data.custom_views as unknown
+
+  let resolvedViews: ViewId[]
+  let hasCustomViews = false
+
+  if (customViews !== null && customViews !== undefined) {
+    // Per-user override
+    resolvedViews = sanitizeViews(customViews)
+    hasCustomViews = true
+  } else {
+    // Try role_permissions from app_settings
+    try {
+      const { data: settingsData } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'role_permissions')
+        .single()
+      if (settingsData?.value) {
+        const parsed = typeof settingsData.value === 'string'
+          ? JSON.parse(settingsData.value)
+          : settingsData.value
+        const perms = sanitizeRolePermissions(parsed)
+        if (perms[role]) {
+          resolvedViews = perms[role].views
+        } else {
+          resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+        }
+      } else {
+        resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+      }
+    } catch {
+      resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+    }
+  }
+
+  return {
+    id: data.id,
+    role,
+    label: data.label,
+    resolvedViews,
+    hasCustomViews,
+  }
+}
+
+// ─── Context ─────────────────────────────────────────────────────────────────
+const AuthContext = createContext<AuthContextType | null>(null)
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [viewAs, setViewAsState] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
-  // Stores the Google email from Supabase Auth session.
-  // undefined = not yet determined | null = no session | string = authenticated email
   const [sessionEmail, setSessionEmail] = useState<string | null | undefined>(undefined)
 
-  // Effect 1: Subscribe to Supabase auth state changes.
-  // IMPORTANT: Never make Supabase data queries here — doing so in Supabase v2
-  // causes a deadlock because the client holds an internal lock during auth callbacks.
-  // We only store the email and let Effect 2 do the role lookup.
+  // setViewAs with guards
+  const setViewAs = useCallback((target: AuthUser | null) => {
+    if (target === null) {
+      setViewAsState(null)
+      return
+    }
+    // Cannot emulate admin
+    if (target.role === 'admin') return
+    // Cannot emulate yourself
+    if (user && target.id === user.id) return
+    setViewAsState(target)
+  }, [user])
+
+  const effectiveUser = viewAs ?? user
+  const isEmulating = viewAs !== null
+
+  // Effect 1: Subscribe to Supabase auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessionEmail(session?.user?.email ?? null)
     })
-    // Failsafe: if INITIAL_SESSION never fires (rare edge case), unblock loading after 5s
     const failsafe = setTimeout(() => setSessionEmail(prev => prev === undefined ? null : prev), 5000)
     return () => {
       subscription.unsubscribe()
@@ -79,10 +213,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Effect 2: Once the session email is known, look up the user's role from app_users.
-  // This runs outside the auth callback so Supabase queries work without deadlocking.
+  // Effect 2: Once session email is known, look up user role
   useEffect(() => {
-    if (sessionEmail === undefined) return // still waiting for INITIAL_SESSION event
+    if (sessionEmail === undefined) return
 
     if (sessionEmail === null) {
       setUser(null)
@@ -120,15 +253,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthError(error.message)
       setIsLoading(false)
     }
-    // On success the browser redirects to Google — no further action needed here
   }
 
   const logout = useCallback(async () => {
+    setViewAsState(null) // clear emulation on logout
     await supabase.auth.signOut()
     setUser(null)
   }, [])
 
-  // Session timeout — auto-logout after inactivity
+  // Session timeout
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -150,7 +283,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user, logout])
 
   return (
-    <AuthContext.Provider value={{ user, loginWithGoogle, logout, isLoading, authError }}>
+    <AuthContext.Provider value={{
+      user, viewAs, effectiveUser, isEmulating, setViewAs,
+      loginWithGoogle, logout, isLoading, authError,
+    }}>
       {children}
     </AuthContext.Provider>
   )
@@ -162,7 +298,7 @@ export function useAuth() {
   return ctx
 }
 
-// View access config — used by sidebar + route guard
+// Legacy VIEW_ACCESS export — kept for any remaining callers
 export const VIEW_ACCESS: Record<string, UserRole[]> = {
   dashboard: ['admin', 'viewer'],
   pipeline: ['admin', 'viewer'],
@@ -183,9 +319,4 @@ export const VIEW_ACCESS: Record<string, UserRole[]> = {
   cleaners: ['admin', 'operations'],
   alerts: ['admin', 'operations', 'viewer'],
   activity: ['admin', 'viewer'],
-}
-
-export function canAccess(view: string, role: UserRole): boolean {
-  const allowed = VIEW_ACCESS[view]
-  return allowed ? allowed.includes(role) : false
 }
