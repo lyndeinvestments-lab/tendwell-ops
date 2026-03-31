@@ -1,5 +1,6 @@
 import { useState, useMemo, Fragment, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { InlineEdit } from '@/components/InlineEdit'
@@ -74,7 +75,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
     staleTime: 60_000,
   })
 
-  const { mutate: addAssignment, isPending } = useMutation({
+  const { mutate: addAssignment, isPending } = useGuardedMutation('cost-tracking', {
     mutationFn: async () => {
       const { error } = await supabase.from('clean_assignments').insert({
         property_id: propertyId,
@@ -165,7 +166,7 @@ export default function CostTrackingPage() {
     setTimeout(() => setFlashedCells(prev => { const s = new Set(prev); s.delete(cellId); return s }), 1500)
   }
 
-  const { mutate: updateProperty } = useMutation({
+  const { mutate: updateProperty } = useGuardedMutation('cost-tracking', {
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error

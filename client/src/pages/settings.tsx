@@ -1,9 +1,11 @@
-import { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
 import {
   useAuth, type UserRole, type AuthUser, type RolePermissionsStore, type ViewId,
+  type PagePermission,
   VIEW_DEFINITIONS, ROLE_VIEWS, buildDefaultRolePermissions, sanitizeRolePermissions, sanitizeViews,
+  derivePermissionsFromViews, sanitizePagePermissions,
 } from '@/lib/auth'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Input } from '@/components/ui/input'
@@ -113,13 +115,22 @@ function PermissionsSection() {
     return groups
   }, [])
 
-  function toggleView(roleId: string, viewId: ViewId, checked: boolean) {
+  function togglePermission(roleId: string, viewId: ViewId, field: 'view' | 'edit', checked: boolean) {
     const current = { ...effectivePerms }
     const role = { ...current[roleId] }
-    const views = new Set(role.views)
-    if (checked) views.add(viewId)
-    else views.delete(viewId)
-    role.views = Array.from(views) as ViewId[]
+    const perms = { ...(role.permissions ?? {}) }
+    const existing = perms[viewId] ?? { view: false, edit: false }
+    const next = { ...existing, [field]: checked }
+    // Enforce: no edit without view
+    if (field === 'view' && !checked) next.edit = false
+    // Enforce: edit implies view
+    if (field === 'edit' && checked) next.view = true
+    perms[viewId] = next
+    role.permissions = perms
+    const validIds = new Set<string>(VIEW_DEFINITIONS.map(v => v.id))
+    role.views = Object.entries(perms)
+      .filter(([id, p]) => p.view && validIds.has(id))
+      .map(([id]) => id) as ViewId[]
     current[roleId] = role
     setLocalPerms(current)
   }
@@ -145,10 +156,11 @@ function PermissionsSection() {
     const current = { ...effectivePerms }
     const defaults = ROLE_VIEWS[roleId]
     if (defaults) {
-      current[roleId] = { ...current[roleId], views: sanitizeViews(defaults) }
+      const views = sanitizeViews(defaults)
+      current[roleId] = { ...current[roleId], views, permissions: derivePermissionsFromViews(views, roleId === 'admin') }
     } else {
-      // Custom role: remove it from stored perms so it falls back
-      delete current[roleId]
+      // Custom role: reset views to empty, keep the role entry
+      current[roleId] = { ...current[roleId], views: [], permissions: derivePermissionsFromViews([], false) }
     }
     setLocalPerms(current)
   }
@@ -160,21 +172,26 @@ function PermissionsSection() {
   )
   const slugCollision = newRoleSlug && effectivePerms[newRoleSlug]
 
-  function handleCreateRole() {
+  async function handleCreateRole() {
     if (!newRoleSlug || slugCollision) return
-    const current = { ...effectivePerms }
-    current[newRoleSlug] = { label: newRoleName.trim(), views: [] }
-    setLocalPerms(current)
-    logActivity({
-      entity_type: 'other',
-      action: 'create',
-      entity_name: 'custom_role',
-      field_name: newRoleSlug,
-      changed_by: user?.label ?? null,
-    })
-    setNewRoleName('')
-    setNewRoleOpen(false)
-    toast({ title: `Role "${newRoleName.trim()}" created`, description: 'Configure its views in the matrix, then save.' })
+    const next = { ...effectivePerms }
+    next[newRoleSlug] = { label: newRoleName.trim(), views: [], permissions: derivePermissionsFromViews([], false) }
+    try {
+      await savePermissions(next)
+      logActivity({
+        entity_type: 'other',
+        action: 'create',
+        entity_name: 'custom_role',
+        field_name: newRoleSlug,
+        changed_by: user?.label ?? null,
+      })
+      setLocalPerms(null) // DB is now source of truth
+      setNewRoleName('')
+      setNewRoleOpen(false)
+      toast({ title: `Role "${newRoleName.trim()}" created`, description: 'Configure its views in the matrix, then save.' })
+    } catch {
+      toast({ title: 'Failed to create role', variant: 'destructive' })
+    }
   }
 
   // ── Delete custom role ──
@@ -259,10 +276,10 @@ function PermissionsSection() {
           <table className="w-full text-xs">
             <thead className="bg-muted/80 border-b border-border">
               <tr>
-                <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px]">View</th>
+                <th rowSpan={2} className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] align-bottom">Page</th>
                 {roleIds.map(roleId => (
-                  <th key={roleId} className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 min-w-[80px]">
-                    <div className="flex flex-col items-center gap-1">
+                  <th key={roleId} colSpan={2} className="text-center font-medium text-muted-foreground uppercase tracking-wide py-1 px-1 min-w-[80px]">
+                    <div className="flex flex-col items-center gap-0.5">
                       <span>{effectivePerms[roleId]?.label || roleId}</span>
                       <div className="flex gap-0.5">
                         {roleId !== 'admin' && (
@@ -288,12 +305,20 @@ function PermissionsSection() {
                   </th>
                 ))}
               </tr>
+              <tr className="border-b border-border/50">
+                {roleIds.map(roleId => (
+                  <React.Fragment key={`sub-${roleId}`}>
+                    <th className="text-center text-[10px] text-muted-foreground/70 py-0.5 px-1 w-10">View</th>
+                    <th className="text-center text-[10px] text-muted-foreground/70 py-0.5 px-1 w-10">Edit</th>
+                  </React.Fragment>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {viewGroups.map(({ group, views }) => (
-                <>
-                  <tr key={`group-${group}`}>
-                    <td colSpan={roleIds.length + 1} className="bg-muted/40 py-1.5 px-3 font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
+                <React.Fragment key={`group-${group}`}>
+                  <tr>
+                    <td colSpan={roleIds.length * 2 + 1} className="bg-muted/40 py-1.5 px-3 font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
                       {group}
                     </td>
                   </tr>
@@ -302,21 +327,33 @@ function PermissionsSection() {
                       <td className="py-1.5 px-3 text-sm">{view.label}</td>
                       {roleIds.map(roleId => {
                         const isAdmin = roleId === 'admin'
-                        const checked = isAdmin || (effectivePerms[roleId]?.views ?? []).includes(view.id as ViewId)
+                        const perm = effectivePerms[roleId]?.permissions?.[view.id] ?? { view: false, edit: false }
+                        const viewChecked = isAdmin || perm.view
+                        const editChecked = isAdmin || perm.edit
                         return (
-                          <td key={roleId} className="py-1.5 px-2 text-center">
-                            <Checkbox
-                              checked={checked}
-                              disabled={isAdmin}
-                              onCheckedChange={(v) => toggleView(roleId, view.id as ViewId, !!v)}
-                              className={isAdmin ? 'opacity-50' : ''}
-                            />
-                          </td>
+                          <React.Fragment key={`${roleId}-${view.id}`}>
+                            <td className="py-1.5 px-1 text-center">
+                              <Checkbox
+                                checked={viewChecked}
+                                disabled={isAdmin}
+                                onCheckedChange={(v) => togglePermission(roleId, view.id as ViewId, 'view', !!v)}
+                                className={isAdmin ? 'opacity-50' : ''}
+                              />
+                            </td>
+                            <td className="py-1.5 px-1 text-center">
+                              <Checkbox
+                                checked={editChecked}
+                                disabled={isAdmin || !viewChecked}
+                                onCheckedChange={(v) => togglePermission(roleId, view.id as ViewId, 'edit', !!v)}
+                                className={isAdmin ? 'opacity-50' : !viewChecked ? 'opacity-30' : ''}
+                              />
+                            </td>
+                          </React.Fragment>
                         )
                       })}
                     </tr>
                   ))}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -492,7 +529,7 @@ function AppSettingsSection() {
       <div className="flex justify-end pt-1">
         <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleSaveAll} data-testid="button-save-all-settings">
           <Check className="w-3.5 h-3.5" />
-          Save All Settings
+          Save Cost & Schedule Settings
         </Button>
       </div>
     </div>
@@ -633,28 +670,29 @@ function CustomViewsDialog({
   const { user } = useAuth()
   const qc = useQueryClient()
 
-  // Determine initial views: custom_views if set, else role defaults
-  const roleViews = useMemo(() => {
-    const rp = rolePermissions[targetUser?.role]
-    if (rp) return rp.views
-    return sanitizeViews(ROLE_VIEWS[targetUser?.role] || [])
-  }, [targetUser?.role, rolePermissions])
-
-  const initialViews = useMemo(() => {
-    if (targetUser?.custom_views !== null && targetUser?.custom_views !== undefined) {
-      return sanitizeViews(targetUser.custom_views)
+  // Build initial permissions from user's current state
+  const initialPerms = useMemo((): Record<string, PagePermission> => {
+    if (targetUser?.custom_permissions && typeof targetUser.custom_permissions === 'object') {
+      const views = sanitizeViews(targetUser.custom_views)
+      return sanitizePagePermissions(targetUser.custom_permissions, views)
     }
-    return roleViews
-  }, [targetUser, roleViews])
+    if (targetUser?.custom_views !== null && targetUser?.custom_views !== undefined) {
+      const views = sanitizeViews(targetUser.custom_views)
+      return derivePermissionsFromViews(views, targetUser?.role === 'admin')
+    }
+    const rp = rolePermissions[targetUser?.role]
+    if (rp) return rp.permissions
+    const views = sanitizeViews(ROLE_VIEWS[targetUser?.role] || [])
+    return derivePermissionsFromViews(views, targetUser?.role === 'admin')
+  }, [targetUser, rolePermissions])
 
-  const [selected, setSelected] = useState<Set<string>>(new Set(initialViews))
+  const [selectedPerms, setSelectedPerms] = useState<Record<string, PagePermission>>(initialPerms)
   const hasCustom = targetUser?.custom_views !== null && targetUser?.custom_views !== undefined
 
-  // Reset local state when dialog opens with new user
-  const targetId = targetUser?.id
-  useState(() => { setSelected(new Set(initialViews)) })
+  useEffect(() => {
+    setSelectedPerms(initialPerms)
+  }, [targetUser?.id])
 
-  // Group views
   const viewGroups = useMemo(() => {
     const groups: { group: string; views: typeof VIEW_DEFINITIONS[number][] }[] = []
     const seen = new Set<string>()
@@ -669,11 +707,11 @@ function CustomViewsDialog({
     return groups
   }, [])
 
-  const { mutate: saveCustomViews, isPending } = useMutation({
-    mutationFn: async (views: string[] | null) => {
+  const { mutate: saveCustomAccess, isPending } = useMutation({
+    mutationFn: async ({ customViews, customPerms }: { customViews: string[] | null; customPerms: Record<string, PagePermission> | null }) => {
       const { error } = await supabase
         .from('app_users')
-        .update({ custom_views: views })
+        .update({ custom_views: customViews, custom_permissions: customPerms })
         .eq('id', targetUser.id)
       if (error) throw error
     },
@@ -684,21 +722,23 @@ function CustomViewsDialog({
   })
 
   function handleSave() {
-    const views = Array.from(selected)
-    saveCustomViews(views)
+    const customViews = Object.entries(selectedPerms)
+      .filter(([, p]) => p.view)
+      .map(([id]) => id)
+    saveCustomAccess({ customViews, customPerms: selectedPerms })
     logActivity({
       entity_type: 'other',
       action: 'update',
       entity_name: 'user_access_override',
       field_name: targetUser.label,
-      new_value: views.join(','),
+      new_value: customViews.join(','),
       changed_by: user?.label ?? null,
     })
-    toast({ title: 'Custom access saved', description: `${targetUser.label} now has custom view access.` })
+    toast({ title: 'Custom access saved', description: `${targetUser.label} now has custom access.` })
   }
 
   function handleReset() {
-    saveCustomViews(null)
+    saveCustomAccess({ customViews: null, customPerms: null })
     logActivity({
       entity_type: 'other',
       action: 'update',
@@ -707,15 +747,16 @@ function CustomViewsDialog({
       new_value: 'reset_to_role',
       changed_by: user?.label ?? null,
     })
-    toast({ title: 'Reset to role defaults', description: `${targetUser.label} will inherit views from their role.` })
+    toast({ title: 'Reset to role defaults', description: `${targetUser.label} will inherit from their role.` })
   }
 
-  function toggle(viewId: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(viewId)) next.delete(viewId)
-      else next.add(viewId)
-      return next
+  function togglePerm(viewId: string, field: 'view' | 'edit', checked: boolean) {
+    setSelectedPerms(prev => {
+      const existing = prev[viewId] ?? { view: false, edit: false }
+      const next = { ...existing, [field]: checked }
+      if (field === 'view' && !checked) next.edit = false
+      if (field === 'edit' && checked) next.view = true
+      return { ...prev, [viewId]: next }
     })
   }
 
@@ -728,24 +769,41 @@ function CustomViewsDialog({
           <DialogTitle>Custom Access for {targetUser.label}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          Override which views this user can access. null = inherit role defaults.
-          Clear all checkboxes only if you intend to revoke all access.
+          Override which pages this user can view and edit. Clear all checkboxes only if you intend to revoke all access.
         </p>
 
         <div className="space-y-3">
+          <div className="flex items-center gap-4 text-[10px] text-muted-foreground uppercase tracking-wider pl-1">
+            <span className="flex-1">Page</span>
+            <span className="w-10 text-center">View</span>
+            <span className="w-10 text-center">Edit</span>
+          </div>
           {viewGroups.map(({ group, views }) => (
             <div key={group}>
               <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{group}</div>
-              <div className="space-y-1">
-                {views.map(v => (
-                  <label key={v.id} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-muted/30 rounded px-1">
-                    <Checkbox
-                      checked={selected.has(v.id)}
-                      onCheckedChange={() => toggle(v.id)}
-                    />
-                    <span className="text-sm">{v.label}</span>
-                  </label>
-                ))}
+              <div className="space-y-0.5">
+                {views.map(v => {
+                  const perm = selectedPerms[v.id] ?? { view: false, edit: false }
+                  return (
+                    <div key={v.id} className="flex items-center gap-4 py-0.5 hover:bg-muted/30 rounded px-1">
+                      <span className="text-sm flex-1">{v.label}</span>
+                      <div className="w-10 flex justify-center">
+                        <Checkbox
+                          checked={perm.view}
+                          onCheckedChange={(c) => togglePerm(v.id, 'view', !!c)}
+                        />
+                      </div>
+                      <div className="w-10 flex justify-center">
+                        <Checkbox
+                          checked={perm.edit}
+                          disabled={!perm.view}
+                          onCheckedChange={(c) => togglePerm(v.id, 'edit', !!c)}
+                          className={!perm.view ? 'opacity-30' : ''}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}
@@ -780,16 +838,16 @@ function UsersSection() {
   const [customizeUser, setCustomizeUser] = useState<any>(null)
   const [newEmail, setNewEmail] = useState('')
   const [newLabel, setNewLabel] = useState('')
-  const [newRole, setNewRole] = useState<UserRole>('operations')
+  const [newRole, setNewRole] = useState<string>('operations')
 
   const { rolePermissions } = useRolePermissions()
 
   // Build role options: system + custom
-  const allRoleOptions = useMemo(() => {
-    const options = [...SYSTEM_ROLE_OPTIONS]
+  const allRoleOptions = useMemo((): { value: string; label: string }[] => {
+    const options: { value: string; label: string }[] = [...SYSTEM_ROLE_OPTIONS]
     for (const [key, val] of Object.entries(rolePermissions)) {
       if (!val.system && !options.find(o => o.value === key)) {
-        options.push({ value: key as UserRole, label: val.label })
+        options.push({ value: key, label: val.label })
       }
     }
     return options
@@ -800,7 +858,7 @@ function UsersSection() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, role, label, google_email, created_at, custom_views')
+        .select('id, role, label, google_email, created_at, custom_views, custom_permissions')
         .order('created_at', { ascending: true })
       if (error) throw error
       return data || []
@@ -834,18 +892,37 @@ function UsersSection() {
     },
   })
 
-  const { mutate: updateRole } = useMutation({
+  const [pendingRoleUpdate, setPendingRoleUpdate] = useState<string | null>(null)
+
+  const { mutateAsync: updateRoleAsync } = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: string }) => {
       const { error } = await supabase.from('app_users').update({ role }).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      setEditingRoleId(null)
-      toast({ title: 'Role updated' })
-    },
-    onError: () => toast({ title: 'Failed to update role', variant: 'destructive' }),
   })
+
+  async function handleRoleChange(userId: string, newRole: string) {
+    setPendingRoleUpdate(userId)
+    try {
+      await updateRoleAsync({ id: userId, role: newRole })
+      await qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      const targetLabel = users?.find((u: any) => u.id === userId)?.label ?? userId
+      logActivity({
+        entity_type: 'other',
+        action: 'update',
+        entity_name: 'user_role',
+        field_name: targetLabel,
+        new_value: newRole,
+        changed_by: user?.label ?? null,
+      })
+      toast({ title: 'Role updated' })
+    } catch {
+      toast({ title: 'Failed to update role', variant: 'destructive' })
+    } finally {
+      setPendingRoleUpdate(null)
+      setEditingRoleId(null)
+    }
+  }
 
   const { mutate: deleteUser, isPending: deleting } = useMutation({
     mutationFn: async (id: string) => {
@@ -864,18 +941,23 @@ function UsersSection() {
   })
 
   function handleViewAs(u: any) {
-    // Build an AuthUser for the target
     const rp = rolePermissions[u.role]
     let resolvedViews: ViewId[]
+    let resolvedPermissions: Record<string, PagePermission>
     let hasCustomViews = false
 
     if (u.custom_views !== null && u.custom_views !== undefined) {
       resolvedViews = sanitizeViews(u.custom_views)
       hasCustomViews = true
+      resolvedPermissions = (u.custom_permissions && typeof u.custom_permissions === 'object')
+        ? sanitizePagePermissions(u.custom_permissions, resolvedViews)
+        : derivePermissionsFromViews(resolvedViews, u.role === 'admin')
     } else if (rp) {
       resolvedViews = rp.views
+      resolvedPermissions = rp.permissions
     } else {
       resolvedViews = sanitizeViews(ROLE_VIEWS[u.role] || [])
+      resolvedPermissions = derivePermissionsFromViews(resolvedViews, u.role === 'admin')
     }
 
     const target: AuthUser = {
@@ -883,6 +965,7 @@ function UsersSection() {
       role: u.role,
       label: u.label,
       resolvedViews,
+      resolvedPermissions,
       hasCustomViews,
     }
 
@@ -972,11 +1055,11 @@ function UsersSection() {
                         {editingRoleId === u.id ? (
                           <div className="flex items-center gap-1">
                             <select
-                              defaultValue={u.role}
+                              value={u.role}
                               autoFocus
-                              className="h-6 rounded border border-input bg-background px-1.5 text-xs"
-                              onChange={e => updateRole({ id: u.id, role: e.target.value })}
-                              onBlur={() => setEditingRoleId(null)}
+                              disabled={pendingRoleUpdate === u.id}
+                              className="h-6 rounded border border-input bg-background px-1.5 text-xs disabled:opacity-50"
+                              onChange={e => handleRoleChange(u.id, e.target.value)}
                             >
                               {allRoleOptions.map(o => (
                                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -1102,7 +1185,7 @@ function UsersSection() {
               <label className="text-xs font-medium text-muted-foreground">Role</label>
               <select
                 value={newRole}
-                onChange={e => setNewRole(e.target.value as UserRole)}
+                onChange={e => setNewRole(e.target.value)}
                 className="mt-1 w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
                 data-testid="select-new-user-role"
               >

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -68,7 +69,7 @@ export default function PreviousPropertiesPage() {
     },
   })
 
-  const { mutate: reactivate, isPending: reactivating } = useMutation({
+  const { mutate: reactivate, isPending: reactivating } = useGuardedMutation('previous-properties', {
     mutationFn: async (property: any) => {
       const activeStage = (stages || []).find((s: any) => s.name.toLowerCase() === 'active')
       if (!activeStage) throw new Error('Active stage not found')

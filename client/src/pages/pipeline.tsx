@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
@@ -472,7 +473,7 @@ export default function PipelinePage() {
     )
   }, [localProperties, properties, search])
 
-  const { mutate: moveProperty, isPending: isMoving } = useMutation({
+  const { mutate: moveProperty, isPending: isMoving } = useGuardedMutation('pipeline', {
     mutationFn: async ({ propId, stageId, fromStageId }: { propId: string; stageId: string; fromStageId: string }) => {
       const { error: updateErr } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propId)
       if (updateErr) throw updateErr
@@ -518,7 +519,7 @@ export default function PipelinePage() {
     },
   })
 
-  const { mutate: updateFollowUpDate } = useMutation({
+  const { mutate: updateFollowUpDate } = useGuardedMutation('pipeline', {
     mutationFn: async ({ propId, date }: { propId: string; date: string }) => {
       const { error } = await supabase.from('properties').update({ follow_up_date: date || null }).eq('id', propId)
       if (error) throw error
@@ -538,7 +539,7 @@ export default function PipelinePage() {
     staleTime: 10_000,
   })
 
-  const { mutate: toggleTask } = useMutation({
+  const { mutate: toggleTask } = useGuardedMutation('pipeline', {
     mutationFn: async ({ taskId, is_complete }: { taskId: string; is_complete: boolean }) => {
       const { error } = await supabase.from('onboarding_tasks').update({ is_complete }).eq('id', taskId)
       if (error) throw error
@@ -549,7 +550,7 @@ export default function PipelinePage() {
     },
   })
 
-  const { mutate: saveNotes } = useMutation({
+  const { mutate: saveNotes } = useGuardedMutation('pipeline', {
     mutationFn: async ({ propId, notes }: { propId: string; notes: string }) => {
       const { error } = await supabase.from('properties').update({ notes }).eq('id', propId)
       if (error) throw error
@@ -579,7 +580,7 @@ export default function PipelinePage() {
     setNewLeadNotes('')
   }
 
-  const { mutate: addLead, isPending: addLeadPending } = useMutation({
+  const { mutate: addLead, isPending: addLeadPending } = useGuardedMutation('pipeline', {
     mutationFn: async () => {
       if (!leadStage) throw new Error('No Lead stage found')
       // Build the notes field by combining contact info + free-form notes

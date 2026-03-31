@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -177,7 +178,7 @@ export default function QuoteSheetPage() {
     })
   }, [properties, search, sortKey, sortDir])
 
-  const { mutate: addProperty, isPending: addPending } = useMutation({
+  const { mutate: addProperty, isPending: addPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async () => {
       if (!quoteStage) throw new Error('No Quote stage')
       const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
@@ -214,7 +215,7 @@ export default function QuoteSheetPage() {
     onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed'), variant: 'destructive' }),
   })
 
-  const { mutate: convertToOnboarding, isPending: convertPending } = useMutation({
+  const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async (prop: any) => {
       if (!onboardingStage) throw new Error('No Onboarding stage')
       const { error: updateErr } = await supabase.from('properties').update({ stage_id: onboardingStage.id }).eq('id', prop.id)

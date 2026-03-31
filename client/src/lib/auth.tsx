@@ -31,19 +31,26 @@ const VALID_VIEW_IDS = new Set<string>(VIEW_DEFINITIONS.map(v => v.id))
 
 export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer'
 
+// ─── Page Permission type ───────────────────────────────────────────────────
+export interface PagePermission {
+  view: boolean
+  edit: boolean
+}
+
 export interface AuthUser {
   id: string
-  role: string          // UserRole or custom role id
+  role: string
   label: string
   resolvedViews: ViewId[]
+  resolvedPermissions: Record<string, PagePermission>
   hasCustomViews: boolean
 }
 
 interface AuthContextType {
   user: AuthUser | null
   viewAs: AuthUser | null
-  effectiveUser: AuthUser | null   // viewAs ?? user
-  isEmulating: boolean             // convenience: viewAs !== null
+  effectiveUser: AuthUser | null
+  isEmulating: boolean
   setViewAs: (u: AuthUser | null) => void
   loginWithGoogle: () => Promise<void>
   logout: () => void
@@ -70,7 +77,12 @@ export const ROLE_VIEWS: Record<string, string[]> = {
   ],
 }
 
-export type RolePermissionsStore = Record<string, { label: string; views: ViewId[]; system?: boolean }>
+export type RolePermissionsStore = Record<string, {
+  label: string
+  views: ViewId[]
+  permissions: Record<string, PagePermission>
+  system?: boolean
+}>
 
 // ─── View ID validation ──────────────────────────────────────────────────────
 export function sanitizeViews(raw: unknown): ViewId[] {
@@ -80,28 +92,74 @@ export function sanitizeViews(raw: unknown): ViewId[] {
   )
 }
 
-// ─── Central access helper ───────────────────────────────────────────────────
+// ─── Permission helpers ──────────────────────────────────────────────────────
+
+export function derivePermissionsFromViews(
+  views: ViewId[],
+  isAdmin: boolean
+): Record<string, PagePermission> {
+  const result: Record<string, PagePermission> = {}
+  for (const v of VIEW_DEFINITIONS) {
+    const hasView = isAdmin || views.includes(v.id as ViewId)
+    result[v.id] = { view: hasView, edit: isAdmin }
+  }
+  return result
+}
+
+export function sanitizePagePermissions(
+  raw: Record<string, any>,
+  fallbackViews: ViewId[]
+): Record<string, PagePermission> {
+  const result: Record<string, PagePermission> = {}
+  for (const v of VIEW_DEFINITIONS) {
+    const p = raw[v.id]
+    if (p && typeof p === 'object') {
+      result[v.id] = { view: !!p.view, edit: !!p.edit }
+    } else {
+      result[v.id] = { view: fallbackViews.includes(v.id as ViewId), edit: false }
+    }
+  }
+  return result
+}
+
+// ─── Central access helpers ─────────────────────────────────────────────────
 export function canAccessView(viewId: string, user: AuthUser | null): boolean {
   if (!user) return false
   return user.resolvedViews.includes(viewId as ViewId)
 }
 
-// Legacy compat — used by AppSidebar and other callers
-export function canAccess(view: string, role: string, effectiveUser?: AuthUser | null): boolean {
-  // If we have an effectiveUser, use resolvedViews
-  if (effectiveUser) return canAccessView(view, effectiveUser)
-  // Fallback to role-based check from ROLE_VIEWS
-  const views = ROLE_VIEWS[role]
-  return views ? views.includes(view) : false
+export function canEditView(viewId: string, user: AuthUser | null): boolean {
+  if (!user) return false
+  return user.resolvedPermissions[viewId]?.edit === true
 }
 
 // ─── Build default role_permissions from ROLE_VIEWS ──────────────────────────
 export function buildDefaultRolePermissions(): RolePermissionsStore {
   return {
-    admin: { label: 'Admin', views: sanitizeViews(ROLE_VIEWS.admin), system: true },
-    operations: { label: 'Operations', views: sanitizeViews(ROLE_VIEWS.operations), system: true },
-    cleaning: { label: 'Cleaning', views: sanitizeViews(ROLE_VIEWS.cleaning), system: true },
-    viewer: { label: 'Viewer', views: sanitizeViews(ROLE_VIEWS.viewer), system: true },
+    admin: {
+      label: 'Admin',
+      views: sanitizeViews(ROLE_VIEWS.admin),
+      permissions: derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.admin), true),
+      system: true,
+    },
+    operations: {
+      label: 'Operations',
+      views: sanitizeViews(ROLE_VIEWS.operations),
+      permissions: derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.operations), false),
+      system: true,
+    },
+    cleaning: {
+      label: 'Cleaning',
+      views: sanitizeViews(ROLE_VIEWS.cleaning),
+      permissions: derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.cleaning), false),
+      system: true,
+    },
+    viewer: {
+      label: 'Viewer',
+      views: sanitizeViews(ROLE_VIEWS.viewer),
+      permissions: derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.viewer), false),
+      system: true,
+    },
   }
 }
 
@@ -110,9 +168,14 @@ export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
   const result: RolePermissionsStore = {}
   for (const [key, val] of Object.entries(raw as Record<string, any>)) {
     if (val && typeof val === 'object' && typeof val.label === 'string') {
+      const views = sanitizeViews(val.views)
+      const permissions: Record<string, PagePermission> = val.permissions
+        ? sanitizePagePermissions(val.permissions, views)
+        : derivePermissionsFromViews(views, key === 'admin')
       result[key] = {
         label: val.label,
-        views: sanitizeViews(val.views),
+        views,
+        permissions,
         ...(val.system ? { system: true } : {}),
       }
     }
@@ -124,23 +187,26 @@ export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
 async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('app_users')
-    .select('id, role, label, custom_views')
+    .select('id, role, label, custom_views, custom_permissions')
     .eq('google_email', email.toLowerCase())
     .single()
   if (error || !data) return null
 
   const role = data.role as string
   const customViews = data.custom_views as unknown
+  const customPermissions = data.custom_permissions as unknown
 
   let resolvedViews: ViewId[]
+  let resolvedPermissions: Record<string, PagePermission>
   let hasCustomViews = false
 
   if (customViews !== null && customViews !== undefined) {
-    // Per-user override
     resolvedViews = sanitizeViews(customViews)
     hasCustomViews = true
+    resolvedPermissions = (customPermissions && typeof customPermissions === 'object')
+      ? sanitizePagePermissions(customPermissions as Record<string, any>, resolvedViews)
+      : derivePermissionsFromViews(resolvedViews, role === 'admin')
   } else {
-    // Try role_permissions from app_settings
     try {
       const { data: settingsData } = await supabase
         .from('app_settings')
@@ -154,14 +220,18 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
         const perms = sanitizeRolePermissions(parsed)
         if (perms[role]) {
           resolvedViews = perms[role].views
+          resolvedPermissions = perms[role].permissions
         } else {
           resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+          resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
         }
       } else {
         resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+        resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
       }
     } catch {
       resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
+      resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
     }
   }
 
@@ -170,6 +240,7 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
     role,
     label: data.label,
     resolvedViews,
+    resolvedPermissions,
     hasCustomViews,
   }
 }
@@ -185,15 +256,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [sessionEmail, setSessionEmail] = useState<string | null | undefined>(undefined)
 
-  // setViewAs with guards
   const setViewAs = useCallback((target: AuthUser | null) => {
     if (target === null) {
       setViewAsState(null)
       return
     }
-    // Cannot emulate admin
     if (target.role === 'admin') return
-    // Cannot emulate yourself
     if (user && target.id === user.id) return
     setViewAsState(target)
   }, [user])
@@ -201,7 +269,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const effectiveUser = viewAs ?? user
   const isEmulating = viewAs !== null
 
-  // Effect 1: Subscribe to Supabase auth state changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessionEmail(session?.user?.email ?? null)
@@ -213,7 +280,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // Effect 2: Once session email is known, look up user role
   useEffect(() => {
     if (sessionEmail === undefined) return
 
@@ -256,12 +322,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = useCallback(async () => {
-    setViewAsState(null) // clear emulation on logout
+    setViewAsState(null)
     await supabase.auth.signOut()
     setUser(null)
   }, [])
 
-  // Session timeout
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -296,27 +361,4 @@ export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used within AuthProvider')
   return ctx
-}
-
-// Legacy VIEW_ACCESS export — kept for any remaining callers
-export const VIEW_ACCESS: Record<string, UserRole[]> = {
-  dashboard: ['admin', 'viewer'],
-  pipeline: ['admin', 'viewer'],
-  contacts: ['admin', 'viewer'],
-  'quote-sheet': ['admin'],
-  'cost-tracking': ['admin', 'viewer'],
-  'property-list': ['admin', 'operations', 'viewer'],
-  'linen-tracker': ['admin', 'operations', 'cleaning', 'viewer'],
-  'access-codes': ['admin', 'operations'],
-  'ac-filters': ['admin', 'operations', 'viewer'],
-  'master-list': ['admin', 'viewer'],
-  'pro-forma': ['admin', 'viewer'],
-  'financial-dashboard': ['admin', 'viewer'],
-  'previous-properties': ['admin', 'viewer'],
-  settings: ['admin'],
-  'revenue-report': ['admin', 'viewer'],
-  inspections: ['admin', 'operations', 'viewer'],
-  cleaners: ['admin', 'operations'],
-  alerts: ['admin', 'operations', 'viewer'],
-  activity: ['admin', 'viewer'],
 }

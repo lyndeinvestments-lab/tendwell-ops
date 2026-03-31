@@ -24,7 +24,13 @@ export function EmulationBanner() {
     <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs">
       <Eye className="w-3.5 h-3.5 flex-shrink-0" />
       <span>
-        Previewing as <strong>{viewAs.label}</strong> · {viewAs.role} · Changes are disabled in preview mode
+        Previewing as <strong>{viewAs.label}</strong> · {viewAs.role}
+        {viewAs.hasCustomViews && (
+          <span className="ml-1.5 px-1 py-0.5 rounded bg-orange-200/60 dark:bg-orange-800/40 text-orange-800 dark:text-orange-200 text-[10px] font-medium">
+            Custom Access
+          </span>
+        )}
+        {' '}· Read-only — all edits blocked
       </span>
       <Button
         variant="outline"

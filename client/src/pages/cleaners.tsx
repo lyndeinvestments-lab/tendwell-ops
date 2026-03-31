@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logActivity } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -151,7 +152,7 @@ export default function CleanersPage() {
     return unassigned
   }, [activeProps, cleaners, assignments])
 
-  const { mutate: addCleaner, isPending: adding } = useMutation({
+  const { mutate: addCleaner, isPending: adding } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
       const { error } = await supabase.from('cleaners').insert({
         full_name: newForm.full_name,
@@ -178,7 +179,7 @@ export default function CleanersPage() {
     onError: () => toast({ title: 'Failed to add cleaner', variant: 'destructive' }),
   })
 
-  const { mutate: addAssignment, isPending: assigning } = useMutation({
+  const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
       const { error } = await supabase.from('clean_assignments').insert({
         cleaner_id: assignCleanerId,
@@ -213,7 +214,7 @@ export default function CleanersPage() {
     onError: () => toast({ title: 'Failed to add assignment', variant: 'destructive' }),
   })
 
-  const { mutate: moveAssignment } = useMutation({
+  const { mutate: moveAssignment } = useGuardedMutation('cleaners', {
     mutationFn: async ({ id, newDate }: { id: string; newDate: string }) => {
       const { error } = await supabase.from('clean_assignments').update({ scheduled_date: newDate }).eq('id', id)
       if (error) throw error
