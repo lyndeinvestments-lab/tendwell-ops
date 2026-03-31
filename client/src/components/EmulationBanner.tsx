@@ -1,10 +1,12 @@
 import { useAuth } from '@/lib/auth'
 import { logActivity } from '@/lib/supabase'
+import { useLocation } from 'wouter'
 import { Eye, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 export function EmulationBanner() {
   const { viewAs, setViewAs, user } = useAuth()
+  const [, navigate] = useLocation()
 
   if (!viewAs) return null
 
@@ -18,6 +20,7 @@ export function EmulationBanner() {
       changed_by: user?.label ?? null,
     })
     setViewAs(null)
+    navigate('/settings')
   }
 
   return (
