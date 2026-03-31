@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logActivity } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -110,7 +111,7 @@ export default function InspectionsPage() {
     enabled: logOpen,
   })
 
-  const { mutate: logInspection, isPending: logging } = useMutation({
+  const { mutate: logInspection, isPending: logging } = useGuardedMutation('inspections', {
     mutationFn: async () => {
       const { error } = await supabase.from('inspections').insert({
         property_id: Number(form.property_id),

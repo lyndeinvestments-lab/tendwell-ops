@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3 } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
@@ -81,7 +82,7 @@ export default function AcFiltersPage() {
     },
   })
 
-  const { mutate: updateField } = useMutation({
+  const { mutate: updateField } = useGuardedMutation('ac-filters', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
       if (error) throw error

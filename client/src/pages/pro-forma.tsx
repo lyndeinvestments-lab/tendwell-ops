@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -37,7 +38,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
   const { toast } = useToast()
   const [customCleans, setCustomCleans] = useState<string>(avgCleans != null ? String(avgCleans) : '')
 
-  const { mutate } = useMutation({
+  const { mutate } = useGuardedMutation('pro-forma', {
     mutationFn: async ({ freq, cleans }: { freq: string; cleans?: number | null }) => {
       const update: Record<string, unknown> = { cleaning_frequency: freq }
       if (cleans != null) update.avg_cleans_per_month = cleans
@@ -125,7 +126,7 @@ function WhatIfPopover({
   const moProfitPreview = profitPerClean != null && cpm != null ? profitPerClean * cpm : null
   const breakEvenCe = previewCost != null ? previewCost / (1 - BREAK_EVEN_MARGIN) : null
 
-  const { mutate, isPending } = useMutation({
+  const { mutate, isPending } = useGuardedMutation('pro-forma', {
     mutationFn: async () => {
       const { error } = await supabase
         .from('properties')
@@ -278,7 +279,7 @@ export default function ProFormaPage() {
     },
   })
 
-  const { mutate: updateDate } = useMutation({
+  const { mutate: updateDate } = useGuardedMutation('pro-forma', {
     mutationFn: async ({ id, value }: { id: string; value: string }) => {
       const { error } = await supabase.from('properties').update({ first_clean_date: value || null }).eq('id', id)
       if (error) throw error
@@ -287,7 +288,7 @@ export default function ProFormaPage() {
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
 
-  const { mutate: bulkSetFreq, isPending: bulkPending } = useMutation({
+  const { mutate: bulkSetFreq, isPending: bulkPending } = useGuardedMutation('pro-forma', {
     mutationFn: async ({ ids, freq }: { ids: string[]; freq: string }) => {
       const { error } = await supabase
         .from('properties')

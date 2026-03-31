@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
@@ -127,7 +128,7 @@ export default function AccessCodesPage() {
     },
   })
 
-  const { mutate: updateField } = useMutation({
+  const { mutate: updateField } = useGuardedMutation('access-codes', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
