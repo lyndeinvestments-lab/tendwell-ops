@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
+import { EmulationBanner } from "@/components/EmulationBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PropertyModalProvider } from "@/hooks/use-property-modal";
 import { PropertyDetailModal } from "@/components/PropertyDetailModal";
@@ -122,12 +123,13 @@ function AlertBellButton() {
 }
 
 function AppRoutes() {
-  const { user, isLoading } = useAuth();
+  const { user, effectiveUser, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
 
   // Redirect non-admin to their first allowed view when landing on /
-  if (user && location === "/" && user.role !== "admin") {
-    setLocation("/" + (user.allowedViews[0] || "linen-tracker"));
+  // Use effectiveUser for role check but user for settings access
+  if (effectiveUser && location === "/" && effectiveUser.role !== "admin") {
+    setLocation("/" + (effectiveUser.resolvedViews[0] || "linen-tracker"));
     return null;
   }
 
@@ -171,6 +173,11 @@ function AppRoutes() {
         <Route path="/cleaners" component={CleanersPage} />
         <Route path="/alerts" component={AlertsPage} />
         <Route path="/activity" component={ActivityFeedPage} />
+        <Route path="/no-access">{() => (
+          <div className="p-5 flex items-center justify-center h-full">
+            <p className="text-muted-foreground">This user has no page access configured.</p>
+          </div>
+        )}</Route>
         <Route component={NotFound} />
       </Switch>
     </Suspense>
@@ -244,6 +251,7 @@ function AppLayout() {
                 <AlertBellButton />
               </div>
             </header>
+            <EmulationBanner />
             <main id="main-content" className="flex-1 overflow-auto">
               <ErrorBoundary resetKey={location}>
                 <AppRoutes />
