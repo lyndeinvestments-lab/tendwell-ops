@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, ClipboardCheck, GripVertical, Plus, Pencil, Check, X } from 'lucide-react'
+import { UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, ClipboardCheck, Plus, Pencil, Check, X } from 'lucide-react'
 
 const ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'admin', label: 'Admin' },
@@ -46,7 +46,6 @@ function AppSettingsSection() {
     { key: 'ac_filter_interval', label: 'Replacement Interval (days)', placeholder: '90', section: 'ac' },
   ]
 
-  // Track live input values so "Save All" can read them
   const [localValues, setLocalValues] = useState<Record<string, string>>(
     () => Object.fromEntries(ALL_FIELDS.map(f => [f.key, get(f.key, f.placeholder)]))
   )
@@ -246,48 +245,66 @@ function OnboardingTemplateSection() {
   )
 }
 
-export default function SettingsPage() {
-  usePageTitle('Settings')
-  const { user } = useAuth()
+function UsersSection() {
   const { toast } = useToast()
   const qc = useQueryClient()
-  const [addOpen, setAddOpen] = useState(false)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [editingRoleId, setEditingRoleId] = useState<string | null>(null)
+  const [newEmail, setNewEmail] = useState('')
   const [newLabel, setNewLabel] = useState('')
   const [newRole, setNewRole] = useState<UserRole>('operations')
-  const [newPassword, setNewPassword] = useState('')
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['/supabase/settings-users'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, role, label, created_at')
+        .select('id, role, label, google_email, created_at')
         .order('created_at', { ascending: true })
       if (error) throw error
       return data || []
     },
   })
 
-  const { mutate: addUser, isPending: adding } = useMutation({
-    mutationFn: async ({ label, role, password }: { label: string; role: UserRole; password: string }) => {
+  const { mutate: inviteUser, isPending: inviting } = useMutation({
+    mutationFn: async ({ email, label, role }: { email: string; label: string; role: UserRole }) => {
       const { error } = await supabase.from('app_users').insert({
+        google_email: email.toLowerCase().trim(),
         label,
         role,
-        password_hash: password,
-        allowed_views: [],
       })
       if (error) throw error
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      toast({ title: 'User added' })
-      setAddOpen(false)
+      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google.` })
+      setInviteOpen(false)
+      setNewEmail('')
       setNewLabel('')
       setNewRole('operations')
-      setNewPassword('')
     },
-    onError: () => toast({ title: 'Failed to add user', variant: 'destructive' }),
+    onError: (err: any) => {
+      const msg = err?.message || ''
+      if (msg.includes('unique') || msg.includes('duplicate')) {
+        toast({ title: 'Email already exists', description: 'That Google account already has access.', variant: 'destructive' })
+      } else {
+        toast({ title: 'Failed to invite user', variant: 'destructive' })
+      }
+    },
+  })
+
+  const { mutate: updateRole } = useMutation({
+    mutationFn: async ({ id, role }: { id: string; role: UserRole }) => {
+      const { error } = await supabase.from('app_users').update({ role }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      setEditingRoleId(null)
+      toast({ title: 'Role updated' })
+    },
+    onError: () => toast({ title: 'Failed to update role', variant: 'destructive' }),
   })
 
   const { mutate: deleteUser, isPending: deleting } = useMutation({
@@ -306,34 +323,21 @@ export default function SettingsPage() {
     },
   })
 
-  if (user?.role !== 'admin') {
-    return (
-      <div className="p-5 flex items-center justify-center h-full">
-        <p className="text-muted-foreground">You don't have access to this page.</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="p-5 space-y-6 h-full flex flex-col max-w-3xl">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-          <Shield className="w-5 h-5" />
-          Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage users and application settings</p>
-      </div>
-
+    <>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-medium flex items-center gap-2">
-            <Users className="w-4 h-4" />
-            Users
-          </h2>
+          <div>
+            <h2 className="text-base font-medium flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              Users
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Add a user's Google email to grant access. They sign in with Google.</p>
+          </div>
           <Button
             size="sm"
             className="h-8 gap-1.5 text-xs"
-            onClick={() => setAddOpen(true)}
+            onClick={() => setInviteOpen(true)}
             data-testid="button-add-user"
           >
             <UserPlus className="w-3.5 h-3.5" />
@@ -345,7 +349,8 @@ export default function SettingsPage() {
           <table className="w-full text-sm">
             <thead className="bg-muted/80 border-b border-border">
               <tr>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Label</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Google Email</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
                 <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
               </tr>
@@ -354,24 +359,50 @@ export default function SettingsPage() {
               {isLoading ? (
                 [...Array(3)].map((_, i) => (
                   <tr key={i} className="border-b border-border/50">
-                    {[...Array(3)].map((_, j) => (
+                    {[...Array(4)].map((_, j) => (
                       <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                     ))}
                   </tr>
                 ))
               ) : !users?.length ? (
                 <tr>
-                  <td colSpan={3} className="text-center py-8 text-muted-foreground text-sm">No users found</td>
+                  <td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">No users found</td>
                 </tr>
               ) : (
                 users.map((u: any) => (
                   <tr key={u.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-user-${u.id}`}>
                     <td className="py-2 px-3 font-medium text-xs">{u.label}</td>
-                    <td className="py-2 px-3"><RoleBadge role={u.role} /></td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground">{u.google_email || <span className="italic">not set</span>}</td>
+                    <td className="py-2 px-3">
+                      {editingRoleId === u.id ? (
+                        <div className="flex items-center gap-1">
+                          <select
+                            defaultValue={u.role}
+                            autoFocus
+                            className="h-6 rounded border border-input bg-background px-1.5 text-xs"
+                            onChange={e => updateRole({ id: u.id, role: e.target.value as UserRole })}
+                            onBlur={() => setEditingRoleId(null)}
+                          >
+                            {ROLE_OPTIONS.map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      ) : (
+                        <button
+                          className="flex items-center gap-1 group/role"
+                          onClick={() => setEditingRoleId(u.id)}
+                          title="Click to change role"
+                        >
+                          <RoleBadge role={u.role} />
+                          <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover/role:opacity-100 transition-opacity" />
+                        </button>
+                      )}
+                    </td>
                     <td className="py-2 px-3 text-right">
                       {confirmDeleteId === u.id ? (
                         <div className="flex items-center justify-end gap-1.5">
-                          <span className="text-xs text-muted-foreground">Are you sure?</span>
+                          <span className="text-xs text-muted-foreground">Remove?</span>
                           <Button
                             variant="destructive"
                             size="sm"
@@ -413,21 +444,32 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <AppSettingsSection />
-      <OnboardingTemplateSection />
-
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Add User</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">
+            Enter their Google account email. They'll be able to sign in immediately.
+          </p>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Label</label>
+              <label className="text-xs font-medium text-muted-foreground">Google Email</label>
+              <Input
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                placeholder="name@gmail.com"
+                className="mt-1"
+                data-testid="input-new-user-email"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Display Name</label>
               <Input
                 value={newLabel}
                 onChange={e => setNewLabel(e.target.value)}
-                placeholder="e.g. Cleaning Team"
+                placeholder="e.g. Sarah (Cleaning Team)"
                 className="mt-1"
                 data-testid="input-new-user-label"
               />
@@ -444,31 +486,55 @@ export default function SettingsPage() {
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Password</label>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="Set a password"
-                className="mt-1"
-                data-testid="input-new-user-password"
-              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {newRole === 'admin' && 'Full access to all pages and settings.'}
+                {newRole === 'operations' && 'Access to property list, linens, access codes, AC filters, inspections, and cleaners.'}
+                {newRole === 'cleaning' && 'Access to linen tracker only.'}
+                {newRole === 'viewer' && 'Read-only access to most pages. Cannot edit settings.'}
+              </p>
             </div>
           </div>
           <DialogFooter>
             <Button
               size="sm"
-              disabled={!newLabel.trim() || !newPassword.trim() || adding}
-              onClick={() => addUser({ label: newLabel.trim(), role: newRole, password: newPassword })}
+              disabled={!newEmail.trim() || !newLabel.trim() || inviting}
+              onClick={() => inviteUser({ email: newEmail, label: newLabel.trim(), role: newRole })}
               data-testid="button-confirm-add-user"
             >
-              {adding ? 'Adding…' : 'Add User'}
+              {inviting ? 'Adding…' : 'Add User'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </>
+  )
+}
+
+export default function SettingsPage() {
+  usePageTitle('Settings')
+  const { user } = useAuth()
+
+  if (user?.role !== 'admin') {
+    return (
+      <div className="p-5 flex items-center justify-center h-full">
+        <p className="text-muted-foreground">You don't have access to this page.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-5 space-y-6 h-full flex flex-col max-w-3xl">
+      <div>
+        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
+          <Shield className="w-5 h-5" />
+          Settings
+        </h1>
+        <p className="text-sm text-muted-foreground">Manage users and application settings</p>
+      </div>
+
+      <UsersSection />
+      <AppSettingsSection />
+      <OnboardingTemplateSection />
     </div>
   )
 }

@@ -28,7 +28,7 @@
 | Backend | Node.js + Express 5, TypeScript |
 | Primary DB | Supabase (PostgreSQL) |
 | Fallback DB | SQLite via Drizzle ORM + better-sqlite3 |
-| Auth | bcrypt password-only login, role stored in React context |
+| Auth | Google OAuth via Supabase Auth, role stored in `app_users` table |
 | Deployment | Vercel (configured) |
 
 ---
@@ -104,11 +104,12 @@ tendwell-ops/
 
 ## Auth & Roles
 
-- **Login**: POST `/api/auth/login` with `{ password: string }` — bcrypt verified server-side
-- **Rate limit**: 10 attempts / 15 min per IP
-- **No sessions / no localStorage** — user state lives in React context only (lost on refresh)
+- **Login**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`)
+- **Authorization**: After Google sign-in, user's email is looked up in `app_users.google_email`. If not found → signed out with "not authorized" error.
+- **Session**: Supabase Auth handles session persistence (localStorage key `tendwell-sb-auth`). 30-min inactivity timeout.
 - **Roles**: `admin` | `operations` | `cleaning` | `viewer`
 - Role definitions and view access map: `client/src/lib/auth.tsx`
+- **User management**: Settings page (`/settings`, admin only) — add users by Google email, set role, inline role editing, remove users. No password needed.
 
 ---
 
@@ -232,10 +233,15 @@ npm run db:push    # Push Drizzle schema to SQLite
   - AC Filters: bulk edit mode (multi-select + bulk set size / mark changed today), CSV import
   - Data integrity: duplicate detection on Add Lead, `exclude_from_financials` flag for SCounty properties, auto `offboarded_at` timestamp
   - UX polish: `?` shortcuts button in header, CSV export toast on all pages, KPI tooltip explanations, sidebar `⌘K` / `?` hints
+- **Google Auth + User Management (2026-03-31):**
+  - Password login removed; replaced with Google OAuth via Supabase Auth
+  - `app_users.google_email` column added — sign-in looks up role by email
+  - Settings page user management: add users by Google email, inline role editing, remove users; no password required
 
 ### Recent Migrations
 
 - `20260327_exclude_from_financials.sql` — adds `exclude_from_financials` boolean + `offboarded_at` timestamp to properties
+- `20260331_google_auth.sql` — adds `google_email` (unique) to `app_users`, makes `password_hash` nullable
 
 ---
 
