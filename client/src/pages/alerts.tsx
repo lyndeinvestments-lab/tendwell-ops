@@ -59,7 +59,7 @@ export function useAlerts() {
       const { data, error } = await supabase
         .from('properties')
         .select('id, name, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, bedrooms, address, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, next_filter_due, pipeline_stages!properties_stage_id_fkey(name)')
-        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote")')
+        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote","Offboarding")')
       if (error) throw error
       return data || []
     },
@@ -95,7 +95,7 @@ export function useAlerts() {
 
     for (const p of properties) {
       const stageName = (p.pipeline_stages as any)?.name
-      if (stageName === 'Offboarded' || stageName === 'Lead' || stageName === 'Quote') continue
+      if (stageName === 'Offboarded' || stageName === 'Lead' || stageName === 'Quote' || stageName === 'Offboarding') continue
 
       // Critical: Negative Profit — skip $0 CE properties (those are missing data, not truly negative)
       if ((p.profit_percentage || 0) < 0 && (p.ce_charged || 0) > 0) {
@@ -117,7 +117,7 @@ export function useAlerts() {
           severity: 'warning',
           category: 'Data Quality',
           title: `Missing Financial Data: ${p.name}`,
-          description: 'CE Charged is $0 — profit calculations are unreliable until this is set.',
+          description: 'Client Charged is $0 — profit calculations are unreliable until this is set.',
           actionRoute: '/cost-tracking',
           propertyId: p.id,
         })

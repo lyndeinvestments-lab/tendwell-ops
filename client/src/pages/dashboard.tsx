@@ -234,7 +234,7 @@ export default function DashboardPage() {
   // Missing data detection — exclude Lead, Quote, Offboarded
   const missingData = properties?.filter((p: any) => {
     const stg = stageMap[p.stage_id]
-    if (!stg || stg.name === 'Offboarded' || stg.name === 'Lead' || stg.name === 'Quote') return false
+    if (!stg || stg.name === 'Offboarded' || stg.name === 'Lead' || stg.name === 'Quote' || stg.name === 'Offboarding') return false
     return !p.ce_charged || !p.cleaner_pay || !p.square_footage || !p.bedrooms || !p.address
   }) || []
 

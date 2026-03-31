@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 
 const ACCESS_COLS = [
@@ -57,25 +57,43 @@ function CopyButton({ value, field, id }: { value: string; field: string; id: st
   )
 }
 
-function MaskedCell({ value, field, id, sensitive, onSave }: {
+function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }: {
   value: string | null; field: string; id: string; sensitive: boolean
+  revealed: boolean; onReveal: () => void
   onSave: (v: string) => void
 }) {
+  const [editing, setEditing] = useState(false)
+
   const handleSave = (v: string) => {
     onSave(v)
     logAccessEvent(id, field, 'update')
+    setEditing(false)
   }
+
+  const showMasked = sensitive && !!value && !revealed && !editing
 
   return (
     <div className="flex items-center gap-1.5">
-      <InlineEdit
-        value={value}
-        type="text"
-        onSave={handleSave}
-        testId={`inline-${field}-${id}`}
-        placeholder="—"
-      />
-      {value && <CopyButton value={value} field={field} id={id} />}
+      <div onClick={() => setEditing(true)} onBlur={() => setEditing(false)}>
+        <InlineEdit
+          value={showMasked ? '••••••••' : value}
+          type="text"
+          onSave={handleSave}
+          testId={`inline-${field}-${id}`}
+          placeholder="—"
+        />
+      </div>
+      {sensitive && value && !editing && (
+        <button
+          onClick={() => onReveal()}
+          className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+          aria-label={revealed ? `Hide ${field}` : `Reveal ${field}`}
+          data-testid={`reveal-${field}-${id}`}
+        >
+          {revealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+        </button>
+      )}
+      {value && (revealed || !sensitive) && <CopyButton value={value} field={field} id={id} />}
     </div>
   )
 }
@@ -115,6 +133,7 @@ export default function AccessCodesPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+  const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set())
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/access-codes'],
@@ -271,17 +290,32 @@ export default function AccessCodesPage() {
                         )}
                       </div>
                     </td>
-                    {ACCESS_COLS.map(c => (
-                      <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
-                        <MaskedCell
-                          value={p[c.key]}
-                          field={c.key}
-                          id={p.id}
-                          sensitive={c.sensitive}
-                          onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
-                        />
-                      </td>
-                    ))}
+                    {ACCESS_COLS.map(c => {
+                      const cellKey = `${p.id}-${c.key}`
+                      const isRevealed = revealedCells.has(cellKey)
+                      return (
+                        <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
+                          <MaskedCell
+                            value={p[c.key]}
+                            field={c.key}
+                            id={p.id}
+                            sensitive={c.sensitive}
+                            revealed={isRevealed}
+                            onReveal={() => {
+                              const next = new Set(revealedCells)
+                              if (isRevealed) {
+                                next.delete(cellKey)
+                              } else {
+                                next.add(cellKey)
+                                logAccessEvent(p.id, c.key, 'reveal')
+                              }
+                              setRevealedCells(next)
+                            }}
+                            onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
+                          />
+                        </td>
+                      )
+                    })}
                     <td className={`py-2 px-3 text-xs whitespace-nowrap ${
                       p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
                         ? 'text-amber-600 dark:text-amber-400 font-medium'

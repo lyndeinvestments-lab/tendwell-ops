@@ -251,7 +251,7 @@ export default function CostTrackingPage() {
     const rows = filtered.map((p: any) => ({
       'Property': p.name || '',
       'Status': p.stage_name || '',
-      'CE Charged': p.ce_charged ?? '',
+      'Client Charged': p.ce_charged ?? '',
       'Cleaner Pay': p.cleaner_pay ?? '',
       'Laundry': p.est_laundry ?? '',
       'Consumables': p.est_consumables ?? '',
@@ -350,7 +350,7 @@ export default function CostTrackingPage() {
             <tr>
               <th className={`${thCls} sticky left-0 z-20 bg-muted/80 backdrop-blur`} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
-              <th className={thCls} onClick={() => toggleSort('ce_charged')}>CE Charged <SortIcon col="ce_charged" /></th>
+              <th className={thCls} onClick={() => toggleSort('ce_charged')}>Client Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
               <th className={thCls} onClick={() => toggleSort('est_laundry')}>Laundry <SortIcon col="est_laundry" /></th>
               <th className={thCls} onClick={() => toggleSort('est_consumables')}>Consumables <SortIcon col="est_consumables" /></th>

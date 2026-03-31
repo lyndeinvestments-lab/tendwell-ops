@@ -1173,7 +1173,7 @@ export function PropertyDetailModal() {
               <TabsContent value="financials" className="mt-3 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label: 'CE Charged', field: 'ce_charged', value: property.ce_charged },
+                    { label: 'Client Charged', field: 'ce_charged', value: property.ce_charged },
                     { label: 'Cleaner Pay', field: 'cleaner_pay', value: property.cleaner_pay },
                   ].map(row => (
                     <div key={row.field}>

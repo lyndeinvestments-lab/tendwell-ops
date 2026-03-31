@@ -312,7 +312,7 @@ export default function QuoteSheetPage() {
             <tr>
               {([
                 { col: 'name', label: 'Name' },
-                { col: 'ce_charged', label: 'CE Charged', title: 'Cleaning Estimate Charged' },
+                { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
                 { col: 'cleaner_pay', label: 'Cleaner Pay' },
                 { col: 'bedrooms', label: 'Bedrooms' },
                 { col: 'number_of_beds', label: 'Beds' },
@@ -518,7 +518,7 @@ export default function QuoteSheetPage() {
             {/* CE Charged and Cleaner Pay — with auto-suggestions */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">CE Charged ($)</Label>
+                <Label className="text-xs text-muted-foreground">Client Charged ($)</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -581,7 +581,7 @@ export default function QuoteSheetPage() {
                       <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">$5.00</span></div>
                       <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
                       {ce != null && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">CE Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
                       )}
                       {profitPct !== null && (
                         <div className="flex justify-between border-t border-border pt-1 font-semibold">

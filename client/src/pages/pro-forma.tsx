@@ -151,7 +151,7 @@ function WhatIfPopover({
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-3" side="right">
         <p className="text-xs font-semibold text-foreground">
-          What-If: {field === 'ce_charged' ? 'CE/Clean' : 'Cost/Clean'}
+          What-If: {field === 'ce_charged' ? 'Client Charged/Clean' : 'Cost/Clean'}
         </p>
         <Input
           type="number"
@@ -372,6 +372,9 @@ export default function ProFormaPage() {
         const aPrefix = (a.name || '').slice(0, 3).toLowerCase()
         const bPrefix = (b.name || '').slice(0, 3).toLowerCase()
         if (aPrefix !== bPrefix || aPrefix === '') continue
+        const aAddr = (a.address || '').toLowerCase().trim()
+        const bAddr = (b.address || '').toLowerCase().trim()
+        if (aAddr && bAddr && aAddr !== bAddr) continue
         const ceSimilar = a.ce_charged != null && b.ce_charged != null && Math.abs(a.ce_charged - b.ce_charged) <= 1
         const costSimilar = a.total_estimated_cost != null && b.total_estimated_cost != null && Math.abs(a.total_estimated_cost - b.total_estimated_cost) <= 1
         if (ceSimilar && costSimilar) {
@@ -453,7 +456,7 @@ export default function ProFormaPage() {
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
       'Property': p.name || '',
-      'CE/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
+      'Client Charged/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
       'Cost/Clean': p.total_estimated_cost != null ? `$${p.total_estimated_cost.toFixed(2)}` : '',
       'Profit/Clean': p.estimated_profit != null ? `$${p.estimated_profit.toFixed(2)}` : '',
       'Frequency': FREQ_OPTIONS.find(f => f.value === p.cleaning_frequency)?.label || p.cleaning_frequency || '',
@@ -661,7 +664,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('ce_charged') } }}
               >
-                <span className="flex items-center gap-1">CE/Clean <SortIcon col="ce_charged" /></span>
+                <span className="flex items-center gap-1">Client Charged/Clean <SortIcon col="ce_charged" /></span>
               </th>
               <th
                 role="columnheader"
@@ -807,7 +810,7 @@ export default function ProFormaPage() {
                         {p.name}
                       </button>
                     </td>
-                    {/* Feature 4: What-If Popover for CE/Clean */}
+                    {/* Feature 4: What-If Popover for Client Charged/Clean */}
                     <td className="py-2 px-3 text-xs tabular-nums">
                       <WhatIfPopover
                         id={p.id}
