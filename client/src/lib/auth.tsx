@@ -61,18 +61,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Check for existing Supabase session on mount
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user?.email) {
-        const appUser = await resolveUserFromEmail(session.user.email)
-        if (appUser) {
-          setUser(appUser)
-        } else {
-          await supabase.auth.signOut()
-          setAuthError('Your Google account is not authorized. Contact an admin.')
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        if (session?.user?.email) {
+          const appUser = await resolveUserFromEmail(session.user.email)
+          if (appUser) {
+            setUser(appUser)
+          } else {
+            await supabase.auth.signOut()
+            setAuthError('Your Google account is not authorized. Contact an admin.')
+          }
         }
-      }
-      setIsLoading(false)
-    })
+        setIsLoading(false)
+      })
+      .catch(() => {
+        // If session check fails for any reason, unblock the UI
+        setIsLoading(false)
+      })
 
     // Listen for auth state changes (handles OAuth redirect callback)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
