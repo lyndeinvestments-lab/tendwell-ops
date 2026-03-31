@@ -185,16 +185,29 @@ export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
 
 // ─── Resolve user from DB ────────────────────────────────────────────────────
 async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
-  const { data, error } = await supabase
+  // Try with custom_permissions first; fall back without it if column doesn't exist yet
+  let data: any = null
+  const { data: d1, error: e1 } = await supabase
     .from('app_users')
     .select('id, role, label, custom_views, custom_permissions')
     .eq('google_email', email.toLowerCase())
     .single()
-  if (error || !data) return null
+  if (!e1 && d1) {
+    data = d1
+  } else {
+    // Column may not exist yet — retry without custom_permissions
+    const { data: d2, error: e2 } = await supabase
+      .from('app_users')
+      .select('id, role, label, custom_views')
+      .eq('google_email', email.toLowerCase())
+      .single()
+    if (e2 || !d2) return null
+    data = d2
+  }
 
   const role = data.role as string
   const customViews = data.custom_views as unknown
-  const customPermissions = data.custom_permissions as unknown
+  const customPermissions = (data.custom_permissions as unknown) ?? null
 
   let resolvedViews: ViewId[]
   let resolvedPermissions: Record<string, PagePermission>

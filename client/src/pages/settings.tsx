@@ -709,11 +709,18 @@ function CustomViewsDialog({
 
   const { mutate: saveCustomAccess, isPending } = useMutation({
     mutationFn: async ({ customViews, customPerms }: { customViews: string[] | null; customPerms: Record<string, PagePermission> | null }) => {
+      // Try saving both columns; fall back to just custom_views if custom_permissions column doesn't exist
       const { error } = await supabase
         .from('app_users')
         .update({ custom_views: customViews, custom_permissions: customPerms })
         .eq('id', targetUser.id)
-      if (error) throw error
+      if (error) {
+        const { error: e2 } = await supabase
+          .from('app_users')
+          .update({ custom_views: customViews })
+          .eq('id', targetUser.id)
+        if (e2) throw e2
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
@@ -856,12 +863,18 @@ function UsersSection() {
   const { data: users, isLoading } = useQuery({
     queryKey: ['/supabase/settings-users'],
     queryFn: async () => {
+      // Try with custom_permissions; fall back if column doesn't exist yet
       const { data, error } = await supabase
         .from('app_users')
         .select('id, role, label, google_email, created_at, custom_views, custom_permissions')
         .order('created_at', { ascending: true })
-      if (error) throw error
-      return data || []
+      if (!error) return data || []
+      const { data: d2, error: e2 } = await supabase
+        .from('app_users')
+        .select('id, role, label, google_email, created_at, custom_views')
+        .order('created_at', { ascending: true })
+      if (e2) throw e2
+      return d2 || []
     },
   })
 
