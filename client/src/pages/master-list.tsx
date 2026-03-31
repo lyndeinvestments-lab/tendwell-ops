@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, STAGE_COLORS, logPropertyEdit } from '@/lib/supabase'
 import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
@@ -164,7 +165,7 @@ export default function MasterListPage() {
     }
   }, [properties, highlightHandled])
 
-  const { mutate: bulkChangeStage, isPending: bulkPending } = useMutation({
+  const { mutate: bulkChangeStage, isPending: bulkPending } = useGuardedMutation('master-list', {
     mutationFn: async ({ ids, stageId }: { ids: string[]; stageId: string }) => {
       const { error } = await supabase.from('properties').update({ stage_id: stageId }).in('id', ids)
       if (error) throw error
@@ -180,7 +181,7 @@ export default function MasterListPage() {
   })
 
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const { mutate: bulkDelete, isPending: deletePending } = useMutation({
+  const { mutate: bulkDelete, isPending: deletePending } = useGuardedMutation('master-list', {
     mutationFn: async (ids: string[]) => {
       const { error } = await supabase.from('properties').delete().in('id', ids)
       if (error) throw error
@@ -199,7 +200,7 @@ export default function MasterListPage() {
   })
 
   // Detail panel save
-  const { mutate: saveDetail, isPending: savingDetail } = useMutation({
+  const { mutate: saveDetail, isPending: savingDetail } = useGuardedMutation('master-list', {
     mutationFn: async (updates: Record<string, any>) => {
       const { error } = await supabase.from('properties').update(updates).eq('id', detailProperty.id)
       if (error) throw error
@@ -222,7 +223,7 @@ export default function MasterListPage() {
   }, [sortKey, sortDir])
 
   // Quick inline update for CE/Pay with undo
-  const { mutate: quickUpdate } = useMutation({
+  const { mutate: quickUpdate } = useGuardedMutation('master-list', {
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error

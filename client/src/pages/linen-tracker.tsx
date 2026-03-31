@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -72,7 +73,7 @@ export default function LinenTrackerPage() {
     },
   })
 
-  const { mutate: updateLinen } = useMutation({
+  const { mutate: updateLinen } = useGuardedMutation('linen-tracker', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: any; oldValue?: any; propName?: string }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error

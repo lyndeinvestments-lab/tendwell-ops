@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
@@ -20,7 +21,7 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
 
-  const { mutate: changeStage } = useMutation({
+  const { mutate: changeStage } = useGuardedMutation('property-list', {
     mutationFn: async (stageId: string) => {
       const fromStage = stages.find((s: any) => s.name === currentStageName)
       const toStage = stages.find((s: any) => s.id === stageId)
