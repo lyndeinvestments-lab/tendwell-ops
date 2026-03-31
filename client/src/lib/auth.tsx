@@ -59,46 +59,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
-  useEffect(() => {
-    // Check for existing Supabase session on mount
-    supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
-        if (session?.user?.email) {
-          const appUser = await resolveUserFromEmail(session.user.email)
-          if (appUser) {
-            setUser(appUser)
-          } else {
-            await supabase.auth.signOut()
-            setAuthError('Your Google account is not authorized. Contact an admin.')
-          }
-        }
-        setIsLoading(false)
-      })
-      .catch(() => {
-        // If session check fails for any reason, unblock the UI
-        setIsLoading(false)
-      })
+  // Stores the Google email from Supabase Auth session.
+  // undefined = not yet determined | null = no session | string = authenticated email
+  const [sessionEmail, setSessionEmail] = useState<string | null | undefined>(undefined)
 
-    // Listen for auth state changes (handles OAuth redirect callback)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user?.email) {
-        const appUser = await resolveUserFromEmail(session.user.email)
+  // Effect 1: Subscribe to Supabase auth state changes.
+  // IMPORTANT: Never make Supabase data queries here — doing so in Supabase v2
+  // causes a deadlock because the client holds an internal lock during auth callbacks.
+  // We only store the email and let Effect 2 do the role lookup.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionEmail(session?.user?.email ?? null)
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Effect 2: Once the session email is known, look up the user's role from app_users.
+  // This runs outside the auth callback so Supabase queries work without deadlocking.
+  useEffect(() => {
+    if (sessionEmail === undefined) return // still waiting for INITIAL_SESSION event
+
+    if (sessionEmail === null) {
+      setUser(null)
+      setIsLoading(false)
+      return
+    }
+
+    resolveUserFromEmail(sessionEmail)
+      .then(appUser => {
         if (appUser) {
           setUser(appUser)
           setAuthError(null)
         } else {
-          await supabase.auth.signOut()
+          supabase.auth.signOut()
           setAuthError('Your Google account is not authorized. Contact an admin.')
+          setUser(null)
         }
-        setIsLoading(false)
-      } else if (event === 'SIGNED_OUT') {
+      })
+      .catch(() => {
         setUser(null)
+      })
+      .finally(() => {
         setIsLoading(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
+      })
+  }, [sessionEmail])
 
   async function loginWithGoogle() {
     setIsLoading(true)
