@@ -71,7 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSessionEmail(session?.user?.email ?? null)
     })
-    return () => subscription.unsubscribe()
+    // Failsafe: if INITIAL_SESSION never fires (rare edge case), unblock loading after 5s
+    const failsafe = setTimeout(() => setSessionEmail(prev => prev === undefined ? null : prev), 5000)
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(failsafe)
+    }
   }, [])
 
   // Effect 2: Once the session email is known, look up the user's role from app_users.

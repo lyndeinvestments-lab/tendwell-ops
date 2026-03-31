@@ -178,7 +178,7 @@ function AppRoutes() {
 }
 
 function AppLayout() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [location] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -266,7 +266,9 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <Router hook={useHashLocation}>
-              <AppLayout />
+              <ErrorBoundary>
+                <AppLayout />
+              </ErrorBoundary>
             </Router>
             <Toaster />
             <Analytics />
