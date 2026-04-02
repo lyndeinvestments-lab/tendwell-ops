@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ type NewProp = {
   hot_tub: boolean
   sq_ft: string
   address: string
+  contact_id: string
 }
 
 const EMPTY_PROP: NewProp = {
@@ -75,6 +76,7 @@ const EMPTY_PROP: NewProp = {
   hot_tub: false,
   sq_ft: '',
   address: '',
+  contact_id: '',
 }
 
 export default function QuoteSheetPage() {
@@ -108,6 +110,15 @@ export default function QuoteSheetPage() {
     queryKey: ['/supabase/pipeline_stages'],
     queryFn: async () => {
       const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
+      return data || []
+    },
+  })
+
+  const { data: contacts } = useQuery({
+    queryKey: ['/supabase/quote-contacts'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('contacts').select('id, full_name, email').order('full_name')
+      if (error) throw error
       return data || []
     },
   })
@@ -190,6 +201,7 @@ export default function QuoteSheetPage() {
       const { error } = await supabase.from('properties').insert({
         name: newProp.name,
         client: newProp.client_name || null,
+        contact_id: newProp.contact_id ? parseInt(newProp.contact_id) : null,
         ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
         cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
         bedrooms: newProp.bedrooms ? parseInt(newProp.bedrooms) : null,
@@ -251,6 +263,7 @@ export default function QuoteSheetPage() {
       hot_tub: prop.hot_tub || false,
       sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
       address: '',
+      contact_id: '',
     })
     setAddOpen(true)
   }
@@ -272,6 +285,37 @@ export default function QuoteSheetPage() {
     return { laundry, consumables }
   }
 
+  function exportCsv() {
+    if (!filtered || filtered.length === 0) return
+    const headers = ['Name', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
+    const rows = filtered.map((p: any) => {
+      const { laundry, consumables } = getEstimates(p)
+      return [
+        p.name || '',
+        p.ce_charged ?? '',
+        p.cleaner_pay ?? '',
+        p.bedrooms ?? '',
+        p.number_of_beds ?? '',
+        p.full_baths ?? '',
+        p.half_baths ?? '',
+        p.square_footage ?? '',
+        laundry?.toFixed(2) ?? '',
+        consumables?.toFixed(2) ?? '',
+        '15.00',
+        '5.00',
+        p.profit_percentage != null ? p.profit_percentage.toFixed(1) : '',
+      ]
+    })
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `quote-sheet-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4">
@@ -280,6 +324,9 @@ export default function QuoteSheetPage() {
           <p className="text-sm text-muted-foreground">Properties currently in Quote stage</p>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 no-print" data-testid="button-print-quote">
             <Printer className="w-3.5 h-3.5" />
             Print
@@ -411,6 +458,27 @@ export default function QuoteSheetPage() {
                 )
               })
             )}
+            {filtered.length > 0 && (
+              <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                <td className="py-2 px-3 text-xs uppercase tracking-wide">Totals / Avg ({filtered.length})</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0))}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0))}</td>
+                <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).laundry || 0), 0))}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).consumables || 0), 0))}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * 15)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * 5)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">
+                  {(() => {
+                    const validProfit = filtered.filter((p: any) => p.profit_percentage != null)
+                    if (validProfit.length === 0) return '—'
+                    const avg = validProfit.reduce((s: number, p: any) => s + p.profit_percentage, 0) / validProfit.length
+                    return <span className={`font-medium ${avg >= 20 ? 'text-green-600 dark:text-green-400' : avg >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>{avg.toFixed(1)}%</span>
+                  })()}
+                </td>
+                <td></td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -434,6 +502,19 @@ export default function QuoteSheetPage() {
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Client Name</Label>
               <Input value={newProp.client_name} onChange={e => setNewProp(prev => ({ ...prev, client_name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-client_name" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Contact</Label>
+              <select
+                value={newProp.contact_id}
+                onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
+                className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
+              >
+                <option value="">No contact linked</option>
+                {(contacts || []).map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.full_name}{c.email ? ` (${c.email})` : ''}</option>
+                ))}
+              </select>
             </div>
 
             {/* Property details grid */}

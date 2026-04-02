@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -153,6 +154,7 @@ function PropertyBarTooltip({ active, payload }: any) {
 
 export default function FinancialDashboardPage() {
   usePageTitle('Financial Dashboard')
+  const { openPropertyModal } = usePropertyModal()
 
   // ── Scenario state ──
   const [scenarioCpmSelect, setScenarioCpmSelect] = useState<string>('')
@@ -472,7 +474,8 @@ export default function FinancialDashboardPage() {
                 {negativeProperties.map((p) => (
                   <li
                     key={p.id}
-                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-destructive/5 hover:bg-destructive/10 transition-colors"
+                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-destructive/5 hover:bg-destructive/10 transition-colors cursor-pointer"
+                    onClick={() => openPropertyModal(p.id)}
                   >
                     <span className="font-medium text-foreground truncate pr-2">{p.name}</span>
                     <span className="text-destructive tabular-nums font-semibold flex-shrink-0">
@@ -514,7 +517,8 @@ export default function FinancialDashboardPage() {
                 {nearBreakEvenProperties.map((p) => (
                   <li
                     key={p.id}
-                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-amber-500/5 hover:bg-amber-500/10 transition-colors"
+                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-amber-500/5 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                    onClick={() => openPropertyModal(p.id)}
                   >
                     <span className="font-medium text-foreground truncate pr-2">{p.name}</span>
                     <span className="text-amber-600 dark:text-amber-400 tabular-nums font-semibold flex-shrink-0">
@@ -646,7 +650,14 @@ export default function FinancialDashboardPage() {
                         width={52}
                       />
                       <Tooltip content={<PropertyBarTooltip />} />
-                      <Bar dataKey="value" radius={[3, 3, 0, 0]}>
+                      <Bar
+                        dataKey="value"
+                        radius={[3, 3, 0, 0]}
+                        cursor="pointer"
+                        onClick={(data: any) => {
+                          if (data?.id) openPropertyModal(data.id)
+                        }}
+                      >
                         {propertyChartData.map((entry, index) => (
                           <Cell
                             key={index}
@@ -660,6 +671,46 @@ export default function FinancialDashboardPage() {
                 </div>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Property List */}
+        <Card className="border-card-border lg:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">All Active Properties — Monthly Profit</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="max-h-64 overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-muted/80 backdrop-blur">
+                  <tr>
+                    <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Property</th>
+                    <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Revenue</th>
+                    <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Cost</th>
+                    <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Profit</th>
+                    <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {propertyChartData.map((p: any) => {
+                    const prop = properties?.find(pr => pr.id === p.id)
+                    return (
+                      <tr
+                        key={p.id}
+                        className="border-b border-border/30 hover:bg-muted/30 cursor-pointer transition-colors"
+                        onClick={() => openPropertyModal(p.id)}
+                      >
+                        <td className="py-1.5 px-2 font-medium">{p.name}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{fmt(prop?.monthly_revenue_estimate)}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{fmt(prop?.monthly_cost_estimate)}</td>
+                        <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${p.value < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(p.value)}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{fmtPct(prop?.profit_percentage)}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </CardContent>
         </Card>
       </div>
