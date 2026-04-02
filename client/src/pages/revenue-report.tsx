@@ -334,16 +334,26 @@ export default function RevenueReportPage() {
 
   const forecastData = useMemo(() => {
     return sorted.map((p: any) => {
-      const occ = propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy
-      const monthlyProj = (p.ce_charged || 0) * (occ / 100)
-      return { ...p, occ, monthlyProj, sixMonthTotal: monthlyProj * 6 }
+      const occ = (propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy) / 100
+      const baseRevenue = (p.ce_charged || 0) * occ
+      const seasonalFactors = forecastMonths.map((m: any) => {
+        const mo = m.date.getMonth() // 0-11
+        if (mo >= 4 && mo <= 8) return 1.1   // May–Sep: summer bump
+        if (mo >= 10 || mo <= 1) return 0.85  // Nov–Feb: winter dip
+        return 1.0
+      })
+      const monthlyRevenues = seasonalFactors.map((f: number) => baseRevenue * f)
+      const monthlyCost = p.cleaner_pay || 0
+      const monthlyProfit = monthlyRevenues.map((r: number) => r - monthlyCost * occ)
+      const sixMonthTotal = monthlyRevenues.reduce((s: number, v: number) => s + v, 0)
+      return { ...p, occ: occ * 100, monthlyRevenues, monthlyProfit, sixMonthTotal }
     })
-  }, [sorted, propertyOccupancy, effectiveOccupancy])
+  }, [sorted, propertyOccupancy, effectiveOccupancy, forecastMonths])
 
   const forecastChartData = useMemo(() => {
-    return forecastMonths.map(m => ({
+    return forecastMonths.map((m: any, mi: number) => ({
       label: m.label,
-      projected: forecastData.reduce((s: number, p: any) => s + (p.monthlyProj || 0), 0),
+      projected: forecastData.reduce((s: number, p: any) => s + (p.monthlyRevenues?.[mi] || 0), 0),
     }))
   }, [forecastMonths, forecastData])
 
@@ -353,7 +363,7 @@ export default function RevenueReportPage() {
       Property: p.name || '',
       'Client Charged': p.ce_charged ?? '',
       'Occupancy %': p.occ,
-      ...Object.fromEntries(forecastMonths.map(m => [m.label, p.monthlyProj.toFixed(2)])),
+      ...Object.fromEntries(forecastMonths.map((m: any, mi: number) => [m.label, (p.monthlyRevenues?.[mi] || 0).toFixed(2)])),
       '6-Month Total': p.sixMonthTotal.toFixed(2),
     }))
     const csv = Papa.unparse(rows)
@@ -546,38 +556,56 @@ export default function RevenueReportPage() {
                 {forecastData.length === 0 ? (
                   <tr><td colSpan={10}><EmptyState icon={TrendingUp} title="No properties" description="No active properties to forecast." /></td></tr>
                 ) : forecastData.map((p: any) => (
-                  <tr key={p.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="py-2 px-3 font-medium text-xs">
-                      <button onClick={() => openPropertyModal(p.id)} className="hover:underline text-left">{p.name}</button>
-                    </td>
-                    <td className="py-2 px-3 tabular-nums text-xs">{fmt(p.ce_charged)}</td>
-                    <td className="py-2 px-3 text-xs">
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy}
-                          onChange={e => setPropertyOccupancy(prev => ({ ...prev, [p.id]: Number(e.target.value) }))}
-                          className="w-14 h-6 text-xs border border-input rounded px-1 bg-background tabular-nums"
-                        />
-                        <span className="text-muted-foreground text-xs">%</span>
-                      </div>
-                    </td>
-                    {forecastMonths.map(m => (
-                      <td key={m.label} className="py-2 px-3 tabular-nums text-xs">{fmt(p.monthlyProj)}</td>
-                    ))}
-                    <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.sixMonthTotal)}</td>
-                  </tr>
+                  <Fragment key={p.id}>
+                    <tr className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                      <td className="py-2 px-3 font-medium text-xs" rowSpan={2}>
+                        <button onClick={() => openPropertyModal(p.id)} className="hover:underline text-left">{p.name}</button>
+                      </td>
+                      <td className="py-2 px-3 tabular-nums text-xs" rowSpan={2}>{fmt(p.ce_charged)}</td>
+                      <td className="py-2 px-3 text-xs" rowSpan={2}>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={propertyOccupancy[p.id] != null ? propertyOccupancy[p.id] : effectiveOccupancy}
+                            onChange={e => setPropertyOccupancy(prev => ({ ...prev, [p.id]: Number(e.target.value) }))}
+                            className="w-14 h-6 text-xs border border-input rounded px-1 bg-background tabular-nums"
+                          />
+                          <span className="text-muted-foreground text-xs">%</span>
+                        </div>
+                      </td>
+                      {p.monthlyRevenues.map((rev: number, mi: number) => (
+                        <td key={mi} className="py-2 px-3 tabular-nums text-xs text-blue-700 dark:text-blue-400">{fmt(rev)}</td>
+                      ))}
+                      <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.sixMonthTotal)}</td>
+                    </tr>
+                    <tr className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                      {p.monthlyProfit.map((prof: number, mi: number) => (
+                        <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${prof >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(prof)}</td>
+                      ))}
+                      <td className={`py-1 px-3 tabular-nums text-xs font-medium ${p.monthlyProfit.reduce((s: number, v: number) => s + v, 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(p.monthlyProfit.reduce((s: number, v: number) => s + v, 0))}</td>
+                    </tr>
+                  </Fragment>
                 ))}
                 {forecastData.length > 0 && (
-                  <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                    <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={3}>Total</td>
-                    {forecastMonths.map(m => (
-                      <td key={m.label} className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.monthlyProj, 0))}</td>
-                    ))}
-                    <td className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.sixMonthTotal, 0))}</td>
-                  </tr>
+                  <Fragment>
+                    <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                      <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={3}>Total Revenue</td>
+                      {forecastMonths.map((_m: any, mi: number) => (
+                        <td key={mi} className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + (p.monthlyRevenues?.[mi] || 0), 0))}</td>
+                      ))}
+                      <td className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.sixMonthTotal, 0))}</td>
+                    </tr>
+                    <tr className="bg-muted/60 border-b border-border font-semibold">
+                      <td className="py-1 px-3 text-xs uppercase tracking-wide text-green-700 dark:text-green-400" colSpan={3}>Total Profit</td>
+                      {forecastMonths.map((_m: any, mi: number) => {
+                        const totalProfit = forecastData.reduce((s: number, p: any) => s + (p.monthlyProfit?.[mi] || 0), 0)
+                        return <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${totalProfit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(totalProfit)}</td>
+                      })}
+                      <td className={`py-1 px-3 tabular-nums text-xs ${forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0))}</td>
+                    </tr>
+                  </Fragment>
                 )}
               </tbody>
             </table>

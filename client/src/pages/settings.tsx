@@ -17,7 +17,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
-  UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind,
+  UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, CalendarDays,
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
   Lock,
 } from 'lucide-react'
@@ -451,9 +451,13 @@ function AppSettingsSection() {
     { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15', section: 'cost' },
     { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5', section: 'cost' },
     { key: 'cost_consumables', label: 'Consumables Base Rate ($)', placeholder: '30', section: 'cost' },
+    { key: 'default_cleaner_pay', label: 'Default Cleaner Pay ($)', placeholder: '75', section: 'cost' },
     { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30', section: 'profit' },
     { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15', section: 'profit' },
     { key: 'ac_filter_interval', label: 'Replacement Interval (days)', placeholder: '90', section: 'ac' },
+    { key: 'followup_reminder_days', label: 'Follow-Up Reminder Window (days)', placeholder: '7', section: 'ops' },
+    { key: 'stale_lead_days', label: 'Stale Lead Threshold (days)', placeholder: '14', section: 'ops' },
+    { key: 'inspection_interval_days', label: 'Inspection Reminder Interval (days)', placeholder: '90', section: 'ops' },
   ]
 
   const [localValues, setLocalValues] = useState<Record<string, string>>(
@@ -473,6 +477,7 @@ function AppSettingsSection() {
   const COST_FIELDS = ALL_FIELDS.filter(f => f.section === 'cost')
   const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
   const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
+  const OPS_FIELDS = ALL_FIELDS.filter(f => f.section === 'ops')
 
   function FieldRow({ f }: { f: typeof ALL_FIELDS[number] }) {
     return (
@@ -526,10 +531,21 @@ function AppSettingsSection() {
         </div>
       </div>
 
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <CalendarDays className="w-4 h-4" />
+          Operational Thresholds
+        </h2>
+        <p className="text-xs text-muted-foreground">Configure when follow-up reminders, stale alerts, and inspection warnings trigger</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {OPS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
+        </div>
+      </div>
+
       <div className="flex justify-end pt-1">
         <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleSaveAll} data-testid="button-save-all-settings">
           <Check className="w-3.5 h-3.5" />
-          Save Cost & Schedule Settings
+          Save All Settings
         </Button>
       </div>
     </div>
