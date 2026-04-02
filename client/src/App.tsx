@@ -6,7 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { AuthProvider, useAuth } from "@/lib/auth";
+import { AuthProvider, useAuth, canAccessView } from "@/lib/auth";
 import { AppSidebar } from "@/components/AppSidebar";
 import { EmulationBanner } from "@/components/EmulationBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -14,7 +14,7 @@ import { PropertyModalProvider } from "@/hooks/use-property-modal";
 import { PropertyDetailModal } from "@/components/PropertyDetailModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAlerts } from "@/pages/alerts";
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useMemo, lazy, Suspense, ComponentType } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Bell, HelpCircle } from 'lucide-react';
@@ -122,6 +122,23 @@ function AlertBellButton() {
   );
 }
 
+function NoAccess() {
+  return (
+    <div className="p-5 flex items-center justify-center h-full">
+      <p className="text-muted-foreground">You don't have access to this page.</p>
+    </div>
+  );
+}
+
+// Route guard: checks canAccessView before rendering the page component
+function GuardedRoute({ viewId, component: Component }: { viewId: string; component: ComponentType }) {
+  const { effectiveUser } = useAuth();
+  if (!effectiveUser || !canAccessView(viewId, effectiveUser)) {
+    return <NoAccess />;
+  }
+  return <Component />;
+}
+
 function AppRoutes() {
   const { user, effectiveUser, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
@@ -153,31 +170,27 @@ function AppRoutes() {
       </div>
     }>
       <Switch>
-        <Route path="/" component={DashboardPage} />
-        <Route path="/dashboard" component={DashboardPage} />
-        <Route path="/pipeline" component={PipelinePage} />
-        <Route path="/contacts" component={ContactsPage} />
-        <Route path="/cost-tracking" component={CostTrackingPage} />
-        <Route path="/property-list" component={PropertyListPage} />
-        <Route path="/linen-tracker" component={LinenTrackerPage} />
-        <Route path="/access-codes" component={AccessCodesPage} />
-        <Route path="/ac-filters" component={AcFiltersPage} />
-        <Route path="/quote-sheet" component={QuoteSheetPage} />
-        <Route path="/master-list" component={MasterListPage} />
-        <Route path="/pro-forma" component={ProFormaPage} />
-        <Route path="/financial-dashboard" component={FinancialDashboardPage} />
-        <Route path="/previous-properties" component={PreviousPropertiesPage} />
-        <Route path="/settings" component={SettingsPage} />
-        <Route path="/revenue-report" component={RevenueReportPage} />
-        <Route path="/inspections" component={InspectionsPage} />
-        <Route path="/cleaners" component={CleanersPage} />
-        <Route path="/alerts" component={AlertsPage} />
-        <Route path="/activity" component={ActivityFeedPage} />
-        <Route path="/no-access">{() => (
-          <div className="p-5 flex items-center justify-center h-full">
-            <p className="text-muted-foreground">This user has no page access configured.</p>
-          </div>
-        )}</Route>
+        <Route path="/">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
+        <Route path="/dashboard">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
+        <Route path="/pipeline">{() => <GuardedRoute viewId="pipeline" component={PipelinePage} />}</Route>
+        <Route path="/contacts">{() => <GuardedRoute viewId="contacts" component={ContactsPage} />}</Route>
+        <Route path="/cost-tracking">{() => <GuardedRoute viewId="cost-tracking" component={CostTrackingPage} />}</Route>
+        <Route path="/property-list">{() => <GuardedRoute viewId="property-list" component={PropertyListPage} />}</Route>
+        <Route path="/linen-tracker">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
+        <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
+        <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
+        <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
+        <Route path="/master-list">{() => <GuardedRoute viewId="master-list" component={MasterListPage} />}</Route>
+        <Route path="/pro-forma">{() => <GuardedRoute viewId="pro-forma" component={ProFormaPage} />}</Route>
+        <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
+        <Route path="/previous-properties">{() => <GuardedRoute viewId="previous-properties" component={PreviousPropertiesPage} />}</Route>
+        <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
+        <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
+        <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
+        <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
+        <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
+        <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
+        <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>

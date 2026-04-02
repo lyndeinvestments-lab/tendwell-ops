@@ -261,8 +261,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setViewAsState(null)
       return
     }
+    // Only admins can emulate other users
+    if (!user || user.role !== 'admin') return
     if (target.role === 'admin') return
-    if (user && target.id === user.id) return
+    if (target.id === user.id) return
     setViewAsState(target)
   }, [user])
 

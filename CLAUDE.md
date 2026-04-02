@@ -149,11 +149,7 @@ Simple `users` table only. Schema in `shared/schema.ts`. Config in `drizzle.conf
 
 ## API
 
-| Method | Path | Description |
-|---|---|---|
-| POST | `/api/auth/login` | Password login → returns `{ role, label, allowedViews }` |
-
-All other data fetching is done **directly from the client via Supabase JS SDK** using the anon key. There is no REST API layer for CRUD — it goes client → Supabase directly.
+No Express API endpoints — all data access goes client → Supabase directly with RLS enforcement. The legacy `/api/auth/login` password endpoint was removed in the security hardening pass.
 
 ---
 
@@ -237,6 +233,15 @@ npm run db:push    # Push Drizzle schema to SQLite
   - Password login removed; replaced with Google OAuth via Supabase Auth
   - `app_users.google_email` column added — sign-in looks up role by email
   - Settings page user management: add users by Google email, inline role editing, remove users; no password required
+- **Security Hardening (2026-04-01):**
+  - RLS enabled on ALL Supabase tables — anon key can no longer read/write any data
+  - `app_users` and `app_settings` restricted to admin-only writes (prevents privilege escalation)
+  - All existing "allow all" RLS policies replaced with authenticated-only policies
+  - Route-level access guards (`GuardedRoute` component) — unauthorized users see "no access" instead of page content
+  - Legacy `/api/auth/login` password endpoint removed entirely
+  - `setViewAs` emulation restricted to admin role at function level
+  - CSP hardened: removed `unsafe-eval` from script-src
+  - All legacy `password_hash` values cleared from `app_users`
 
 - **UX Improvements (2026-04-02):**
   - Dashboard: Follow-Up Due Today widget, Pipeline Velocity KPIs (conversions, avg onboarding days)
@@ -252,6 +257,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 
 - `20260327_exclude_from_financials.sql` — adds `exclude_from_financials` boolean + `offboarded_at` timestamp to properties
 - `20260331_google_auth.sql` — adds `google_email` (unique) to `app_users`, makes `password_hash` nullable
+- `20260401_security_rls.sql` — enables RLS on all tables, creates `current_user_role()` helper, restricts `app_users`/`app_settings` to admin writes
 - `20260402_alert_dismissals.sql` — creates `alert_dismissals` table for persistent dismissal/snooze state
 - `20260402_inspections_cleaner.sql` — adds `cleaner_id` FK to `inspections` for quality attribution
 
