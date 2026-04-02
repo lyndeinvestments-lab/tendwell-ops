@@ -138,21 +138,21 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const allResults = useMemo(() => {
     const items: { type: 'page' | 'recent' | 'property'; id: string; action: () => void }[] = []
     for (const page of matchedPages) {
-      items.push({ type: 'page', id: `page-${page.path}`, action: () => handleSelectPage(page.path) })
+      items.push({ type: 'page', id: `page-${page.path}`, action: () => { onClose(); navigate(page.path) } })
     }
     if (!q) {
       for (const p of recentProperties) {
-        items.push({ type: 'recent', id: `recent-${(p as any).id}`, action: () => handleSelectProperty((p as any).id) })
+        items.push({ type: 'recent', id: `recent-${(p as any).id}`, action: () => { onClose(); openPropertyModal((p as any).id) } })
       }
     }
     for (const p of matchedProperties) {
-      items.push({ type: 'property', id: `prop-${p.id}`, action: () => handleSelectProperty(p.id) })
+      items.push({ type: 'property', id: `prop-${p.id}`, action: () => { onClose(); openPropertyModal(p.id) } })
     }
     for (const c of matchedContacts) {
       items.push({ type: 'property' as const, id: `contact-${c.id}`, action: () => { onClose(); navigate('/contacts') } })
     }
     return items
-  }, [matchedPages, recentProperties, matchedProperties, matchedContacts, q])
+  }, [matchedPages, recentProperties, matchedProperties, matchedContacts, q, onClose, navigate, openPropertyModal])
 
   const totalResults = matchedPages.length + matchedProperties.length + matchedContacts.length
 

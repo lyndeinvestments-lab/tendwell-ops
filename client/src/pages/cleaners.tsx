@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logActivity } from '@/lib/supabase'
@@ -444,8 +444,8 @@ export default function CleanersPage() {
                   </div>
                 ))}
                 {activeCleaners.map((c: any) => (
-                  <>
-                    <div key={`name-${c.id}`} className="border-b border-r border-border px-2 py-1.5 text-xs font-medium truncate flex items-center gap-1.5 sticky left-0 z-10 bg-background">
+                  <React.Fragment key={c.id}>
+                    <div className="border-b border-r border-border px-2 py-1.5 text-xs font-medium truncate flex items-center gap-1.5 sticky left-0 z-10 bg-background">
                       <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${LEGEND_DOTS[cleanerColorMap[c.id] ?? 0]}`} />
                       {c.full_name}
                     </div>
@@ -470,7 +470,7 @@ export default function CleanersPage() {
                         </DroppableDayCell>
                       )
                     })}
-                  </>
+                  </React.Fragment>
                 ))}
               </div>
             </div>

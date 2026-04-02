@@ -24,28 +24,6 @@ interface Alert {
   propertyId?: string
 }
 
-function getStorageKey(id: string) { return `alert_dismissed_${id}` }
-function getSnoozeKey(id: string) { return `alert_snoozed_${id}` }
-
-function isDismissed(id: string): boolean {
-  return localStorage.getItem(getStorageKey(id)) === 'true'
-}
-
-function isSnoozed(id: string): boolean {
-  const expiry = localStorage.getItem(getSnoozeKey(id))
-  if (!expiry) return false
-  if (new Date(expiry) > new Date()) return true
-  localStorage.removeItem(getSnoozeKey(id))
-  return false
-}
-
-function dismissAlert(id: string) { localStorage.setItem(getStorageKey(id), 'true') }
-function undismissAlert(id: string) { localStorage.removeItem(getStorageKey(id)) }
-function snoozeAlert(id: string, days: number) {
-  const expiry = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
-  localStorage.setItem(getSnoozeKey(id), expiry)
-}
-
 const SEVERITY_CONFIG = {
   critical: { icon: AlertTriangle, color: 'text-red-700 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800', badge: 'bg-red-500' },
   warning: { icon: AlertCircle, color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800', badge: 'bg-amber-500' },
