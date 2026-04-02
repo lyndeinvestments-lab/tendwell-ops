@@ -1,4 +1,5 @@
 import { useState, useMemo, Fragment, useCallback, useEffect } from 'react'
+import { useAlerts } from '@/pages/alerts'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
@@ -142,6 +143,19 @@ export default function CostTrackingPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [localProperties, setLocalProperties] = useState<any[] | null>(null)
   const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set())
+
+  const { activeAlerts } = useAlerts()
+  const alertByPropertyId = useMemo(() => {
+    const map: Record<string, { severity: string; title: string }> = {}
+    for (const a of activeAlerts) {
+      if (a.propertyId && (a.category === 'Financial' || a.category === 'Data Quality')) {
+        if (!map[a.propertyId] || a.severity === 'critical') {
+          map[a.propertyId] = { severity: a.severity, title: a.title }
+        }
+      }
+    }
+    return map
+  }, [activeAlerts])
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/operational_properties'],
@@ -382,7 +396,7 @@ export default function CostTrackingPage() {
                 <Fragment key={p.id}>
                 <ContextMenu>
                   <ContextMenuTrigger asChild>
-                <tr data-testid={`row-property-${p.id}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                <tr data-testid={`row-property-${p.id}`} className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${alertByPropertyId[String(p.id)]?.severity === 'critical' ? 'bg-red-50/50 dark:bg-red-900/10' : alertByPropertyId[String(p.id)]?.severity === 'warning' ? 'bg-amber-50/50 dark:bg-amber-900/10' : ''}`}>
                   <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-card">
                     <div className="flex items-center gap-1">
                       <button
@@ -392,6 +406,12 @@ export default function CostTrackingPage() {
                       >
                         {expandedRow === p.id ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </button>
+                      {alertByPropertyId[String(p.id)] && (
+                        <span
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${alertByPropertyId[String(p.id)].severity === 'critical' ? 'bg-red-500' : 'bg-amber-500'}`}
+                          title={alertByPropertyId[String(p.id)].title}
+                        />
+                      )}
                       <button
                         onClick={() => openPropertyModal(p.id)}
                         className="hover:underline text-left max-w-[200px] truncate"

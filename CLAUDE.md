@@ -243,11 +243,23 @@ npm run db:push    # Push Drizzle schema to SQLite
   - CSP hardened: removed `unsafe-eval` from script-src
   - All legacy `password_hash` values cleared from `app_users`
 
+- **UX Improvements (2026-04-02):**
+  - Dashboard: Follow-Up Due Today widget, Pipeline Velocity KPIs (conversions, avg onboarding days)
+  - CSV export on Inspections and Cleaners reconciliation pages
+  - Date-range filtering on Inspections, month picker on Cleaners reconciliation
+  - Mobile: sticky cleaner name column on calendar, touch-visible assign button
+  - In-line alert highlights on Cost Tracking rows (financial/data quality alerts)
+  - Cleaners linked to inspections via `cleaner_id` column + dropdown in Log Inspection form
+  - Persistent alert dismissals in Supabase (replaces localStorage)
+  - Sticky property name column on Inspections table
+
 ### Recent Migrations
 
 - `20260327_exclude_from_financials.sql` — adds `exclude_from_financials` boolean + `offboarded_at` timestamp to properties
 - `20260331_google_auth.sql` — adds `google_email` (unique) to `app_users`, makes `password_hash` nullable
 - `20260401_security_rls.sql` — enables RLS on all tables, creates `current_user_role()` helper, restricts `app_users`/`app_settings` to admin writes
+- `20260402_alert_dismissals.sql` — creates `alert_dismissals` table for persistent dismissal/snooze state
+- `20260402_inspections_cleaner.sql` — adds `cleaner_id` FK to `inspections` for quality attribution
 
 ---
 
