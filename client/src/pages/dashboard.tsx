@@ -177,6 +177,69 @@ export default function DashboardPage() {
     },
   })
 
+  const { data: followUps } = useQuery({
+    queryKey: ['/supabase/dashboard-followups'],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0]
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, name, follow_up_date, pipeline_stages!properties_stage_id_fkey(name)')
+        .not('pipeline_stages.name', 'in', '("Offboarded")')
+        .lte('follow_up_date', today)
+        .order('follow_up_date', { ascending: true })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { data: onboardingVelocity } = useQuery({
+    queryKey: ['/supabase/dashboard-velocity', sinceDate, untilDate],
+    queryFn: async () => {
+      // Get transitions TO active in the period
+      const { data: toActive, error: e1 } = await supabase
+        .from('stage_transitions')
+        .select('property_id, created_at')
+        .eq('to_stage_id', stages?.find((s: any) => s.name === 'Active')?.id)
+        .gte('created_at', sinceDate)
+        .lte('created_at', untilDate)
+      if (e1) throw e1
+
+      // Get transitions TO onboarding for those same properties
+      const propIds = (toActive || []).map((t: any) => t.property_id)
+      if (propIds.length === 0) return { avgDays: null, conversions: 0 }
+
+      const { data: toOnboarding, error: e2 } = await supabase
+        .from('stage_transitions')
+        .select('property_id, created_at')
+        .in('property_id', propIds)
+        .eq('to_stage_id', stages?.find((s: any) => s.name === 'Onboarding')?.id)
+      if (e2) throw e2
+
+      // Compute avg days between onboarding → active for each property
+      const onboardMap: Record<string, string> = {}
+      for (const t of (toOnboarding || [])) {
+        if (!onboardMap[t.property_id] || t.created_at > onboardMap[t.property_id]) {
+          onboardMap[t.property_id] = t.created_at
+        }
+      }
+
+      let totalDays = 0, count = 0
+      for (const t of (toActive || [])) {
+        const start = onboardMap[t.property_id]
+        if (start) {
+          const days = (new Date(t.created_at).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
+          if (days >= 0) { totalDays += days; count++ }
+        }
+      }
+
+      return {
+        avgDays: count > 0 ? Math.round(totalDays / count) : null,
+        conversions: (toActive || []).length,
+      }
+    },
+    enabled: !!stages,
+  })
+
   // CRM data
   const { data: crmContacts } = useQuery({
     queryKey: ['/supabase/dashboard-crm-contacts'],
@@ -320,7 +383,7 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
         <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
         <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
@@ -343,7 +406,55 @@ export default function DashboardPage() {
           hint="Average profit margin across active properties. Numbers may differ from Revenue Report which uses actual CE charged totals."
           onClick={() => navigate('/revenue-report')}
         />
+        <KpiCard
+          title="Conversions"
+          value={onboardingVelocity?.conversions ?? 0}
+          subtitle={`in ${periodLabel}`}
+          icon={UserCheck}
+          loading={isLoading || !onboardingVelocity}
+          hint="Properties that moved to Active stage during this period"
+          onClick={() => navigate('/pipeline')}
+        />
+        <KpiCard
+          title="Avg Onboarding"
+          value={onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d` : '—'}
+          subtitle="days to active"
+          icon={Activity}
+          loading={isLoading || !onboardingVelocity}
+          hint="Average days from Onboarding to Active stage for conversions in this period"
+        />
       </div>
+
+      {/* Follow-Up Due Today */}
+      {!isLoading && followUps && followUps.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <CalendarDays className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">{followUps.length} Follow-Up{followUps.length !== 1 ? 's' : ''} Due</span>
+            </div>
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {followUps.map((p: any) => {
+                const isOverdue = p.follow_up_date < new Date().toISOString().split('T')[0]
+                return (
+                  <div key={p.id} className="flex items-center justify-between text-xs gap-2">
+                    <span className="truncate cursor-pointer hover:underline" onClick={() => openPropertyModal(p.id)}>{p.name}</span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-muted-foreground">{(p.pipeline_stages as any)?.name}</span>
+                      <span className={isOverdue ? 'text-destructive font-medium' : 'text-primary'}>
+                        {isOverdue ? 'Overdue' : 'Today'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <button onClick={() => navigate('/pipeline')} className="text-xs text-primary hover:underline mt-2 block">
+              View Pipeline →
+            </button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 30-Day Activity Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

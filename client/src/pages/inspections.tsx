@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
-import { ArrowUpDown, Search, X, ClipboardCheck, Plus } from 'lucide-react'
+import { ArrowUpDown, Search, X, ClipboardCheck, Plus, Download } from 'lucide-react'
 import { format } from 'date-fns'
 
 type SortKey = 'property' | 'date' | 'overall' | 'inspector'
@@ -58,6 +58,7 @@ const defaultForm = () => ({
   property_id: '',
   inspected_at: new Date().toISOString().split('T')[0],
   inspected_by: '',
+  cleaner_id: '',
   cleanliness_score: 8,
   linens_score: 8,
   supplies_score: 8,
@@ -71,6 +72,8 @@ export default function InspectionsPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
@@ -89,7 +92,7 @@ export default function InspectionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('inspections')
-        .select('*, properties!inspections_property_id_fkey(id, name)')
+        .select('*, properties!inspections_property_id_fkey(id, name), cleaners(id, full_name)')
         .order('inspected_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -111,6 +114,16 @@ export default function InspectionsPage() {
     enabled: logOpen,
   })
 
+  const { data: cleanersList } = useQuery({
+    queryKey: ['/supabase/inspection-cleaners'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cleaners').select('id, full_name').eq('is_active', true).order('full_name')
+      if (error) throw error
+      return data || []
+    },
+    enabled: logOpen,
+  })
+
   const { mutate: logInspection, isPending: logging } = useGuardedMutation('inspections', {
     mutationFn: async () => {
       const { error } = await supabase.from('inspections').insert({
@@ -123,6 +136,7 @@ export default function InspectionsPage() {
         exterior_score: form.exterior_score,
         overall_score: overall,
         notes: form.notes.trim() || null,
+        cleaner_id: form.cleaner_id || null,
       })
       if (error) throw error
     },
@@ -158,12 +172,42 @@ export default function InspectionsPage() {
     else { setSortKey(key); setSortDir(key === 'date' ? 'desc' : 'asc') }
   }
 
+  function exportCsv() {
+    if (!filtered || filtered.length === 0) return
+    const headers = ['Property', 'Date', 'Inspector', 'Overall', 'Cleanliness', 'Linens', 'Supplies', 'Exterior', 'Notes']
+    const rows = filtered.map((i: any) => [
+      (i.properties as any)?.name || '',
+      i.inspected_at ? format(new Date(i.inspected_at), 'yyyy-MM-dd') : '',
+      i.inspected_by || '',
+      i.overall_score ?? '',
+      i.cleanliness_score ?? '',
+      i.linens_score ?? '',
+      i.supplies_score ?? '',
+      i.exterior_score ?? '',
+      (i.notes || '').replace(/"/g, '""'),
+    ])
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inspections-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const filtered = useMemo(() => {
     if (!inspections) return []
     let arr = inspections
     if (search.trim()) {
       const q = search.toLowerCase()
       arr = arr.filter((i: any) => (i.properties as any)?.name?.toLowerCase().includes(q) || i.inspected_by?.toLowerCase().includes(q))
+    }
+    if (dateFrom) {
+      arr = arr.filter((i: any) => i.inspected_at >= dateFrom)
+    }
+    if (dateTo) {
+      arr = arr.filter((i: any) => i.inspected_at <= dateTo + 'T23:59:59')
     }
     arr = [...arr].sort((a: any, b: any) => {
       let av: any, bv: any
@@ -176,7 +220,7 @@ export default function InspectionsPage() {
       return 0
     })
     return arr
-  }, [inspections, search, sortKey, sortDir])
+  }, [inspections, search, dateFrom, dateTo, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -209,6 +253,23 @@ export default function InspectionsPage() {
               </button>
             )}
           </div>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={e => { setDateFrom(e.target.value); setPage(1) }}
+            className="h-8 w-36 text-xs"
+            aria-label="From date"
+          />
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={e => { setDateTo(e.target.value); setPage(1) }}
+            className="h-8 w-36 text-xs"
+            aria-label="To date"
+          />
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setLogOpen(true)}>
             <Plus className="w-3.5 h-3.5" /> Log Inspection
           </Button>
@@ -219,9 +280,10 @@ export default function InspectionsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={thCls} onClick={() => toggleSort('property')}>Property <SortIcon col="property" /></th>
+              <th className={`${thCls} sticky left-0 z-20 bg-muted/80`} onClick={() => toggleSort('property')}>Property <SortIcon col="property" /></th>
               <th className={thCls} onClick={() => toggleSort('date')}>Date <SortIcon col="date" /></th>
               <th className={thCls} onClick={() => toggleSort('inspector')}>Inspector <SortIcon col="inspector" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Cleaner</th>
               <th className={thCls} onClick={() => toggleSort('overall')}>Overall <SortIcon col="overall" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Cleanliness</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Linens</th>
@@ -234,12 +296,12 @@ export default function InspectionsPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(10)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <EmptyState
                     icon={ClipboardCheck}
                     title="No inspections"
@@ -255,7 +317,7 @@ export default function InspectionsPage() {
                   className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
                   onClick={() => setDetailInspection(i)}
                 >
-                  <td className="py-2 px-3 font-medium text-xs">
+                  <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                     <button
                       onClick={e => { e.stopPropagation(); openPropertyModal((i.properties as any)?.id) }}
                       className="hover:underline text-left"
@@ -265,6 +327,7 @@ export default function InspectionsPage() {
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{format(new Date(i.inspected_at), 'MMM d, yyyy')}</td>
                   <td className="py-2 px-3 text-xs">{i.inspected_by}</td>
+                  <td className="py-2 px-3 text-xs">{(i.cleaners as any)?.full_name || '—'}</td>
                   <td className="py-2 px-3"><ScoreBadge score={i.overall_score} /></td>
                   <td className="py-2 px-3"><ScoreBadge score={i.cleanliness_score} /></td>
                   <td className="py-2 px-3"><ScoreBadge score={i.linens_score} /></td>
@@ -320,6 +383,20 @@ export default function InspectionsPage() {
                   className="mt-1 h-8 text-xs"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-muted-foreground">Cleaner</label>
+              <select
+                value={form.cleaner_id}
+                onChange={e => setForm(f => ({ ...f, cleaner_id: e.target.value }))}
+                className="mt-1 w-full h-8 text-xs border border-input rounded px-2 bg-background"
+              >
+                <option value="">No cleaner linked</option>
+                {(cleanersList || []).map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.full_name}</option>
+                ))}
+              </select>
             </div>
 
             <div className="rounded-md border border-border p-3 space-y-4 bg-muted/20">

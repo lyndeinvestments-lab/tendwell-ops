@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -81,6 +81,18 @@ export function useAlerts() {
     queryFn: async () => {
       const { data, error } = await supabase.from('contacts').select('id, created_at, properties:properties(id)')
       if (error) throw error
+      return data || []
+    },
+    staleTime: 30_000,
+  })
+
+  const { data: dismissals } = useQuery({
+    queryKey: ['/supabase/alert-dismissals'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('alert_dismissals')
+        .select('alert_key, snoozed_until')
+      if (error) return []
       return data || []
     },
     staleTime: 30_000,
@@ -231,48 +243,61 @@ export function useAlerts() {
     return result
   }, [properties, onboardingTasks, contacts])
 
+  const dismissedSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const d of (dismissals || [])) {
+      if (d.snoozed_until) {
+        if (new Date(d.snoozed_until) > new Date()) set.add(d.alert_key)
+      } else {
+        set.add(d.alert_key)
+      }
+    }
+    return set
+  }, [dismissals])
+
   const activeAlerts = useMemo(() => {
-    return alerts.filter(a => !isDismissed(a.id) && !isSnoozed(a.id))
-  }, [alerts])
+    return alerts.filter(a => !dismissedSet.has(a.id))
+  }, [alerts, dismissedSet])
 
   const badgeCount = useMemo(() => {
     return activeAlerts.filter(a => a.severity === 'critical' || a.severity === 'warning').length
   }, [activeAlerts])
 
-  return { alerts, activeAlerts, badgeCount }
+  return { alerts, activeAlerts, badgeCount, dismissedSet }
 }
 
 export default function AlertsPage() {
   usePageTitle('Alerts')
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
-  const { alerts } = useAlerts()
+  const { alerts, dismissedSet } = useAlerts()
+  const qcAlerts = useQueryClient()
   const [showDismissed, setShowDismissed] = useState(false)
-  const [, forceUpdate] = useState(0)
 
   const visibleAlerts = useMemo(() => {
     if (showDismissed) return alerts
-    return alerts.filter(a => !isDismissed(a.id) && !isSnoozed(a.id))
-  }, [alerts, showDismissed])
+    return alerts.filter(a => !dismissedSet.has(a.id))
+  }, [alerts, showDismissed, dismissedSet])
 
-  const handleDismiss = useCallback((id: string) => {
-    dismissAlert(id)
-    forceUpdate(n => n + 1)
-  }, [])
+  const handleDismiss = useCallback(async (id: string) => {
+    await supabase.from('alert_dismissals').upsert({ alert_key: id, dismissed_at: new Date().toISOString(), snoozed_until: null }, { onConflict: 'alert_key' })
+    qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+  }, [qcAlerts])
 
-  const handleSnooze = useCallback((id: string, days: number) => {
-    snoozeAlert(id, days)
-    forceUpdate(n => n + 1)
-  }, [])
+  const handleSnooze = useCallback(async (id: string, days: number) => {
+    const snoozedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    await supabase.from('alert_dismissals').upsert({ alert_key: id, snoozed_until: snoozedUntil }, { onConflict: 'alert_key' })
+    qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+  }, [qcAlerts])
 
-  const handleUndismiss = useCallback((id: string) => {
-    undismissAlert(id)
-    forceUpdate(n => n + 1)
-  }, [])
+  const handleUndismiss = useCallback(async (id: string) => {
+    await supabase.from('alert_dismissals').delete().eq('alert_key', id)
+    qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+  }, [qcAlerts])
 
-  const criticalCount = alerts.filter(a => a.severity === 'critical' && !isDismissed(a.id) && !isSnoozed(a.id)).length
-  const warningCount = alerts.filter(a => a.severity === 'warning' && !isDismissed(a.id) && !isSnoozed(a.id)).length
-  const infoCount = alerts.filter(a => a.severity === 'info' && !isDismissed(a.id) && !isSnoozed(a.id)).length
+  const criticalCount = alerts.filter(a => a.severity === 'critical' && !dismissedSet.has(a.id)).length
+  const warningCount = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id)).length
+  const infoCount = alerts.filter(a => a.severity === 'info' && !dismissedSet.has(a.id)).length
 
   return (
     <div className="p-5 space-y-4">
@@ -285,16 +310,19 @@ export default function AlertsPage() {
         </div>
         <div className="flex items-center gap-2">
           {warningCount > 3 && (
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
-              alerts.filter(a => a.severity === 'warning' && !isDismissed(a.id) && !isSnoozed(a.id)).forEach(a => dismissAlert(a.id))
-              forceUpdate(n => n + 1)
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={async () => {
+              const toDismiss = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id))
+              await Promise.all(toDismiss.map(a =>
+                supabase.from('alert_dismissals').upsert({ alert_key: a.id, dismissed_at: new Date().toISOString(), snoozed_until: null }, { onConflict: 'alert_key' })
+              ))
+              qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
             }}>
               Dismiss All Warnings ({warningCount})
             </Button>
           )}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-            Show dismissed ({alerts.filter(a => isDismissed(a.id) || isSnoozed(a.id)).length})
+            Show dismissed ({alerts.filter(a => dismissedSet.has(a.id)).length})
           </label>
         </div>
       </div>
@@ -310,7 +338,7 @@ export default function AlertsPage() {
           visibleAlerts.map(alert => {
             const config = SEVERITY_CONFIG[alert.severity]
             const Icon = config.icon
-            const dismissed = isDismissed(alert.id)
+            const dismissed = dismissedSet.has(alert.id)
             return (
               <Card key={alert.id} className={`border ${config.bg} ${dismissed ? 'opacity-50' : ''}`}>
                 <CardContent className="p-3 flex items-start gap-3">

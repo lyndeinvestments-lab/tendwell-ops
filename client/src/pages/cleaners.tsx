@@ -16,7 +16,7 @@ import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
-import { Users2, Plus, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 
 type ViewMode = 'list' | 'calendar' | 'reconciliation'
@@ -69,7 +69,7 @@ function DroppableDayCell({ cellId, children, onAssign }: { cellId: string; chil
       {children}
       <button
         onClick={onAssign}
-        className="absolute bottom-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-xs text-muted-foreground hover:text-primary"
+        className="absolute bottom-0.5 right-0.5 opacity-0 group-hover:opacity-100 sm:opacity-0 max-sm:opacity-100 transition-opacity text-xs text-muted-foreground hover:text-primary"
         title="Assign"
       >
         <Plus className="w-3 h-3" />
@@ -89,6 +89,10 @@ export default function CleanersPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [detailCleaner, setDetailCleaner] = useState<any>(null)
   const [weekOffset, setWeekOffset] = useState(0)
+  const [reconMonth, setReconMonth] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [newForm, setNewForm] = useState({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
 
   // Assign dialog state
@@ -276,11 +280,10 @@ export default function CleanersPage() {
     return map
   }, [assignments])
 
-  // Reconciliation: cleaner-based for current month
+  // Reconciliation: cleaner-based for selected month
   const reconciliationData = useMemo(() => {
     if (!cleaners || !assignments) return []
-    const now = new Date()
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const currentMonth = reconMonth
     return cleaners.map((c: any) => {
       const monthAssignments = assignments.filter((a: any) =>
         String(a.cleaner_id) === String(c.id) && a.scheduled_date?.startsWith(currentMonth)
@@ -289,9 +292,34 @@ export default function CleanersPage() {
       const avgPay = monthAssignments.length > 0 ? totalPay / monthAssignments.length : 0
       return { ...c, cleans: monthAssignments.length, totalPay, avgPay }
     }).sort((a: any, b: any) => b.cleans - a.cleans)
-  }, [cleaners, assignments])
+  }, [cleaners, assignments, reconMonth])
 
   function fmt(n: number) { return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
+
+  function exportReconciliation() {
+    if (!reconciliationData || reconciliationData.length === 0) return
+    const headers = ['Cleaner', 'Status', 'Pay Rate', 'Cleans This Month', 'Total Pay', 'Avg Pay/Clean', 'Expected Pay']
+    const rows = reconciliationData.map((c: any) => {
+      const expected = c.pay_rate && c.cleans > 0 ? c.pay_rate * c.cleans : null
+      return [
+        c.full_name || '',
+        c.is_active ? 'Active' : 'Inactive',
+        c.pay_rate ?? '',
+        c.cleans,
+        c.totalPay > 0 ? c.totalPay.toFixed(2) : '',
+        c.avgPay > 0 ? c.avgPay.toFixed(2) : '',
+        expected != null ? expected.toFixed(2) : '',
+      ]
+    })
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `cleaner-reconciliation-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   function openAssign(cleanerId: string, dateStr: string) {
     setAssignCleanerId(cleanerId)
@@ -409,7 +437,7 @@ export default function CleanersPage() {
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
             <div className="border border-border rounded-lg overflow-auto">
               <div className="grid" style={{ gridTemplateColumns: '150px repeat(7, 1fr)', minWidth: '900px' }}>
-                <div className="bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-muted-foreground">Cleaner</div>
+                <div className="bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-muted-foreground sticky left-0 z-20">Cleaner</div>
                 {weekDays.map(d => (
                   <div key={d.toISOString()} className={`bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-center ${isSameDay(d, new Date()) ? 'text-primary' : 'text-muted-foreground'}`}>
                     {format(d, 'EEE M/d')}
@@ -417,7 +445,7 @@ export default function CleanersPage() {
                 ))}
                 {activeCleaners.map((c: any) => (
                   <>
-                    <div key={`name-${c.id}`} className="border-b border-r border-border px-2 py-1.5 text-xs font-medium truncate flex items-center gap-1.5">
+                    <div key={`name-${c.id}`} className="border-b border-r border-border px-2 py-1.5 text-xs font-medium truncate flex items-center gap-1.5 sticky left-0 z-10 bg-background">
                       <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${LEGEND_DOTS[cleanerColorMap[c.id] ?? 0]}`} />
                       {c.full_name}
                     </div>
@@ -468,9 +496,19 @@ export default function CleanersPage() {
           {/* Summary KPIs */}
           {reconciliationData.length > 0 && (
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
+              <Input
+                type="month"
+                value={reconMonth}
+                onChange={e => setReconMonth(e.target.value)}
+                className="h-7 w-40 text-xs"
+                aria-label="Reconciliation month"
+              />
               <span>Total cleans: <strong className="text-foreground">{reconciliationData.reduce((s: number, c: any) => s + c.cleans, 0)}</strong></span>
               <span>Total pay: <strong className="text-foreground">{fmt(reconciliationData.reduce((s: number, c: any) => s + c.totalPay, 0))}</strong></span>
               <span>Active cleaners: <strong className="text-foreground">{reconciliationData.filter((c: any) => c.is_active && c.cleans > 0).length}</strong></span>
+              <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs ml-auto" onClick={exportReconciliation}>
+                <Download className="w-3 h-3" /> Export CSV
+              </Button>
             </div>
           )}
           <div className="overflow-auto flex-1 rounded-lg border border-border">
