@@ -204,7 +204,7 @@ export default function InspectionsPage() {
       arr = arr.filter((i: any) => (i.properties as any)?.name?.toLowerCase().includes(q) || i.inspected_by?.toLowerCase().includes(q))
     }
     if (dateFrom) {
-      arr = arr.filter((i: any) => i.inspected_at >= dateFrom)
+      arr = arr.filter((i: any) => i.inspected_at >= dateFrom + 'T00:00:00')
     }
     if (dateTo) {
       arr = arr.filter((i: any) => i.inspected_at <= dateTo + 'T23:59:59')

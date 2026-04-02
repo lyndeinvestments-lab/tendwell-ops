@@ -58,9 +58,8 @@ export default function RevenueReportPage() {
   usePageTitle('Revenue Report')
   const { toast } = useToast()
   const { openPropertyModal } = usePropertyModal()
-  const now = new Date()
-  const [month, setMonth] = useState(now.getMonth())
-  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(() => new Date().getMonth())
+  const [year, setYear] = useState(() => new Date().getFullYear())
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [viewMode, setViewMode] = useState<ViewMode>('property')
@@ -325,12 +324,13 @@ export default function RevenueReportPage() {
 
   const forecastMonths = useMemo(() => {
     const result = []
+    const today = new Date()
     for (let i = 0; i < 6; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() + i + 1, 1)
+      const d = new Date(today.getFullYear(), today.getMonth() + i + 1, 1)
       result.push({ label: `${MONTHS[d.getMonth()]} ${d.getFullYear().toString().slice(2)}`, date: d })
     }
     return result
-  }, [now])
+  }, [])
 
   const forecastData = useMemo(() => {
     return sorted.map((p: any) => {
@@ -375,7 +375,8 @@ export default function RevenueReportPage() {
     toast({ title: 'Forecast CSV exported', description: `${rows.length} rows exported` })
   }
 
-  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+  const currentYear = useMemo(() => new Date().getFullYear(), [])
+  const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   function SortIcon({ col }: { col: SortKey }) {

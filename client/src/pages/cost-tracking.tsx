@@ -238,7 +238,7 @@ export default function CostTrackingPage() {
       return 0
     })
     return arr
-  }, [properties, search, statusFilter, sortKey, sortDir])
+  }, [displayProperties, search, statusFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
