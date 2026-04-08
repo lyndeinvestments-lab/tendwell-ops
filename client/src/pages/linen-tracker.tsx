@@ -10,7 +10,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy, Download, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
@@ -49,6 +49,8 @@ export default function LinenTrackerPage() {
   const [search, setSearch] = useState('')
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
   const [copyTarget, setCopyTarget] = useState<any>(null)
+  const [importData, setImportData] = useState<any[] | null>(null)
+  const [importing, setImporting] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [sortKey, setSortKey] = useState<string>('name')
@@ -145,6 +147,101 @@ export default function LinenTrackerPage() {
     return sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
   }
 
+  // CSV column name → DB field mapping (case-insensitive, flexible)
+  const COL_MAP: Record<string, string> = {
+    'property': '_name', 'name': '_name',
+    'king': 'king_beds', 'king beds': 'king_beds', 'king_beds': 'king_beds',
+    'queen': 'queen_beds', 'queen beds': 'queen_beds', 'queen_beds': 'queen_beds',
+    'full': 'full_beds', 'full beds': 'full_beds', 'full_beds': 'full_beds',
+    'twin': 'twin_beds', 'twin beds': 'twin_beds', 'twin_beds': 'twin_beds',
+    'bath towels': 'bath_towels', 'bath_towels': 'bath_towels', 'bathtowels': 'bath_towels',
+    'washcloths': 'washcloths', 'wash cloths': 'washcloths',
+    'hand towels': 'hand_towels', 'hand_towels': 'hand_towels', 'handtowels': 'hand_towels',
+    'bathmats': 'bathmats', 'bath mats': 'bathmats',
+    'pool towels': 'pool_towels', 'pool_towels': 'pool_towels', 'pooltowels': 'pool_towels',
+    'notes': 'linen_notes', 'linen_notes': 'linen_notes', 'linen notes': 'linen_notes',
+  }
+
+  function handleCsvFile(file: File) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        if (!result.data?.length || !properties) {
+          toast({ title: 'No data found in CSV', variant: 'destructive' })
+          return
+        }
+        // Map CSV headers to DB fields
+        const csvHeaders = Object.keys(result.data[0] as any)
+        const headerMap: Record<string, string> = {}
+        for (const h of csvHeaders) {
+          const mapped = COL_MAP[h.toLowerCase().trim()]
+          if (mapped) headerMap[h] = mapped
+        }
+        const nameCol = csvHeaders.find(h => headerMap[h] === '_name')
+        if (!nameCol) {
+          toast({ title: 'CSV must have a "Property" or "Name" column', variant: 'destructive' })
+          return
+        }
+        // Match CSV rows to existing properties by name (fuzzy)
+        const rows: any[] = []
+        for (const csvRow of result.data as any[]) {
+          const csvName = (csvRow[nameCol] || '').trim()
+          if (!csvName) continue
+          // Find matching property by exact or partial name match
+          const match = properties.find((p: any) =>
+            p.name?.toLowerCase() === csvName.toLowerCase() ||
+            p.name?.toLowerCase().startsWith(csvName.toLowerCase().split(' - ')[0]) ||
+            csvName.toLowerCase().startsWith(p.name?.toLowerCase())
+          )
+          const updates: Record<string, any> = {}
+          let changeCount = 0
+          for (const [csvCol, dbField] of Object.entries(headerMap)) {
+            if (dbField === '_name') continue
+            const val = csvRow[csvCol]
+            if (val == null || val === '') continue
+            const isNumeric = dbField !== 'linen_notes'
+            updates[dbField] = isNumeric ? parseInt(val) || 0 : val
+            changeCount++
+          }
+          if (changeCount > 0) {
+            rows.push({
+              csvName,
+              matchedProperty: match,
+              updates,
+              changeCount,
+            })
+          }
+        }
+        if (rows.length === 0) {
+          toast({ title: 'No importable data found', variant: 'destructive' })
+          return
+        }
+        setImportData(rows)
+      },
+      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+    })
+  }
+
+  async function executeImport() {
+    if (!importData) return
+    setImporting(true)
+    let updated = 0, skipped = 0
+    for (const row of importData) {
+      if (!row.matchedProperty) { skipped++; continue }
+      const { error } = await supabase
+        .from('properties')
+        .update(row.updates)
+        .eq('id', row.matchedProperty.id)
+      if (!error) updated++
+      else skipped++
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+    toast({ title: `Import complete`, description: `${updated} updated, ${skipped} skipped` })
+    setImportData(null)
+    setImporting(false)
+  }
+
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -169,6 +266,24 @@ export default function LinenTrackerPage() {
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5">
             <Download className="w-3.5 h-3.5" />
             Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 text-xs gap-1.5"
+            onClick={() => {
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.accept = '.csv'
+              input.onchange = e => {
+                const file = (e.target as HTMLInputElement).files?.[0]
+                if (file) handleCsvFile(file)
+              }
+              input.click()
+            }}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
           </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -345,6 +460,60 @@ export default function LinenTrackerPage() {
                   </span>
                 </button>
               ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Import CSV Preview Dialog */}
+      <Dialog open={!!importData} onOpenChange={v => !v && !importing && setImportData(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Linen Data — Preview</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground">
+            {importData?.filter(r => r.matchedProperty).length} of {importData?.length} rows matched to existing properties.
+            Unmatched rows will be skipped.
+          </p>
+          <div className="overflow-auto flex-1 rounded-lg border border-border">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border">
+                <tr>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">CSV Name</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Matched To</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Fields</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {importData?.map((row, i) => (
+                  <tr key={i} className={`border-b border-border/30 ${row.matchedProperty ? '' : 'opacity-50'}`}>
+                    <td className="py-1.5 px-2">{row.csvName}</td>
+                    <td className="py-1.5 px-2 font-medium">{row.matchedProperty?.name || '—'}</td>
+                    <td className="py-1.5 px-2 text-muted-foreground">{row.changeCount} values</td>
+                    <td className="py-1.5 px-2">
+                      {row.matchedProperty ? (
+                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Ready</span>
+                      ) : (
+                        <span className="text-muted-foreground">No match</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center justify-between pt-2">
+            <Button variant="outline" size="sm" onClick={() => setImportData(null)} disabled={importing}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="gap-1.5"
+              onClick={executeImport}
+              disabled={importing || !importData?.some(r => r.matchedProperty)}
+            >
+              {importing ? 'Importing…' : `Import ${importData?.filter(r => r.matchedProperty).length} Properties`}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
