@@ -14,7 +14,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'linen-tracker',       label: 'Linen Tracker',       group: 'Operations' },
   { id: 'access-codes',        label: 'Access Codes',        group: 'Operations' },
   { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
-  { id: 'inspections',         label: 'Inspections',         group: 'Operations' },
+  { id: 'inspections',         label: 'Verification',        group: 'Operations' },
   { id: 'cleaners',            label: 'Cleaners',            group: 'Operations' },
   { id: 'master-list',         label: 'Master List',         group: 'Admin' },
   { id: 'revenue-report',      label: 'Revenue Report',      group: 'Admin' },

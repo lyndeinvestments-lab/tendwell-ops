@@ -26,7 +26,7 @@ const PAGE_ROUTES = [
   { name: 'Previous Properties', path: '/previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
   { name: 'Settings', path: '/settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
   { name: 'Revenue Report', path: '/revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
-  { name: 'Inspections', path: '/inspections', keywords: ['inspections', 'quality', 'scores', 'cleanliness'], icon: ClipboardCheck },
+  { name: 'Verification', path: '/inspections', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'inspections'], icon: ClipboardCheck },
   { name: 'Cleaners', path: '/cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
   { name: 'Alerts', path: '/alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },
   { name: 'Activity', path: '/activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },
