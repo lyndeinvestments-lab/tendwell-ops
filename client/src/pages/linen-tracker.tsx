@@ -31,14 +31,10 @@ const LINEN_COLS = [
 const NUMERIC_KEYS = LINEN_COLS.filter(c => c.key !== 'linen_notes').map(c => c.key)
 const TOWEL_KEYS = new Set(['bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels'])
 
-// A property has incomplete data if ANY numeric linen field is null/0
+// A property has incomplete data only if ALL numeric fields are zero/null
+// Individual zeros are fine — a property may not have a certain bed type
 function hasIncompleteData(p: any): boolean {
-  return NUMERIC_KEYS.some(k => p[k] == null || p[k] === 0)
-}
-
-// Count how many fields are empty for a property
-function emptyFieldCount(p: any): number {
-  return NUMERIC_KEYS.filter(k => p[k] == null || p[k] === 0).length
+  return NUMERIC_KEYS.every(k => !p[k] || p[k] === 0)
 }
 
 export default function LinenTrackerPage() {
@@ -361,13 +357,12 @@ export default function LinenTrackerPage() {
             ) : (
               paged.map((p: any) => {
                 const incomplete = hasIncompleteData(p)
-                const emptyCount = emptyFieldCount(p)
                 return (
                   <tr key={p.id} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${incomplete ? 'bg-red-50/30 dark:bg-red-900/5' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <div className="flex items-center gap-1.5">
                         {incomplete && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title={`${emptyCount} empty field${emptyCount !== 1 ? 's' : ''}`} />
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data — all fields are zero" />
                         )}
                         <button
                           onClick={() => openPropertyModal(p.id, 'linen-tracker')}
@@ -387,9 +382,8 @@ export default function LinenTrackerPage() {
                     </td>
                     {LINEN_COLS.map(c => {
                       const isNumeric = c.key !== 'linen_notes'
-                      const isEmpty = isNumeric && (p[c.key] == null || p[c.key] === 0)
                       return (
-                        <td key={c.key} className={`py-2 px-3 ${isEmpty ? 'bg-red-100/60 dark:bg-red-900/20' : ''}`}>
+                        <td key={c.key} className="py-2 px-3">
                           <InlineEdit
                             value={p[c.key]}
                             type={isNumeric ? 'number' : 'text'}
@@ -401,7 +395,6 @@ export default function LinenTrackerPage() {
                               propName: p.name,
                             })}
                             testId={`inline-${c.key}-${p.id}`}
-                            className={isEmpty ? 'text-red-600 dark:text-red-400 font-medium' : undefined}
                           />
                         </td>
                       )
