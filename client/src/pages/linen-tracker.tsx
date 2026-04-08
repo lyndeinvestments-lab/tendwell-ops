@@ -30,6 +30,7 @@ const LINEN_COLS = [
 ]
 
 const NUMERIC_KEYS = LINEN_COLS.filter(c => c.key !== 'linen_notes').map(c => c.key)
+const TOWEL_KEYS = new Set(['bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels'])
 
 function isZeroInventory(p: any): boolean {
   const hasBeds = (p.bedrooms ?? 0) > 0
@@ -59,7 +60,8 @@ export default function LinenTrackerPage() {
   const [showRecommended, setShowRecommended] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+  const [sortKey, setSortKey] = useState<string>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/linen-tracker'],
@@ -67,7 +69,7 @@ export default function LinenTrackerPage() {
       const { data, error } = await supabase
         .from('operational_properties')
         .select('id, name, stage_name, bedrooms, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
-        .eq('stage_name', 'Active')
+        .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
       return data || []
     },
@@ -97,17 +99,27 @@ export default function LinenTrackerPage() {
       return matchSearch && matchZero && matchRestock
     })
 
-    if (sortDir) {
-      result = [...result].sort((a: any, b: any) => {
-        const cmp = (a.name || '').localeCompare(b.name || '')
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-    }
+    result = [...result].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      if (sortKey === 'name') return (a.name || '').localeCompare(b.name || '') * dir
+      const av = a[sortKey] ?? 0
+      const bv = b[sortKey] ?? 0
+      return (av - bv) * dir
+    })
 
     return result
-  }, [properties, search, showZeroOnly, showRestockOnly, restockMultiplier, sortDir])
+  }, [properties, search, showZeroOnly, showRestockOnly, restockMultiplier, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  const companyTotals = useMemo(() => {
+    if (!properties) return null
+    const totals: Record<string, number> = {}
+    for (const key of NUMERIC_KEYS) {
+      totals[key] = properties.reduce((sum: number, p: any) => sum + (p[key] ?? 0), 0)
+    }
+    return totals
+  }, [properties])
 
   const zeroCount = useMemo(() => {
     if (!properties) return 0
@@ -119,8 +131,13 @@ export default function LinenTrackerPage() {
     return properties.filter((p: any) => isBelowThreshold(p, restockMultiplier)).length
   }, [properties, restockMultiplier])
 
-  function toggleSort() {
-    setSortDir(prev => prev === null ? 'asc' : prev === 'asc' ? 'desc' : null)
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
   }
 
   function exportCsv() {
@@ -138,10 +155,9 @@ export default function LinenTrackerPage() {
     toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
-  const SortIcon = () => {
-    if (sortDir === 'asc') return <ArrowUp className="w-3 h-3" />
-    if (sortDir === 'desc') return <ArrowDown className="w-3 h-3" />
-    return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+  function ColSortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 opacity-40" />
+    return sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
   }
 
   function getDeficientItems(p: any) {
@@ -183,7 +199,7 @@ export default function LinenTrackerPage() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Linen Tracker</h1>
-          <p className="text-sm text-muted-foreground">Active properties — click to edit</p>
+          <p className="text-sm text-muted-foreground">Active & onboarding properties — one set per property</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {restockCount > 0 && (
@@ -272,16 +288,25 @@ export default function LinenTrackerPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] cursor-pointer select-none hover:text-foreground group"
-                onClick={toggleSort}
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] cursor-pointer select-none hover:text-foreground sticky left-0 z-20 bg-muted/80"
+                onClick={() => toggleSort('name')}
               >
                 <span className="flex items-center gap-1">
                   Property
-                  <SortIcon />
+                  <ColSortIcon col="name" />
                 </span>
               </th>
               {LINEN_COLS.map(c => (
-                <th key={c.key} className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{c.label}</th>
+                <th
+                  key={c.key}
+                  className={`text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap ${c.key !== 'linen_notes' ? 'cursor-pointer select-none hover:text-foreground' : ''}`}
+                  onClick={c.key !== 'linen_notes' ? () => toggleSort(c.key) : undefined}
+                >
+                  <span className="flex items-center gap-1">
+                    {c.label}
+                    {c.key !== 'linen_notes' && <ColSortIcon col={c.key} />}
+                  </span>
+                </th>
               ))}
             </tr>
           </thead>
@@ -310,7 +335,7 @@ export default function LinenTrackerPage() {
                 const flaggedRestock = !flaggedZero && isBelowThreshold(p, restockMultiplier)
                 return (
                   <tr key={p.id} data-testid={`row-linen-${p.id}`} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${flaggedZero ? 'bg-red-50/40 dark:bg-red-900/10' : flaggedRestock ? 'bg-amber-50/40 dark:bg-amber-900/10' : ''}`}>
-                    <td className="py-2 px-3 font-medium text-xs">
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <div className="flex items-center gap-1.5">
                         {flaggedZero && <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" role="img" aria-label="No linen data recorded" />}
                         {flaggedRestock && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" role="img" aria-label="Below restock threshold" />}
@@ -337,8 +362,9 @@ export default function LinenTrackerPage() {
                       const actual = p[c.key] ?? 0
                       const recommended = isNumeric && p.bedrooms ? p.bedrooms * restockMultiplier : 0
                       const meetsMin = actual >= recommended
+                      const isTowelZero = isNumeric && TOWEL_KEYS.has(c.key) && (p[c.key] == null || p[c.key] === 0)
                       return (
-                        <td key={c.key} className="py-2 px-3">
+                        <td key={c.key} className={`py-2 px-3 ${isTowelZero ? 'bg-red-100/60 dark:bg-red-900/20' : ''}`}>
                           {showRecommended && isNumeric ? (
                             <div className="flex items-center gap-1">
                               <InlineEdit
@@ -370,6 +396,7 @@ export default function LinenTrackerPage() {
                                 propName: p.name,
                               })}
                               testId={`inline-${c.key}-${p.id}`}
+                              className={isTowelZero ? 'text-red-600 dark:text-red-400 font-medium' : undefined}
                             />
                           )}
                         </td>
@@ -378,6 +405,16 @@ export default function LinenTrackerPage() {
                   </tr>
                 )
               })
+            )}
+            {!isLoading && companyTotals && filtered.length > 0 && (
+              <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/90">Company Totals ({properties?.length})</td>
+                {LINEN_COLS.map(c => (
+                  <td key={c.key} className="py-2 px-3 text-xs tabular-nums font-semibold">
+                    {c.key === 'linen_notes' ? '' : companyTotals[c.key]?.toLocaleString() ?? 0}
+                  </td>
+                ))}
+              </tr>
             )}
           </tbody>
         </table>

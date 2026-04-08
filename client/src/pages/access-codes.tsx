@@ -132,7 +132,8 @@ export default function AccessCodesPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [sortDir, setSortDir] = useState<'asc' | 'desc' | null>(null)
+  const [sortKey, setSortKey] = useState<'name' | 'stage_name' | 'auto_code' | 'door_code' | 'other_codes' | 'wifi_info' | 'notes'>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set())
 
   const { data: properties, isLoading } = useQuery({
@@ -165,19 +166,24 @@ export default function AccessCodesPage() {
   const filtered = useMemo(() => {
     if (!properties) return []
     let result = properties.filter((p: any) => p.name?.toLowerCase().includes(search.toLowerCase()))
-    if (sortDir) {
-      result = [...result].sort((a: any, b: any) => {
-        const cmp = (a.name || '').localeCompare(b.name || '')
-        return sortDir === 'asc' ? cmp : -cmp
-      })
-    }
+    result = [...result].sort((a: any, b: any) => {
+      const aVal = (a[sortKey] ?? '')
+      const bVal = (b[sortKey] ?? '')
+      const cmp = String(aVal).localeCompare(String(bVal))
+      return sortDir === 'asc' ? cmp : -cmp
+    })
     return result
-  }, [properties, search, sortDir])
+  }, [properties, search, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
-  function toggleSort() {
-    setSortDir(prev => prev === null ? 'asc' : prev === 'asc' ? 'desc' : null)
+  function handleSort(key: typeof sortKey) {
+    if (sortKey === key) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
   }
 
   // CSV export: only property name + last updated (security requirement — no credentials)
@@ -196,10 +202,10 @@ export default function AccessCodesPage() {
     toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
 
-  const SortIcon = () => {
+  function SortIcon({ col }: { col: typeof sortKey }) {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
     if (sortDir === 'asc') return <ArrowUp className="w-3 h-3" />
-    if (sortDir === 'desc') return <ArrowDown className="w-3 h-3" />
-    return <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+    return <ArrowDown className="w-3 h-3" />
   }
 
   return (
@@ -243,15 +249,36 @@ export default function AccessCodesPage() {
             <tr>
               <th
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[150px] cursor-pointer select-none hover:text-foreground group sticky left-0 z-20 bg-muted/80 backdrop-blur"
-                onClick={toggleSort}
+                onClick={() => handleSort('name')}
+                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
                 <span className="flex items-center gap-1">
                   Property
-                  <SortIcon />
+                  <SortIcon col="name" />
+                </span>
+              </th>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap cursor-pointer select-none hover:text-foreground group"
+                onClick={() => handleSort('stage_name')}
+                aria-sort={sortKey === 'stage_name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+              >
+                <span className="flex items-center gap-1">
+                  Stage
+                  <SortIcon col="stage_name" />
                 </span>
               </th>
               {ACCESS_COLS.map(c => (
-                <th key={c.key} className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{c.label}</th>
+                <th
+                  key={c.key}
+                  className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap cursor-pointer select-none hover:text-foreground group"
+                  onClick={() => handleSort(c.key as typeof sortKey)}
+                  aria-sort={sortKey === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  <span className="flex items-center gap-1">
+                    {c.label}
+                    <SortIcon col={c.key as typeof sortKey} />
+                  </span>
+                </th>
               ))}
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Updated</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8"></th>
@@ -261,14 +288,14 @@ export default function AccessCodesPage() {
             {isLoading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(ACCESS_COLS.length + 3)].map((_, j) => (
+                  {[...Array(ACCESS_COLS.length + 4)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={ACCESS_COLS.length + 3} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
+                <td colSpan={ACCESS_COLS.length + 4} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
               </tr>
             ) : (
               paged.map((p: any) => {
@@ -290,6 +317,7 @@ export default function AccessCodesPage() {
                         )}
                       </div>
                     </td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name || '—'}</td>
                     {ACCESS_COLS.map(c => {
                       const cellKey = `${p.id}-${c.key}`
                       const isRevealed = revealedCells.has(cellKey)
