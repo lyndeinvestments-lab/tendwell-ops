@@ -1,243 +1,302 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
-import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
-import { ArrowUpDown, Search, X, ClipboardCheck, Plus, Download } from 'lucide-react'
-import { format } from 'date-fns'
+import {
+  Search, X, ClipboardCheck, Check, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Download,
+} from 'lucide-react'
+import { format, differenceInDays } from 'date-fns'
 
-type SortKey = 'property' | 'date' | 'overall' | 'inspector'
+const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000
 
-const SCORE_SECTIONS = [
-  { key: 'cleanliness_score', label: 'Cleanliness' },
-  { key: 'linens_score', label: 'Linens' },
-  { key: 'supplies_score', label: 'Supplies' },
-  { key: 'exterior_score', label: 'Exterior' },
-] as const
+// Fields to verify during a walkthrough (non-financial property info)
+const VERIFY_SECTIONS = [
+  {
+    title: 'Property Details',
+    fields: [
+      { key: 'address', label: 'Address', type: 'text' },
+      { key: 'bedrooms', label: 'Bedrooms', type: 'number' },
+      { key: 'full_baths', label: 'Full Baths', type: 'number' },
+      { key: 'half_baths', label: 'Half Baths', type: 'number' },
+      { key: 'square_footage', label: 'Square Footage', type: 'number' },
+      { key: 'guest_count', label: 'Max Guests', type: 'number' },
+      { key: 'hot_tub', label: 'Hot Tub', type: 'boolean' },
+      { key: 'pet_friendly', label: 'Pet Friendly', type: 'text' },
+    ],
+  },
+  {
+    title: 'Bed Counts',
+    fields: [
+      { key: 'king_beds', label: 'King Beds', type: 'number' },
+      { key: 'queen_beds', label: 'Queen Beds', type: 'number' },
+      { key: 'full_beds', label: 'Full Beds', type: 'number' },
+      { key: 'twin_beds', label: 'Twin Beds', type: 'number' },
+      { key: 'number_of_beds', label: 'Total Beds', type: 'number' },
+    ],
+  },
+  {
+    title: 'Access & Wi-Fi',
+    fields: [
+      { key: 'auto_code', label: 'Auto Code', type: 'text' },
+      { key: 'door_code', label: 'Door Code', type: 'text' },
+      { key: 'other_codes', label: 'Other Codes', type: 'text' },
+      { key: 'wifi_info', label: 'Wi-Fi Info', type: 'text' },
+    ],
+  },
+  {
+    title: 'Operations',
+    fields: [
+      { key: 'filter_size', label: 'AC Filter Size', type: 'text' },
+      { key: 'cleaning_frequency', label: 'Cleaning Frequency', type: 'text' },
+      { key: 'notes', label: 'Special Notes', type: 'textarea' },
+    ],
+  },
+]
 
-function ScoreBadge({ score }: { score: number | null }) {
-  if (score == null) return <span className="text-muted-foreground">—</span>
-  const cls = score >= 8 ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' :
-              score >= 6 ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800' :
-              'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{score}/10</span>
-}
+const ALL_VERIFY_FIELDS = VERIFY_SECTIONS.flatMap(s => s.fields)
 
-function ScoreInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-medium text-muted-foreground">{label}</label>
-        <ScoreBadge score={value || null} />
-      </div>
-      <input
-        type="range"
-        min={1}
-        max={10}
-        step={1}
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-full accent-primary h-2"
-      />
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>1</span><span>5</span><span>10</span>
-      </div>
-    </div>
-  )
-}
-
-const defaultForm = () => ({
-  property_id: '',
-  inspected_at: new Date().toISOString().split('T')[0],
-  inspected_by: '',
-  cleaner_id: '',
-  cleanliness_score: 8,
-  linens_score: 8,
-  supplies_score: 8,
-  exterior_score: 8,
-  notes: '',
-})
+type SortKey = 'name' | 'status' | 'last_verified'
 
 export default function InspectionsPage() {
-  usePageTitle('Inspections')
-  const { openPropertyModal } = usePropertyModal()
+  usePageTitle('Property Verification')
   const { toast } = useToast()
+  const { user } = useAuth()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('date')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [showDueOnly, setShowDueOnly] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('status')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [logOpen, setLogOpen] = useState(false)
-  const [detailInspection, setDetailInspection] = useState<any>(null)
-  const [form, setForm] = useState(defaultForm())
+  const [activeProperty, setActiveProperty] = useState<any>(null)
+  const [editValues, setEditValues] = useState<Record<string, any>>({})
+  const [saving, setSaving] = useState(false)
 
-  const overall = useMemo(() => {
-    const scores = [form.cleanliness_score, form.linens_score, form.supplies_score, form.exterior_score]
-    return Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
-  }, [form.cleanliness_score, form.linens_score, form.supplies_score, form.exterior_score])
-
-  const { data: inspections, isLoading } = useQuery({
-    queryKey: ['/supabase/inspections-all'],
+  // Fetch active + onboarding properties with all verifiable fields
+  const { data: properties, isLoading } = useQuery({
+    queryKey: ['/supabase/property-verification-list'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('inspections')
-        .select('*, properties!inspections_property_id_fkey(id, name), cleaners(id, full_name)')
-        .order('inspected_at', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  const { data: activeProps } = useQuery({
-    queryKey: ['/supabase/inspection-active-props'],
-    queryFn: async () => {
+      const fields = ['id', 'name', 'stage_id', ...ALL_VERIFY_FIELDS.map(f => f.key)].join(', ')
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, pipeline_stages!properties_stage_id_fkey(name)')
-      if (error) throw error
-      return (data || []).filter((p: any) => {
-        const sn = (p.pipeline_stages as any)?.name
-        return sn === 'Active' || sn === 'Onboarding'
-      }).sort((a: any, b: any) => a.name.localeCompare(b.name))
-    },
-    enabled: logOpen,
-  })
-
-  const { data: cleanersList } = useQuery({
-    queryKey: ['/supabase/inspection-cleaners'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cleaners').select('id, full_name').eq('is_active', true).order('full_name')
+        .select(`${fields}, pipeline_stages!properties_stage_id_fkey(name)`)
+        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote")')
+        .order('name')
       if (error) throw error
       return data || []
     },
-    enabled: logOpen,
   })
 
-  const { mutate: logInspection, isPending: logging } = useGuardedMutation('inspections', {
-    mutationFn: async () => {
-      const { error } = await supabase.from('inspections').insert({
-        property_id: Number(form.property_id),
-        inspected_at: new Date(form.inspected_at).toISOString(),
-        inspected_by: form.inspected_by.trim() || 'ops-user',
-        cleanliness_score: form.cleanliness_score,
-        linens_score: form.linens_score,
-        supplies_score: form.supplies_score,
-        exterior_score: form.exterior_score,
-        overall_score: overall,
-        notes: form.notes.trim() || null,
-        cleaner_id: form.cleaner_id || null,
-      })
+  // Fetch verification records
+  const { data: verifications } = useQuery({
+    queryKey: ['/supabase/property-verifications'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_verifications')
+        .select('property_id, verified_at, verified_by')
       if (error) throw error
+      return data || []
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
-      toast({ title: 'Inspection logged' })
-      setLogOpen(false)
-      // Log to activity feed
-      const propName = (activeProps || []).find((p: any) => String(p.id) === form.property_id)?.name
-      logActivity({
-        entity_type: 'inspection',
-        entity_id: form.property_id,
-        entity_name: propName ?? null,
-        action: 'create',
-        field_name: 'overall_score',
-        new_value: String(overall),
-        changed_by: form.inspected_by.trim() || null,
-        metadata: {
-          cleanliness: form.cleanliness_score,
-          linens: form.linens_score,
-          supplies: form.supplies_score,
-          exterior: form.exterior_score,
-          date: form.inspected_at,
-        },
-      })
-      setForm(defaultForm())
-    },
-    onError: (e: any) => toast({ title: 'Failed: ' + (e.message || 'Error'), variant: 'destructive' }),
   })
+
+  // Build lookup: property_id → last verification
+  const verificationMap = useMemo(() => {
+    const map: Record<string, { verified_at: string; verified_by: string }> = {}
+    for (const v of (verifications || [])) {
+      map[String(v.property_id)] = v
+    }
+    return map
+  }, [verifications])
+
+  function getStatus(p: any): 'due' | 'verified' | 'never' {
+    const v = verificationMap[String(p.id)]
+    if (!v) return 'never'
+    const daysSince = differenceInDays(new Date(), new Date(v.verified_at))
+    return daysSince >= 180 ? 'due' : 'verified'
+  }
+
+  function getDaysSince(p: any): number | null {
+    const v = verificationMap[String(p.id)]
+    if (!v) return null
+    return differenceInDays(new Date(), new Date(v.verified_at))
+  }
+
+  const dueCount = useMemo(() => {
+    if (!properties) return 0
+    return properties.filter((p: any) => getStatus(p) !== 'verified').length
+  }, [properties, verificationMap])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    else { setSortKey(key); setSortDir(key === 'date' ? 'desc' : 'asc') }
+    else { setSortKey(key); setSortDir('asc') }
+  }
+
+  const filtered = useMemo(() => {
+    if (!properties) return []
+    let result = properties.filter((p: any) => {
+      const matchSearch = !search.trim() || p.name?.toLowerCase().includes(search.toLowerCase())
+      const matchDue = !showDueOnly || getStatus(p) !== 'verified'
+      return matchSearch && matchDue
+    })
+
+    result = [...result].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      if (sortKey === 'name') return (a.name || '').localeCompare(b.name || '') * dir
+      if (sortKey === 'last_verified') {
+        const da = getDaysSince(a) ?? 9999
+        const db = getDaysSince(b) ?? 9999
+        return (da - db) * dir
+      }
+      // status: never first, then due, then verified
+      const order = { never: 0, due: 1, verified: 2 }
+      return (order[getStatus(a)] - order[getStatus(b)]) * dir
+    })
+    return result
+  }, [properties, verificationMap, search, showDueOnly, sortKey, sortDir])
+
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  function openWalkthrough(p: any) {
+    // Pre-populate edit values with current property data
+    const vals: Record<string, any> = {}
+    for (const f of ALL_VERIFY_FIELDS) {
+      vals[f.key] = p[f.key]
+    }
+    setEditValues(vals)
+    setActiveProperty(p)
+  }
+
+  async function saveVerification() {
+    if (!activeProperty) return
+    setSaving(true)
+
+    // Find which fields changed
+    const changes: Record<string, { old: any; new: any }> = {}
+    const updates: Record<string, any> = {}
+    for (const f of ALL_VERIFY_FIELDS) {
+      const oldVal = activeProperty[f.key]
+      const newVal = editValues[f.key]
+      // Normalize for comparison
+      const oldNorm = oldVal == null ? null : oldVal
+      const newNorm = newVal == null || newVal === '' ? null : (f.type === 'number' ? Number(newVal) : f.type === 'boolean' ? Boolean(newVal) : newVal)
+      if (String(oldNorm ?? '') !== String(newNorm ?? '')) {
+        changes[f.key] = { old: oldNorm, new: newNorm }
+        updates[f.key] = newNorm
+      }
+    }
+
+    // Update property fields if any changed
+    if (Object.keys(updates).length > 0) {
+      const { error } = await supabase.from('properties').update(updates).eq('id', activeProperty.id)
+      if (error) {
+        toast({ title: 'Failed to update property', variant: 'destructive' })
+        setSaving(false)
+        return
+      }
+    }
+
+    // Upsert verification record
+    const { error: vError } = await supabase.from('property_verifications').upsert({
+      property_id: activeProperty.id,
+      verified_by: user?.label ?? null,
+      verified_at: new Date().toISOString(),
+      notes: editValues.notes !== activeProperty.notes ? 'Notes updated' : null,
+      fields_updated: Object.keys(changes).length > 0 ? changes : null,
+    }, { onConflict: 'property_id' })
+
+    if (vError) {
+      toast({ title: 'Failed to save verification', variant: 'destructive' })
+      setSaving(false)
+      return
+    }
+
+    // Log activity
+    logActivity({
+      entity_type: 'property',
+      entity_id: String(activeProperty.id),
+      entity_name: activeProperty.name,
+      action: 'update',
+      field_name: 'verification',
+      new_value: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} fields updated` : 'Verified, no changes',
+      changed_by: user?.label ?? null,
+    })
+
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verification-list'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+    toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
+    setActiveProperty(null)
+    setSaving(false)
   }
 
   function exportCsv() {
-    if (!filtered || filtered.length === 0) return
-    const headers = ['Property', 'Date', 'Inspector', 'Overall', 'Cleanliness', 'Linens', 'Supplies', 'Exterior', 'Notes']
-    const rows = filtered.map((i: any) => [
-      (i.properties as any)?.name || '',
-      i.inspected_at ? format(new Date(i.inspected_at), 'yyyy-MM-dd') : '',
-      i.inspected_by || '',
-      i.overall_score ?? '',
-      i.cleanliness_score ?? '',
-      i.linens_score ?? '',
-      i.supplies_score ?? '',
-      i.exterior_score ?? '',
-      (i.notes || '').replace(/"/g, '""'),
-    ])
+    if (!filtered?.length) return
+    const headers = ['Property', 'Status', 'Last Verified', 'Verified By', 'Days Since']
+    const rows = filtered.map((p: any) => {
+      const v = verificationMap[String(p.id)]
+      const status = getStatus(p)
+      return [
+        p.name || '',
+        status === 'verified' ? 'Verified' : status === 'due' ? 'Due' : 'Never',
+        v ? format(new Date(v.verified_at), 'yyyy-MM-dd') : '',
+        v?.verified_by || '',
+        getDaysSince(p) ?? '',
+      ]
+    })
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `inspections-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `property-verifications-${new Date().toISOString().split('T')[0]}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
 
-  const filtered = useMemo(() => {
-    if (!inspections) return []
-    let arr = inspections
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      arr = arr.filter((i: any) => (i.properties as any)?.name?.toLowerCase().includes(q) || i.inspected_by?.toLowerCase().includes(q))
-    }
-    if (dateFrom) {
-      arr = arr.filter((i: any) => i.inspected_at >= dateFrom + 'T00:00:00')
-    }
-    if (dateTo) {
-      arr = arr.filter((i: any) => i.inspected_at <= dateTo + 'T23:59:59')
-    }
-    arr = [...arr].sort((a: any, b: any) => {
-      let av: any, bv: any
-      if (sortKey === 'property') { av = (a.properties as any)?.name || ''; bv = (b.properties as any)?.name || '' }
-      else if (sortKey === 'date') { av = a.inspected_at || ''; bv = b.inspected_at || '' }
-      else if (sortKey === 'overall') { av = a.overall_score || 0; bv = b.overall_score || 0 }
-      else { av = a.inspected_by || ''; bv = b.inspected_by || '' }
-      if (av < bv) return sortDir === 'asc' ? -1 : 1
-      if (av > bv) return sortDir === 'asc' ? 1 : -1
-      return 0
-    })
-    return arr
-  }, [inspections, search, dateFrom, dateTo, sortKey, sortDir])
+  function SortIcon({ col }: { col: SortKey }) {
+    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />
+    return sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline ml-1" /> : <ArrowDown className="w-3 h-3 inline ml-1" />
+  }
 
-  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+  function StatusBadge({ status }: { status: 'due' | 'verified' | 'never' }) {
+    if (status === 'verified') return <span className="text-xs px-1.5 py-0.5 rounded border text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800">Verified</span>
+    if (status === 'due') return <span className="text-xs px-1.5 py-0.5 rounded border text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800">Due</span>
+    return <span className="text-xs px-1.5 py-0.5 rounded border text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800">Never</span>
+  }
 
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
-
-  function SortIcon({ col }: { col: SortKey }) {
-    return <ArrowUpDown className={`w-3 h-3 inline ml-1 ${sortKey === col ? 'text-primary' : 'text-muted-foreground/40'}`} />
-  }
 
   return (
     <div className="p-5 h-full flex flex-col space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
-          <p className="text-sm text-muted-foreground">Quality scores across all properties</p>
+          <h1 className="text-xl font-semibold text-foreground">Property Verification</h1>
+          <p className="text-sm text-muted-foreground">Verify property details every 6 months — click a property to start walkthrough</p>
         </div>
         <div className="flex items-center gap-2">
+          {dueCount > 0 && (
+            <button
+              onClick={() => { setShowDueOnly(v => !v); setPage(1) }}
+              className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
+                showDueOnly
+                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'
+                  : 'border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+              }`}
+            >
+              <AlertTriangle className="w-3 h-3" />
+              {dueCount} need{dueCount === 1 ? 's' : ''} verification
+            </button>
+          )}
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -253,26 +312,6 @@ export default function InspectionsPage() {
               </button>
             )}
           </div>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={e => { setDateFrom(e.target.value); setPage(1) }}
-            className="h-8 w-36 text-xs"
-            aria-label="From date"
-          />
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={e => { setDateTo(e.target.value); setPage(1) }}
-            className="h-8 w-36 text-xs"
-            aria-label="To date"
-          />
-          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setLogOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Log Inspection
-          </Button>
         </div>
       </div>
 
@@ -280,213 +319,155 @@ export default function InspectionsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={`${thCls} sticky left-0 z-20 bg-muted/80`} onClick={() => toggleSort('property')}>Property <SortIcon col="property" /></th>
-              <th className={thCls} onClick={() => toggleSort('date')}>Date <SortIcon col="date" /></th>
-              <th className={thCls} onClick={() => toggleSort('inspector')}>Inspector <SortIcon col="inspector" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Cleaner</th>
-              <th className={thCls} onClick={() => toggleSort('overall')}>Overall <SortIcon col="overall" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Cleanliness</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Linens</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Supplies</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Exterior</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Notes</th>
+              <th className={`${thCls} sticky left-0 z-20 bg-muted/80`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
+              <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
+              <th className={thCls} onClick={() => toggleSort('last_verified')}>Last Verified <SortIcon col="last_verified" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Verified By</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(10)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(5)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10}>
+                <td colSpan={5}>
                   <EmptyState
                     icon={ClipboardCheck}
-                    title="No inspections"
-                    description="Log property inspections to track cleanliness, linens, supplies, and exterior condition. Each inspection scores properties on a 1-10 scale."
-                    action={{ label: 'Log First Inspection', onClick: () => setLogOpen(true) }}
+                    title={showDueOnly ? 'All verified' : 'No properties'}
+                    description={showDueOnly ? 'All properties have been verified within the last 6 months.' : 'No properties found matching your search.'}
                   />
                 </td>
               </tr>
             ) : (
-              paged.map((i: any) => (
-                <tr
-                  key={i.id}
-                  className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
-                  onClick={() => setDetailInspection(i)}
-                >
-                  <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                    <button
-                      onClick={e => { e.stopPropagation(); openPropertyModal((i.properties as any)?.id) }}
-                      className="hover:underline text-left"
-                    >
-                      {(i.properties as any)?.name || '—'}
-                    </button>
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{format(new Date(i.inspected_at), 'MMM d, yyyy')}</td>
-                  <td className="py-2 px-3 text-xs">{i.inspected_by}</td>
-                  <td className="py-2 px-3 text-xs">{(i.cleaners as any)?.full_name || '—'}</td>
-                  <td className="py-2 px-3"><ScoreBadge score={i.overall_score} /></td>
-                  <td className="py-2 px-3"><ScoreBadge score={i.cleanliness_score} /></td>
-                  <td className="py-2 px-3"><ScoreBadge score={i.linens_score} /></td>
-                  <td className="py-2 px-3"><ScoreBadge score={i.supplies_score} /></td>
-                  <td className="py-2 px-3"><ScoreBadge score={i.exterior_score} /></td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate">{i.notes || '—'}</td>
-                </tr>
-              ))
+              paged.map((p: any) => {
+                const status = getStatus(p)
+                const v = verificationMap[String(p.id)]
+                const daysSince = getDaysSince(p)
+                return (
+                  <tr
+                    key={p.id}
+                    className={`border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer ${status === 'never' ? 'bg-red-50/30 dark:bg-red-900/5' : status === 'due' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
+                    onClick={() => openWalkthrough(p)}
+                  >
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{p.name}</td>
+                    <td className="py-2 px-3"><StatusBadge status={status} /></td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground">
+                      {v ? (
+                        <span>
+                          {format(new Date(v.verified_at), 'MMM d, yyyy')}
+                          <span className="ml-1 text-muted-foreground/60">({daysSince}d ago)</span>
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 px-3 text-xs">{v?.verified_by || '—'}</td>
+                    <td className="py-2 px-3">
+                      <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-6 text-xs gap-1 px-2">
+                        <ClipboardCheck className="w-3 h-3" />
+                        {status === 'verified' ? 'Re-verify' : 'Verify'}
+                      </Button>
+                    </td>
+                  </tr>
+                )
+              })
             )}
           </tbody>
         </table>
       </div>
+
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      {/* Log Inspection Sheet */}
-      <Sheet open={logOpen} onOpenChange={setLogOpen}>
-        <SheetContent side="right" className="w-[420px] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Log Inspection</SheetTitle>
-          </SheetHeader>
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Property *</label>
-              <select
-                value={form.property_id}
-                onChange={e => setForm(f => ({ ...f, property_id: e.target.value }))}
-                className="mt-1 w-full h-8 text-xs border border-input rounded px-2 bg-background"
-              >
-                <option value="">Select property…</option>
-                {(activeProps || []).map((p: any) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Date *</label>
-                <Input
-                  type="date"
-                  value={form.inspected_at}
-                  onChange={e => setForm(f => ({ ...f, inspected_at: e.target.value }))}
-                  className="mt-1 h-8 text-xs"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Inspector</label>
-                <Input
-                  value={form.inspected_by}
-                  onChange={e => setForm(f => ({ ...f, inspected_by: e.target.value }))}
-                  placeholder="Name…"
-                  className="mt-1 h-8 text-xs"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Cleaner</label>
-              <select
-                value={form.cleaner_id}
-                onChange={e => setForm(f => ({ ...f, cleaner_id: e.target.value }))}
-                className="mt-1 w-full h-8 text-xs border border-input rounded px-2 bg-background"
-              >
-                <option value="">No cleaner linked</option>
-                {(cleanersList || []).map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="rounded-md border border-border p-3 space-y-4 bg-muted/20">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Scores</p>
-              {SCORE_SECTIONS.map(s => (
-                <ScoreInput
-                  key={s.key}
-                  label={s.label}
-                  value={(form as any)[s.key]}
-                  onChange={v => setForm(f => ({ ...f, [s.key]: v }))}
-                />
-              ))}
-              <div className="pt-2 border-t border-border/60 flex items-center justify-between">
-                <span className="text-xs font-medium">Overall Score</span>
-                <ScoreBadge score={overall} />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                placeholder="Optional notes…"
-                className="mt-1 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-
-            <Button
-              className="w-full"
-              disabled={!form.property_id || !form.inspected_at || logging}
-              onClick={() => logInspection()}
-            >
-              {logging ? 'Saving…' : 'Save Inspection'}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
-
-      {/* Detail Inspection Sheet */}
-      <Sheet open={!!detailInspection} onOpenChange={v => !v && setDetailInspection(null)}>
-        <SheetContent side="right" className="w-[400px] overflow-y-auto">
-          {detailInspection && (
+      {/* Verification Walkthrough Sheet */}
+      <Sheet open={!!activeProperty} onOpenChange={v => !v && !saving && setActiveProperty(null)}>
+        <SheetContent side="right" className="w-[480px] overflow-y-auto">
+          {activeProperty && (
             <>
               <SheetHeader>
-                <SheetTitle>{(detailInspection.properties as any)?.name || 'Inspection'}</SheetTitle>
+                <SheetTitle className="text-base">{activeProperty.name}</SheetTitle>
+                <p className="text-xs text-muted-foreground">{activeProperty.address || 'No address'}</p>
               </SheetHeader>
-              <div className="mt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-muted-foreground block">Date</span>
-                    <span className="font-medium">{format(new Date(detailInspection.inspected_at), 'MMM d, yyyy')}</span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground block">Inspector</span>
-                    <span className="font-medium">{detailInspection.inspected_by || '—'}</span>
-                  </div>
-                </div>
-                <div className="rounded-md border border-border p-3 space-y-2 bg-muted/20">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Scores</p>
-                  {[
-                    { label: 'Overall', value: detailInspection.overall_score },
-                    { label: 'Cleanliness', value: detailInspection.cleanliness_score },
-                    { label: 'Linens', value: detailInspection.linens_score },
-                    { label: 'Supplies', value: detailInspection.supplies_score },
-                    { label: 'Exterior', value: detailInspection.exterior_score },
-                  ].map(s => (
-                    <div key={s.label} className="flex items-center justify-between">
-                      <span className="text-xs">{s.label}</span>
-                      <ScoreBadge score={s.value} />
+
+              <div className="mt-4 space-y-6">
+                {VERIFY_SECTIONS.map(section => (
+                  <div key={section.title}>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{section.title}</h3>
+                    <div className="space-y-3">
+                      {section.fields.map(f => {
+                        const currentVal = editValues[f.key]
+                        const originalVal = activeProperty[f.key]
+                        const changed = String(currentVal ?? '') !== String(originalVal ?? '')
+                        return (
+                          <div key={f.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
+                            <label className="text-xs text-muted-foreground">{f.label}</label>
+                            {f.type === 'boolean' ? (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditValues(v => ({ ...v, [f.key]: false }))}
+                                  className={`flex-1 h-7 rounded-md border text-xs transition-colors ${
+                                    !currentVal
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  No
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditValues(v => ({ ...v, [f.key]: true }))}
+                                  className={`flex-1 h-7 rounded-md border text-xs transition-colors ${
+                                    currentVal
+                                      ? 'bg-primary text-primary-foreground border-primary'
+                                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  Yes
+                                </button>
+                              </div>
+                            ) : f.type === 'textarea' ? (
+                              <textarea
+                                value={currentVal ?? ''}
+                                onChange={e => setEditValues(v => ({ ...v, [f.key]: e.target.value }))}
+                                className={`w-full h-16 rounded-md border px-2 py-1.5 text-xs resize-none bg-background focus:outline-none focus:ring-2 focus:ring-ring ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : 'border-input'}`}
+                              />
+                            ) : (
+                              <Input
+                                type={f.type === 'number' ? 'number' : 'text'}
+                                value={currentVal ?? ''}
+                                onChange={e => setEditValues(v => ({ ...v, [f.key]: f.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value }))}
+                                className={`h-7 text-xs ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
+                              />
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
-                  ))}
-                </div>
-                {detailInspection.notes && (
-                  <div>
-                    <span className="text-xs text-muted-foreground block mb-1">Notes</span>
-                    <p className="text-xs">{detailInspection.notes}</p>
                   </div>
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs"
-                  onClick={() => {
-                    setDetailInspection(null)
-                    openPropertyModal((detailInspection.properties as any)?.id)
-                  }}
-                >
-                  Open Property →
-                </Button>
+                ))}
+
+                <div className="pt-4 border-t border-border flex gap-2">
+                  <Button
+                    className="flex-1 gap-1.5"
+                    onClick={saveVerification}
+                    disabled={saving}
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {saving ? 'Saving…' : 'Confirm Verification'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveProperty(null)}
+                    disabled={saving}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
             </>
           )}
