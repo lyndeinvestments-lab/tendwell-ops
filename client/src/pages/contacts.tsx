@@ -21,7 +21,7 @@ const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'So
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6']
 
-type SortKey = 'full_name' | 'client_since' | 'properties'
+type SortKey = 'full_name' | 'company' | 'email' | 'phone' | 'source' | 'payment_method' | 'client_since' | 'properties' | 'tags'
 type SortDir = 'asc' | 'desc'
 
 function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
@@ -109,10 +109,25 @@ export default function ContactsPage() {
       let cmp = 0
       if (sortKey === 'full_name') {
         cmp = (a.full_name || '').localeCompare(b.full_name || '')
+      } else if (sortKey === 'company') {
+        cmp = (a.company || '').localeCompare(b.company || '')
+      } else if (sortKey === 'email') {
+        cmp = (a.email || '').localeCompare(b.email || '')
+      } else if (sortKey === 'phone') {
+        cmp = (a.phone || '').localeCompare(b.phone || '')
+      } else if (sortKey === 'source') {
+        cmp = (a.source || '').localeCompare(b.source || '')
+      } else if (sortKey === 'payment_method') {
+        cmp = (a.payment_method || '').localeCompare(b.payment_method || '')
       } else if (sortKey === 'client_since') {
         cmp = (a.client_since || '').localeCompare(b.client_since || '')
       } else if (sortKey === 'properties') {
         cmp = (a.properties?.length || 0) - (b.properties?.length || 0)
+      } else if (sortKey === 'tags') {
+        const aLen = (a.tags || []).length
+        const bLen = (b.tags || []).length
+        if (aLen !== bLen) cmp = aLen - bLen
+        else cmp = (a.tags?.[0] || '').localeCompare(b.tags?.[0] || '')
       }
       return sortDir === 'desc' ? -cmp : cmp
     })
@@ -242,14 +257,14 @@ export default function ContactsPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <SortHeader label="Name" sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Company</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Source</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Payment</th>
+              <SortHeader label="Company" sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Email" sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Phone" sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Source" sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Payment" sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Client Since" sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Properties" sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Tags</th>
+              <SortHeader label="Tags" sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
             </tr>
           </thead>
           <tbody>
