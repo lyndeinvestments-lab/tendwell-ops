@@ -304,7 +304,7 @@ export default function InspectionsPage() {
               placeholder="Search…"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="pl-8 pr-8 h-8 w-56 text-sm"
+              className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
               <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
@@ -366,7 +366,7 @@ export default function InspectionsPage() {
                     </td>
                     <td className="py-2 px-3 text-xs">{v?.verified_by || '—'}</td>
                     <td className="py-2 px-3">
-                      <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-6 text-xs gap-1 px-2">
+                      <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-8 text-xs gap-1 px-2">
                         <ClipboardCheck className="w-3 h-3" />
                         {status === 'verified' ? 'Re-verify' : 'Verify'}
                       </Button>
@@ -385,7 +385,7 @@ export default function InspectionsPage() {
 
       {/* Verification Walkthrough Sheet */}
       <Sheet open={!!activeProperty} onOpenChange={v => !v && !saving && setActiveProperty(null)}>
-        <SheetContent side="right" className="w-[480px] overflow-y-auto">
+        <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
           {activeProperty && (
             <>
               <SheetHeader>

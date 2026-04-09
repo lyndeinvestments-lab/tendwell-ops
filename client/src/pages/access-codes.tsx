@@ -48,7 +48,7 @@ function CopyButton({ value, field, id }: { value: string; field: string; id: st
   return (
     <button
       onClick={handleCopy}
-      className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+      className="p-1 min-w-[28px] min-h-[28px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
       aria-label={copied ? 'Copied!' : `Copy ${field} to clipboard`}
       data-testid={`copy-${field}-${id}`}
     >
@@ -86,7 +86,7 @@ function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }:
       {sensitive && value && !editing && (
         <button
           onClick={() => onReveal()}
-          className="p-0.5 text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+          className="p-1 min-w-[28px] min-h-[28px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
           aria-label={revealed ? `Hide ${field}` : `Reveal ${field}`}
           data-testid={`reveal-${field}-${id}`}
         >

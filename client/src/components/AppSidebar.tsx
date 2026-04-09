@@ -44,7 +44,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Linen Tracker', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
-      { title: 'Inspections', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
+      { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
       { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
     ],
   },

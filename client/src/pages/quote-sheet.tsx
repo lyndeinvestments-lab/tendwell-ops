@@ -318,7 +318,7 @@ export default function QuoteSheetPage() {
 
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Quote Sheet</h1>
           <p className="text-sm text-muted-foreground">Properties currently in Quote stage</p>
@@ -374,7 +374,7 @@ export default function QuoteSheetPage() {
               ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
                 <th
                   key={col}
-                  className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                  className={`text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap${col === 'name' ? ' sticky left-0 z-20 bg-muted/80' : ''}`}
                   title={title}
                   tabIndex={0}
                   role="columnheader"
@@ -412,7 +412,7 @@ export default function QuoteSheetPage() {
                 const { laundry, consumables } = getEstimates(p)
                 return (
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{p.name}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.ce_charged)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.cleaner_pay)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
@@ -460,7 +460,7 @@ export default function QuoteSheetPage() {
             )}
             {filtered.length > 0 && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide">Totals / Avg ({filtered.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals / Avg ({filtered.length})</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0))}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0))}</td>
                 <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
