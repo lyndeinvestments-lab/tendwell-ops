@@ -296,7 +296,7 @@ export default function ActivityFeedPage() {
               placeholder="Search…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-8 h-8 w-56 text-sm"
+              className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
               <button
@@ -307,7 +307,7 @@ export default function ActivityFeedPage() {
               </button>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
             <label>From</label>
             <input
               type="date"

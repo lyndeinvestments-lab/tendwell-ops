@@ -279,7 +279,7 @@ export default function AlertsPage() {
 
   return (
     <div className="p-5 space-y-4">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Alerts</h1>
           <p className="text-sm text-muted-foreground">

@@ -337,7 +337,7 @@ export default function MasterListPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {selected.size > 0 && (
-            <div className="flex items-center gap-2 bg-muted/60 rounded-md px-2.5 py-1.5">
+            <div className="flex items-center gap-2 flex-wrap bg-muted/60 rounded-md px-2.5 py-1.5">
               <span className="text-xs font-medium">{selected.size} selected</span>
               <Select value={bulkStage} onValueChange={setBulkStage}>
                 <SelectTrigger data-testid="select-bulk-stage" className="h-7 w-36 text-xs">

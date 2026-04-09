@@ -893,7 +893,7 @@ export default function PipelinePage() {
       )}
 
       <Sheet open={!!detailPanel} onOpenChange={(open) => { if (!open) setDetailPanel(null) }}>
-        <SheetContent side="right" className="w-[400px] overflow-y-auto flex flex-col gap-0 p-0">
+        <SheetContent side="right" className="w-full sm:w-[400px] overflow-y-auto flex flex-col gap-0 p-0">
           {detailPanel && (() => {
             const stageName = detailPanel.pipeline_stages?.name ?? ''
             const color = STAGE_COLORS[stageName] || '#6b7280'
