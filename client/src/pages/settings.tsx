@@ -457,6 +457,11 @@ function AppSettingsSection() {
     { key: 'followup_reminder_days', label: 'Follow-Up Reminder Window (days)', placeholder: '7', section: 'ops' },
     { key: 'stale_lead_days', label: 'Stale Lead Threshold (days)', placeholder: '14', section: 'ops' },
     { key: 'inspection_interval_days', label: 'Inspection Reminder Interval (days)', placeholder: '90', section: 'ops' },
+    { key: 'amenity_bathroom', label: 'Bathroom Amenities ($ per bathroom)', placeholder: '1.05', section: 'amenity' },
+    { key: 'amenity_toilet_paper', label: 'Toilet Paper ($ per bathroom)', placeholder: '0.78', section: 'amenity' },
+    { key: 'amenity_kitchen', label: 'Kitchen Supplies ($ per kitchen)', placeholder: '2.05', section: 'amenity' },
+    { key: 'amenity_trash_bag', label: 'Trash Bags ($ per bed)', placeholder: '0.06', section: 'amenity' },
+    { key: 'amenity_hot_tub', label: 'Hot Tub Chemicals ($ per property)', placeholder: '0.88', section: 'amenity' },
   ]
 
   const [localValues, setLocalValues] = useState<Record<string, string>>(
@@ -474,6 +479,7 @@ function AppSettingsSection() {
   }
 
   const COST_FIELDS = ALL_FIELDS.filter(f => f.section === 'cost')
+  const AMENITY_FIELDS = ALL_FIELDS.filter(f => f.section === 'amenity')
   const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
   const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
   const OPS_FIELDS = ALL_FIELDS.filter(f => f.section === 'ops')
@@ -506,6 +512,20 @@ function AppSettingsSection() {
         <div className="rounded-lg border border-border p-4 space-y-3">
           {COST_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          Amenity Costs
+        </h2>
+        <p className="text-xs text-muted-foreground">Per-unit supply costs used to calculate Est Consumables on each property</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {AMENITY_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Formula: (Full Baths + Half Baths) × (Bathroom + Toilet Paper) + Kitchens × Kitchen + Beds × Trash Bag + Hot Tub
+        </p>
       </div>
 
       <div className="space-y-3">
