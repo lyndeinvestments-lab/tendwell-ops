@@ -207,8 +207,8 @@ export function useAlerts() {
             id: `unlinked_contact_${c.id}`,
             severity: 'info',
             category: 'CRM',
-            title: 'Unlinked Contact',
-            description: `Contact created 7+ days ago with no properties linked`,
+            title: 'Unlinked Client',
+            description: `Client created 7+ days ago with no properties linked`,
             actionRoute: '/contacts',
           })
         }

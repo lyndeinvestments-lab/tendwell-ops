@@ -79,7 +79,7 @@ export const SHORTCUT_SECTIONS = [
     shortcuts: [
       { keys: ['G', 'D'], description: 'Dashboard' },
       { keys: ['G', 'P'], description: 'Pipeline' },
-      { keys: ['G', 'C'], description: 'Contacts' },
+      { keys: ['G', 'C'], description: 'Clients' },
       { keys: ['G', 'Q'], description: 'Quote Sheet' },
       { keys: ['G', 'T'], description: 'Cost Tracking' },
       { keys: ['G', 'L'], description: 'Property List' },

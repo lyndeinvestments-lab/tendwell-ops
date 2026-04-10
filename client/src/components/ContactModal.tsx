@@ -178,10 +178,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         metadata: { company: form.company?.trim() || null, source: form.source || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
-      toast({ title: 'Contact created' })
+      toast({ title: 'Client created' })
       onClose()
     },
-    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to create contact'), variant: 'destructive' }),
+    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to create client'), variant: 'destructive' }),
   })
 
   // Log interaction
@@ -292,7 +292,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       <SheetContent side="right" className="w-[480px] overflow-y-auto" data-testid="contact-modal">
         <SheetHeader>
           <SheetTitle className="text-base">
-            {isCreate ? 'New Contact' : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || 'Contact')}
+            {isCreate ? 'New Client' : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || 'Client')}
           </SheetTitle>
           {!isCreate && contact?.updated_at && (
             <p className="text-xs text-muted-foreground">Updated {formatDistanceToNow(new Date(contact.updated_at), { addSuffix: true })}</p>
@@ -315,7 +315,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
             {/* Details Tab */}
             <TabsContent value="details" className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Full Name *" field="full_name" placeholder="Contact name" />
+                <Field label="Full Name *" field="full_name" placeholder="Client name" />
                 <Field label="Company" field="company" placeholder="Company name" />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -390,7 +390,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                 <div className="flex gap-2 pt-2">
                   <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
                   <Button size="sm" onClick={() => createContact()} disabled={!form.full_name?.trim() || creating} data-testid="button-save-contact">
-                    {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Contact'}
+                    {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Client'}
                   </Button>
                 </div>
               ) : (
@@ -400,7 +400,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                     size="sm"
                     className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
                     onClick={() => {
-                      if (confirm('Deactivate this contact? They will be hidden from the active list.')) {
+                      if (confirm('Deactivate this client? They will be hidden from the active list.')) {
                         saveField({ field: 'is_active', value: false })
                         onClose()
                       }

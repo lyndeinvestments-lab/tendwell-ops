@@ -496,13 +496,13 @@ export default function QuoteSheetPage() {
               <Input value={newProp.client_name} onChange={e => setNewProp(prev => ({ ...prev, client_name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-client_name" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Contact</Label>
+              <Label className="text-xs text-muted-foreground">Client</Label>
               <select
                 value={newProp.contact_id}
                 onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
                 className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
               >
-                <option value="">No contact linked</option>
+                <option value="">No client linked</option>
                 {(contacts || []).map((c: any) => (
                   <option key={c.id} value={c.id}>{c.full_name}{c.email ? ` (${c.email})` : ''}</option>
                 ))}

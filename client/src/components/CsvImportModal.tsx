@@ -790,7 +790,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
-                  These properties have been added with the cleaning frequency inferred from your CSV. Open them from the Pipeline or Property List to fill in Client Charged, costs, contact info, and other details.
+                  These properties have been added with the cleaning frequency inferred from your CSV. Open them from the Pipeline or Property List to fill in Client Charged, costs, client info, and other details.
                 </p>
               </div>
             )}
