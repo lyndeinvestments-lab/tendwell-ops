@@ -111,7 +111,7 @@ export default function PropertyListPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, address, bedrooms, full_baths, guest_count, square_footage, stage_name, stage_color')
+        .select('id, name, address, bedrooms, full_baths, guest_count, square_footage, cleaner_pay, stage_name, stage_color')
       if (error) throw error
       return data || []
     },
@@ -162,6 +162,7 @@ export default function PropertyListPage() {
       'Full Baths': p.full_baths ?? '',
       'Max Guests': p.guest_count ?? '',
       'Sq Ft': p.square_footage ?? '',
+      'Cleaner Pay': p.cleaner_pay ?? '',
       'Status': p.stage_name || '',
     }))
     const csv = Papa.unparse(rows)
@@ -235,6 +236,7 @@ export default function PropertyListPage() {
                 { col: 'full_baths', label: 'Baths' },
                 { col: 'guest_count', label: 'Guests' },
                 { col: 'square_footage', label: 'Sq Ft' },
+                { col: 'cleaner_pay', label: 'Cleaner Pay' },
                 { col: 'stage_name', label: 'Status' },
               ] as { col: string; label: string }[]).map(({ col, label }) => (
                 <th
@@ -255,14 +257,14 @@ export default function PropertyListPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(7)].map((_, j) => (
+                  {[...Array(8)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
                 </td>
               </tr>
@@ -273,15 +275,17 @@ export default function PropertyListPage() {
                   <tr
                     key={p.id}
                     data-testid={`row-property-${p.id}`}
-                    onClick={() => openPropertyModal(p.id, 'property-list')}
-                    className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer"
+                    className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                   >
-                    <td className="py-2 px-3 font-medium text-xs text-primary hover:underline">{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs">
+                      <button onClick={() => openPropertyModal(p.id, 'property-list')} className="text-primary hover:underline text-left">{p.name}</button>
+                    </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.guest_count ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage ? p.square_footage.toLocaleString() : '—'}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums">{p.cleaner_pay ? `$${Number(p.cleaner_pay).toFixed(2)}` : '—'}</td>
                     <td className="py-2 px-3">
                       {p.stage_name && stages?.length ? (
                         <StageBadgePopover
