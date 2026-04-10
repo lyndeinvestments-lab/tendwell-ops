@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { useAuth, canEditView } from '@/lib/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -537,6 +538,7 @@ function levenshtein(a: string, b: string): number {
 function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: any[] }) {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
   const [merging, setMerging] = useState(false)
 
   const duplicates = useMemo(() => {
@@ -567,6 +569,10 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
   }, [contacts])
 
   async function handleMerge(primary: any, secondary: any) {
+    if (!canEditView('contacts', effectiveUser)) {
+      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      return
+    }
     setMerging(true)
     try {
       // Copy non-null fields from secondary to primary

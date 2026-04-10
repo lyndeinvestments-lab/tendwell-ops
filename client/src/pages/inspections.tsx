@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
@@ -68,7 +68,7 @@ type SortKey = 'name' | 'status' | 'last_verified'
 export default function InspectionsPage() {
   usePageTitle('Property Verification')
   const { toast } = useToast()
-  const { user } = useAuth()
+  const { user, effectiveUser } = useAuth()
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [showDueOnly, setShowDueOnly] = useState(false)
@@ -176,6 +176,10 @@ export default function InspectionsPage() {
 
   async function saveVerification() {
     if (!activeProperty) return
+    if (!canEditView('inspections', effectiveUser)) {
+      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      return
+    }
     setSaving(true)
 
     // Find which fields changed
@@ -455,10 +459,10 @@ export default function InspectionsPage() {
                   <Button
                     className="flex-1 gap-1.5"
                     onClick={saveVerification}
-                    disabled={saving}
+                    disabled={saving || !canEditView('inspections', effectiveUser)}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    {saving ? 'Saving…' : 'Confirm Verification'}
+                    {saving ? 'Saving…' : canEditView('inspections', effectiveUser) ? 'Confirm Verification' : 'View Only'}
                   </Button>
                   <Button
                     variant="outline"
