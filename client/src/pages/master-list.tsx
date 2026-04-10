@@ -15,7 +15,9 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
-import { Search, Download, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2 } from 'lucide-react'
+import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import Papa from 'papaparse'
 import { InlineEdit } from '@/components/InlineEdit'
 import { TablePagination } from '@/components/TablePagination'
 
@@ -309,13 +311,36 @@ export default function MasterListPage() {
     else setSelected(new Set(filtered.map((p: any) => p.id)))
   }
 
+  // ── CSV Export/Import column definitions ──
+  const EXPORT_COLS = [
+    'id', 'name', 'client', 'address', 'bedrooms', 'full_baths', 'half_baths',
+    'square_footage', 'guest_count', 'number_of_beds', 'king_beds', 'queen_beds',
+    'full_beds', 'twin_beds', 'hot_tub', 'pet_friendly', 'auto_code', 'door_code',
+    'other_codes', 'wifi_info', 'filter_size', 'cleaning_frequency', 'notes',
+    'ce_charged', 'cleaner_pay', 'profit_percentage', 'stage',
+  ]
+  // Fields that can be imported (excludes computed/read-only fields)
+  const IMPORTABLE_FIELDS = new Set([
+    'client', 'address', 'bedrooms', 'full_baths', 'half_baths', 'square_footage',
+    'guest_count', 'number_of_beds', 'king_beds', 'queen_beds', 'full_beds', 'twin_beds',
+    'hot_tub', 'pet_friendly', 'auto_code', 'door_code', 'other_codes', 'wifi_info',
+    'filter_size', 'cleaning_frequency', 'notes', 'ce_charged', 'cleaner_pay',
+  ])
+  const NUMERIC_FIELDS = new Set([
+    'bedrooms', 'full_baths', 'half_baths', 'square_footage', 'guest_count',
+    'number_of_beds', 'king_beds', 'queen_beds', 'full_beds', 'twin_beds',
+    'ce_charged', 'cleaner_pay',
+  ])
+  const BOOLEAN_FIELDS = new Set(['hot_tub'])
+
   function exportCSV() {
-    const cols = ['name', 'client', 'address', 'bedrooms', 'full_baths', 'square_footage', 'ce_charged', 'cleaner_pay', 'profit_percentage', 'stage']
-    const header = cols.join(',')
-    const rows = filtered.map((p: any) => cols.map(c => {
+    const header = EXPORT_COLS.join(',')
+    const rows = filtered.map((p: any) => EXPORT_COLS.map(c => {
       if (c === 'stage') return `"${p.pipeline_stages?.name || ''}"`
       const v = p[c]
-      return v == null ? '' : typeof v === 'string' ? `"${v.replace(/"/g, '""')}"` : v
+      if (v == null) return ''
+      if (typeof v === 'boolean') return v ? 'true' : 'false'
+      return typeof v === 'string' ? `"${v.replace(/"/g, '""')}"` : v
     }).join(','))
     const csv = [header, ...rows].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -324,6 +349,116 @@ export default function MasterListPage() {
     a.href = url; a.download = 'tendwell-properties.csv'; a.click()
     URL.revokeObjectURL(url)
     toast({ title: `Exported ${filtered.length} properties` })
+  }
+
+  // ── CSV Import (fill-only mode) ──
+  const [importPreview, setImportPreview] = useState<any[] | null>(null)
+  const [importRunning, setImportRunning] = useState(false)
+
+  function handleImportFile(file: File) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        if (!result.data?.length || !properties) {
+          toast({ title: 'No data found in CSV', variant: 'destructive' })
+          return
+        }
+        const csvRows = result.data as Record<string, string>[]
+        const csvHeaders = Object.keys(csvRows[0])
+
+        // Determine how to match: by ID if available, else by name
+        const hasId = csvHeaders.some(h => h.toLowerCase().trim() === 'id')
+        const nameCol = csvHeaders.find(h => h.toLowerCase().trim() === 'name')
+
+        const preview: any[] = []
+
+        for (const csvRow of csvRows) {
+          // Find matching property
+          let match: any = null
+          const csvId = hasId ? (csvRow['id'] || csvRow['ID'] || csvRow['Id'] || '').trim() : ''
+          const csvName = nameCol ? (csvRow[nameCol] || '').trim() : ''
+
+          if (csvId) {
+            match = properties.find((p: any) => String(p.id) === csvId)
+          }
+          if (!match && csvName) {
+            match = properties.find((p: any) =>
+              p.name?.toLowerCase() === csvName.toLowerCase()
+            )
+          }
+
+          if (!match) {
+            preview.push({ csvName: csvName || csvId, match: null, fills: [], skips: 0 })
+            continue
+          }
+
+          // Compare each importable field: fill only if DB is empty and CSV has data
+          const fills: { field: string; value: any }[] = []
+          let skips = 0
+
+          for (const csvCol of csvHeaders) {
+            const field = csvCol.toLowerCase().trim()
+            if (!IMPORTABLE_FIELDS.has(field)) continue
+            const csvVal = (csvRow[csvCol] || '').trim()
+            if (!csvVal) continue // empty CSV cell → skip, never erase
+
+            const dbVal = match[field]
+            const dbEmpty = dbVal == null || dbVal === '' || dbVal === 0
+
+            if (dbEmpty) {
+              // Convert value to correct type
+              let typedVal: any = csvVal
+              if (NUMERIC_FIELDS.has(field)) {
+                typedVal = parseFloat(csvVal)
+                if (isNaN(typedVal)) continue
+              } else if (BOOLEAN_FIELDS.has(field)) {
+                typedVal = csvVal.toLowerCase() === 'true' || csvVal === '1' || csvVal.toLowerCase() === 'yes'
+              }
+              fills.push({ field, value: typedVal })
+            } else {
+              // DB already has data — never overwrite
+              skips++
+            }
+          }
+
+          preview.push({
+            csvName: match.name,
+            match,
+            fills,
+            skips,
+          })
+        }
+
+        setImportPreview(preview)
+      },
+      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+    })
+  }
+
+  async function executeImport() {
+    if (!importPreview) return
+    setImportRunning(true)
+    let updated = 0, fieldsAdded = 0
+
+    for (const row of importPreview) {
+      if (!row.match || row.fills.length === 0) continue
+      const updates: Record<string, any> = {}
+      for (const fill of row.fills) {
+        updates[fill.field] = fill.value
+      }
+      const { error } = await supabase.from('properties').update(updates).eq('id', row.match.id)
+      if (!error) {
+        updated++
+        fieldsAdded += row.fills.length
+      }
+    }
+
+    qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+    toast({ title: 'Import complete', description: `${updated} properties updated, ${fieldsAdded} fields filled in` })
+    setImportPreview(null)
+    setImportRunning(false)
   }
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
@@ -404,6 +539,23 @@ export default function MasterListPage() {
           </Select>
           <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={exportCSV} data-testid="button-export-csv">
             <Download className="w-3 h-3" /> Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => {
+              const input = document.createElement('input')
+              input.type = 'file'
+              input.accept = '.csv'
+              input.onchange = e => {
+                const file = (e.target as HTMLInputElement).files?.[0]
+                if (file) handleImportFile(file)
+              }
+              input.click()
+            }}
+          >
+            <Upload className="w-3 h-3" /> Import CSV
           </Button>
         </div>
       </div>
@@ -550,6 +702,98 @@ export default function MasterListPage() {
         onSave={saveDetail}
         saving={savingDetail}
       />
+
+      {/* Import CSV Preview Dialog */}
+      <Dialog open={!!importPreview} onOpenChange={v => !v && !importRunning && setImportPreview(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Preview — Fill Missing Data Only</DialogTitle>
+          </DialogHeader>
+          {importPreview && (() => {
+            const matched = importPreview.filter(r => r.match)
+            const unmatched = importPreview.filter(r => !r.match)
+            const withFills = matched.filter(r => r.fills.length > 0)
+            const totalFills = matched.reduce((s: number, r: any) => s + r.fills.length, 0)
+            const totalSkips = matched.reduce((s: number, r: any) => s + r.skips, 0)
+            return (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="rounded-md border border-border p-2">
+                    <p className="text-muted-foreground">Matched</p>
+                    <p className="text-lg font-semibold">{matched.length}</p>
+                  </div>
+                  <div className="rounded-md border border-green-200 dark:border-green-800 p-2 bg-green-50/50 dark:bg-green-900/10">
+                    <p className="text-green-700 dark:text-green-400">Fields to fill</p>
+                    <p className="text-lg font-semibold text-green-700 dark:text-green-400">{totalFills}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2">
+                    <p className="text-muted-foreground">Already have data (skipped)</p>
+                    <p className="text-lg font-semibold">{totalSkips}</p>
+                  </div>
+                  <div className="rounded-md border border-border p-2">
+                    <p className="text-muted-foreground">Unmatched (skipped)</p>
+                    <p className="text-lg font-semibold">{unmatched.length}</p>
+                  </div>
+                </div>
+
+                <div className="overflow-auto flex-1 rounded-lg border border-border mt-2">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border">
+                      <tr>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Property</th>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Fields to Fill</th>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Skipped (has data)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {withFills.map((row: any, i: number) => (
+                        <tr key={i} className="border-b border-border/30">
+                          <td className="py-1.5 px-2 font-medium">{row.csvName}</td>
+                          <td className="py-1.5 px-2">
+                            <span className="text-green-600 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> {row.fills.length} to fill</span>
+                          </td>
+                          <td className="py-1.5 px-2 text-muted-foreground">
+                            {row.fills.map((f: any) => f.field).join(', ')}
+                          </td>
+                          <td className="py-1.5 px-2 text-muted-foreground">{row.skips}</td>
+                        </tr>
+                      ))}
+                      {matched.filter((r: any) => r.fills.length === 0).map((row: any, i: number) => (
+                        <tr key={`skip-${i}`} className="border-b border-border/30 opacity-50">
+                          <td className="py-1.5 px-2">{row.csvName}</td>
+                          <td className="py-1.5 px-2 text-muted-foreground">No changes</td>
+                          <td className="py-1.5 px-2 text-muted-foreground">—</td>
+                          <td className="py-1.5 px-2 text-muted-foreground">{row.skips} kept</td>
+                        </tr>
+                      ))}
+                      {unmatched.map((row: any, i: number) => (
+                        <tr key={`unm-${i}`} className="border-b border-border/30 opacity-40">
+                          <td className="py-1.5 px-2">{row.csvName}</td>
+                          <td className="py-1.5 px-2 text-red-500">No match</td>
+                          <td className="py-1.5 px-2" colSpan={2}>Property not found in database — skipped</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 text-xs">
+                  <p className="text-muted-foreground">
+                    Only empty fields will be filled. Existing data is never changed or erased.
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setImportPreview(null)} disabled={importRunning}>Cancel</Button>
+                    <Button size="sm" className="gap-1.5" onClick={executeImport} disabled={importRunning || totalFills === 0}>
+                      {importRunning ? 'Importing…' : `Fill ${totalFills} Fields`}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
