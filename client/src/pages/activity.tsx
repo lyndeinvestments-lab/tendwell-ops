@@ -22,7 +22,7 @@ const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'inspections', label: 'Inspections' },
   { key: 'cleaners', label: 'Cleaners' },
-  { key: 'contacts', label: 'Contacts' },
+  { key: 'contacts', label: 'Clients' },
 ]
 
 // Map activity_log entity_type → filter category
@@ -81,7 +81,7 @@ const FIELD_LABELS: Record<string, string> = {
   stage_id: 'Stage',
   stage: 'Stage',
   follow_up_date: 'Follow-up Date',
-  contact_id: 'Contact',
+  contact_id: 'Client',
   bedrooms: 'Bedrooms',
   full_baths: 'Full Baths',
   half_baths: 'Half Baths',

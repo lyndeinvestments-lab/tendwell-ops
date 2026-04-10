@@ -14,7 +14,7 @@ import {
 const PAGE_ROUTES = [
   { name: 'Dashboard', path: '/', keywords: ['dashboard', 'home', 'overview', 'kpi'], icon: LayoutDashboard },
   { name: 'Pipeline', path: '/pipeline', keywords: ['pipeline', 'kanban', 'board', 'leads', 'stages'], icon: Kanban },
-  { name: 'Contacts', path: '/contacts', keywords: ['contacts', 'crm', 'client', 'people'], icon: Users },
+  { name: 'Clients', path: '/contacts', keywords: ['contacts', 'crm', 'client', 'people'], icon: Users },
   { name: 'Quote Sheet', path: '/quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'], icon: FileSpreadsheet },
   { name: 'Cost Tracking', path: '/cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'], icon: DollarSign },
   { name: 'Property List', path: '/property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
@@ -263,7 +263,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
             {matchedContacts.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Contacts</div>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Clients</div>
                 {matchedContacts.map((c: any, contactIdx: number) => (
                   <button
                     key={`contact-${c.id}`}

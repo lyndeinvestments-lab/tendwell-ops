@@ -32,7 +32,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     label: 'Sales',
     items: [
       { title: 'Pipeline', href: '/pipeline', view: 'pipeline', icon: Kanban },
-      { title: 'Contacts', href: '/contacts', view: 'contacts', icon: Users },
+      { title: 'Clients', href: '/contacts', view: 'contacts', icon: Users },
       { title: 'Quote Sheet', href: '/quote-sheet', view: 'quote-sheet', icon: FileSpreadsheet },
     ],
   },

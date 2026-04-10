@@ -822,7 +822,7 @@ export default function DashboardPage() {
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <p className="text-xs text-muted-foreground">Total Contacts</p>
+              <p className="text-xs text-muted-foreground">Total Clients</p>
               <p className="text-lg font-semibold tabular-nums">{crmStats.total}</p>
             </div>
             <div>
@@ -844,7 +844,7 @@ export default function DashboardPage() {
           </div>
           {crmStats.total === 0 && (
             <p className="text-xs text-muted-foreground">
-              No contacts yet.{' '}
+              No clients yet.{' '}
               <button onClick={() => navigate('/contacts')} className="text-primary hover:underline">Import from Properties →</button>
             </p>
           )}

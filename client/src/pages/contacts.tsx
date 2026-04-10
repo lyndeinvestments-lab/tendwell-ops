@@ -52,7 +52,7 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 
 export default function ContactsPage() {
   const { toast } = useToast()
-  usePageTitle('Contacts')
+  usePageTitle('Clients')
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState(() => {
     try { return localStorage.getItem('contacts_source_filter') || 'all' } catch { return 'all' }
@@ -192,8 +192,8 @@ export default function ContactsPage() {
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Contacts</h1>
-          <p className="text-sm text-muted-foreground">Manage client contacts and relationships</p>
+          <h1 className="text-xl font-semibold text-foreground">Clients</h1>
+          <p className="text-sm text-muted-foreground">Manage clients and relationships</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
@@ -236,7 +236,7 @@ export default function ContactsPage() {
                 <BarChart3 className="w-3.5 h-3.5" /> Source Report
               </Button>
             </TooltipTrigger>
-            <TooltipContent>View breakdown of how contacts were sourced</TooltipContent>
+            <TooltipContent>View breakdown of how clients were sourced</TooltipContent>
           </Tooltip>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download className="w-3.5 h-3.5" /> Export CSV
@@ -248,7 +248,7 @@ export default function ContactsPage() {
             <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
           </Button>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
-            <Plus className="w-3.5 h-3.5" /> Add Contact
+            <Plus className="w-3.5 h-3.5" /> Add Client
           </Button>
         </div>
       </div>
@@ -283,12 +283,12 @@ export default function ContactsPage() {
                   {contacts && contacts.length === 0 ? (
                     <EmptyState
                       icon={Users}
-                      title="No contacts yet"
-                      description="Import contacts from your existing properties, or add one manually."
+                      title="No clients yet"
+                      description="Import clients from your existing properties, or add one manually."
                       action={{ label: 'Import from Properties', onClick: () => setImportOpen(true) }}
                     />
                   ) : (
-                    <div className="text-center py-12 text-muted-foreground text-sm">No contacts match your filters</div>
+                    <div className="text-center py-12 text-muted-foreground text-sm">No clients match your filters</div>
                   )}
                 </td>
               </tr>
@@ -356,7 +356,7 @@ export default function ContactsPage() {
                     <XAxis type="number" tick={{ fontSize: 11 }} />
                     <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} width={75} />
                     <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="total" name="Contacts" radius={[0, 4, 4, 0]}>
+                    <Bar dataKey="total" name="Clients" radius={[0, 4, 4, 0]}>
                       {sourceReportData.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
@@ -470,11 +470,11 @@ function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Import Contacts from Properties</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Import Clients from Properties</DialogTitle></DialogHeader>
         {!unlinkedClients ? (
           <div className="space-y-2 py-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
         ) : unlinkedClients.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">All properties already have contacts linked.</p>
+          <p className="text-sm text-muted-foreground text-center py-6">All properties already have clients linked.</p>
         ) : (
           <div className="space-y-2">
             <label className="flex items-center gap-2 text-xs cursor-pointer">
@@ -601,7 +601,7 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
         metadata: { merged_from_id: secondary.id },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
-      toast({ title: 'Contacts merged successfully.' })
+      toast({ title: 'Clients merged successfully.' })
     } catch {
       toast({ title: 'Merge failed', variant: 'destructive' })
     } finally {

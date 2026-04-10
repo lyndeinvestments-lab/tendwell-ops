@@ -7,7 +7,7 @@ const SESSION_TIMEOUT_MS = 30 * 60 * 1000 // 30 minutes of inactivity
 export const VIEW_DEFINITIONS = [
   { id: 'dashboard',           label: 'Dashboard',           group: 'Overview' },
   { id: 'pipeline',            label: 'Pipeline',            group: 'Sales' },
-  { id: 'contacts',            label: 'Contacts',            group: 'Sales' },
+  { id: 'contacts',            label: 'Clients',             group: 'Sales' },
   { id: 'quote-sheet',         label: 'Quote Sheet',         group: 'Sales' },
   { id: 'cost-tracking',       label: 'Cost Tracking',       group: 'Operations' },
   { id: 'property-list',       label: 'Property List',       group: 'Operations' },

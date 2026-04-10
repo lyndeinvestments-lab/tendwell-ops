@@ -825,10 +825,10 @@ export function PropertyDetailModal() {
       qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      toast({ title: 'Contact updated' })
+      toast({ title: 'Client updated' })
       setContactPopoverOpen(false)
     },
-    onError: () => toast({ title: 'Failed to update contact', variant: 'destructive' }),
+    onError: () => toast({ title: 'Failed to update client', variant: 'destructive' }),
   })
 
   // Reset form when property changes
@@ -1045,9 +1045,9 @@ export function PropertyDetailModal() {
                   </div>
                 ))}
               </div>
-              {/* Point of Contact */}
+              {/* Client */}
               <div>
-                <Label className="text-xs text-muted-foreground">Point of Contact</Label>
+                <Label className="text-xs text-muted-foreground">Client</Label>
                 <div className="mt-0.5 flex items-center gap-2">
                   {linkedContact ? (
                     <div className="flex items-center gap-2 flex-1">
@@ -1058,7 +1058,7 @@ export function PropertyDetailModal() {
                         <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
                       )}
                       {canEdit && (
-                        <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title="Unlink contact">
+                        <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title="Unlink client">
                           <X className="w-3 h-3" />
                         </button>
                       )}
@@ -1067,20 +1067,20 @@ export function PropertyDetailModal() {
                     <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-dashed border-border hover:border-primary/40">
-                          Assign contact…
+                          Assign client…
                         </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-64 p-2" align="start">
                         <Input
                           value={contactSearch}
                           onChange={e => setContactSearch(e.target.value)}
-                          placeholder="Search contacts…"
+                          placeholder="Search clients…"
                           className="h-7 text-xs mb-2"
                           autoFocus
                         />
                         <div className="max-h-40 overflow-y-auto space-y-0.5">
                           {filteredContacts.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-2">No contacts found</p>
+                            <p className="text-xs text-muted-foreground text-center py-2">No clients found</p>
                           ) : (
                             filteredContacts.map((c: any) => (
                               <button
