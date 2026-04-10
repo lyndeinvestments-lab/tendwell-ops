@@ -43,7 +43,7 @@ export default function LinenTrackerPage() {
   const qc = useQueryClient()
   const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
-  usePageTitle('Linen Tracker')
+  usePageTitle('Linen Requirements')
   const [search, setSearch] = useState('')
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
   const [copyTarget, setCopyTarget] = useState<any>(null)
@@ -135,7 +135,7 @@ export default function LinenTrackerPage() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = 'linen-tracker.csv'; a.click()
+    a.href = url; a.download = 'linen-requirements.csv'; a.click()
     URL.revokeObjectURL(url)
     toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
   }
@@ -248,8 +248,8 @@ export default function LinenTrackerPage() {
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Linen Tracker</h1>
-          <p className="text-sm text-muted-foreground">Active & onboarding properties — one set per property</p>
+          <h1 className="text-xl font-semibold text-foreground">Linen Requirements</h1>
+          <p className="text-sm text-muted-foreground">Active & onboarding properties — required quantities for one full set</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {incompleteCount > 0 && (

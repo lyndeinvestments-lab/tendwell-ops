@@ -11,7 +11,8 @@ export const VIEW_DEFINITIONS = [
   { id: 'quote-sheet',         label: 'Quote Sheet',         group: 'Sales' },
   { id: 'cost-tracking',       label: 'Cost Tracking',       group: 'Operations' },
   { id: 'property-list',       label: 'Property List',       group: 'Operations' },
-  { id: 'linen-tracker',       label: 'Linen Tracker',       group: 'Operations' },
+  { id: 'linen-tracker',       label: 'Linen Requirements',  group: 'Operations' },
+  { id: 'linen-inventory',     label: 'Linen Inventory',     group: 'Operations' },
   { id: 'access-codes',        label: 'Access Codes',        group: 'Operations' },
   { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
   { id: 'inspections',         label: 'Verification',        group: 'Operations' },
@@ -62,13 +63,13 @@ interface AuthContextType {
 export const ROLE_VIEWS: Record<string, string[]> = {
   admin: [
     'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
-    'property-list', 'linen-tracker', 'access-codes', 'ac-filters',
+    'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
     'master-list', 'pro-forma', 'previous-properties', 'settings',
     'revenue-report', 'inspections', 'cleaners', 'alerts', 'activity',
     'financial-dashboard',
   ],
-  operations: ['property-list', 'linen-tracker', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'alerts'],
-  cleaning: ['linen-tracker'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'alerts'],
+  cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma',

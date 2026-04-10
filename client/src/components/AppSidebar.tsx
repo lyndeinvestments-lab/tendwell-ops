@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
+  BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
   BarChart3, ClipboardCheck, Users2, Bell, Activity
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -41,7 +41,8 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { title: 'Cost Tracking', href: '/cost-tracking', view: 'cost-tracking', icon: DollarSign },
       { title: 'Property List', href: '/property-list', view: 'property-list', icon: Building2 },
-      { title: 'Linen Tracker', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
+      { title: 'Linen Requirements', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
+      { title: 'Linen Inventory', href: '/linen-inventory', view: 'linen-inventory', icon: Boxes },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
       { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },

@@ -39,6 +39,7 @@ const PipelinePage = lazyRetry(() => import("@/pages/pipeline"));
 const CostTrackingPage = lazyRetry(() => import("@/pages/cost-tracking"));
 const PropertyListPage = lazyRetry(() => import("@/pages/property-list"));
 const LinenTrackerPage = lazyRetry(() => import("@/pages/linen-tracker"));
+const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
 const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
 const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
@@ -177,6 +178,7 @@ function AppRoutes() {
         <Route path="/cost-tracking">{() => <GuardedRoute viewId="cost-tracking" component={CostTrackingPage} />}</Route>
         <Route path="/property-list">{() => <GuardedRoute viewId="property-list" component={PropertyListPage} />}</Route>
         <Route path="/linen-tracker">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
+        <Route path="/linen-inventory">{() => <GuardedRoute viewId="linen-inventory" component={LinenInventoryPage} />}</Route>
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
