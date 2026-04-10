@@ -229,8 +229,13 @@ export default function ProFormaPage() {
   const [profitFilter, setProfitFilter] = useState('all')
   const [missingDataFilter, setMissingDataFilter] = useState(false)
 
-  // Feature 5: Dismissed duplicates
-  const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(new Set())
+  // Feature 5: Dismissed duplicates — persisted to localStorage
+  const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('tendwell-dismissed-duplicates')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch { return new Set() }
+  })
 
   // Import history panel
   const [showHistory, setShowHistory] = useState(false)
@@ -619,7 +624,11 @@ export default function ProFormaPage() {
                 </span>
                 <button
                   className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-                  onClick={() => setDismissedDuplicates(prev => { const n = new Set(prev); n.add(pair.key); return n })}
+                  onClick={() => setDismissedDuplicates(prev => {
+                    const n = new Set(prev); n.add(pair.key)
+                    try { localStorage.setItem('tendwell-dismissed-duplicates', JSON.stringify([...n])) } catch {}
+                    return n
+                  })}
                   title="Dismiss"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -837,7 +846,9 @@ export default function ProFormaPage() {
                       {/* Feature 1: Custom frequency with inline input */}
                       <FrequencyCell id={p.id} value={p.cleaning_frequency} avgCleans={p.avg_cleans_per_month} />
                     </td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.avg_cleans_per_month ?? '—'}</td>
+                    <td className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`} title={(p.avg_cleans_per_month ?? 0) > 10 ? 'Unusually high — verify cleaning history' : undefined}>
+                      {p.avg_cleans_per_month ?? '—'}
+                    </td>
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.first_clean_date ? p.first_clean_date.slice(0, 10) : ''}
@@ -983,7 +994,7 @@ export default function ProFormaPage() {
 
       {/* Import history slide-over */}
       <Sheet open={showHistory} onOpenChange={setShowHistory}>
-        <SheetContent side="right" className="w-[480px] sm:w-[520px] flex flex-col">
+        <SheetContent side="right" className="w-full sm:w-[480px] flex flex-col">
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2 text-base">
               <History className="w-4 h-4" />
@@ -1030,7 +1041,7 @@ export default function ProFormaPage() {
 
       {/* Per-property cleaning history slide-over */}
       <Sheet open={!!historyProperty} onOpenChange={open => { if (!open) setHistoryProperty(null) }}>
-        <SheetContent side="right" className="w-[480px] sm:w-[520px] flex flex-col">
+        <SheetContent side="right" className="w-full sm:w-[480px] flex flex-col">
           <SheetHeader>
             <SheetTitle className="text-base truncate">{historyProperty?.name} — Cleaning History</SheetTitle>
           </SheetHeader>
