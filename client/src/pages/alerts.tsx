@@ -155,20 +155,6 @@ export function useAlerts() {
         })
       }
 
-      // Warning: Linen Restock
-      const linenFields = ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels'] as const
-      const hasZeroLinen = p.bedrooms && linenFields.some(f => (p as any)[f] === 0)
-      if (hasZeroLinen) {
-        result.push({
-          id: `linen_restock_${p.id}`,
-          severity: 'warning',
-          category: 'Inventory',
-          title: `Linen Restock: ${p.name}`,
-          description: 'One or more linen types at zero inventory',
-          actionRoute: '/linen-tracker',
-          propertyId: p.id,
-        })
-      }
     }
 
     // Info: Onboarding Stalled
