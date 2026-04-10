@@ -88,7 +88,7 @@ export default function InspectionsPage() {
       const { data, error } = await supabase
         .from('properties')
         .select(`${fields}, pipeline_stages!properties_stage_id_fkey(name)`)
-        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote")')
+        .eq('pipeline_stages.name', 'Active')
         .order('name')
       if (error) throw error
       return data || []
