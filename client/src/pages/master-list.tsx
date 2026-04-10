@@ -41,7 +41,7 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
   const active = currentSort === sortKey
   return (
     <th
-      className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+      className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
       onClick={() => onSort(sortKey)}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(sortKey) } }}
       tabIndex={0}
@@ -526,10 +526,10 @@ export default function MasterListPage() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input type="search" placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
-              data-testid="input-search-master" className="pl-8 h-7 w-48 text-xs" />
+              data-testid="input-search-master" className="pl-8 h-8 w-full sm:w-56 text-sm" />
           </div>
           <Select value={stageFilter} onValueChange={v => { setStageFilter(v); setPage(1); try { localStorage.setItem('ml-stage-filter', v) } catch {} }}>
-            <SelectTrigger data-testid="select-stage-filter" className="h-7 w-36 text-xs">
+            <SelectTrigger data-testid="select-stage-filter" className="h-8 w-36 text-xs">
               <SelectValue placeholder="All stages" />
             </SelectTrigger>
             <SelectContent>
@@ -537,13 +537,13 @@ export default function MasterListPage() {
               {stages?.map((s: any) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={exportCSV} data-testid="button-export-csv">
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCSV} data-testid="button-export-csv">
             <Download className="w-3 h-3" /> Export CSV
           </Button>
           <Button
             variant="outline"
             size="sm"
-            className="h-7 gap-1.5 text-xs"
+            className="h-8 gap-1.5 text-xs"
             onClick={() => {
               const input = document.createElement('input')
               input.type = 'file'

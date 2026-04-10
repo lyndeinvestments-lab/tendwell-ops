@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { useAuth, canEditView } from '@/lib/auth'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -40,6 +41,7 @@ function hasIncompleteData(p: any): boolean {
 export default function LinenTrackerPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
   usePageTitle('Linen Tracker')
   const [search, setSearch] = useState('')
@@ -221,6 +223,10 @@ export default function LinenTrackerPage() {
 
   async function executeImport() {
     if (!importData) return
+    if (!canEditView('linen-tracker', effectiveUser)) {
+      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      return
+    }
     setImporting(true)
     let updated = 0, skipped = 0
     for (const row of importData) {
@@ -263,24 +269,26 @@ export default function LinenTrackerPage() {
             <Download className="w-3.5 h-3.5" />
             Export CSV
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 text-xs gap-1.5"
-            onClick={() => {
-              const input = document.createElement('input')
-              input.type = 'file'
-              input.accept = '.csv'
-              input.onchange = e => {
-                const file = (e.target as HTMLInputElement).files?.[0]
-                if (file) handleCsvFile(file)
-              }
-              input.click()
-            }}
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Import CSV
-          </Button>
+          {canEditView('linen-tracker', effectiveUser) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = '.csv'
+                input.onchange = e => {
+                  const file = (e.target as HTMLInputElement).files?.[0]
+                  if (file) handleCsvFile(file)
+                }
+                input.click()
+              }}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Import CSV
+            </Button>
+          )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -371,13 +379,15 @@ export default function LinenTrackerPage() {
                         >
                           {p.name}
                         </button>
-                        <button
-                          onClick={() => setCopyTarget(p)}
-                          className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-                          aria-label="Copy linen data from another property"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
+                        {canEditView('linen-tracker', effectiveUser) && (
+                          <button
+                            onClick={() => setCopyTarget(p)}
+                            className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                            aria-label="Copy linen data from another property"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                     </td>
                     {LINEN_COLS.map(c => {
@@ -435,6 +445,10 @@ export default function LinenTrackerPage() {
                   key={s.id}
                   className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
                   onClick={() => {
+                    if (!canEditView('linen-tracker', effectiveUser)) {
+                      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+                      return
+                    }
                     const updates = NUMERIC_KEYS.map(k =>
                       supabase.from('properties').update({ [k]: s[k] ?? null }).eq('id', copyTarget.id)
                     )

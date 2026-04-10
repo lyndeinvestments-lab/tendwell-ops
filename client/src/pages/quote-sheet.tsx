@@ -12,6 +12,7 @@ import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { profitColorClass } from '@/lib/profit-colors'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 const INSPECTION_COST = 15
@@ -426,7 +427,7 @@ export default function QuoteSheetPage() {
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">$5.00</td>
                     <td className="py-2 px-3 text-xs tabular-nums">
                       {p.profit_percentage != null ? (
-                        <span className={`font-medium ${p.profit_percentage >= 20 ? 'text-green-600 dark:text-green-400' : p.profit_percentage >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>
+                        <span className={`font-medium ${profitColorClass(p.profit_percentage)}`}>
                           {p.profit_percentage.toFixed(1)}%
                         </span>
                       ) : '—'}
@@ -473,7 +474,7 @@ export default function QuoteSheetPage() {
                     const validProfit = filtered.filter((p: any) => p.profit_percentage != null)
                     if (validProfit.length === 0) return '—'
                     const avg = validProfit.reduce((s: number, p: any) => s + p.profit_percentage, 0) / validProfit.length
-                    return <span className={`font-medium ${avg >= 20 ? 'text-green-600 dark:text-green-400' : avg >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>{avg.toFixed(1)}%</span>
+                    return <span className={`font-medium ${profitColorClass(avg)}`}>{avg.toFixed(1)}%</span>
                   })()}
                 </td>
                 <td></td>
@@ -667,7 +668,7 @@ export default function QuoteSheetPage() {
                       {profitPct !== null && (
                         <div className="flex justify-between border-t border-border pt-1 font-semibold">
                           <span>Profit %</span>
-                          <span className={`tabular-nums ${profitPct >= 20 ? 'text-green-600 dark:text-green-400' : profitPct >= 10 ? 'text-amber-600 dark:text-amber-400' : 'text-destructive'}`}>
+                          <span className={`tabular-nums ${profitColorClass(profitPct)}`}>
                             {profitPct.toFixed(1)}%
                           </span>
                         </div>

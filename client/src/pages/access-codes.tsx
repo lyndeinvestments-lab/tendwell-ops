@@ -10,8 +10,9 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff } from 'lucide-react'
+import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
+import { EmptyState } from '@/components/EmptyState'
 
 const ACCESS_COLS = [
   { key: 'auto_code', label: 'Auto Code', sensitive: true },
@@ -210,7 +211,7 @@ export default function AccessCodesPage() {
 
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Access Codes</h1>
           <p className="text-sm text-muted-foreground">Click any field to edit — use copy icon for clipboard</p>
@@ -238,10 +239,6 @@ export default function AccessCodesPage() {
           </div>
         </div>
       </div>
-
-      {!isLoading && filtered.length > 0 && (
-        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
-      )}
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -295,7 +292,9 @@ export default function AccessCodesPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={ACCESS_COLS.length + 4} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
+                <td colSpan={ACCESS_COLS.length + 4} className="py-12">
+                  <EmptyState icon={KeyRound} title="No properties found" description="No properties match your current filters." />
+                </td>
               </tr>
             ) : (
               paged.map((p: any) => {

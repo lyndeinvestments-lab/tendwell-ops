@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { useAuth, canEditView } from '@/lib/auth'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
@@ -12,8 +13,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
-import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3 } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3, Wind } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
+import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 
 function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
@@ -41,6 +43,7 @@ function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: Sort
 export default function AcFiltersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
   const { getNumber } = useAppSettings()
   const intervalDays = getNumber('ac_filter_interval', 90)
   usePageTitle('AC Filters')
@@ -104,6 +107,10 @@ export default function AcFiltersPage() {
   }
 
   function markChangedToday(id: string) {
+    if (!canEditView('ac-filters', effectiveUser)) {
+      toast({ title: 'Edit access required', variant: 'destructive' })
+      return
+    }
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
     const prop = properties?.find((p: any) => p.id === id)
@@ -140,6 +147,10 @@ export default function AcFiltersPage() {
   }
 
   async function bulkSetFilterSize() {
+    if (!canEditView('ac-filters', effectiveUser)) {
+      toast({ title: 'Edit access required', variant: 'destructive' })
+      return
+    }
     if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
     const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids)
@@ -157,6 +168,10 @@ export default function AcFiltersPage() {
   }
 
   async function bulkMarkChangedToday() {
+    if (!canEditView('ac-filters', effectiveUser)) {
+      toast({ title: 'Edit access required', variant: 'destructive' })
+      return
+    }
     if (bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
     const today = new Date().toISOString().slice(0, 10)
@@ -190,6 +205,10 @@ export default function AcFiltersPage() {
   }
 
   async function importCsv() {
+    if (!canEditView('ac-filters', effectiveUser)) {
+      toast({ title: 'Edit access required', variant: 'destructive' })
+      return
+    }
     if (!csvData.length || !properties) return
     let updated = 0
     for (const row of csvData) {
@@ -296,21 +315,25 @@ export default function AcFiltersPage() {
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
-            <Edit3 className="w-3.5 h-3.5" />
-            {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
-            <Upload className="w-3.5 h-3.5" />
-            Import CSV
-          </Button>
-          <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
           </div>
+          {canEditView('ac-filters', effectiveUser) && (
+            <>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
+                <Edit3 className="w-3.5 h-3.5" />
+                {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
+              </Button>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
+                <Upload className="w-3.5 h-3.5" />
+                Import CSV
+              </Button>
+              <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+            </>
+          )}
         </div>
       </div>
 
       {/* Bulk action bar */}
-      {bulkMode && bulkSelected.size > 0 && (
+      {canEditView('ac-filters', effectiveUser) && bulkMode && bulkSelected.size > 0 && (
         <div className="flex items-center gap-3 p-2 bg-primary/5 border border-primary/20 rounded-lg text-xs">
           <span className="font-medium">{bulkSelected.size} selected</span>
           <div className="flex items-center gap-1.5">
@@ -392,7 +415,9 @@ export default function AcFiltersPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-muted-foreground text-sm">No properties found</td>
+                <td colSpan={8} className="py-12">
+                  <EmptyState icon={Wind} title="No properties found" description="No properties match your current filters." />
+                </td>
               </tr>
             ) : (
               paged.map((p: any) => {
