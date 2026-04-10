@@ -843,7 +843,6 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         // Operations
         cleaning_frequency: property.cleaning_frequency || '',
         filter_size: property.filter_size || '',
-        follow_up_date: property.follow_up_date || '',
         notes: property.notes || '',
         linen_notes: property.linen_notes || '',
         stage_id: property.stage_id,
@@ -869,8 +868,6 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         updates[key] = val
       } else if (key === 'stage_id') {
         updates[key] = val ? parseInt(val) : null
-      } else if (key === 'follow_up_date') {
-        updates[key] = val || null
       } else if (NUMBER_FIELDS.has(key)) {
         updates[key] = val === '' ? null : parseFloat(val)
       } else {
@@ -928,7 +925,6 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
     { title: 'Operations', fields: [
       { key: 'cleaning_frequency', label: 'Cleaning Freq', type: 'select', options: ['weekly', 'biweekly', 'monthly', 'as_needed'] },
       { key: 'filter_size', label: 'AC Filter Size', type: 'text' },
-      { key: 'follow_up_date', label: 'Follow-Up Date', type: 'date' },
       { key: 'notes', label: 'Special Notes', type: 'textarea' },
     ]},
   ]
