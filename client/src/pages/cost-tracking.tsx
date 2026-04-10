@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/context-menu'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
@@ -143,6 +144,11 @@ export default function CostTrackingPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [localProperties, setLocalProperties] = useState<any[] | null>(null)
   const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set())
+
+  const { getNumber } = useAppSettings()
+  const inspectionCost = getNumber('cost_inspection', 15)
+  const trashCost = getNumber('cost_trash', 5)
+  const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
 
   const { activeAlerts } = useAlerts()
   const alertByPropertyId = useMemo(() => {
@@ -373,7 +379,7 @@ export default function CostTrackingPage() {
               <th className={thCls} onClick={() => toggleSort('total_estimated_cost')}>Total Cost <SortIcon col="total_estimated_cost" /></th>
               <th className={thCls} onClick={() => toggleSort('estimated_profit')}>Profit <SortIcon col="estimated_profit" /></th>
               <th className={thCls} onClick={() => toggleSort('profit_percentage')}>Profit % <SortIcon col="profit_percentage" /></th>
-              <th className={thCls} onClick={() => toggleSort('break_even_ce')} title="CE needed to break even at 20% margin">Break-Even CE <SortIcon col="break_even_ce" /></th>
+              <th className={thCls} onClick={() => toggleSort('break_even_ce')} title={`CE needed to break even at ${Math.round(breakEvenMargin * 100)}% margin`}>Break-Even CE <SortIcon col="break_even_ce" /></th>
             </tr>
           </thead>
           <tbody>
@@ -471,13 +477,13 @@ export default function CostTrackingPage() {
                       testId={`inline-consumables-${p.id}`}
                     />
                   </td>
-                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">$15.00</td>
-                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">$5.00</td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(inspectionCost)}</td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(trashCost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.total_estimated_cost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
                   <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">
-                    {p.total_estimated_cost != null ? '$' + (p.total_estimated_cost / 0.80).toFixed(2) : '—'}
+                    {p.total_estimated_cost != null ? '$' + (p.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2) : '—'}
                   </td>
                 </tr>
                   </ContextMenuTrigger>
@@ -501,11 +507,11 @@ export default function CostTrackingPage() {
                         </div>
                         <div>
                           <span className="text-muted-foreground block">Inspection</span>
-                          <span className="font-medium">$15.00</span>
+                          <span className="font-medium">{fmt(inspectionCost)}</span>
                         </div>
                         <div>
                           <span className="text-muted-foreground block">Trash</span>
-                          <span className="font-medium">$5.00</span>
+                          <span className="font-medium">{fmt(trashCost)}</span>
                         </div>
                         <div>
                           <span className="text-muted-foreground block">Cleaner Pay</span>
@@ -536,12 +542,12 @@ export default function CostTrackingPage() {
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * 15)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * 5)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / 0.80)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
               </tr>
             )}
           </tbody>

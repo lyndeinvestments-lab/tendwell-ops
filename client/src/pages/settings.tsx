@@ -450,7 +450,6 @@ function AppSettingsSection() {
   const ALL_FIELDS = [
     { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15', section: 'cost' },
     { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5', section: 'cost' },
-    { key: 'cost_consumables', label: 'Consumables Base Rate ($)', placeholder: '30', section: 'cost' },
     { key: 'default_cleaner_pay', label: 'Default Cleaner Pay ($)', placeholder: '75', section: 'cost' },
     { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30', section: 'profit' },
     { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15', section: 'profit' },

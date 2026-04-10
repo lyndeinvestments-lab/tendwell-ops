@@ -417,11 +417,11 @@ export default function DashboardPage() {
         />
         <KpiCard
           title="Avg Onboarding"
-          value={onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d` : '—'}
-          subtitle="days to active"
+          value={onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d` : 'No data'}
+          subtitle={onboardingVelocity?.avgDays != null ? 'days to active' : 'no transitions yet'}
           icon={Activity}
           loading={isLoading || !onboardingVelocity}
-          hint="Average days from Onboarding to Active stage for conversions in this period"
+          hint={onboardingVelocity?.avgDays != null ? "Average days from Onboarding to Active stage for conversions in this period" : "No Onboarding → Active transitions recorded in this period. Properties added directly to Active bypass this metric."}
         />
       </div>
 
