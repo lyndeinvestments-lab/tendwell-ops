@@ -83,7 +83,7 @@ export const SHORTCUT_SECTIONS = [
       { keys: ['G', 'Q'], description: 'Quote Sheet' },
       { keys: ['G', 'T'], description: 'Cost Tracking' },
       { keys: ['G', 'L'], description: 'Property List' },
-      { keys: ['G', 'N'], description: 'Linen Tracker' },
+      { keys: ['G', 'N'], description: 'Linen Requirements' },
       { keys: ['G', 'A'], description: 'AC Filters' },
       { keys: ['G', 'M'], description: 'Master List' },
       { keys: ['G', 'R'], description: 'Revenue Report' },

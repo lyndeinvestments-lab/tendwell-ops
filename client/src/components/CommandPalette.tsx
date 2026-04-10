@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
-  DollarSign, Building2, BedDouble, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
+  DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
   ClipboardCheck, Brush, Bell, Activity, PieChart,
 } from 'lucide-react'
 
@@ -18,7 +18,8 @@ const PAGE_ROUTES = [
   { name: 'Quote Sheet', path: '/quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'], icon: FileSpreadsheet },
   { name: 'Cost Tracking', path: '/cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'], icon: DollarSign },
   { name: 'Property List', path: '/property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
-  { name: 'Linen Tracker', path: '/linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory'], icon: BedDouble },
+  { name: 'Linen Requirements', path: '/linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory', 'requirements'], icon: BedDouble },
+  { name: 'Linen Inventory', path: '/linen-inventory', keywords: ['linen', 'inventory', 'count', 'par', 'sets', 'stock'], icon: Boxes },
   { name: 'Access Codes', path: '/access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
   { name: 'AC Filters', path: '/ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
   { name: 'Master List', path: '/master-list', keywords: ['master', 'list', 'all properties', 'admin'], icon: ListFilter },
