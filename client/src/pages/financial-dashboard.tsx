@@ -282,21 +282,34 @@ export default function FinancialDashboardPage() {
     },
   })
 
+  // QBO data synced to Supabase via Claude MCP (no serverless function needed)
   const { data: qboData, isLoading: qboLoading } = useQuery({
-    queryKey: ['/api/qbo/financials'],
+    queryKey: ['/supabase/qbo-pl-data'],
     enabled: isAdmin,
     staleTime: 300_000,
     queryFn: async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session?.access_token) return null
-      const res = await fetch('/api/qbo/financials', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        return { error: true, needsAuth: err.needsAuth, message: err.error }
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'qbo_pl_data')
+        .single()
+      if (error || !data?.value) return null
+      const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value
+      return {
+        connected: true,
+        companyName: parsed.company,
+        profitLoss: {
+          totalIncome: parsed.totalIncome,
+          totalExpenses: parsed.totalCOGS + parsed.totalExpenses,
+          netIncome: parsed.netIncome,
+          period: parsed.period,
+        },
+        monthly: parsed.monthly,
+        cogsBreakdown: parsed.cogsBreakdown,
+        incomeBreakdown: parsed.incomeBreakdown,
+        expenseBreakdown: parsed.expenseBreakdown,
+        updatedAt: parsed.updated_at,
       }
-      return res.json()
     },
   })
 
@@ -812,45 +825,33 @@ export default function FinancialDashboardPage() {
             </CardContent>
           </Card>
 
-          {/* QuickBooks */}
+          {/* QuickBooks P&L */}
           <Card className="border-card-border">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-primary" />
-                QuickBooks {qboData?.environment === 'sandbox' ? '(Sandbox)' : ''}
+                QuickBooks P&L
               </CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               {qboLoading ? (
                 <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
-              ) : qboData?.needsAuth || qboData?.error ? (
-                <div className="text-center py-4">
-                  <p className="text-xs text-muted-foreground mb-2">{qboData?.message || 'QuickBooks not connected'}</p>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => window.open('/api/qbo/authorize', '_blank')}>
-                    <ExternalLink className="w-3 h-3" /> Connect QuickBooks
-                  </Button>
-                </div>
               ) : !qboData?.connected ? (
-                <div className="text-center py-4">
-                  <p className="text-xs text-muted-foreground mb-2">Connect QuickBooks to see real P&L data</p>
-                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => window.open('/api/qbo/authorize', '_blank')}>
-                    <ExternalLink className="w-3 h-3" /> Connect QuickBooks
-                  </Button>
-                </div>
+                <p className="text-xs text-muted-foreground py-3 text-center">No QuickBooks data synced yet</p>
               ) : (
                 <div className="space-y-3">
                   {qboData.companyName && (
-                    <p className="text-xs text-muted-foreground">{qboData.companyName}</p>
+                    <p className="text-xs text-muted-foreground">{qboData.companyName}{qboData.updatedAt && <span> · Updated {new Date(qboData.updatedAt).toLocaleDateString()}</span>}</p>
                   )}
                   {qboData.profitLoss ? (
                     <>
                       <div className="grid grid-cols-3 gap-3">
                         <div>
-                          <span className="text-xs text-muted-foreground block">Income</span>
+                          <span className="text-xs text-muted-foreground block">Revenue</span>
                           <span className="text-sm font-medium text-green-600 dark:text-green-400">{fmt(qboData.profitLoss.totalIncome)}</span>
                         </div>
                         <div>
-                          <span className="text-xs text-muted-foreground block">Expenses</span>
+                          <span className="text-xs text-muted-foreground block">Total Costs</span>
                           <span className="text-sm font-medium">{fmt(qboData.profitLoss.totalExpenses)}</span>
                         </div>
                         <div>
@@ -858,10 +859,35 @@ export default function FinancialDashboardPage() {
                           <span className={`text-sm font-medium ${qboData.profitLoss.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboData.profitLoss.netIncome)}</span>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {qboData.profitLoss.period}
-                        {qboData.environment === 'sandbox' && <span className="ml-1 text-amber-600 dark:text-amber-400">· Sandbox data — switch QBO_ENVIRONMENT to production for real numbers</span>}
-                      </p>
+                      <p className="text-xs text-muted-foreground">{qboData.profitLoss.period}</p>
+                      {/* Monthly trend */}
+                      {qboData.monthly && (
+                        <>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-2">Monthly Net Income</p>
+                          <div className="space-y-1">
+                            {Object.entries(qboData.monthly).map(([month, data]: [string, any]) => (
+                              <div key={month} className="flex items-center justify-between text-xs">
+                                <span className="text-muted-foreground">{month}</span>
+                                <span className={`tabular-nums font-medium ${data.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(data.netIncome)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                      {/* Top COGS */}
+                      {qboData.cogsBreakdown && (
+                        <>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-2">Top Costs (COGS)</p>
+                          <div className="space-y-1">
+                            {Object.entries(qboData.cogsBreakdown).slice(0, 5).map(([name, amount]: [string, any]) => (
+                              <div key={name} className="flex items-center justify-between text-xs">
+                                <span className="truncate mr-2">{name}</span>
+                                <span className="tabular-nums font-medium">{fmt(amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">No P&L data available</p>
