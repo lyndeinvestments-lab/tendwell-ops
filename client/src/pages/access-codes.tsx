@@ -135,7 +135,6 @@ export default function AccessCodesPage() {
   const [pageSize, setPageSize] = useState(50)
   const [sortKey, setSortKey] = useState<'name' | 'stage_name' | 'auto_code' | 'door_code' | 'other_codes' | 'wifi_info' | 'notes'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
-  const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set())
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/access-codes'],
@@ -298,7 +297,9 @@ export default function AccessCodesPage() {
               </tr>
             ) : (
               paged.map((p: any) => {
-                const isMissing = SENSITIVE_KEYS.every(k => !p[k])
+                const codeKeys = ['auto_code', 'door_code', 'other_codes']
+                const missingCodes = codeKeys.filter(k => !p[k] || !p[k].trim())
+                const isMissing = missingCodes.length > 0
                 return (
                   <tr key={p.id} data-testid={`row-access-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="py-2 px-3 text-xs sticky left-0 z-10 bg-card">
@@ -318,28 +319,19 @@ export default function AccessCodesPage() {
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name || '—'}</td>
                     {ACCESS_COLS.map(c => {
-                      const cellKey = `${p.id}-${c.key}`
-                      const isRevealed = revealedCells.has(cellKey)
+                      const isEmpty = c.sensitive && (!p[c.key] || p[c.key].trim() === '')
                       return (
-                        <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
-                          <MaskedCell
-                            value={p[c.key]}
-                            field={c.key}
-                            id={p.id}
-                            sensitive={c.sensitive}
-                            revealed={isRevealed}
-                            onReveal={() => {
-                              const next = new Set(revealedCells)
-                              if (isRevealed) {
-                                next.delete(cellKey)
-                              } else {
-                                next.add(cellKey)
-                                logAccessEvent(p.id, c.key, 'reveal')
-                              }
-                              setRevealedCells(next)
-                            }}
-                            onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
-                          />
+                        <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''} ${isEmpty ? 'bg-red-100/60 dark:bg-red-900/20' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
+                          <div className="flex items-center gap-1">
+                            <InlineEdit
+                              value={p[c.key]}
+                              type="text"
+                              onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
+                              testId={`inline-${c.key}-${p.id}`}
+                              className={isEmpty ? 'text-red-600 dark:text-red-400' : undefined}
+                            />
+                            {p[c.key] && <CopyButton value={p[c.key]} field={c.key} id={p.id} />}
+                          </div>
                         </td>
                       )
                     })}
