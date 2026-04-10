@@ -20,6 +20,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import Papa from 'papaparse'
 import { InlineEdit } from '@/components/InlineEdit'
 import { TablePagination } from '@/components/TablePagination'
+import { profitColorClass } from '@/lib/profit-colors'
+import { useAppSettings } from '@/hooks/use-app-settings'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return ''
@@ -654,7 +656,7 @@ export default function MasterListPage() {
                   </td>
                   <td className="py-1.5 px-3 tabular-nums">
                     {p.profit_percentage != null ? (
-                      <span className={`font-medium ${p.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' : p.profit_percentage >= 15 ? 'text-amber-600' : 'text-destructive'}`}>
+                      <span className={`font-medium ${profitColorClass(p.profit_percentage)}`}>
                         {p.profit_percentage.toFixed(1)}%
                       </span>
                     ) : '—'}
@@ -804,6 +806,9 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
 }) {
   const [form, setForm] = useState<Record<string, any>>({})
 
+  const { getNumber } = useAppSettings()
+  const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
+
   const propId = property?.id
   useMemo(() => {
     if (property) {
@@ -941,21 +946,43 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
           </SheetTitle>
         </SheetHeader>
 
-        {/* Computed summary */}
+        {/* Financial summary */}
         <div className="grid grid-cols-3 gap-3 bg-muted/50 rounded-md p-3 mb-4">
+          <div>
+            <span className="text-xs text-muted-foreground block">Client Charged</span>
+            <span className="text-sm font-medium">${(property.ce_charged || 0).toFixed(2)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
+            <span className="text-sm font-medium">${(property.cleaner_pay || 0).toFixed(2)}</span>
+          </div>
           <div>
             <span className="text-xs text-muted-foreground block">Total Cost</span>
             <span className="text-sm font-medium">${(property.total_estimated_cost || 0).toFixed(2)}</span>
           </div>
           <div>
-            <span className="text-xs text-muted-foreground block">Profit</span>
+            <span className="text-xs text-muted-foreground block">Laundry</span>
+            <span className="text-sm font-medium">${(property.est_laundry || 0).toFixed(2)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Consumables</span>
+            <span className="text-sm font-medium">${(property.est_consumables || 0).toFixed(2)}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Profit / Clean</span>
             <span className={`text-sm font-medium ${(property.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>
               ${(property.estimated_profit || 0).toFixed(2)}
             </span>
           </div>
           <div>
             <span className="text-xs text-muted-foreground block">Profit %</span>
-            <span className="text-sm font-medium">{(property.profit_percentage || 0).toFixed(1)}%</span>
+            <span className={`text-sm font-medium ${profitColorClass(property.profit_percentage)}`}>{(property.profit_percentage || 0).toFixed(1)}%</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">Break-Even CE</span>
+            <span className="text-sm font-medium">
+              {property.total_estimated_cost ? `$${(property.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2)}` : '—'}
+            </span>
           </div>
         </div>
 

@@ -251,10 +251,21 @@ export default function AlertsPage() {
   const { alerts, dismissedSet } = useAlerts()
   const qcAlerts = useQueryClient()
   const [showDismissed, setShowDismissed] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState<string>('All')
 
   const visibleAlerts = useMemo(() => {
-    if (showDismissed) return alerts
-    return alerts.filter(a => !dismissedSet.has(a.id))
+    let base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
+    if (categoryFilter !== 'All') base = base.filter(a => a.category === categoryFilter)
+    return base
+  }, [alerts, showDismissed, dismissedSet, categoryFilter])
+
+  const categoryCounts = useMemo(() => {
+    const base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
+    const counts: Record<string, number> = { All: base.length }
+    for (const a of base) {
+      counts[a.category] = (counts[a.category] || 0) + 1
+    }
+    return counts
   }, [alerts, showDismissed, dismissedSet])
 
   const handleDismiss = useCallback(async (id: string) => {
@@ -303,6 +314,26 @@ export default function AlertsPage() {
             Show dismissed ({alerts.filter(a => dismissedSet.has(a.id)).length})
           </label>
         </div>
+      </div>
+
+      {/* Category filter tabs */}
+      <div className="flex items-center gap-1.5 flex-wrap -mt-1">
+        {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM']
+          .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
+          .map(cat => (
+            <button
+              key={cat}
+              onClick={() => setCategoryFilter(cat)}
+              className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+                categoryFilter === cat
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-muted'
+              }`}
+            >
+              {cat}
+              <span className="ml-1.5 tabular-nums opacity-70">{categoryCounts[cat] || 0}</span>
+            </button>
+          ))}
       </div>
 
       <div className="space-y-2">

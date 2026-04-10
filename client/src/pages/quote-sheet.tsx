@@ -13,16 +13,17 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { profitColorClass } from '@/lib/profit-colors'
+import { useAppSettings } from '@/hooks/use-app-settings'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
-const INSPECTION_COST = 15
-const TRASH_COST = 5
 
 // Laundry: number of beds × wash/dry cost per set
 function calcLaundry(numberOfBeds: number): number {
   return numberOfBeds * 11.5 * 0.69
 }
 
+// Consumables are calculated per-item (bathroom amenities, kitchen supplies, etc.)
+// NOT from the app_settings 'cost_consumables' base rate
 // Consumables itemized by unit costs
 const BATHROOM_COST = 1.05   // shampoo $0.26 + conditioner $0.26 + body wash $0.26 + bar $0.23 + liners $0.04
 const TOILET_PAPER_COST = 0.78 // 2 rolls × $0.39 — flat per property
@@ -84,6 +85,9 @@ export default function QuoteSheetPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   usePageTitle('Quote Sheet')
+  const { getNumber } = useAppSettings()
+  const INSPECTION_COST = getNumber('cost_inspection', 15)
+  const TRASH_COST = getNumber('cost_trash', 5)
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
@@ -302,8 +306,8 @@ export default function QuoteSheetPage() {
         p.square_footage ?? '',
         laundry?.toFixed(2) ?? '',
         consumables?.toFixed(2) ?? '',
-        '15.00',
-        '5.00',
+        INSPECTION_COST.toFixed(2),
+        TRASH_COST.toFixed(2),
         p.profit_percentage != null ? p.profit_percentage.toFixed(1) : '',
       ]
     })
@@ -423,8 +427,8 @@ export default function QuoteSheetPage() {
                     <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(laundry)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(consumables)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">$15.00</td>
-                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">$5.00</td>
+                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">
                       {p.profit_percentage != null ? (
                         <span className={`font-medium ${profitColorClass(p.profit_percentage)}`}>
@@ -467,8 +471,8 @@ export default function QuoteSheetPage() {
                 <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).laundry || 0), 0))}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).consumables || 0), 0))}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * 15)}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * 5)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * INSPECTION_COST)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">
                   {(() => {
                     const validProfit = filtered.filter((p: any) => p.profit_percentage != null)
@@ -659,8 +663,8 @@ export default function QuoteSheetPage() {
                       {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">Cleaner Pay</span><span className="tabular-nums">{fmt(pay)}</span></div>}
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">$15.00</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">$5.00</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
                       <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
                       {ce != null && (
                         <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
