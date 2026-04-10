@@ -771,6 +771,7 @@ export function PropertyDetailModal() {
   const [form, setForm] = useState<Record<string, any>>({})
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
+  const [savingMissing, setSavingMissing] = useState(false)
 
   const propertyId = modalState?.propertyId
   const highlightFields = modalState?.highlightFields ?? []
@@ -1019,6 +1020,70 @@ export function PropertyDetailModal() {
           </div>
         ) : !property ? (
           <p className="text-sm text-muted-foreground py-4">Property not found.</p>
+        ) : sourceContext === 'dashboard-missing' && highlightFields.length > 0 ? (
+          /* ── Focused Missing Data Form ── */
+          <div className="mt-3 space-y-4">
+            <p className="text-xs text-muted-foreground">Fill in the missing fields below:</p>
+            <div className="space-y-3">
+              {highlightFields.map(field => {
+                const fieldConfig: Record<string, { label: string; type: string }> = {
+                  address: { label: 'Address', type: 'text' },
+                  bedrooms: { label: 'Bedrooms', type: 'number' },
+                  full_baths: { label: 'Full Baths', type: 'number' },
+                  half_baths: { label: 'Half Baths', type: 'number' },
+                  square_footage: { label: 'Square Footage', type: 'number' },
+                  guest_count: { label: 'Guest Count', type: 'number' },
+                  ce_charged: { label: 'Client Charged ($)', type: 'number' },
+                  cleaner_pay: { label: 'Cleaner Pay ($)', type: 'number' },
+                  number_of_beds: { label: 'Number of Beds', type: 'number' },
+                }
+                const config = fieldConfig[field] || { label: field, type: 'text' }
+                return (
+                  <div key={field} className="grid grid-cols-[120px_1fr] items-center gap-2">
+                    <Label className="text-xs text-muted-foreground">{config.label}</Label>
+                    <Input
+                      type={config.type}
+                      value={form[field] ?? ''}
+                      onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                      className="h-8 text-sm"
+                      autoFocus={highlightFields[0] === field}
+                      step={config.type === 'number' ? '0.01' : undefined}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" size="sm" onClick={closePropertyModal}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={savingMissing}
+                onClick={async () => {
+                  setSavingMissing(true)
+                  const updates: Record<string, any> = {}
+                  for (const field of highlightFields) {
+                    const val = form[field]
+                    if (val !== '' && val != null) {
+                      updates[field] = ['bedrooms', 'full_baths', 'half_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', 'number_of_beds'].includes(field) ? parseFloat(val) : val
+                    }
+                  }
+                  if (Object.keys(updates).length === 0) { setSavingMissing(false); return }
+                  const { error } = await supabase.from('properties').update(updates).eq('id', property.id)
+                  setSavingMissing(false)
+                  if (error) {
+                    toast({ title: 'Save failed', variant: 'destructive' })
+                  } else {
+                    toast({ title: 'Missing data filled in' })
+                    qc.invalidateQueries({ queryKey: ['/supabase/property-detail'] })
+                    qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+                    closePropertyModal()
+                  }
+                }}
+              >
+                {savingMissing ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </div>
         ) : (
           <Tabs defaultValue="overview" className="mt-2">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
@@ -1271,11 +1336,6 @@ export function PropertyDetailModal() {
                     <span className="text-sm">{property.next_filter_due ? property.next_filter_due.slice(0, 10) : '—'}</span>
                   </div>
                 </div>
-              </div>
-              <Separator />
-              <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Supplies</h4>
-                <SuppliesTab propertyId={property.id} />
               </div>
             </TabsContent>
 
