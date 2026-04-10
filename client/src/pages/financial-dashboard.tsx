@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,9 @@ import {
   AlertCircle,
   RotateCcw,
   Percent,
+  ExternalLink,
+  CreditCard,
+  BookOpen,
 } from 'lucide-react'
 import {
   BarChart,
@@ -155,6 +159,8 @@ function PropertyBarTooltip({ active, payload }: any) {
 export default function FinancialDashboardPage() {
   usePageTitle('Financial Dashboard')
   const { openPropertyModal } = usePropertyModal()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
 
   // ── Scenario state ──
   const [scenarioCpmSelect, setScenarioCpmSelect] = useState<string>('')
@@ -259,6 +265,40 @@ export default function FinancialDashboardPage() {
       { label: 'Negative (<0%)', count: negative, color: '#ef4444' },
     ]
   }, [properties])
+
+  // ── Integrations (admin only) ──
+  const { data: rampData, isLoading: rampLoading } = useQuery({
+    queryKey: ['/api/ramp/spend'],
+    enabled: isAdmin,
+    staleTime: 300_000, // 5 min cache
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return null
+      const res = await fetch('/api/ramp/spend', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) return null
+      return res.json()
+    },
+  })
+
+  const { data: qboData, isLoading: qboLoading } = useQuery({
+    queryKey: ['/api/qbo/financials'],
+    enabled: isAdmin,
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) return null
+      const res = await fetch('/api/qbo/financials', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        return { error: true, needsAuth: err.needsAuth, message: err.error }
+      }
+      return res.json()
+    },
+  })
 
   // ── Per-property bar chart data ──
   const propertyChartData = useMemo(() => {
@@ -714,6 +754,121 @@ export default function FinancialDashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Integrations (admin only) ── */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Ramp Spend */}
+          <Card className="border-card-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <CreditCard className="w-4 h-4 text-primary" />
+                Ramp Spend (30 days)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {rampLoading ? (
+                <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
+              ) : !rampData ? (
+                <p className="text-xs text-muted-foreground py-3 text-center">Unable to load Ramp data</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">Total Spend</span>
+                    <span className="text-lg font-semibold">{fmt(rampData.totalSpend)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{rampData.transactionCount} transactions</span>
+                    <span>{rampData.period}</span>
+                  </div>
+                  {rampData.topCategories?.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-1">Top Categories</p>
+                      <div className="space-y-1">
+                        {rampData.topCategories.slice(0, 5).map((c: any) => (
+                          <div key={c.name} className="flex items-center justify-between text-xs">
+                            <span className="truncate mr-2">{c.name}</span>
+                            <span className="tabular-nums font-medium">{fmt(c.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {rampData.topMerchants?.length > 0 && (
+                    <>
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-1">Top Merchants</p>
+                      <div className="space-y-1">
+                        {rampData.topMerchants.slice(0, 5).map((m: any) => (
+                          <div key={m.name} className="flex items-center justify-between text-xs">
+                            <span className="truncate mr-2">{m.name}</span>
+                            <span className="tabular-nums font-medium">{fmt(m.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* QuickBooks */}
+          <Card className="border-card-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-primary" />
+                QuickBooks {qboData?.environment === 'sandbox' ? '(Sandbox)' : ''}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              {qboLoading ? (
+                <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
+              ) : qboData?.needsAuth || qboData?.error ? (
+                <div className="text-center py-4">
+                  <p className="text-xs text-muted-foreground mb-2">{qboData?.message || 'QuickBooks not connected'}</p>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => window.open('/api/qbo/authorize', '_blank')}>
+                    <ExternalLink className="w-3 h-3" /> Connect QuickBooks
+                  </Button>
+                </div>
+              ) : !qboData?.connected ? (
+                <div className="text-center py-4">
+                  <p className="text-xs text-muted-foreground mb-2">Connect QuickBooks to see real P&L data</p>
+                  <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => window.open('/api/qbo/authorize', '_blank')}>
+                    <ExternalLink className="w-3 h-3" /> Connect QuickBooks
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {qboData.companyName && (
+                    <p className="text-xs text-muted-foreground">{qboData.companyName}</p>
+                  )}
+                  {qboData.profitLoss ? (
+                    <>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Income</span>
+                          <span className="text-sm font-medium text-green-600 dark:text-green-400">{fmt(qboData.profitLoss.totalIncome)}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Expenses</span>
+                          <span className="text-sm font-medium">{fmt(qboData.profitLoss.totalExpenses)}</span>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground block">Net Income</span>
+                          <span className={`text-sm font-medium ${qboData.profitLoss.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboData.profitLoss.netIncome)}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{qboData.profitLoss.period}</p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No P&L data available</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
