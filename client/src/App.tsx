@@ -54,6 +54,7 @@ const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
 const CleanersPage = lazyRetry(() => import("@/pages/cleaners"));
 const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
 const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
+const IssuesPage = lazyRetry(() => import("@/pages/issues"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
 
 const sidebarStyle = {
@@ -192,6 +193,7 @@ function AppRoutes() {
         <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
         <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
+        <Route path="/issues">{() => <GuardedRoute viewId="issues" component={IssuesPage} />}</Route>
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
