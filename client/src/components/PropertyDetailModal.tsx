@@ -192,6 +192,41 @@ function OnboardingChecklist({ propertyId }: { propertyId: string }) {
 }
 
 // ── Inspections Tab ──────────────────────────────────────────────────────────
+function VerificationHistory({ propertyId }: { propertyId: string }) {
+  const { data: verifications, isLoading } = useQuery({
+    queryKey: ['/supabase/property-verifications-history', propertyId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_verifications')
+        .select('*')
+        .eq('property_id', propertyId)
+        .order('verified_at', { ascending: false })
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+  if (!verifications?.length) return <p className="text-sm text-muted-foreground text-center py-6">No verifications completed yet.</p>
+
+  return (
+    <div className="space-y-2">
+      {verifications.map((v: any) => (
+        <div key={v.id} className="rounded-md border border-border p-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-medium">{new Date(v.verified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <span className="text-muted-foreground">{v.verified_by || '—'}</span>
+          </div>
+          {v.fields_updated && Object.keys(v.fields_updated).length > 0 && (
+            <p className="text-muted-foreground mt-1">{Object.keys(v.fields_updated).length} field(s) updated</p>
+          )}
+          {v.notes && <p className="text-muted-foreground mt-1">{v.notes}</p>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function InspectionsTab({ propertyId }: { propertyId: string }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -1088,12 +1123,12 @@ export function PropertyDetailModal() {
           <Tabs defaultValue="overview" className="mt-2">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
               <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-              {canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
+              {sourceContext !== 'property-list' && canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
               <TabsTrigger value="operations" className="text-xs">Operations</TabsTrigger>
-              {canViewAccess && <TabsTrigger value="setup" className="text-xs">Setup</TabsTrigger>}
-              <TabsTrigger value="inspections" className="text-xs">Inspections</TabsTrigger>
-              <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>
+              {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">Setup</TabsTrigger>}
+              <TabsTrigger value="inspections" className="text-xs">{sourceContext === 'property-list' ? 'Verification' : 'Inspections'}</TabsTrigger>
+              {sourceContext !== 'property-list' && <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>}
               <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
             </TabsList>
 
@@ -1231,6 +1266,13 @@ export function PropertyDetailModal() {
                   </div>
                 ))}
               </div>
+              {/* Cleaner Pay — shown in property-list context */}
+              {sourceContext === 'property-list' && (
+                <div className="bg-muted/40 rounded-md p-3">
+                  <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
+                  <span className="text-sm font-medium">{property.cleaner_pay ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                </div>
+              )}
             </TabsContent>
 
             {/* ── Financials Tab ── */}
@@ -1337,6 +1379,28 @@ export function PropertyDetailModal() {
                   </div>
                 </div>
               </div>
+              {/* Access & WiFi — included in operations tab when from property-list */}
+              {sourceContext === 'property-list' && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access & WiFi</h4>
+                    <div className="space-y-2">
+                      {[
+                        { key: 'auto_code', label: 'Auto Code' },
+                        { key: 'door_code', label: 'Door Code' },
+                        { key: 'other_codes', label: 'Other Codes' },
+                        { key: 'wifi_info', label: 'WiFi Info' },
+                      ].map(col => (
+                        <div key={col.key}>
+                          <span className="text-xs text-muted-foreground block mb-0.5">{col.label}</span>
+                          <span className="text-sm">{property[col.key] || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </TabsContent>
 
             {/* ── Setup Tab (Access Codes, Onboarding) ── */}
@@ -1389,7 +1453,11 @@ export function PropertyDetailModal() {
 
             {/* ── Inspections Tab ── */}
             <TabsContent value="inspections" className="mt-3">
-              <InspectionsTab propertyId={property.id} />
+              {sourceContext === 'property-list' ? (
+                <VerificationHistory propertyId={property.id} />
+              ) : (
+                <InspectionsTab propertyId={property.id} />
+              )}
             </TabsContent>
 
             {/* ── Assignments Tab ── */}
