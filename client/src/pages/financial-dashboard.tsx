@@ -858,7 +858,10 @@ export default function FinancialDashboardPage() {
                           <span className={`text-sm font-medium ${qboData.profitLoss.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboData.profitLoss.netIncome)}</span>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">{qboData.profitLoss.period}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {qboData.profitLoss.period}
+                        {qboData.environment === 'sandbox' && <span className="ml-1 text-amber-600 dark:text-amber-400">· Sandbox data — switch QBO_ENVIRONMENT to production for real numbers</span>}
+                      </p>
                     </>
                   ) : (
                     <p className="text-xs text-muted-foreground">No P&L data available</p>
