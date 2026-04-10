@@ -804,7 +804,6 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
 }) {
   const [form, setForm] = useState<Record<string, any>>({})
 
-  // Reset form when property changes
   const propId = property?.id
   useMemo(() => {
     if (property) {
@@ -812,23 +811,41 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         name: property.name || '',
         client: property.client || '',
         address: property.address || '',
+        // Property details
         bedrooms: property.bedrooms ?? '',
         full_baths: property.full_baths ?? '',
         half_baths: property.half_baths ?? '',
         square_footage: property.square_footage ?? '',
-        ce_charged: property.ce_charged ?? '',
-        cleaner_pay: property.cleaner_pay ?? '',
         number_of_beds: property.number_of_beds ?? '',
         guest_count: property.guest_count ?? '',
         kitchens: property.kitchens ?? '',
         hot_tub: property.hot_tub ?? false,
-        pet_friendly: property.pet_friendly || 'No',
-        cleaning_frequency: property.cleaning_frequency || 'as_needed',
+        pet_friendly: property.pet_friendly || '',
+        // Bed sizes (for linens)
+        king_beds: property.king_beds ?? '',
+        queen_beds: property.queen_beds ?? '',
+        full_beds: property.full_beds ?? '',
+        twin_beds: property.twin_beds ?? '',
+        // Financial
+        ce_charged: property.ce_charged ?? '',
+        cleaner_pay: property.cleaner_pay ?? '',
+        // Access & Wi-Fi
         auto_code: property.auto_code || '',
         door_code: property.door_code || '',
-        wifi_network: (property.wifi_info || '').split('\n')[0] || '',
-        wifi_password: (property.wifi_info || '').split('\n')[1] || '',
+        other_codes: property.other_codes || '',
+        wifi_info: property.wifi_info || '',
+        // Linen towels
+        bath_towels: property.bath_towels ?? '',
+        washcloths: property.washcloths ?? '',
+        hand_towels: property.hand_towels ?? '',
+        bathmats: property.bathmats ?? '',
+        pool_towels: property.pool_towels ?? '',
+        // Operations
+        cleaning_frequency: property.cleaning_frequency || '',
+        filter_size: property.filter_size || '',
+        follow_up_date: property.follow_up_date || '',
         notes: property.notes || '',
+        linen_notes: property.linen_notes || '',
         stage_id: property.stage_id,
       })
     }
@@ -838,20 +855,24 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
     setForm(prev => ({ ...prev, [key]: value }))
   }
 
+  const NUMBER_FIELDS = new Set([
+    'bedrooms', 'full_baths', 'half_baths', 'square_footage', 'number_of_beds',
+    'guest_count', 'kitchens', 'king_beds', 'queen_beds', 'full_beds', 'twin_beds',
+    'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels',
+    'ce_charged', 'cleaner_pay',
+  ])
+
   function handleSave() {
     const updates: Record<string, any> = {}
     for (const [key, val] of Object.entries(form)) {
       if (key === 'hot_tub') {
         updates[key] = val
-      } else if (['bedrooms', 'full_baths', 'half_baths', 'square_footage', 'ce_charged', 'cleaner_pay', 'number_of_beds', 'guest_count', 'kitchens'].includes(key)) {
+      } else if (NUMBER_FIELDS.has(key)) {
         updates[key] = val === '' ? null : parseFloat(val)
       } else {
         updates[key] = val || null
       }
     }
-    updates.wifi_info = [form.wifi_network, form.wifi_password].filter(Boolean).join('\n')
-    delete updates.wifi_network
-    delete updates.wifi_password
     onSave(updates)
   }
 
@@ -859,39 +880,58 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
 
   const stageColor = property.pipeline_stages?.color || '#6b7280'
 
-  const FIELDS = [
-    { section: 'Basic Info', fields: [
+  const SECTIONS = [
+    { title: 'Basic Info', fields: [
       { key: 'name', label: 'Property Name', type: 'text' },
       { key: 'client', label: 'Client', type: 'text' },
       { key: 'address', label: 'Address', type: 'text' },
     ]},
-    { section: 'Property Details', fields: [
+    { title: 'Property Details', fields: [
       { key: 'bedrooms', label: 'Bedrooms', type: 'number' },
       { key: 'full_baths', label: 'Full Baths', type: 'number' },
       { key: 'half_baths', label: 'Half Baths', type: 'number' },
       { key: 'square_footage', label: 'Square Footage', type: 'number' },
-      { key: 'number_of_beds', label: 'Number of Beds', type: 'number' },
-      { key: 'guest_count', label: 'Guest Count', type: 'number' },
+      { key: 'number_of_beds', label: 'Total Beds', type: 'number' },
+      { key: 'guest_count', label: 'Max Guests', type: 'number' },
       { key: 'kitchens', label: 'Kitchens', type: 'number' },
-      { key: 'pet_friendly', label: 'Pet Friendly', type: 'select', options: ['Yes', 'No'] },
+      { key: 'hot_tub', label: 'Hot Tub', type: 'boolean' },
+      { key: 'pet_friendly', label: 'Pet Friendly', type: 'text' },
     ]},
-    { section: 'Financial', fields: [
-      { key: 'ce_charged', label: 'Client Charged', type: 'number' },
-      { key: 'cleaner_pay', label: 'Cleaner Pay', type: 'number' },
+    { title: 'Bed Sizes', fields: [
+      { key: 'king_beds', label: 'King', type: 'number' },
+      { key: 'queen_beds', label: 'Queen', type: 'number' },
+      { key: 'full_beds', label: 'Full', type: 'number' },
+      { key: 'twin_beds', label: 'Twin', type: 'number' },
     ]},
-    { section: 'Operations', fields: [
-      { key: 'cleaning_frequency', label: 'Cleaning Frequency', type: 'select', options: ['weekly', 'biweekly', 'monthly', 'as_needed'] },
+    { title: 'Linen Counts', fields: [
+      { key: 'bath_towels', label: 'Bath Towels', type: 'number' },
+      { key: 'washcloths', label: 'Washcloths', type: 'number' },
+      { key: 'hand_towels', label: 'Hand Towels', type: 'number' },
+      { key: 'bathmats', label: 'Bathmats', type: 'number' },
+      { key: 'pool_towels', label: 'Pool Towels', type: 'number' },
+      { key: 'linen_notes', label: 'Linen Notes', type: 'textarea' },
+    ]},
+    { title: 'Financial', fields: [
+      { key: 'ce_charged', label: 'Client Charged ($)', type: 'number', step: '0.01' },
+      { key: 'cleaner_pay', label: 'Cleaner Pay ($)', type: 'number', step: '0.01' },
+    ]},
+    { title: 'Access & Wi-Fi', fields: [
       { key: 'auto_code', label: 'Auto Code', type: 'text' },
       { key: 'door_code', label: 'Door Code', type: 'text' },
-      { key: 'wifi_network', label: 'WiFi Network', type: 'text' },
-      { key: 'wifi_password', label: 'WiFi Password', type: 'text' },
-      { key: 'notes', label: 'Notes', type: 'text' },
+      { key: 'other_codes', label: 'Other Codes', type: 'text' },
+      { key: 'wifi_info', label: 'Wi-Fi Info', type: 'textarea' },
+    ]},
+    { title: 'Operations', fields: [
+      { key: 'cleaning_frequency', label: 'Cleaning Freq', type: 'select', options: ['weekly', 'biweekly', 'monthly', 'as_needed'] },
+      { key: 'filter_size', label: 'AC Filter Size', type: 'text' },
+      { key: 'follow_up_date', label: 'Follow-Up Date', type: 'date' },
+      { key: 'notes', label: 'Special Notes', type: 'textarea' },
     ]},
   ]
 
   return (
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
-      <SheetContent className="w-[400px] sm:w-[480px] overflow-y-auto" data-testid="property-detail-panel">
+      <SheetContent className="w-full sm:w-[480px] overflow-y-auto" data-testid="property-detail-panel">
         <SheetHeader className="pb-4">
           <SheetTitle className="text-base flex items-center gap-2">
             {property.name}
@@ -919,32 +959,48 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
           </div>
         </div>
 
-        {/* Editable fields */}
+        {/* Editable fields by section */}
         <div className="space-y-5">
-          {FIELDS.map(section => (
-            <div key={section.section}>
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{section.section}</h3>
+          {SECTIONS.map(section => (
+            <div key={section.title}>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{section.title}</h3>
               <div className="space-y-2.5">
-                {section.fields.map(field => (
+                {section.fields.map((field: any) => (
                   <div key={field.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
                     <Label className="text-xs text-muted-foreground">{field.label}</Label>
-                    {field.type === 'select' ? (
+                    {field.type === 'boolean' ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateForm(field.key, false)}
+                          className={`flex-1 h-7 rounded-md border text-xs transition-colors ${!form[field.key] ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'}`}
+                        >No</button>
+                        <button
+                          type="button"
+                          onClick={() => updateForm(field.key, true)}
+                          className={`flex-1 h-7 rounded-md border text-xs transition-colors ${form[field.key] ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'}`}
+                        >Yes</button>
+                      </div>
+                    ) : field.type === 'select' ? (
                       <Select value={form[field.key] || ''} onValueChange={v => updateForm(field.key, v)}>
-                        <SelectTrigger className="h-7 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
+                        <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {field.options?.map((o: string) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    ) : field.type === 'textarea' ? (
+                      <textarea
+                        value={form[field.key] ?? ''}
+                        onChange={e => updateForm(field.key, e.target.value)}
+                        className="w-full h-16 rounded-md border border-input bg-background px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      />
                     ) : (
                       <Input
                         type={field.type}
                         value={form[field.key] ?? ''}
                         onChange={e => updateForm(field.key, e.target.value)}
                         className="h-7 text-xs"
-                        data-testid={`detail-input-${field.key}`}
-                        step={field.type === 'number' ? '0.01' : undefined}
+                        step={field.step || (field.type === 'number' ? '1' : undefined)}
                         min={field.type === 'number' ? '0' : undefined}
                       />
                     )}
@@ -959,9 +1015,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
           <div className="grid grid-cols-[120px_1fr] items-center gap-2">
             <Label className="text-xs text-muted-foreground">Stage</Label>
             <Select value={String(form.stage_id)} onValueChange={v => updateForm('stage_id', v)}>
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {stages?.map((s: any) => <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>)}
               </SelectContent>
