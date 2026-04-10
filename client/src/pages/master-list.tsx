@@ -215,7 +215,7 @@ export default function MasterListPage() {
       toast({ title: 'Property updated' })
       setDetailProperty(null)
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' }),
   })
 
   // Persist sort/filter to localStorage (#9)
@@ -867,6 +867,10 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
     for (const [key, val] of Object.entries(form)) {
       if (key === 'hot_tub') {
         updates[key] = val
+      } else if (key === 'stage_id') {
+        updates[key] = val ? parseInt(val) : null
+      } else if (key === 'follow_up_date') {
+        updates[key] = val || null
       } else if (NUMBER_FIELDS.has(key)) {
         updates[key] = val === '' ? null : parseFloat(val)
       } else {
