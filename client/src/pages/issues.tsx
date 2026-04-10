@@ -13,7 +13,7 @@ import { TablePagination } from '@/components/TablePagination'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
 import {
-  Search, X, AlertTriangle, Plus, Download, ArrowUpDown, ArrowUp, ArrowDown,
+  Search, X, AlertTriangle, Plus, Download, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import Papa from 'papaparse'
@@ -80,6 +80,7 @@ export default function IssuesPage() {
     coverage: '',
     status: 'In Progress',
     remarks: '',
+    slack_link: '',
   })
 
   // ─── Queries ──────────────────────────────────────────────────────────────
@@ -164,6 +165,7 @@ export default function IssuesPage() {
         coverage: newForm.coverage || null,
         status: newForm.status,
         remarks: newForm.remarks || null,
+        slack_link: newForm.slack_link || null,
         created_by: effectiveUser?.label || null,
       })
       if (error) throw error
@@ -172,7 +174,7 @@ export default function IssuesPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
       toast({ title: 'Issue logged' })
       setAddOpen(false)
-      setNewForm({ ...newForm, property_name: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '' })
+      setNewForm({ ...newForm, property_name: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
     },
     onError: () => toast({ title: 'Failed to save', variant: 'destructive' }),
   })
@@ -202,6 +204,7 @@ export default function IssuesPage() {
       'Coverage': i.coverage || '',
       'Status': i.status,
       'Remarks': i.remarks || '',
+      'Slack Link': i.slack_link || '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -275,14 +278,15 @@ export default function IssuesPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Touch</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap min-w-[250px]">Details</th>
               <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Slack</th>
               {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              [...Array(8)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 7 : 6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+              [...Array(8)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={canEdit ? 7 : 6}><EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} /></td></tr>
+              <tr><td colSpan={canEdit ? 8 : 7}><EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} /></td></tr>
             ) : paged.map((issue: any) => (
               <tr
                 key={issue.id}
@@ -295,6 +299,13 @@ export default function IssuesPage() {
                 <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
                 <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
                 <td className="py-2 px-3"><StatusBadge status={issue.status} /></td>
+                <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
+                  {issue.slack_link ? (
+                    <a href={issue.slack_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
+                      <ExternalLink className="w-3 h-3" /> Link
+                    </a>
+                  ) : <span className="text-muted-foreground text-xs">—</span>}
+                </td>
                 {canEdit && (
                   <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                     <select
@@ -337,10 +348,17 @@ export default function IssuesPage() {
                   { label: 'Resolution', value: detailIssue.resolution },
                   { label: 'Coverage', value: detailIssue.coverage },
                   { label: 'Remarks', value: detailIssue.remarks },
-                ].map(row => row.value ? (
+                  { label: 'Slack Link', value: detailIssue.slack_link, isLink: true },
+                ].map((row: any) => row.value ? (
                   <div key={row.label}>
                     <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{row.label}</span>
-                    <p className="text-sm whitespace-pre-wrap">{row.value}</p>
+                    {row.isLink ? (
+                      <a href={row.value} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
+                        <ExternalLink className="w-3.5 h-3.5" /> Open in Slack
+                      </a>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap">{row.value}</p>
+                    )}
                   </div>
                 ) : null)}
                 {canEdit && (
@@ -425,6 +443,10 @@ export default function IssuesPage() {
                 <label className="text-xs font-medium text-muted-foreground block mb-1">Remarks</label>
                 <Input value={newForm.remarks} onChange={e => setNewForm(f => ({ ...f, remarks: e.target.value }))} className="h-8 text-sm" />
               </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Slack Link</label>
+              <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder="https://tendwell.slack.com/..." />
             </div>
             <Button className="w-full h-10" disabled={!newForm.property_name || !newForm.details || adding} onClick={() => addIssue()}>
               {adding ? 'Saving…' : 'Log Issue'}
