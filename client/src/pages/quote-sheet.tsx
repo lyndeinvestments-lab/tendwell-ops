@@ -14,6 +14,7 @@ import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, A
 import { EmptyState } from '@/components/EmptyState'
 import { profitColorClass } from '@/lib/profit-colors'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 
@@ -22,26 +23,6 @@ function calcLaundry(numberOfBeds: number): number {
   return numberOfBeds * 11.5 * 0.69
 }
 
-// Consumables are calculated per-item (bathroom amenities, kitchen supplies, etc.)
-// NOT from the app_settings 'cost_consumables' base rate
-// Consumables itemized by unit costs
-const BATHROOM_COST = 1.05   // shampoo $0.26 + conditioner $0.26 + body wash $0.26 + bar $0.23 + liners $0.04
-const TOILET_PAPER_COST = 0.78 // 2 rolls × $0.39 — flat per property
-const KITCHEN_COST = 2.05    // dish soap $0.51 + gel pod $0.23 + tab $0.17 + paper towel $0.94 + liners $0.20
-const TRASH_BAG_56G_COST = 0.06 // $0.30 × 0.2 per bed
-const HOT_TUB_COST = 0.88    // bromine $0.58 + floater $0.30 per hot tub
-
-function calcConsumables(
-  fullBaths: number,
-  numberOfBeds: number,
-  kitchens: number,
-  hotTubCount: number,
-): number {
-  return (fullBaths * BATHROOM_COST + TOILET_PAPER_COST)
-    + (kitchens * KITCHEN_COST)
-    + (TRASH_BAG_56G_COST * numberOfBeds)
-    + (HOT_TUB_COST * hotTubCount)
-}
 // ─────────────────────────────────────────────────────────────────────────────
 
 function fmt(n: number | null | undefined) {
@@ -88,6 +69,13 @@ export default function QuoteSheetPage() {
   const { getNumber } = useAppSettings()
   const INSPECTION_COST = getNumber('cost_inspection', 15)
   const TRASH_COST = getNumber('cost_trash', 5)
+  const amenityCosts: AmenityCosts = {
+    bathroom: getNumber(AMENITY_SETTINGS_KEYS.bathroom, DEFAULT_AMENITY_COSTS.bathroom),
+    toiletPaper: getNumber(AMENITY_SETTINGS_KEYS.toiletPaper, DEFAULT_AMENITY_COSTS.toiletPaper),
+    kitchen: getNumber(AMENITY_SETTINGS_KEYS.kitchen, DEFAULT_AMENITY_COSTS.kitchen),
+    trashBag: getNumber(AMENITY_SETTINGS_KEYS.trashBag, DEFAULT_AMENITY_COSTS.trashBag),
+    hotTub: getNumber(AMENITY_SETTINGS_KEYS.hotTub, DEFAULT_AMENITY_COSTS.hotTub),
+  }
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
@@ -162,11 +150,8 @@ export default function QuoteSheetPage() {
       if (sortKey === 'est_laundry' || sortKey === 'est_consumables') {
         const getVal = (p: any) => {
           const beds = p.number_of_beds || 0
-          const fullBaths = p.full_baths || 0
-          const kitchens = p.number_of_kitchens ?? 1
-          const hotTubCount = p.hot_tub ? 1 : 0
           if (sortKey === 'est_laundry') return p.est_laundry ?? calcLaundry(beds)
-          return p.est_consumables ?? calcConsumables(fullBaths, beds, kitchens, hotTubCount)
+          return p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
         }
         const av = getVal(a)
         const bv = getVal(b)
@@ -200,9 +185,14 @@ export default function QuoteSheetPage() {
       const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
       const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
       const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
-      const hotTubCount = newProp.hot_tub ? 1 : 0
       const estLaundry = calcLaundry(beds)
-      const estConsumables = calcConsumables(fullBaths, beds, kitchens, hotTubCount)
+      const estConsumables = calcConsumablesFromCosts(amenityCosts, {
+        full_baths: fullBaths,
+        half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
+        kitchens,
+        number_of_beds: beds,
+        hot_tub: newProp.hot_tub,
+      })
       const { error } = await supabase.from('properties').insert({
         name: newProp.name,
         client: newProp.client_name || null,
@@ -282,11 +272,8 @@ export default function QuoteSheetPage() {
   // Compute estimates for display (fall back to client-side calc if DB value absent)
   function getEstimates(p: any) {
     const beds = p.number_of_beds || 0
-    const fullBaths = p.full_baths || 0
-    const kitchens = p.number_of_kitchens ?? 1
-    const hotTubCount = p.hot_tub ? 1 : 0
     const laundry = p.est_laundry ?? calcLaundry(beds)
-    const consumables = p.est_consumables ?? calcConsumables(fullBaths, beds, kitchens, hotTubCount)
+    const consumables = p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
     return { laundry, consumables }
   }
 
@@ -652,7 +639,13 @@ export default function QuoteSheetPage() {
                   const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
                   const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
                   const laundry = calcLaundry(beds)
-                  const consumables = calcConsumables(fullBaths, beds, kitchens, newProp.hot_tub ? 1 : 0)
+                  const consumables = calcConsumablesFromCosts(amenityCosts, {
+                    full_baths: fullBaths,
+                    half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
+                    kitchens,
+                    number_of_beds: beds,
+                    hot_tub: newProp.hot_tub,
+                  })
                   const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST
                   const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
                   const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
