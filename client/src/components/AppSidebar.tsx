@@ -48,6 +48,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
       { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
       { title: 'Issues', href: '/issues', view: 'issues', icon: AlertTriangle },
+      { title: 'Cleaner Metrics', href: '/cleaner-metrics', view: 'cleaner-metrics', icon: Users2 },
     ],
   },
   {
@@ -66,6 +67,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
+      { title: 'Executive Summary', href: '/report', view: 'report', icon: TrendingUp },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },
