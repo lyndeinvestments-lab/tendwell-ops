@@ -148,7 +148,7 @@ export default function TasksPage() {
       const dir = sortDir === 'asc' ? 1 : -1
       if (sortKey === 'priority') {
         const order = { Urgent: 0, High: 1, Medium: 2, Low: 3 }
-        return ((order as any)[a.priority] ?? 2) - ((order as any)[b.priority] ?? 2) * dir
+        return (((order as any)[a.priority] ?? 2) - ((order as any)[b.priority] ?? 2)) * dir
       }
       const av = a[sortKey] || ''
       const bv = b[sortKey] || ''

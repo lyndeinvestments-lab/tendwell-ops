@@ -543,7 +543,7 @@ export default function DashboardPage() {
                   {negativeProfit.slice(0, 8).map((p: any) => (
                     <div key={p.id} className="flex justify-between text-xs">
                       <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/cost-tracking')}>{p.name}</span>
-                      <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${p.estimated_profit?.toFixed(2)}</span>
+                      <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${(p.estimated_profit || 0).toFixed(2)}</span>
                     </div>
                   ))}
                   {negativeProfit.length > 8 && (

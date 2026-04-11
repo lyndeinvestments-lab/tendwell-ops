@@ -626,7 +626,7 @@ export default function ProFormaPage() {
                   className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
                   onClick={() => setDismissedDuplicates(prev => {
                     const n = new Set(prev); n.add(pair.key)
-                    try { localStorage.setItem('tendwell-dismissed-duplicates', JSON.stringify([...n])) } catch {}
+                    try { localStorage.setItem('tendwell-dismissed-duplicates', JSON.stringify(Array.from(n))) } catch {}
                     return n
                   })}
                   title="Dismiss"
