@@ -82,12 +82,14 @@ export default function LinenInventoryPage() {
       const { data, error } = await supabase
         .from('properties')
         .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, pipeline_stages!properties_stage_id_fkey(name)')
-        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote")')
+        .order('name')
       if (error) throw error
       const totals: Record<string, number> = {}
       const keys = ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels']
       for (const k of keys) totals[k] = 0
       for (const p of (data || [])) {
+        const stage = (p as any).pipeline_stages?.name
+        if (stage === 'Offboarded' || stage === 'Lead' || stage === 'Quote') continue
         for (const k of keys) totals[k] += (p as any)[k] ?? 0
       }
       return totals
@@ -291,7 +293,7 @@ export default function LinenInventoryPage() {
                       <tr key={row.key} className={`border-b border-border/50 ${row.variance != null && row.variance < 0 ? 'bg-red-50/30 dark:bg-red-900/5' : ''}`}>
                         <td className="py-2 px-3 text-xs font-medium">
                           {row.label}
-                          {row.description && <span className="text-muted-foreground font-normal ml-1.5">({row.description})</span>}
+                          {'description' in row && row.description && <span className="text-muted-foreground font-normal ml-1.5">({(row as any).description})</span>}
                         </td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right">{row.required}</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>

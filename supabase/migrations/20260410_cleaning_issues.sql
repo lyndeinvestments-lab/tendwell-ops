@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS cleaning_issues (
   status TEXT NOT NULL DEFAULT 'In Progress',
   reference TEXT,
   remarks TEXT,
+  slack_link TEXT,
   created_by TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()

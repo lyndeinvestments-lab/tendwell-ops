@@ -814,7 +814,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
   const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
 
   const propId = property?.id
-  useMemo(() => {
+  useEffect(() => {
     if (property) {
       setForm({
         name: property.name || '',

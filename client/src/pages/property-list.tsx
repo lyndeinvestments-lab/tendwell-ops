@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useAuth } from '@/lib/auth'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -21,6 +22,7 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
   const { toast } = useToast()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const { effectiveUser } = useAuth()
 
   const { mutate: changeStage } = useGuardedMutation('property-list', {
     mutationFn: async (stageId: string) => {
@@ -32,7 +34,7 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
         property_id: propertyId,
         from_stage_id: fromStage?.id,
         to_stage_id: stageId,
-        changed_by: 'ops-user',
+        transitioned_by: effectiveUser?.label || 'unknown',
       })
     },
     onSuccess: (_, stageId) => {
