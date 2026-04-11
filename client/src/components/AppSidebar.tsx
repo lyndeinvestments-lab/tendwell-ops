@@ -9,7 +9,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle
+  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -48,6 +48,12 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
       { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
       { title: 'Issues', href: '/issues', view: 'issues', icon: AlertTriangle },
+    ],
+  },
+  {
+    label: 'Management',
+    items: [
+      { title: 'Tasks', href: '/tasks', view: 'tasks', icon: CheckSquare },
     ],
   },
   {

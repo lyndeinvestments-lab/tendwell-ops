@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
   DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
-  ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle,
+  ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle, CheckSquare,
 } from 'lucide-react'
 
 const PAGE_ROUTES = [
@@ -34,6 +34,7 @@ const PAGE_ROUTES = [
   { name: 'Activity', path: '/activity', viewId: 'activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },
   { name: 'Financial Dashboard', path: '/financial-dashboard', viewId: 'financial-dashboard', keywords: ['financial', 'dashboard', 'profit', 'margin', 'scenario'], icon: PieChart },
   { name: 'Issues', path: '/issues', viewId: 'issues', keywords: ['issues', 'problems', 'cleaning', 'complaints', 'tracker'], icon: AlertTriangle },
+  { name: 'Tasks', path: '/tasks', viewId: 'tasks', keywords: ['tasks', 'todo', 'assignments', 'work', 'checklist'], icon: CheckSquare },
 ]
 
 interface CommandPaletteProps {
