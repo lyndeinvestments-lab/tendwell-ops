@@ -205,7 +205,7 @@ export default function ReportPage() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div><p className="text-xs text-muted-foreground">Revenue</p><p className="text-lg font-semibold text-green-600 dark:text-green-400">{fmt(qboRaw.totalIncome)}</p></div>
-                <div><p className="text-xs text-muted-foreground">Total Costs</p><p className="text-lg font-semibold">{fmt(qboRaw.totalCOGS + qboRaw.totalExpenses)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Total Costs</p><p className="text-lg font-semibold">{fmt((qboRaw.totalCOGS ?? 0) + (qboRaw.totalExpenses ?? 0))}</p></div>
                 <div><p className="text-xs text-muted-foreground">Net Income</p><p className={`text-lg font-semibold ${qboRaw.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboRaw.netIncome)}</p></div>
               </div>
               {qboRaw.monthly && (

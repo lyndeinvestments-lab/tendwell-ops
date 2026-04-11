@@ -49,7 +49,7 @@ export default function CleanerMetricsPage() {
       // Issues attributed to this cleaner (by last_touch name match)
       const myIssues = issues.filter((i: any) =>
         i.last_touch && cleaner.full_name &&
-        i.last_touch.toLowerCase().includes(cleaner.full_name.split(' ')[0].toLowerCase())
+        i.last_touch.toLowerCase().includes(cleaner.full_name.toLowerCase())
       )
       const issueCount = myIssues.length
       const issueRate = totalCleans > 0 ? ((issueCount / totalCleans) * 100) : 0
