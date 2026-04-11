@@ -13,7 +13,7 @@ import { TablePagination } from '@/components/TablePagination'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
 import {
-  Search, X, AlertTriangle, Plus, Download, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
+  Search, X, AlertTriangle, Plus, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import Papa from 'papaparse'
@@ -69,6 +69,8 @@ export default function IssuesPage() {
   const [pageSize, setPageSize] = useState(50)
   const [detailIssue, setDetailIssue] = useState<any>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [importData, setImportData] = useState<any[] | null>(null)
+  const [importRunning, setImportRunning] = useState(false)
   const [newForm, setNewForm] = useState({
     report_date: new Date().toISOString().split('T')[0],
     property_name: '',
@@ -214,6 +216,66 @@ export default function IssuesPage() {
     URL.revokeObjectURL(url)
   }
 
+  function handleImportFile(file: File) {
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (result) => {
+        if (!result.data?.length) {
+          toast({ title: 'No data found in CSV', variant: 'destructive' })
+          return
+        }
+        const rows = (result.data as any[]).map(row => {
+          // Map common column names flexibly
+          const get = (keys: string[]) => {
+            for (const k of keys) {
+              const val = row[k] || row[k.toLowerCase()] || row[k.toUpperCase()]
+              if (val) return val.trim()
+            }
+            return ''
+          }
+          return {
+            report_date: get(['Report Date', 'REPORT DATE', 'Date', 'date']) || new Date().toISOString().split('T')[0],
+            property_name: get(['Property', 'PROPERTY NAME', 'Property Name', 'property_name']),
+            category: get(['Category', 'CATEGORY', 'category']) || 'Other',
+            last_touch: get(['Last Touch', 'LAST TOUCH', 'last_touch']),
+            details: get(['Details', 'DETAILS', 'details']),
+            assessment: get(['Assessment', 'ASSESSMENT', 'assessment']),
+            resolution: get(['Resolution', 'RESOLUTION', 'resolution']),
+            coverage: get(['Coverage', 'COVERAGE', 'coverage']),
+            status: get(['Status', 'STATUS', 'status']) || 'In Progress',
+            slack_link: get(['Slack Link', 'slack_link', 'Slack']),
+            remarks: get(['Remarks', 'REMARKS', 'remarks']),
+          }
+        }).filter(r => r.property_name && r.details)
+
+        if (rows.length === 0) {
+          toast({ title: 'No valid issues found in CSV', variant: 'destructive' })
+          return
+        }
+        setImportData(rows)
+      },
+      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+    })
+  }
+
+  async function executeImport() {
+    if (!importData) return
+    setImportRunning(true)
+    let imported = 0
+    for (const row of importData) {
+      const { error } = await supabase.from('cleaning_issues').insert({
+        ...row,
+        created_by: effectiveUser?.label || null,
+      })
+      if (!error) imported++
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
+    toast({ title: `Imported ${imported} issues` })
+    setImportData(null)
+    setImportRunning(false)
+  }
+
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   return (
@@ -230,6 +292,25 @@ export default function IssuesPage() {
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
+          {canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = '.csv'
+                input.onchange = e => {
+                  const file = (e.target as HTMLInputElement).files?.[0]
+                  if (file) handleImportFile(file)
+                }
+                input.click()
+              }}
+            >
+              <Upload className="w-3.5 h-3.5" /> Import CSV
+            </Button>
+          )}
           {canEdit && (
             <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAddOpen(true)}>
               <Plus className="w-3.5 h-3.5" /> Log Issue
@@ -381,6 +462,35 @@ export default function IssuesPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Import Preview Sheet */}
+      {importData && (
+        <Sheet open={true} onOpenChange={v => !v && !importRunning && setImportData(null)}>
+          <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Import {importData.length} Issues</SheetTitle>
+            </SheetHeader>
+            <div className="mt-4 space-y-2 max-h-[60vh] overflow-y-auto">
+              {importData.map((row, i) => (
+                <div key={i} className="rounded-md border border-border p-2 text-xs">
+                  <div className="font-medium">{row.property_name}</div>
+                  <div className="text-muted-foreground truncate">{row.details}</div>
+                  <div className="flex gap-2 mt-1">
+                    <StatusBadge status={row.status} />
+                    <span className="text-muted-foreground">{row.category}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button variant="outline" onClick={() => setImportData(null)} disabled={importRunning}>Cancel</Button>
+              <Button className="flex-1" onClick={executeImport} disabled={importRunning}>
+                {importRunning ? 'Importing…' : `Import ${importData.length} Issues`}
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      )}
 
       {/* Add Issue Sheet */}
       <Sheet open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>

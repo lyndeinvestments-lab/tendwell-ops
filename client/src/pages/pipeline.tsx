@@ -300,6 +300,9 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           </div>
         </StageHistoryTooltip>
       )}
+      {(stageName === 'Active' || stageName === 'Onboarding') && property.cleaner_pay && (
+        <span className="text-xs text-muted-foreground mt-1 block">${Number(property.cleaner_pay).toFixed(0)} pay</span>
+      )}
       {stageName === 'Onboarding' && (
         <div className="mt-1.5 pt-1.5 border-t border-border/40">
           {onboardingProgress && onboardingProgress.total > 0 ? (

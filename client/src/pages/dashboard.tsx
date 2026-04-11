@@ -96,7 +96,7 @@ export default function DashboardPage() {
     }
   }, [preset, customFrom, customTo])
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -346,6 +346,12 @@ export default function DashboardPage() {
         <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground">Operations overview</p>
       </div>
+
+      {isError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load dashboard data. Please refresh the page.
+        </div>
+      )}
 
       {/* Date Range Filter Bar */}
       <div className="flex flex-wrap items-center gap-2 -mt-1">

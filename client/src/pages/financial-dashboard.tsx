@@ -171,7 +171,7 @@ export default function FinancialDashboardPage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc' | 'name'>('desc')
 
   // ── Data ──
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError } = useQuery({
     queryKey: ['/supabase/financial-dashboard'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -360,6 +360,12 @@ export default function FinancialDashboardPage() {
           </Button>
         )}
       </div>
+
+      {isError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+          Failed to load dashboard data. Please refresh the page.
+        </div>
+      )}
 
       {/* ── KPI Cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
