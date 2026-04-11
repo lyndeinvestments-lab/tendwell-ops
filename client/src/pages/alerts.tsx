@@ -287,7 +287,7 @@ export default function AlertsPage() {
             {criticalCount} critical, {warningCount} warnings, {infoCount} info
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {warningCount > 3 && (
             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={async () => {
               const toDismiss = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id))

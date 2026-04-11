@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
@@ -82,6 +83,8 @@ export default function QuoteSheetPage() {
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<string | null>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   function toggleSort(key: string) {
     if (sortKey === key) {
@@ -178,6 +181,8 @@ export default function QuoteSheetPage() {
       return (av - bv) * dir
     })
   }, [properties, search, sortKey, sortDir])
+
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
   const { mutate: addProperty, isPending: addPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async () => {
@@ -315,7 +320,7 @@ export default function QuoteSheetPage() {
           <h1 className="text-xl font-semibold text-foreground">Quote Sheet</h1>
           <p className="text-sm text-muted-foreground">Properties currently in Quote stage</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
@@ -329,8 +334,8 @@ export default function QuoteSheetPage() {
               type="search"
               placeholder="Search…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-7 h-8 w-48 text-sm"
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
@@ -400,7 +405,7 @@ export default function QuoteSheetPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((p: any) => {
+              paged.map((p: any) => {
                 const { laundry, consumables } = getEstimates(p)
                 return (
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
@@ -474,6 +479,7 @@ export default function QuoteSheetPage() {
           </tbody>
         </table>
       </div>
+      {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
 
       {/* Add Quote Dialog */}
       <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
@@ -98,6 +99,9 @@ export default function PropertyListPage() {
       : <ArrowDown className="inline w-3 h-3 ml-1" />
   }
 
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+
   const [statusFilter, setStatusFilter] = useState<string>(() => {
     try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }
   })
@@ -154,6 +158,8 @@ export default function PropertyListPage() {
     })
   }, [properties, search, statusFilter, sortKey, sortDir])
 
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
       'Property': p.name || '',
@@ -187,7 +193,7 @@ export default function PropertyListPage() {
               type="search"
               placeholder="Search properties…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-properties"
               className="pl-8 pr-7 h-8 w-56 text-sm"
             />
@@ -197,7 +203,7 @@ export default function PropertyListPage() {
               </button>
             )}
           </div>
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
             <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
               <SelectValue />
             </SelectTrigger>
@@ -227,7 +233,7 @@ export default function PropertyListPage() {
 
       <div className="rounded-lg border border-border overflow-auto">
         <table className="w-full text-sm">
-          <thead className="bg-muted/80 border-b border-border">
+          <thead className="sticky top-0 bg-muted border-b border-border z-10">
             <tr>
               {([
                 { col: 'name', label: 'Property' },
@@ -269,7 +275,7 @@ export default function PropertyListPage() {
                 </td>
               </tr>
             ) : (
-              filtered.map((p: any) => {
+              paged.map((p: any) => {
                 const color = p.stage_color || '#6b7280'
                 return (
                   <tr
@@ -308,6 +314,7 @@ export default function PropertyListPage() {
           </tbody>
         </table>
       </div>
+      {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
     </div>
   )
 }
