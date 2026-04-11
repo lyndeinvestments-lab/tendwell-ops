@@ -235,7 +235,7 @@ export default function PreviousPropertiesPage() {
           <h1 className="text-xl font-semibold text-foreground">Previous Properties</h1>
           <p className="text-sm text-muted-foreground">Archive of offboarded properties — read only</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input

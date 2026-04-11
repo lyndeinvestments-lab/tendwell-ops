@@ -204,7 +204,7 @@ export default function ContactsPage() {
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-contacts"
-              className="pl-8 pr-7 h-8 w-64 text-sm"
+              className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
               <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">

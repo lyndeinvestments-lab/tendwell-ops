@@ -215,7 +215,7 @@ export default function AccessCodesPage() {
           <h1 className="text-xl font-semibold text-foreground">Access Codes</h1>
           <p className="text-sm text-muted-foreground">Click any field to edit — use copy icon for clipboard</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
             <Download className="w-3.5 h-3.5" />
             Export CSV

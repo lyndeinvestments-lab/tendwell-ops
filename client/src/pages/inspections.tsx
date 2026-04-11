@@ -284,7 +284,7 @@ export default function InspectionsPage() {
           <h1 className="text-xl font-semibold text-foreground">Property Verification</h1>
           <p className="text-sm text-muted-foreground">Verify property details every 6 months — click a property to start walkthrough</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {dueCount > 0 && (
             <button
               onClick={() => { setShowDueOnly(v => !v); setPage(1) }}

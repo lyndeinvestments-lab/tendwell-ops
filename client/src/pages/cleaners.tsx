@@ -366,7 +366,7 @@ export default function CleanersPage() {
               <Input
                 type="search" placeholder="Search…" value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-8 pr-8 h-8 w-48 text-sm"
+                className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
               />
               {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5" /></button>}
             </div>
