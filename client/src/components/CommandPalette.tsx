@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
@@ -12,27 +13,27 @@ import {
 } from 'lucide-react'
 
 const PAGE_ROUTES = [
-  { name: 'Dashboard', path: '/', keywords: ['dashboard', 'home', 'overview', 'kpi'], icon: LayoutDashboard },
-  { name: 'Pipeline', path: '/pipeline', keywords: ['pipeline', 'kanban', 'board', 'leads', 'stages'], icon: Kanban },
-  { name: 'Clients', path: '/contacts', keywords: ['contacts', 'crm', 'client', 'people'], icon: Users },
-  { name: 'Quote Sheet', path: '/quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'], icon: FileSpreadsheet },
-  { name: 'Cost Tracking', path: '/cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'], icon: DollarSign },
-  { name: 'Property List', path: '/property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
-  { name: 'Linen Requirements', path: '/linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory', 'requirements'], icon: BedDouble },
-  { name: 'Linen Inventory', path: '/linen-inventory', keywords: ['linen', 'inventory', 'count', 'par', 'sets', 'stock'], icon: Boxes },
-  { name: 'Access Codes', path: '/access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
-  { name: 'AC Filters', path: '/ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
-  { name: 'Master List', path: '/master-list', keywords: ['master', 'list', 'all properties', 'admin'], icon: ListFilter },
-  { name: 'Pro Forma', path: '/pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly'], icon: TrendingUp },
-  { name: 'Previous Properties', path: '/previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
-  { name: 'Settings', path: '/settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
-  { name: 'Revenue Report', path: '/revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
-  { name: 'Verification', path: '/inspections', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'inspections'], icon: ClipboardCheck },
-  { name: 'Cleaners', path: '/cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
-  { name: 'Alerts', path: '/alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },
-  { name: 'Activity', path: '/activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },
-  { name: 'Financial Dashboard', path: '/financial-dashboard', keywords: ['financial', 'dashboard', 'profit', 'margin', 'scenario'], icon: PieChart },
-  { name: 'Issues', path: '/issues', keywords: ['issues', 'problems', 'cleaning', 'complaints', 'tracker'], icon: AlertTriangle },
+  { name: 'Dashboard', path: '/', viewId: 'dashboard', keywords: ['dashboard', 'home', 'overview', 'kpi'], icon: LayoutDashboard },
+  { name: 'Pipeline', path: '/pipeline', viewId: 'pipeline', keywords: ['pipeline', 'kanban', 'board', 'leads', 'stages'], icon: Kanban },
+  { name: 'Clients', path: '/contacts', viewId: 'contacts', keywords: ['contacts', 'crm', 'client', 'people'], icon: Users },
+  { name: 'Quote Sheet', path: '/quote-sheet', viewId: 'quote-sheet', keywords: ['quote', 'quotes', 'new property', 'quote sheet'], icon: FileSpreadsheet },
+  { name: 'Cost Tracking', path: '/cost-tracking', viewId: 'cost-tracking', keywords: ['cost', 'tracking', 'profit', 'financial'], icon: DollarSign },
+  { name: 'Property List', path: '/property-list', viewId: 'property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
+  { name: 'Linen Requirements', path: '/linen-tracker', viewId: 'linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory', 'requirements'], icon: BedDouble },
+  { name: 'Linen Inventory', path: '/linen-inventory', viewId: 'linen-inventory', keywords: ['linen', 'inventory', 'count', 'par', 'sets', 'stock'], icon: Boxes },
+  { name: 'Access Codes', path: '/access-codes', viewId: 'access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
+  { name: 'AC Filters', path: '/ac-filters', viewId: 'ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
+  { name: 'Master List', path: '/master-list', viewId: 'master-list', keywords: ['master', 'list', 'all properties', 'admin'], icon: ListFilter },
+  { name: 'Pro Forma', path: '/pro-forma', viewId: 'pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly'], icon: TrendingUp },
+  { name: 'Previous Properties', path: '/previous-properties', viewId: 'previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
+  { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
+  { name: 'Revenue Report', path: '/revenue-report', viewId: 'revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
+  { name: 'Verification', path: '/inspections', viewId: 'inspections', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'inspections'], icon: ClipboardCheck },
+  { name: 'Cleaners', path: '/cleaners', viewId: 'cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
+  { name: 'Alerts', path: '/alerts', viewId: 'alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },
+  { name: 'Activity', path: '/activity', viewId: 'activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },
+  { name: 'Financial Dashboard', path: '/financial-dashboard', viewId: 'financial-dashboard', keywords: ['financial', 'dashboard', 'profit', 'margin', 'scenario'], icon: PieChart },
+  { name: 'Issues', path: '/issues', viewId: 'issues', keywords: ['issues', 'problems', 'cleaning', 'complaints', 'tracker'], icon: AlertTriangle },
 ]
 
 interface CommandPaletteProps {
@@ -44,6 +45,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
+  const { effectiveUser } = useAuth()
   const inputRef = useRef<HTMLInputElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
 
@@ -87,12 +89,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const q = query.trim().toLowerCase()
 
   const matchedPages = useMemo(() => {
-    if (!q) return PAGE_ROUTES
-    return PAGE_ROUTES.filter(p =>
+    const allowed = PAGE_ROUTES.filter(p => !p.viewId || canAccessView(p.viewId, effectiveUser))
+    if (!q) return allowed
+    return allowed.filter(p =>
       p.name.toLowerCase().includes(q) ||
       p.keywords.some(k => k.includes(q))
     )
-  }, [q])
+  }, [q, effectiveUser])
 
   // Recently viewed from localStorage
   const recentIds: string[] = useMemo(() => {
