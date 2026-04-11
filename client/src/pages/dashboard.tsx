@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useLocation, Link } from 'wouter'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -47,6 +48,8 @@ export default function DashboardPage() {
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
   usePageTitle('Dashboard')
+  const { effectiveUser } = useAuth()
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
   type Preset = '7d' | '30d' | '90d' | 'custom'
   const [preset, setPreset] = useState<Preset>(() => {
@@ -388,24 +391,28 @@ export default function DashboardPage() {
         <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
         <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
         <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Offboarding')} />
-        <KpiCard
-          title="Monthly Revenue"
-          value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
-          subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
-          icon={DollarSign}
-          loading={isLoading}
-          hint="Includes all active properties × estimated cleans/month. See Revenue Report for actual CE charged totals."
-          onClick={() => navigate('/revenue-report')}
-        />
-        <KpiCard
-          title="Avg Profit %"
-          value={`${avgProfit.toFixed(1)}%`}
-          icon={TrendingUp}
-          loading={isLoading}
-          alert={avgProfit < 15}
-          hint="Average profit margin across active properties. Numbers may differ from Revenue Report which uses actual CE charged totals."
-          onClick={() => navigate('/revenue-report')}
-        />
+        {canViewFinancials && (
+          <KpiCard
+            title="Monthly Revenue"
+            value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
+            subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
+            icon={DollarSign}
+            loading={isLoading}
+            hint="Includes all active properties × estimated cleans/month. See Revenue Report for actual CE charged totals."
+            onClick={() => navigate('/revenue-report')}
+          />
+        )}
+        {canViewFinancials && (
+          <KpiCard
+            title="Avg Profit %"
+            value={`${avgProfit.toFixed(1)}%`}
+            icon={TrendingUp}
+            loading={isLoading}
+            alert={avgProfit < 15}
+            hint="Average profit margin across active properties. Numbers may differ from Revenue Report which uses actual CE charged totals."
+            onClick={() => navigate('/revenue-report')}
+          />
+        )}
         <KpiCard
           title="Conversions"
           value={onboardingVelocity?.conversions ?? 0}
@@ -517,7 +524,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Alerts Row */}
-      {!isLoading && (negativeProfit.length > 0 || missingData.length > 0) && (
+      {canViewFinancials && !isLoading && (negativeProfit.length > 0 || missingData.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {negativeProfit.length > 0 && (
             <Card className="border-destructive/30 bg-destructive/5">
@@ -594,6 +601,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Profit Distribution */}
+        {canViewFinancials && (
         <Card className="border-card-border">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
@@ -623,6 +631,7 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         {/* Properties by Stage */}
         <Card className="border-card-border">
