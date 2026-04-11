@@ -56,7 +56,10 @@ const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
 const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
 const IssuesPage = lazyRetry(() => import("@/pages/issues"));
 const TasksPage = lazyRetry(() => import("@/pages/tasks"));
+const ReportPage = lazyRetry(() => import("@/pages/report"));
+const CleanerMetricsPage = lazyRetry(() => import("@/pages/cleaner-metrics"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
+const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -196,6 +199,9 @@ function AppRoutes() {
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
         <Route path="/issues">{() => <GuardedRoute viewId="issues" component={IssuesPage} />}</Route>
         <Route path="/tasks">{() => <GuardedRoute viewId="tasks" component={TasksPage} />}</Route>
+        <Route path="/report">{() => <GuardedRoute viewId="report" component={ReportPage} />}</Route>
+        <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
+        <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
@@ -233,7 +239,17 @@ function AppLayout() {
     </div>
   );
 
-  if (!user) return <LoginPage />;
+  if (!user) {
+    // Allow public onboarding form without authentication
+    if (window.location.hash.startsWith('#/onboard')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <OnboardingFormPage />
+        </Suspense>
+      );
+    }
+    return <LoginPage />;
+  }
 
   return (
     <PropertyModalProvider>

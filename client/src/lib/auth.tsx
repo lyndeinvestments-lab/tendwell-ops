@@ -27,6 +27,8 @@ export const VIEW_DEFINITIONS = [
   { id: 'previous-properties', label: 'Previous Properties', group: 'Admin' },
   { id: 'settings',            label: 'Settings',            group: 'Admin' },
   { id: 'tasks',               label: 'Tasks',               group: 'Management' },
+  { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
+  { id: 'cleaner-metrics',     label: 'Cleaner Metrics',     group: 'Operations' },
 ] as const
 
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
@@ -68,9 +70,9 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
     'master-list', 'pro-forma', 'previous-properties', 'settings',
     'revenue-report', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
-    'financial-dashboard', 'tasks',
+    'financial-dashboard', 'tasks', 'report', 'cleaner-metrics',
   ],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics'],
   cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',

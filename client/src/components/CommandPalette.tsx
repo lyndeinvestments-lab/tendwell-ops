@@ -35,6 +35,8 @@ const PAGE_ROUTES = [
   { name: 'Financial Dashboard', path: '/financial-dashboard', viewId: 'financial-dashboard', keywords: ['financial', 'dashboard', 'profit', 'margin', 'scenario'], icon: PieChart },
   { name: 'Issues', path: '/issues', viewId: 'issues', keywords: ['issues', 'problems', 'cleaning', 'complaints', 'tracker'], icon: AlertTriangle },
   { name: 'Tasks', path: '/tasks', viewId: 'tasks', keywords: ['tasks', 'todo', 'assignments', 'work', 'checklist'], icon: CheckSquare },
+  { name: 'Executive Summary', path: '/report', viewId: 'report', keywords: ['report', 'summary', 'executive', 'founder', 'pdf'], icon: TrendingUp },
+  { name: 'Cleaner Metrics', path: '/cleaner-metrics', viewId: 'cleaner-metrics', keywords: ['cleaner', 'metrics', 'performance', 'issues', 'rate'], icon: Users },
 ]
 
 interface CommandPaletteProps {
