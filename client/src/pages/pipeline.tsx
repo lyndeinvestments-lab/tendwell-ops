@@ -3,7 +3,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
@@ -337,7 +337,8 @@ export default function PipelinePage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
-  const { user } = useAuth()
+  const { user, effectiveUser } = useAuth()
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   usePageTitle('Pipeline')
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -910,6 +911,7 @@ export default function PipelinePage() {
 
                 <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
                   {/* Financial summary */}
+                  {canViewFinancials && (
                   <div>
                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Financials</p>
                     <div className="grid grid-cols-3 gap-3">
@@ -929,6 +931,7 @@ export default function PipelinePage() {
                       </div>
                     </div>
                   </div>
+                  )}
 
                   {/* Onboarding checklist */}
                   {isOnboarding && (

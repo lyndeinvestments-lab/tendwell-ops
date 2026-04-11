@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { supabase, STAGE_COLORS, logPropertyEdit } from '@/lib/supabase'
 import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
@@ -805,6 +806,9 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
   onSave: (updates: Record<string, any>) => void; saving: boolean
 }) {
   const [form, setForm] = useState<Record<string, any>>({})
+  const { effectiveUser } = useAuth()
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
+  const canViewAccess = canAccessView('access-codes', effectiveUser)
 
   const { getNumber } = useAppSettings()
   const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
@@ -946,8 +950,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
           </SheetTitle>
         </SheetHeader>
 
-        {/* Financial summary */}
-        <div className="grid grid-cols-3 gap-3 bg-muted/50 rounded-md p-3 mb-4">
+        {/* Financial summary — only for users with financial access */}
+        {canViewFinancials && <div className="grid grid-cols-3 gap-3 bg-muted/50 rounded-md p-3 mb-4">
           <div>
             <span className="text-xs text-muted-foreground block">Client Charged</span>
             <span className="text-sm font-medium">${(property.ce_charged || 0).toFixed(2)}</span>
@@ -984,11 +988,15 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
               {property.total_estimated_cost ? `$${(property.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2)}` : '—'}
             </span>
           </div>
-        </div>
+        </div>}
 
         {/* Editable fields by section */}
         <div className="space-y-5">
-          {SECTIONS.map(section => (
+          {SECTIONS.filter(section => {
+            if (section.title === 'Financial' && !canViewFinancials) return false
+            if (section.title === 'Access & Wi-Fi' && !canViewAccess) return false
+            return true
+          }).map(section => (
             <div key={section.title}>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{section.title}</h3>
               <div className="space-y-2.5">

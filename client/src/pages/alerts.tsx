@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useLocation } from 'wouter'
@@ -238,12 +239,15 @@ export default function AlertsPage() {
   const qcAlerts = useQueryClient()
   const [showDismissed, setShowDismissed] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string>('All')
+  const { effectiveUser } = useAuth()
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
   const visibleAlerts = useMemo(() => {
     let base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
+    if (!canViewFinancials) base = base.filter(a => a.category !== 'Financial')
     if (categoryFilter !== 'All') base = base.filter(a => a.category === categoryFilter)
     return base
-  }, [alerts, showDismissed, dismissedSet, categoryFilter])
+  }, [alerts, showDismissed, dismissedSet, categoryFilter, canViewFinancials])
 
   const categoryCounts = useMemo(() => {
     const base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
@@ -798,7 +798,7 @@ function FinancialsEnhancement({ property }: { property: any }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export function PropertyDetailModal() {
   const { modalState, closePropertyModal } = usePropertyModal()
-  const { user } = useAuth()
+  const { user, effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const [, navigate] = useLocation()
@@ -963,8 +963,10 @@ export function PropertyDetailModal() {
   const isAdmin = user?.role === 'admin'
   const isOperations = user?.role === 'operations'
   const canEdit = isAdmin || isOperations
-  const canViewFinancials = user?.role !== 'cleaning'
-  const canViewAccess = user?.role !== 'cleaning'
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
+  const canViewAccess = canAccessView('access-codes', effectiveUser)
+  const canViewAssignments = canAccessView('cleaners', effectiveUser)
+  const canViewVerification = canAccessView('inspections', effectiveUser)
 
   const stageColor = property?.pipeline_stages?.color || '#6b7280'
   const stageName = property?.pipeline_stages?.name || '—'
@@ -1127,8 +1129,8 @@ export function PropertyDetailModal() {
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
               <TabsTrigger value="operations" className="text-xs">Operations</TabsTrigger>
               {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">Setup</TabsTrigger>}
-              <TabsTrigger value="inspections" className="text-xs">{sourceContext === 'property-list' ? 'Verification' : 'Inspections'}</TabsTrigger>
-              {sourceContext !== 'property-list' && <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>}
+              {canViewVerification && <TabsTrigger value="inspections" className="text-xs">{sourceContext === 'property-list' ? 'Verification' : 'Inspections'}</TabsTrigger>}
+              {canViewAssignments && sourceContext !== 'property-list' && <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>}
               <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
             </TabsList>
 
@@ -1267,7 +1269,7 @@ export function PropertyDetailModal() {
                 ))}
               </div>
               {/* Cleaner Pay — shown in property-list context */}
-              {sourceContext === 'property-list' && (
+              {sourceContext === 'property-list' && canViewFinancials && (
                 <div className="bg-muted/40 rounded-md p-3">
                   <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
                   <span className="text-sm font-medium">{property.cleaner_pay ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
@@ -1380,7 +1382,7 @@ export function PropertyDetailModal() {
                 </div>
               </div>
               {/* Access & WiFi — included in operations tab when from property-list */}
-              {sourceContext === 'property-list' && (
+              {sourceContext === 'property-list' && canViewAccess && (
                 <>
                   <Separator />
                   <div>

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { useAuth, canAccessView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -135,11 +136,15 @@ function normaliseRow(row: any, source: 'activity_log' | 'property_edit_log'): a
   }
 }
 
+const FINANCIAL_FIELDS = new Set(['ce_charged', 'cleaner_pay', 'estimated_profit', 'profit_percentage', 'total_estimated_cost', 'est_laundry', 'est_consumables', 'monthly_revenue_estimate', 'monthly_cost_estimate', 'monthly_profit_estimate'])
+
 export default function ActivityFeedPage() {
   usePageTitle('Activity')
   const { openPropertyModal } = usePropertyModal()
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<FilterType>('all')
@@ -212,6 +217,8 @@ export default function ActivityFeedPage() {
 
   const filtered = useMemo(() => {
     return allEntries.filter(entry => {
+      // Financial field gate
+      if (!canViewFinancials && entry.field_name && FINANCIAL_FIELDS.has(entry.field_name)) return false
       // Category filter
       if (filter !== 'all') {
         const cat = entry.entity_type
@@ -234,7 +241,7 @@ export default function ActivityFeedPage() {
       }
       return true
     })
-  }, [allEntries, filter, search, dateFrom, dateTo])
+  }, [allEntries, filter, search, dateFrom, dateTo, canViewFinancials])
 
   // Group by date
   const grouped = useMemo(() => {
