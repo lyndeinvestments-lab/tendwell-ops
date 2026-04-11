@@ -513,7 +513,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
                 <button
                   onClick={() => window.open(p.photo_url, '_blank')}
-                  className="bg-white/90 text-gray-800 p-1.5 rounded text-xs hover:bg-white"
+                  className="bg-background/90 text-foreground p-1.5 rounded text-xs hover:bg-background"
                   title="Copy URL"
                 >
                   <Copy className="w-3.5 h-3.5" />

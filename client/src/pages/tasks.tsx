@@ -17,8 +17,9 @@ import {
 } from 'lucide-react'
 import { format, differenceInDays, isPast, isToday } from 'date-fns'
 import Papa from 'papaparse'
+import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable, useDraggable } from '@dnd-kit/core'
 
-type ViewMode = 'list' | 'board'
+type ViewMode = 'list' | 'board' | 'calendar'
 type StatusFilter = 'all' | 'To Do' | 'In Progress' | 'Done' | 'Blocked'
 type SortKey = 'title' | 'status' | 'priority' | 'due_date' | 'assignee_name' | 'created_at'
 
@@ -58,6 +59,85 @@ function DueDateLabel({ date }: { date: string | null }) {
   return <span className={`text-xs ${cls}`}>{label}</span>
 }
 
+function DroppableColumn({ id, children }: { id: string; children: React.ReactNode }) {
+  const { isOver, setNodeRef } = useDroppable({ id })
+  return <div ref={setNodeRef} className={`flex-1 space-y-2 overflow-y-auto min-h-[200px] rounded-md p-1 transition-colors ${isOver ? 'bg-primary/5' : ''}`}>{children}</div>
+}
+
+function DraggableCard({ task, children }: { task: any; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: task.id })
+  return <div ref={setNodeRef} {...listeners} {...attributes} className={`transition-opacity ${isDragging ? 'opacity-30' : ''}`}>{children}</div>
+}
+
+function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: any) => void }) {
+  const [monthOffset, setMonthOffset] = useState(0)
+  const baseDate = new Date()
+  baseDate.setMonth(baseDate.getMonth() + monthOffset)
+  const year = baseDate.getFullYear()
+  const month = baseDate.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const monthLabel = format(new Date(year, month, 1), 'MMMM yyyy')
+
+  const days = Array.from({ length: 42 }, (_, i) => {
+    const day = i - firstDay + 1
+    if (day < 1 || day > daysInMonth) return null
+    return day
+  })
+
+  const tasksByDate = useMemo(() => {
+    const map: Record<string, any[]> = {}
+    for (const t of tasks) {
+      if (!t.due_date) continue
+      const d = t.due_date // YYYY-MM-DD
+      if (!map[d]) map[d] = []
+      map[d].push(t)
+    }
+    return map
+  }, [tasks])
+
+  const today = new Date().toISOString().split('T')[0]
+
+  return (
+    <div className="flex-1">
+      <div className="flex items-center justify-between mb-3">
+        <Button variant="outline" size="sm" onClick={() => setMonthOffset(m => m - 1)}>&lt;</Button>
+        <span className="text-sm font-medium">{monthLabel}</span>
+        <Button variant="outline" size="sm" onClick={() => setMonthOffset(m => m + 1)}>&gt;</Button>
+      </div>
+      <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden border border-border">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} className="bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground text-center">{d}</div>
+        ))}
+        {days.map((day, i) => {
+          if (day === null) return <div key={i} className="bg-background min-h-[80px]" />
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+          const dayTasks = tasksByDate[dateStr] || []
+          const isToday = dateStr === today
+          return (
+            <div key={i} className={`bg-background min-h-[80px] p-1 ${isToday ? 'ring-2 ring-primary ring-inset' : ''}`}>
+              <span className={`text-xs ${isToday ? 'font-bold text-primary' : 'text-muted-foreground'}`}>{day}</span>
+              <div className="mt-0.5 space-y-0.5">
+                {dayTasks.slice(0, 3).map((t: any) => (
+                  <button key={t.id} onClick={() => onTaskClick(t)}
+                    className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${
+                      t.status === 'Done' ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 line-through' :
+                      t.priority === 'Urgent' ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
+                      'bg-primary/10 text-primary'
+                    }`}>
+                    {t.title}
+                  </button>
+                ))}
+                {dayTasks.length > 3 && <span className="text-xs text-muted-foreground">+{dayTasks.length - 3} more</span>}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function TasksPage() {
   usePageTitle('Tasks')
   const { toast } = useToast()
@@ -73,6 +153,8 @@ export default function TasksPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [detailTask, setDetailTask] = useState<any>(null)
   const [commentText, setCommentText] = useState('')
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
   // New task form
   const [newForm, setNewForm] = useState({
@@ -236,6 +318,15 @@ export default function TasksPage() {
     onError: () => toast({ title: 'Delete failed', variant: 'destructive' }),
   })
 
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e
+    if (!over) return
+    const newStatus = String(over.id)
+    if (!STATUSES.includes(newStatus)) return
+    const taskId = String(active.id)
+    updateTask({ id: taskId, updates: { status: newStatus, completed_at: newStatus === 'Done' ? new Date().toISOString() : null } })
+  }
+
   function exportCsv() {
     if (!filtered.length) return
     const rows = filtered.map((t: any) => ({
@@ -267,10 +358,10 @@ export default function TasksPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center border rounded-md overflow-hidden">
-            {(['list', 'board'] as ViewMode[]).map(v => (
+            {(['list', 'board', 'calendar'] as ViewMode[]).map(v => (
               <button key={v} onClick={() => setViewMode(v)}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>
-                {v === 'list' ? 'List' : 'Board'}
+                {v === 'list' ? 'List' : v === 'board' ? 'Board' : 'Calendar'}
               </button>
             ))}
           </div>
@@ -370,38 +461,47 @@ export default function TasksPage() {
 
       {/* ═══ BOARD VIEW ═══ */}
       {viewMode === 'board' && (
-        <div className="flex-1 overflow-x-auto">
-          <div className="flex gap-3 min-w-[900px] h-full">
-            {STATUSES.map(status => (
-              <div key={status} className="flex-1 min-w-[220px] flex flex-col">
-                <div className="flex items-center justify-between px-2 py-1.5 mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{status}</span>
-                  <span className="text-xs text-muted-foreground tabular-nums">{(boardData[status] || []).length}</span>
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <div className="flex-1 overflow-x-auto">
+            <div className="flex gap-3 min-w-[900px] h-full">
+              {STATUSES.map(status => (
+                <div key={status} className="flex-1 min-w-[220px] flex flex-col">
+                  <div className="flex items-center justify-between px-2 py-1.5 mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{status}</span>
+                    <span className="text-xs text-muted-foreground tabular-nums">{(boardData[status] || []).length}</span>
+                  </div>
+                  <DroppableColumn id={status}>
+                    {(boardData[status] || []).map((task: any) => {
+                      const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
+                      return (
+                        <DraggableCard key={task.id} task={task}>
+                          <div onClick={() => setDetailTask(task)}
+                            className={`rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors ${overdue ? 'border-red-200 dark:border-red-800' : ''}`}>
+                            <p className="text-xs font-medium mb-1">{task.title}</p>
+                            {task.property_name && <p className="text-xs text-muted-foreground mb-1">{task.property_name}</p>}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <PriorityBadge priority={task.priority} />
+                              <DueDateLabel date={task.due_date} />
+                            </div>
+                            {task.assignee_name && <p className="text-xs text-muted-foreground mt-1">{task.assignee_name}</p>}
+                          </div>
+                        </DraggableCard>
+                      )
+                    })}
+                    {(boardData[status] || []).length === 0 && (
+                      <div className="text-center py-8 text-xs text-muted-foreground">No tasks</div>
+                    )}
+                  </DroppableColumn>
                 </div>
-                <div className="flex-1 space-y-2 overflow-y-auto">
-                  {(boardData[status] || []).map((task: any) => {
-                    const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
-                    return (
-                      <div key={task.id} onClick={() => setDetailTask(task)}
-                        className={`rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors ${overdue ? 'border-red-200 dark:border-red-800' : ''}`}>
-                        <p className="text-xs font-medium mb-1">{task.title}</p>
-                        {task.property_name && <p className="text-xs text-muted-foreground mb-1">{task.property_name}</p>}
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <PriorityBadge priority={task.priority} />
-                          <DueDateLabel date={task.due_date} />
-                        </div>
-                        {task.assignee_name && <p className="text-xs text-muted-foreground mt-1">{task.assignee_name}</p>}
-                      </div>
-                    )
-                  })}
-                  {(boardData[status] || []).length === 0 && (
-                    <div className="text-center py-8 text-xs text-muted-foreground">No tasks</div>
-                  )}
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        </DndContext>
+      )}
+
+      {/* ═══ CALENDAR VIEW ═══ */}
+      {viewMode === 'calendar' && (
+        <CalendarView tasks={filtered} onTaskClick={setDetailTask} />
       )}
 
       {/* ═══ TASK DETAIL SHEET ═══ */}
