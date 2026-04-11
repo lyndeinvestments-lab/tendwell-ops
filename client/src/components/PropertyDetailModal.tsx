@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
-import { useAuth, canAccessView } from '@/lib/auth'
+import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
@@ -960,9 +960,7 @@ export function PropertyDetailModal() {
     saveInlineField({ field, value: inlineValue })
   }
 
-  const isAdmin = user?.role === 'admin'
-  const isOperations = user?.role === 'operations'
-  const canEdit = isAdmin || isOperations
+  const canEdit = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser) || canEditView('cost-tracking', effectiveUser)
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
   const canViewAssignments = canAccessView('cleaners', effectiveUser)

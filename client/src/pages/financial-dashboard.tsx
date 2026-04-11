@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canEditView } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -159,8 +159,8 @@ function PropertyBarTooltip({ active, payload }: any) {
 export default function FinancialDashboardPage() {
   usePageTitle('Financial Dashboard')
   const { openPropertyModal } = usePropertyModal()
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const { effectiveUser } = useAuth()
+  const canViewIntegrations = canEditView('financial-dashboard', effectiveUser)
 
   // ── Scenario state ──
   const [scenarioCpmSelect, setScenarioCpmSelect] = useState<string>('')
@@ -269,7 +269,7 @@ export default function FinancialDashboardPage() {
   // ── Integrations (admin only) ──
   const { data: rampData, isLoading: rampLoading } = useQuery({
     queryKey: ['/api/ramp/spend'],
-    enabled: isAdmin,
+    enabled: canViewIntegrations,
     staleTime: 300_000, // 5 min cache
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -285,7 +285,7 @@ export default function FinancialDashboardPage() {
   // QBO data synced to Supabase via Claude MCP (no serverless function needed)
   const { data: qboData, isLoading: qboLoading } = useQuery({
     queryKey: ['/supabase/qbo-pl-data'],
-    enabled: isAdmin,
+    enabled: canViewIntegrations,
     staleTime: 300_000,
     queryFn: async () => {
       const { data, error } = await supabase
@@ -769,7 +769,7 @@ export default function FinancialDashboardPage() {
       </div>
 
       {/* ── Integrations (admin only) ── */}
-      {isAdmin && (
+      {canViewIntegrations && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Ramp Spend */}
           <Card className="border-card-border">

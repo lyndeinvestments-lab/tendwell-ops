@@ -1260,14 +1260,6 @@ export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
 
-  if (user?.role !== 'admin') {
-    return (
-      <div className="p-5 flex items-center justify-center h-full">
-        <p className="text-muted-foreground">You don't have access to this page.</p>
-      </div>
-    )
-  }
-
   return (
     <div className="p-5 space-y-6 h-full flex flex-col max-w-3xl">
       <div>
