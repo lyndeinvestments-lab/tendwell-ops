@@ -39,30 +39,30 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Operations',
     items: [
-      { title: 'Cost Tracking', href: '/cost-tracking', view: 'cost-tracking', icon: DollarSign },
       { title: 'Property List', href: '/property-list', view: 'property-list', icon: Building2 },
       { title: 'Linen Requirements', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
       { title: 'Linen Inventory', href: '/linen-inventory', view: 'linen-inventory', icon: Boxes },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
       { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
-      { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
-      { title: 'Issues', href: '/issues', view: 'issues', icon: AlertTriangle },
-      { title: 'Cleaner Metrics', href: '/cleaner-metrics', view: 'cleaner-metrics', icon: Users2 },
     ],
   },
   {
     label: 'Management',
     items: [
       { title: 'Tasks', href: '/tasks', view: 'tasks', icon: CheckSquare },
+      { title: 'Issues', href: '/issues', view: 'issues', icon: AlertTriangle },
+      { title: 'Cleaners', href: '/cleaners', view: 'cleaners', icon: Users2 },
+      { title: 'Cleaner Metrics', href: '/cleaner-metrics', view: 'cleaner-metrics', icon: Users2 },
+      { title: 'Alerts', href: '/alerts', view: 'alerts', icon: Bell },
     ],
   },
   {
     label: 'Admin',
     items: [
+      { title: 'Cost Tracking', href: '/cost-tracking', view: 'cost-tracking', icon: DollarSign },
       { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
       { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
-      { title: 'Alerts', href: '/alerts', view: 'alerts', icon: Bell },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
