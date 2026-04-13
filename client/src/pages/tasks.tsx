@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
@@ -26,6 +26,121 @@ type SortKey = 'title' | 'status' | 'priority' | 'due_date' | 'assignee_name' | 
 const STATUSES = ['To Do', 'In Progress', 'Done', 'Blocked']
 const PRIORITIES = ['Urgent', 'High', 'Medium', 'Low']
 const CATEGORIES = ['General', 'Cleaning', 'Maintenance', 'Onboarding', 'Client', 'Finance', 'Admin']
+
+// ─── Mention input + comment renderer ──────────────────────────────────────
+function MentionInput({
+  value, onChange, users, onSubmit, placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  users: Array<{ id: number; label: string }>
+  onSubmit: () => void
+  placeholder?: string
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [tokenStart, setTokenStart] = useState(-1)
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  const matches = useMemo(() => {
+    const q = query.toLowerCase()
+    return users
+      .filter(u => u.label && (q === '' || u.label.toLowerCase().includes(q)))
+      .slice(0, 6)
+  }, [users, query])
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = e.target.value
+    onChange(v)
+    const cursor = e.target.selectionStart ?? v.length
+    // Find @ token immediately to the left of cursor
+    const before = v.slice(0, cursor)
+    const m = before.match(/(?:^|\s)@([\w' -]*)$/)
+    if (m) {
+      setOpen(true)
+      setQuery(m[1])
+      setTokenStart(cursor - m[1].length - 1) // position of @
+      setActiveIdx(0)
+    } else {
+      setOpen(false)
+    }
+  }
+
+  function pick(label: string) {
+    if (tokenStart < 0) return
+    const before = value.slice(0, tokenStart)
+    const after = value.slice((inputRef.current?.selectionStart ?? value.length))
+    const next = `${before}@${label} ${after}`
+    onChange(next)
+    setOpen(false)
+    requestAnimationFrame(() => {
+      const pos = (before + '@' + label + ' ').length
+      inputRef.current?.setSelectionRange(pos, pos)
+      inputRef.current?.focus()
+    })
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (open && matches.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx(i => (i + 1) % matches.length); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx(i => (i - 1 + matches.length) % matches.length); return }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(matches[activeIdx].label); return }
+      if (e.key === 'Escape') { setOpen(false); return }
+    }
+    if (e.key === 'Enter' && !open) {
+      e.preventDefault()
+      onSubmit()
+    }
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        className="h-8 text-xs"
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute bottom-full left-0 mb-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[180px] py-1">
+          {matches.map((u, i) => (
+            <button
+              key={u.id}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(u.label) }}
+              onMouseEnter={() => setActiveIdx(i)}
+              className={`w-full text-left px-3 py-1.5 text-xs ${i === activeIdx ? 'bg-accent text-accent-foreground' : ''}`}
+            >
+              {u.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CommentBody({ text, userLabels }: { text: string; userLabels: string[] }) {
+  if (!text) return null
+  if (userLabels.length === 0) return <>{text}</>
+  const sorted = [...userLabels].sort((a, b) => b.length - a.length)
+  const escaped = sorted.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const re = new RegExp(`@(${escaped.join('|')})(?![a-zA-Z0-9])`, 'gi')
+  const parts: React.ReactNode[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  let key = 0
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>)
+    parts.push(<span key={key++} className="text-blue-600 dark:text-blue-400 font-medium">{m[0]}</span>)
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push(<span key={key++}>{text.slice(last)}</span>)
+  return <>{parts}</>
+}
 
 function StatusBadge({ status }: { status: string }) {
   const cls = {
@@ -303,12 +418,33 @@ export default function TasksPage() {
 
   const { mutate: addComment, isPending: commenting } = useGuardedMutation('tasks', {
     mutationFn: async () => {
+      const text = commentText.trim()
       const { error } = await supabase.from('task_comments').insert({
         task_id: detailTask.id,
         author: effectiveUser?.label || 'Unknown',
-        content: commentText.trim(),
+        content: text,
       })
       if (error) throw error
+      // Parse mentions and notify
+      try {
+        const { parseMentions, notify } = await import('@/lib/notify')
+        const mentionedIds = parseMentions(text, (users || []).map((u: any) => ({ id: u.id, label: u.label })))
+        // Don't notify yourself
+        const myId = effectiveUser?.id
+        const targets = mentionedIds.filter(id => String(id) !== String(myId))
+        if (targets.length > 0) {
+          notify({
+            eventType: 'task_mention',
+            subject: `${effectiveUser?.label || 'Someone'} mentioned you on "${detailTask.title}"`,
+            bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label || 'Someone'}</strong> mentioned you in a comment on <strong>${detailTask.title}</strong></p>
+              <blockquote style="border-left:3px solid #cbd5e1;padding:8px 12px;margin:12px 0;color:#475569;font-size:13px;white-space:pre-wrap;">${text.replace(/[<>]/g, c => c === '<' ? '&lt;' : '&gt;')}</blockquote>`,
+            ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+            ctaLabel: 'Open Task',
+            targetUserIds: targets as number[],
+            meta: { task_id: detailTask.id },
+          })
+        }
+      } catch { /* ignore */ }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/task-comments', detailTask?.id] })
@@ -622,15 +758,24 @@ export default function TasksPage() {
                             <span className="text-xs font-medium">{c.author}</span>
                             <span className="text-xs text-muted-foreground">{format(new Date(c.created_at), 'MMM d, h:mm a')}</span>
                           </div>
-                          <p className="text-xs whitespace-pre-wrap">{c.content}</p>
+                          <p className="text-xs whitespace-pre-wrap">
+                            <CommentBody text={c.content} userLabels={(users || []).map((u: any) => u.label)} />
+                          </p>
                         </div>
                       ))}
                     </div>
                   )}
                   {canEdit && (
-                    <div className="flex gap-2">
-                      <Input value={commentText} onChange={e => setCommentText(e.target.value)} placeholder="Add a comment…" className="h-8 text-xs flex-1"
-                        onKeyDown={e => { if (e.key === 'Enter' && commentText.trim()) addComment() }} />
+                    <div className="flex gap-2 items-start">
+                      <div className="flex-1">
+                        <MentionInput
+                          value={commentText}
+                          onChange={setCommentText}
+                          users={(users || []).map((u: any) => ({ id: u.id, label: u.label }))}
+                          onSubmit={() => commentText.trim() && addComment()}
+                          placeholder="Add a comment… use @ to mention"
+                        />
+                      </div>
                       <Button size="sm" className="h-8 px-3" disabled={!commentText.trim() || commenting} onClick={() => addComment()}>
                         <Send className="w-3.5 h-3.5" />
                       </Button>
