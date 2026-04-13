@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   getSupabaseConfig, getAllUsersWithViews, getAllPreferences, filterRecipients,
   sendEmail, logNotification, renderEmailLayout, escapeHtml,
-} from './_lib'
+} from './_lib.js'
 
 // POST /api/notify/public — for events triggered from unauthenticated pages (e.g. public onboarding form)
 // Only the following event types are allowed; payload is verified against DB before sending.
