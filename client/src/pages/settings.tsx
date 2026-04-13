@@ -1479,8 +1479,23 @@ function NotificationLogViewer() {
       ) : total === 0 ? (
         <p className="text-xs text-muted-foreground py-3 text-center">No notifications sent yet.</p>
       ) : (
-        <div className="max-h-64 overflow-auto rounded border border-border">
-          <table className="w-full text-xs">
+        <div className="max-h-72 overflow-auto rounded border border-border">
+          {/* Mobile: stacked cards */}
+          <div className="sm:hidden divide-y divide-border">
+            {(logs || []).map((l: any) => (
+              <div key={l.id} className="p-2.5 space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium truncate">{l.event_type}</span>
+                  <span className={`text-xs flex-shrink-0 ${l.status === 'sent' ? 'text-green-600 dark:text-green-400' : l.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>{l.status}</span>
+                </div>
+                <p className="text-xs text-muted-foreground truncate">{l.recipient_email}</p>
+                <p className="text-[10px] text-muted-foreground">{new Date(l.sent_at).toLocaleString()}</p>
+                {l.error && <p className="text-xs text-red-600 dark:text-red-400">{l.error}</p>}
+              </div>
+            ))}
+          </div>
+          {/* Desktop: table */}
+          <table className="w-full text-xs hidden sm:table">
             <thead className="sticky top-0 bg-muted">
               <tr>
                 <th className="text-left px-2 py-1.5 font-medium">When</th>

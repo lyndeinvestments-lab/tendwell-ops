@@ -102,17 +102,18 @@ function MentionInput({
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="h-8 text-xs"
+        className="h-10 sm:h-8 text-sm sm:text-xs"
       />
       {open && matches.length > 0 && (
-        <div className="absolute bottom-full left-0 mb-1 z-50 bg-popover border border-border rounded-md shadow-md min-w-[180px] py-1">
+        <div className="absolute bottom-full left-0 right-0 sm:right-auto mb-1 z-50 bg-popover border border-border rounded-md shadow-md sm:min-w-[200px] max-h-56 overflow-y-auto py-1">
           {matches.map((u, i) => (
             <button
               key={u.id}
               type="button"
               onMouseDown={(e) => { e.preventDefault(); pick(u.label) }}
+              onTouchStart={(e) => { e.preventDefault(); pick(u.label) }}
               onMouseEnter={() => setActiveIdx(i)}
-              className={`w-full text-left px-3 py-1.5 text-xs ${i === activeIdx ? 'bg-accent text-accent-foreground' : ''}`}
+              className={`w-full text-left px-3 py-2.5 sm:py-1.5 text-sm sm:text-xs ${i === activeIdx ? 'bg-accent text-accent-foreground' : ''}`}
             >
               {u.label}
             </button>
@@ -776,8 +777,8 @@ export default function TasksPage() {
                           placeholder="Add a comment… use @ to mention"
                         />
                       </div>
-                      <Button size="sm" className="h-8 px-3" disabled={!commentText.trim() || commenting} onClick={() => addComment()}>
-                        <Send className="w-3.5 h-3.5" />
+                      <Button size="sm" className="h-10 sm:h-8 px-3 flex-shrink-0" disabled={!commentText.trim() || commenting} onClick={() => addComment()}>
+                        <Send className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                       </Button>
                     </div>
                   )}
