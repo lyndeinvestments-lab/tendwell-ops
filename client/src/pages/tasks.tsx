@@ -267,6 +267,18 @@ export default function TasksPage() {
         created_by: effectiveUser?.label || null,
       })
       if (error) throw error
+      try {
+        const { notify } = await import('@/lib/notify')
+        notify({
+          eventType: 'task_assigned',
+          subject: `New task: ${newForm.title}`,
+          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${newForm.title}</strong>${newForm.description ? `<br/><span style="color:#475569;">${newForm.description}</span>` : ''}</p>
+            <p style="font-size:13px;color:#475569;">Priority: ${newForm.priority} · Assigned to: ${newForm.assignee_name || 'Unassigned'}${newForm.due_date ? ` · Due: ${newForm.due_date}` : ''}${newForm.property_name ? ` · Property: ${newForm.property_name}` : ''}</p>`,
+          ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+          ctaLabel: 'Open Tasks',
+          meta: { assignee: newForm.assignee_name, priority: newForm.priority },
+        })
+      } catch { /* ignore */ }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
