@@ -1106,7 +1106,7 @@ export function PropertyDetailModal() {
               {sourceContext !== 'property-list' && canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
               <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
               <TabsTrigger value="operations" className="text-xs">Operations</TabsTrigger>
-              {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">Setup</TabsTrigger>}
+              {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">Access</TabsTrigger>}
               {canViewVerification && <TabsTrigger value="inspections" className="text-xs">{sourceContext === 'property-list' ? 'Verification' : 'Inspections'}</TabsTrigger>}
               {canViewAssignments && sourceContext !== 'property-list' && <TabsTrigger value="assignments" className="text-xs">Assignments</TabsTrigger>}
               <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
