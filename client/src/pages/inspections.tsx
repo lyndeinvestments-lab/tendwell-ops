@@ -12,8 +12,11 @@ import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import {
   Search, X, ClipboardCheck, Check, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Download,
+  UserPlus, Calendar, CheckSquare, Square, Trash2,
 } from 'lucide-react'
-import { format, differenceInDays } from 'date-fns'
+import { format, differenceInDays, addMonths } from 'date-fns'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000
 
@@ -63,7 +66,7 @@ const VERIFY_SECTIONS = [
 
 const ALL_VERIFY_FIELDS = VERIFY_SECTIONS.flatMap(s => s.fields)
 
-type SortKey = 'name' | 'status' | 'last_verified'
+type SortKey = 'name' | 'status' | 'last_verified' | 'assignee' | 'due_date'
 
 export default function InspectionsPage() {
   usePageTitle('Property Verification')
@@ -79,6 +82,10 @@ export default function InspectionsPage() {
   const [activeProperty, setActiveProperty] = useState<any>(null)
   const [editValues, setEditValues] = useState<Record<string, any>>({})
   const [saving, setSaving] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
+  const [bulkDueOpen, setBulkDueOpen] = useState(false)
+  const [bulkDueDate, setBulkDueDate] = useState('')
 
   // Fetch active + onboarding properties with all verifiable fields
   const { data: properties, isLoading } = useQuery({
@@ -94,37 +101,46 @@ export default function InspectionsPage() {
     },
   })
 
-  // Fetch verification records
+  // Fetch verification records (now includes assignee + due_date)
   const { data: verifications } = useQuery({
     queryKey: ['/supabase/property-verifications'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('property_verifications')
-        .select('property_id, verified_at, verified_by')
+        .select('property_id, verified_at, verified_by, assignee_name, due_date')
       if (error) throw error
+      return data || []
+    },
+  })
+
+  // Fetch users for assignee dropdown
+  const { data: users } = useQuery({
+    queryKey: ['/supabase/verification-users'],
+    queryFn: async () => {
+      const { data } = await supabase.from('app_users').select('id, label').order('label')
       return data || []
     },
   })
 
   // Build lookup: property_id → last verification
   const verificationMap = useMemo(() => {
-    const map: Record<string, { verified_at: string; verified_by: string }> = {}
+    const map: Record<string, { verified_at?: string; verified_by?: string; assignee_name?: string; due_date?: string }> = {}
     for (const v of (verifications || [])) {
-      map[String(v.property_id)] = v
+      map[String(v.property_id)] = v as any
     }
     return map
   }, [verifications])
 
   function getStatus(p: any): 'due' | 'verified' | 'never' {
     const v = verificationMap[String(p.id)]
-    if (!v) return 'never'
+    if (!v || !v.verified_at) return 'never'
     const daysSince = differenceInDays(new Date(), new Date(v.verified_at))
     return daysSince >= 180 ? 'due' : 'verified'
   }
 
   function getDaysSince(p: any): number | null {
     const v = verificationMap[String(p.id)]
-    if (!v) return null
+    if (!v || !v.verified_at) return null
     return differenceInDays(new Date(), new Date(v.verified_at))
   }
 
@@ -153,6 +169,16 @@ export default function InspectionsPage() {
         const da = getDaysSince(a) ?? 9999
         const db = getDaysSince(b) ?? 9999
         return (da - db) * dir
+      }
+      if (sortKey === 'assignee') {
+        const aa = verificationMap[String(a.id)]?.assignee_name || ''
+        const bb = verificationMap[String(b.id)]?.assignee_name || ''
+        return aa.localeCompare(bb) * dir
+      }
+      if (sortKey === 'due_date') {
+        const aa = verificationMap[String(a.id)]?.due_date || '9999-12-31'
+        const bb = verificationMap[String(b.id)]?.due_date || '9999-12-31'
+        return aa.localeCompare(bb) * dir
       }
       // status: never first, then due, then verified
       const order = { never: 0, due: 1, verified: 2 }
@@ -206,14 +232,19 @@ export default function InspectionsPage() {
       }
     }
 
-    // Upsert verification record
+    // Upsert verification record (clears assignee + due_date on completion)
     const { error: vError } = await supabase.from('property_verifications').upsert({
       property_id: activeProperty.id,
       verified_by: user?.label ?? null,
       verified_at: new Date().toISOString(),
       notes: editValues.notes !== activeProperty.notes ? 'Notes updated' : null,
       fields_updated: Object.keys(changes).length > 0 ? changes : null,
+      assignee_name: null,
+      due_date: null,
     }, { onConflict: 'property_id' })
+
+    // Close any linked task on the Tasks board
+    await closeVerificationTask(activeProperty.id)
 
     if (vError) {
       toast({ title: 'Failed to save verification', variant: 'destructive' })
@@ -237,6 +268,171 @@ export default function InspectionsPage() {
     toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
     setActiveProperty(null)
     setSaving(false)
+  }
+
+  // ─── Sync linked Task in tasks table for assigned/scheduled verifications ──
+  async function syncVerificationTask(propertyId: number, propertyName: string, assignee: string | null, dueDate: string | null) {
+    // Find existing task linked to this property
+    const { data: existing } = await supabase
+      .from('tasks')
+      .select('id, status')
+      .eq('verification_property_id', propertyId)
+      .neq('status', 'Done')
+      .limit(1)
+
+    const taskRow = existing?.[0]
+
+    if (!assignee && !dueDate) {
+      // Cleared — delete any open task
+      if (taskRow) await supabase.from('tasks').delete().eq('id', taskRow.id)
+      return
+    }
+
+    if (taskRow) {
+      await supabase.from('tasks').update({
+        assignee_name: assignee || null,
+        due_date: dueDate || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', taskRow.id)
+    } else {
+      await supabase.from('tasks').insert({
+        title: `Verify: ${propertyName}`,
+        description: 'Run the 6-month property verification walkthrough.',
+        status: 'To Do',
+        priority: 'Medium',
+        category: 'Onboarding',
+        property_name: propertyName,
+        assignee_name: assignee || null,
+        due_date: dueDate || null,
+        created_by: user?.label || null,
+        verification_property_id: propertyId,
+      })
+    }
+  }
+
+  async function closeVerificationTask(propertyId: number) {
+    await supabase
+      .from('tasks')
+      .update({ status: 'Done', updated_at: new Date().toISOString() })
+      .eq('verification_property_id', propertyId)
+      .neq('status', 'Done')
+  }
+
+  // ─── Bulk actions ─────────────────────────────────────────────────────────
+  async function bulkAssign(assigneeName: string | null) {
+    if (selected.size === 0) return
+    const targets = (paged as any[]).filter(p => selected.has(p.id))
+    const rows = targets.map(p => {
+      const existing = verificationMap[String(p.id)] || {}
+      return {
+        property_id: p.id,
+        assignee_name: assigneeName,
+        due_date: existing.due_date || null,
+        verified_at: existing.verified_at || null,
+        verified_by: existing.verified_by || null,
+      }
+    })
+    const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
+    if (error) {
+      toast({ title: 'Bulk assign failed', description: error.message, variant: 'destructive' })
+      return
+    }
+    await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, assigneeName, verificationMap[String(p.id)]?.due_date || null)))
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    toast({ title: assigneeName ? `Assigned ${selected.size} to ${assigneeName}` : `Cleared assignment on ${selected.size}` })
+    setSelected(new Set())
+    setBulkAssignOpen(false)
+  }
+
+  async function bulkSetDue(date: string) {
+    if (selected.size === 0 || !date) return
+    const targets = (paged as any[]).filter(p => selected.has(p.id))
+    const rows = targets.map(p => {
+      const existing = verificationMap[String(p.id)] || {}
+      return {
+        property_id: p.id,
+        due_date: date,
+        assignee_name: existing.assignee_name || null,
+        verified_at: existing.verified_at || null,
+        verified_by: existing.verified_by || null,
+      }
+    })
+    const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
+    if (error) {
+      toast({ title: 'Bulk schedule failed', description: error.message, variant: 'destructive' })
+      return
+    }
+    await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, verificationMap[String(p.id)]?.assignee_name || null, date)))
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    toast({ title: `Set due date on ${selected.size}` })
+    setSelected(new Set())
+    setBulkDueOpen(false)
+    setBulkDueDate('')
+  }
+
+  async function bulkMarkVerified() {
+    if (selected.size === 0) return
+    if (!confirm(`Mark ${selected.size} as verified now? This won't update property fields, only the verification record.`)) return
+    const targets = (paged as any[]).filter(p => selected.has(p.id))
+    const now = new Date().toISOString()
+    const rows = targets.map(p => ({
+      property_id: p.id,
+      verified_at: now,
+      verified_by: user?.label || null,
+      assignee_name: null,
+      due_date: null,
+    }))
+    const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
+    if (error) {
+      toast({ title: 'Bulk verify failed', description: error.message, variant: 'destructive' })
+      return
+    }
+    await Promise.all(targets.map(p => closeVerificationTask(p.id)))
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    toast({ title: `Marked ${selected.size} verified` })
+    setSelected(new Set())
+  }
+
+  async function bulkClear() {
+    if (selected.size === 0) return
+    const targets = (paged as any[]).filter(p => selected.has(p.id))
+    const rows = targets.map(p => {
+      const existing = verificationMap[String(p.id)] || {}
+      return {
+        property_id: p.id,
+        assignee_name: null,
+        due_date: null,
+        verified_at: existing.verified_at || null,
+        verified_by: existing.verified_by || null,
+      }
+    })
+    const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
+    if (error) {
+      toast({ title: 'Clear failed', description: error.message, variant: 'destructive' })
+      return
+    }
+    await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, null, null)))
+    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    toast({ title: `Cleared assignment on ${selected.size}` })
+    setSelected(new Set())
+  }
+
+  function toggleSelect(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === paged.length) setSelected(new Set())
+    else setSelected(new Set((paged as any[]).map(p => p.id)))
   }
 
   function exportCsv() {
@@ -318,12 +514,60 @@ export default function InspectionsPage() {
         </div>
       </div>
 
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/60 px-3 py-2 text-xs">
+          <span className="font-medium">{selected.size} selected</span>
+          <Popover open={bulkAssignOpen} onOpenChange={setBulkAssignOpen}>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><UserPlus className="w-3 h-3" /> Assign</Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-1" align="start">
+              <div className="max-h-64 overflow-y-auto">
+                {(users || []).map((u: any) => (
+                  <button key={u.id} type="button" onClick={() => bulkAssign(u.label)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded">
+                    {u.label}
+                  </button>
+                ))}
+                <div className="border-t border-border my-1" />
+                <button type="button" onClick={() => bulkAssign(null)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded text-muted-foreground">
+                  Clear assignment
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Popover open={bulkDueOpen} onOpenChange={setBulkDueOpen}>
+            <PopoverTrigger asChild>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><Calendar className="w-3 h-3" /> Set due date</Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2" align="start">
+              <Input type="date" value={bulkDueDate} onChange={e => setBulkDueDate(e.target.value)} className="h-8 text-xs mb-2" />
+              <div className="flex gap-1">
+                <Button size="sm" className="h-7 text-xs flex-1" onClick={() => bulkSetDue(bulkDueDate)} disabled={!bulkDueDate}>Apply</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setBulkDueDate(addMonths(new Date(), 1).toISOString().slice(0,10)); }}>+1mo</Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={bulkMarkVerified}><Check className="w-3 h-3" /> Mark verified</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" onClick={bulkClear}><Trash2 className="w-3 h-3" /> Clear</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>Cancel</Button>
+        </div>
+      )}
+
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={`${thCls} sticky left-0 z-20 bg-muted/80`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
+              <th className="w-8 px-2 py-2 sticky left-0 z-20 bg-muted/80">
+                <Checkbox
+                  checked={paged.length > 0 && selected.size === paged.length}
+                  onCheckedChange={toggleSelectAll}
+                  aria-label="Select all"
+                />
+              </th>
+              <th className={`${thCls} sticky left-8 z-20 bg-muted/80`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
               <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
+              <th className={thCls} onClick={() => toggleSort('assignee')}>Assignee <SortIcon col="assignee" /></th>
+              <th className={thCls} onClick={() => toggleSort('due_date')}>Due <SortIcon col="due_date" /></th>
               <th className={thCls} onClick={() => toggleSort('last_verified')}>Last Verified <SortIcon col="last_verified" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Verified By</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>
@@ -333,12 +577,12 @@ export default function InspectionsPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(5)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={5}>
+                <td colSpan={8}>
                   <EmptyState
                     icon={ClipboardCheck}
                     title={showDueOnly ? 'All verified' : 'No properties'}
@@ -351,25 +595,31 @@ export default function InspectionsPage() {
                 const status = getStatus(p)
                 const v = verificationMap[String(p.id)]
                 const daysSince = getDaysSince(p)
+                const isSelected = selected.has(p.id)
+                const dueOverdue = v?.due_date && v.due_date < new Date().toISOString().slice(0,10)
                 return (
                   <tr
                     key={p.id}
-                    className={`border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer ${status === 'never' ? 'bg-red-50/30 dark:bg-red-900/5' : status === 'due' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
-                    onClick={() => openWalkthrough(p)}
+                    className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSelected ? 'bg-primary/5' : status === 'never' ? 'bg-red-50/30 dark:bg-red-900/5' : status === 'due' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
                   >
-                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{p.name}</td>
-                    <td className="py-2 px-3"><StatusBadge status={status} /></td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground">
-                      {v ? (
+                    <td className="px-2 py-2 sticky left-0 z-10 bg-background" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(p.id)} aria-label={`Select ${p.name}`} />
+                    </td>
+                    <td className="py-2 px-3 font-medium text-xs sticky left-8 z-10 bg-background cursor-pointer" onClick={() => openWalkthrough(p)}>{p.name}</td>
+                    <td className="py-2 px-3 cursor-pointer" onClick={() => openWalkthrough(p)}><StatusBadge status={status} /></td>
+                    <td className="py-2 px-3 text-xs">{v?.assignee_name || <span className="text-muted-foreground">—</span>}</td>
+                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-red-600 dark:text-red-400 font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground cursor-pointer" onClick={() => openWalkthrough(p)}>
+                      {v?.verified_at ? (
                         <span>
                           {format(new Date(v.verified_at), 'MMM d, yyyy')}
                           <span className="ml-1 text-muted-foreground/60">({daysSince}d ago)</span>
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="py-2 px-3 text-xs">{v?.verified_by || '—'}</td>
+                    <td className="py-2 px-3 text-xs cursor-pointer" onClick={() => openWalkthrough(p)}>{v?.verified_by || '—'}</td>
                     <td className="py-2 px-3">
-                      <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-8 text-xs gap-1 px-2">
+                      <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-8 text-xs gap-1 px-2" onClick={() => openWalkthrough(p)}>
                         <ClipboardCheck className="w-3 h-3" />
                         {status === 'verified' ? 'Re-verify' : 'Verify'}
                       </Button>

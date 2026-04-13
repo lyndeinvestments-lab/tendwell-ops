@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { profitColorClass } from '@/lib/profit-colors'
@@ -67,6 +68,7 @@ export default function QuoteSheetPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   usePageTitle('Quote Sheet')
+  const { openPropertyModal } = usePropertyModal()
   const { getNumber } = useAppSettings()
   const INSPECTION_COST = getNumber('cost_inspection', 15)
   const TRASH_COST = getNumber('cost_trash', 5)
@@ -409,7 +411,9 @@ export default function QuoteSheetPage() {
                 const { laundry, consumables } = getEstimates(p)
                 return (
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{p.name}</td>
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                      <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
+                    </td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.ce_charged)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.cleaner_pay)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
@@ -457,7 +461,7 @@ export default function QuoteSheetPage() {
             )}
             {filtered.length > 0 && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals / Avg ({filtered.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0))}</td>
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0))}</td>
                 <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
@@ -470,7 +474,7 @@ export default function QuoteSheetPage() {
                     const validProfit = filtered.filter((p: any) => p.profit_percentage != null)
                     if (validProfit.length === 0) return '—'
                     const avg = validProfit.reduce((s: number, p: any) => s + p.profit_percentage, 0) / validProfit.length
-                    return <span className={`font-medium ${profitColorClass(avg)}`}>{avg.toFixed(1)}%</span>
+                    return <span className={`font-medium ${profitColorClass(avg)}`} title="Average profit %">{avg.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span></span>
                   })()}
                 </td>
                 <td></td>
