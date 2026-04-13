@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Verifications due — properties not verified in 6 months (best-effort)
     let verificationsDue: any[] = []
     try {
-      const verifs = await fetchTbl(`property_verifications?select=property_id,verified_at&order=verified_at.desc`)
+      const verifs = await fetchTbl(`property_verifications?select=property_id,verified_at&verified_at=not.is.null&order=verified_at.desc`)
       const lastByProp = new Map<string, string>()
       for (const v of verifs) if (!lastByProp.has(v.property_id)) lastByProp.set(v.property_id, v.verified_at)
       verificationsDue = (properties as any[])
