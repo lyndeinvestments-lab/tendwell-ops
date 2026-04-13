@@ -690,7 +690,7 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
   )
 }
 
-// ── Financials Enhancement: Profit History + vs. Portfolio Avg ──
+// ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property }: { property: any }) {
   const { data: editHistory } = useQuery({
     queryKey: ['/supabase/property-edit-history', property.id],
@@ -704,18 +704,6 @@ function FinancialsEnhancement({ property }: { property: any }) {
       if (error) throw error
       return data || []
     },
-  })
-
-  const { data: allProperties } = useQuery({
-    queryKey: ['/supabase/portfolio-averages'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('operational_properties')
-        .select('est_laundry, est_consumables, inspection_cost, trash_cost')
-      if (error) throw error
-      return data || []
-    },
-    staleTime: 60_000,
   })
 
   const chartData = useMemo(() => {
@@ -732,29 +720,28 @@ function FinancialsEnhancement({ property }: { property: any }) {
     return points
   }, [editHistory, property])
 
-  const portfolioAvg = useMemo(() => {
-    if (!allProperties || allProperties.length === 0) return null
-    const avg = (field: string) => {
-      const vals = allProperties.filter((p: any) => p[field] != null).map((p: any) => Number(p[field]))
-      return vals.length > 0 ? vals.reduce((s, v) => s + v, 0) / vals.length : 0
-    }
-    return {
-      laundry: avg('est_laundry'),
-      consumables: avg('est_consumables'),
-      inspection: avg('inspection_cost'),
-      trash: avg('trash_cost'),
-    }
-  }, [allProperties])
+  const ce = Number(property.ce_charged || 0)
+  const pay = Number(property.cleaner_pay || 0)
+  const laundry = Number(property.est_laundry || 0)
+  const consumables = Number(property.est_consumables || 0)
+  const inspection = Number(property.inspection_cost ?? 15)
+  const trash = Number(property.trash_cost ?? 5)
+  const totalCost = pay + laundry + consumables + inspection + trash
+  const profit = ce - totalCost
+  const profitPct = ce > 0 ? (profit / ce) * 100 : 0
+  const fmt = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-  function DeltaIndicator({ current, avg, label }: { current: number; avg: number; label: string }) {
-    const delta = current - avg
-    const isAbove = delta > 0.01
-    return (
-      <span className={`text-xs ${isAbove ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-        {isAbove ? '+' : ''}{delta.toFixed(2)}
-      </span>
-    )
-  }
+  const breakdownRows: Array<{ label: string; value: string; color?: string }> = [
+    { label: 'Client Charged', value: fmt(ce) },
+    { label: 'Cleaner Pay', value: fmt(pay) },
+    { label: 'Laundry', value: fmt(laundry) },
+    { label: 'Consumables', value: fmt(consumables) },
+    { label: 'Inspection', value: fmt(inspection) },
+    { label: 'Trash', value: fmt(trash) },
+    { label: 'Total Cost', value: fmt(totalCost) },
+    { label: 'Profit', value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
+    { label: 'Profit %', value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
+  ]
 
   return (
     <div className="space-y-3">
@@ -773,24 +760,17 @@ function FinancialsEnhancement({ property }: { property: any }) {
         <p className="text-xs text-muted-foreground italic">Not enough history yet</p>
       )}
 
-      {portfolioAvg && (
-        <div className="space-y-1">
-          <span className="text-xs text-muted-foreground block">vs. Portfolio Average</span>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { label: 'Laundry', current: property.est_laundry || 0, avg: portfolioAvg.laundry },
-              { label: 'Consumables', current: property.est_consumables || 0, avg: portfolioAvg.consumables },
-              { label: 'Inspection', current: property.inspection_cost || 15, avg: portfolioAvg.inspection },
-              { label: 'Trash', current: property.trash_cost || 5, avg: portfolioAvg.trash },
-            ].map(item => (
-              <div key={item.label} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1">
-                <span className="text-muted-foreground">{item.label}</span>
-                <DeltaIndicator current={item.current} avg={item.avg} label={item.label} />
-              </div>
-            ))}
-          </div>
+      <div className="space-y-1">
+        <span className="text-xs text-muted-foreground block">Breakdown</span>
+        <div className="grid grid-cols-1 gap-1">
+          {breakdownRows.map(row => (
+            <div key={row.label} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
+              <span className="text-muted-foreground">{row.label}</span>
+              <span className={`tabular-nums font-medium ${row.color || ''}`}>{row.value}</span>
+            </div>
+          ))}
         </div>
-      )}
+      </div>
     </div>
   )
 }
