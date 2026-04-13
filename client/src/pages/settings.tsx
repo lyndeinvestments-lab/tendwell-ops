@@ -1256,6 +1256,193 @@ function UsersSection() {
 
 // ─── Settings Page ───────────────────────────────────────────────────────────
 
+// ─── Notifications Section ───────────────────────────────────────────────────
+
+function NotificationsSection() {
+  const { user } = useAuth()
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [testing, setTesting] = useState(false)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+
+  // All users (admins can edit any; non-admins only see their own row)
+  const { data: users } = useQuery({
+    queryKey: ['/supabase/notif-users'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('app_users')
+        .select('id, label, google_email, role, custom_views')
+        .order('label')
+      return data || []
+    },
+  })
+
+  // role permissions to compute allowed views per user
+  const { data: rolePerms } = useQuery({
+    queryKey: ['/supabase/role-permissions'],
+    queryFn: async () => {
+      const { data: row } = await supabase.from('app_settings').select('value').eq('key', 'role_permissions').single()
+      if (!row?.value) return buildDefaultRolePermissions()
+      return sanitizeRolePermissions(typeof row.value === 'string' ? JSON.parse(row.value) : row.value)
+    },
+  })
+
+  const { data: prefsRows } = useQuery({
+    queryKey: ['/supabase/notif-prefs'],
+    queryFn: async () => {
+      const { data } = await supabase.from('notification_preferences').select('*')
+      return data || []
+    },
+  })
+
+  const prefsByUser = useMemo(() => {
+    const m = new Map<string, any>()
+    for (const p of (prefsRows || [])) m.set(p.user_id, p)
+    return m
+  }, [prefsRows])
+
+  function allowedViewsFor(u: any): string[] {
+    if (Array.isArray(u.custom_views)) return u.custom_views
+    if (rolePerms?.[u.role]?.views) return rolePerms[u.role].views
+    return ROLE_VIEWS[u.role] || []
+  }
+
+  const savePref = useMutation({
+    mutationFn: async (payload: any) => {
+      const { error } = await supabase.from('notification_preferences').upsert({
+        ...payload,
+        updated_at: new Date().toISOString(),
+        updated_by: user?.label || null,
+      }, { onConflict: 'user_id' })
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/notif-prefs'] }),
+    onError: (e: any) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
+  })
+
+  async function handleTestEmail() {
+    setTesting(true)
+    const { sendTestEmail } = await import('@/lib/notify')
+    const r = await sendTestEmail()
+    setTesting(false)
+    if (r.ok) toast({ title: 'Test email sent', description: `Sent to ${r.sentTo}` })
+    else toast({ title: 'Test failed', description: r.error, variant: 'destructive' })
+  }
+
+  const isAdmin = user?.role === 'admin'
+  const visibleUsers = isAdmin ? (users || []) : (users || []).filter((u: any) => u.id === user?.id)
+
+  const EVENT_DEFS: Array<{ field: string; label: string; view: string }> = [
+    { field: 'notify_task_assigned',        label: 'Task assigned',          view: 'tasks' },
+    { field: 'notify_task_overdue',         label: 'Task overdue (digest)',  view: 'tasks' },
+    { field: 'notify_issue_logged',         label: 'New issue logged',       view: 'issues' },
+    { field: 'notify_verification_due',     label: 'Verification due',       view: 'inspections' },
+    { field: 'notify_onboarding_submitted', label: 'Onboarding submitted',   view: 'master-list' },
+    { field: 'notify_follow_up_due',        label: 'Follow-up due',          view: 'contacts' },
+  ]
+
+  return (
+    <div className="rounded-lg border border-border p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-base font-medium flex items-center gap-2">
+            <Users className="w-4 h-4" /> Email Notifications
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Each user only receives notifications for events tied to views they can access.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={handleTestEmail} disabled={testing}>
+          {testing ? 'Sending…' : 'Send test email to me'}
+        </Button>
+      </div>
+
+      <div className="space-y-3">
+        {visibleUsers.map((u: any) => {
+          const prefs = prefsByUser.get(u.id) || { user_id: u.id, email_enabled: true, digest_frequency: 'instant' }
+          const allowedViews = allowedViewsFor(u)
+          const isExpanded = editingUserId === u.id || visibleUsers.length === 1
+          const canEditThis = isAdmin || u.id === user?.id
+
+          return (
+            <div key={u.id} className="border border-border rounded-md">
+              <button
+                type="button"
+                onClick={() => setEditingUserId(isExpanded && editingUserId === u.id ? null : u.id)}
+                className="w-full flex items-center justify-between gap-3 px-3 py-2 hover:bg-muted/30"
+                disabled={visibleUsers.length === 1}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium truncate">{u.label}</span>
+                  <RoleBadge role={u.role} />
+                  <span className="text-xs text-muted-foreground truncate">{u.google_email}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  {prefs.email_enabled ? (
+                    <span className="text-green-600 dark:text-green-400">on · {prefs.digest_frequency}</span>
+                  ) : (
+                    <span className="text-muted-foreground">off</span>
+                  )}
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="px-3 py-3 border-t border-border space-y-3">
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <label className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={prefs.email_enabled}
+                        disabled={!canEditThis}
+                        onCheckedChange={(v) => savePref.mutate({ ...prefs, email_enabled: !!v })}
+                      />
+                      Email enabled
+                    </label>
+                    <label className="flex items-center gap-2 text-sm">
+                      Frequency:
+                      <select
+                        value={prefs.digest_frequency || 'instant'}
+                        disabled={!canEditThis}
+                        onChange={(e) => savePref.mutate({ ...prefs, digest_frequency: e.target.value })}
+                        className="h-7 text-xs border border-input rounded px-2 bg-background"
+                      >
+                        <option value="instant">Instant</option>
+                        <option value="daily">Daily digest (8am ET)</option>
+                        <option value="off">Off</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {EVENT_DEFS.map(ev => {
+                      const hasAccess = allowedViews.includes(ev.view)
+                      const checked = !!prefs[ev.field]
+                      return (
+                        <label
+                          key={ev.field}
+                          className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded border ${hasAccess ? 'border-border' : 'border-border/50 opacity-50'}`}
+                          title={hasAccess ? '' : `Requires ${ev.view} access`}
+                        >
+                          <Checkbox
+                            checked={hasAccess && checked}
+                            disabled={!canEditThis || !hasAccess}
+                            onCheckedChange={(v) => savePref.mutate({ ...prefs, [ev.field]: !!v })}
+                          />
+                          <span className="flex-1">{ev.label}</span>
+                          {!hasAccess && <Lock className="w-3 h-3 text-muted-foreground" />}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -1272,6 +1459,7 @@ export default function SettingsPage() {
 
       <UsersSection />
       <PermissionsSection />
+      <NotificationsSection />
       <AppSettingsSection />
       <OnboardingTemplateSection />
     </div>

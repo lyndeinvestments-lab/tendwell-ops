@@ -90,6 +90,14 @@ export default function OnboardingFormPage() {
       else setError('Something went wrong. Please try again.')
     } else {
       setSubmitted(true)
+      // Fire-and-forget notification to admins
+      try {
+        await fetch('/api/notify/public', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ eventType: 'onboarding_submitted', token }),
+        })
+      } catch { /* ignore */ }
     }
   }
 
