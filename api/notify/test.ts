@@ -1,6 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getSupabaseConfig, verifyAuthHeader, sendEmail, logNotification, renderEmailLayout } from './_lib'
-
+import { getSupabaseConfig, verifyAuthHeader, sendEmail, logNotification, renderEmailLayout } from './_lib.js'
 // POST /api/notify/test — sends a test email to the requesting user
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
