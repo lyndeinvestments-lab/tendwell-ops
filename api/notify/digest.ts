@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   getSupabaseConfig, getAllUsersWithViews, getAllPreferences,
   filterRecipients, sendEmail, logNotification, renderEmailLayout, escapeHtml,
-} from './_lib'
+} from './_lib.js'
 
 // GET /api/notify/digest — invoked by Vercel cron daily at 8am ET (12:00 UTC)
 // Auth: requires CRON_SECRET in Authorization header (Vercel cron sets this).
