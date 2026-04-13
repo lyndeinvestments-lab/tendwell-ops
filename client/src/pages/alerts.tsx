@@ -143,19 +143,6 @@ export function useAlerts() {
         })
       }
 
-      // Warning: Low Profit
-      if ((p.profit_percentage || 0) >= 0 && (p.profit_percentage || 0) < 10 && stageName === 'Active') {
-        result.push({
-          id: `low_profit_${p.id}`,
-          severity: 'warning',
-          category: 'Financial',
-          title: `Low Profit: ${p.name}`,
-          description: `Profit is only ${(p.profit_percentage || 0).toFixed(1)}%`,
-          actionRoute: '/cost-tracking',
-          propertyId: p.id,
-        })
-      }
-
     }
 
     // Info: Onboarding Stalled

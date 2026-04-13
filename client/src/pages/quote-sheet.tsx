@@ -208,7 +208,7 @@ export default function QuoteSheetPage() {
         number_of_beds: beds || null,
         full_baths: fullBaths || null,
         half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : null,
-        number_of_kitchens: kitchens,
+        kitchens,
         hot_tub: newProp.hot_tub,
         square_footage: newProp.sq_ft ? parseFloat(newProp.sq_ft) : null,
         address: newProp.address || null,

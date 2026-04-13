@@ -81,14 +81,18 @@ function useIsMobile() {
 function AlertBellButton() {
   const [, navigate] = useLocation();
   const [open, setOpen] = useState(false);
-  const { alerts } = useAlerts();
+  const { activeAlerts } = useAlerts();
+  const { effectiveUser } = useAuth();
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser);
 
-  const activeAlerts = useMemo(() => {
-    return alerts.filter(a => a.severity === 'critical' || a.severity === 'warning');
-  }, [alerts]);
+  const visibleAlerts = useMemo(() => {
+    return activeAlerts
+      .filter(a => a.severity === 'critical' || a.severity === 'warning')
+      .filter(a => canViewFinancials || a.category !== 'Financial');
+  }, [activeAlerts, canViewFinancials]);
 
-  const badgeCount = activeAlerts.length;
-  const previewItems = activeAlerts.slice(0, 5);
+  const badgeCount = visibleAlerts.length;
+  const previewItems = visibleAlerts.slice(0, 5);
 
   return (
     <div className="relative">
