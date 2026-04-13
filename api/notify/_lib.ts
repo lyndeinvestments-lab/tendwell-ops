@@ -9,6 +9,7 @@ export const FROM_EMAIL = process.env.NOTIFY_FROM_EMAIL || 'Tendwell Ops <norepl
 export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   task_assigned: 'tasks',
   task_overdue: 'tasks',
+  task_mention: 'tasks',
   issue_logged: 'issues',
   verification_due: 'inspections',
   onboarding_submitted: 'master-list',
@@ -18,6 +19,7 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
 export const EVENT_PREF_FIELD: Record<string, string> = {
   task_assigned: 'notify_task_assigned',
   task_overdue: 'notify_task_overdue',
+  task_mention: 'notify_task_mention',
   issue_logged: 'notify_issue_logged',
   verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',
@@ -182,7 +184,7 @@ export function filterRecipients(
   users: Array<AppUserMin & { allowedViews: string[] }>,
   prefsByUser: Map<number, NotifPrefs>,
   eventType: string,
-  opts: { includeDigestUsers?: boolean } = {}
+  opts: { includeDigestUsers?: boolean; onlyUserIds?: Set<number> } = {}
 ): Array<AppUserMin & { allowedViews: string[] }> {
   const requiredView = EVENT_VIEW_REQUIREMENT[eventType]
   const prefField = EVENT_PREF_FIELD[eventType] as keyof NotifPrefs
@@ -190,6 +192,7 @@ export function filterRecipients(
 
   return users.filter(u => {
     if (!u.google_email) return false
+    if (opts.onlyUserIds && !opts.onlyUserIds.has(u.id)) return false
     if (!u.allowedViews.includes(requiredView)) return false
     const prefs = prefsByUser.get(u.id)
     // Default behavior if no prefs row: send (matches table defaults)

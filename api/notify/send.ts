@@ -18,7 +18,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = await verifyAuthHeader(sb, req.headers.authorization)
   if (!session) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { eventType, subject, bodyHtml, ctaUrl, ctaLabel, meta } = (req.body || {}) as any
+  const { eventType, subject, bodyHtml, ctaUrl, ctaLabel, meta, targetUserIds } = (req.body || {}) as any
   if (!eventType || !subject || !bodyHtml) {
     return res.status(400).json({ error: 'eventType, subject, bodyHtml required' })
   }
@@ -28,7 +28,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       getAllUsersWithViews(sb),
       getAllPreferences(sb),
     ])
-    const recipients = filterRecipients(users, prefs, eventType)
+    const onlyUserIds = Array.isArray(targetUserIds) && targetUserIds.length > 0
+      ? new Set<number>(targetUserIds.map((x: any) => Number(x)).filter((n: number) => !Number.isNaN(n)))
+      : undefined
+    const recipients = filterRecipients(users, prefs, eventType, { onlyUserIds })
 
     const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl, ctaLabel })
     const results = await Promise.all(recipients.map(async u => {

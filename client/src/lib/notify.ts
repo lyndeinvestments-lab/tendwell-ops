@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 export type NotificationEventType =
   | 'task_assigned'
   | 'task_overdue'
+  | 'task_mention'
   | 'issue_logged'
   | 'verification_due'
   | 'onboarding_submitted'
@@ -13,6 +14,7 @@ export type NotificationEventType =
 export const EVENT_LABELS: Record<NotificationEventType, string> = {
   task_assigned: 'Task assigned to me',
   task_overdue: 'Task overdue',
+  task_mention: 'Mentioned in a task comment',
   issue_logged: 'New issue logged',
   verification_due: 'Verification due',
   onboarding_submitted: 'Onboarding form submitted',
@@ -23,6 +25,7 @@ export const EVENT_LABELS: Record<NotificationEventType, string> = {
 export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   task_assigned: 'tasks',
   task_overdue: 'tasks',
+  task_mention: 'tasks',
   issue_logged: 'issues',
   verification_due: 'inspections',
   onboarding_submitted: 'master-list',
@@ -32,6 +35,7 @@ export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
 export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
   task_assigned: 'notify_task_assigned',
   task_overdue: 'notify_task_overdue',
+  task_mention: 'notify_task_mention',
   issue_logged: 'notify_issue_logged',
   verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',
@@ -45,6 +49,41 @@ interface NotifyOpts {
   ctaUrl?: string
   ctaLabel?: string
   meta?: Record<string, any>
+  targetUserIds?: number[]
+}
+
+// Parse @mentions from text given list of user labels.
+// Matches @<label> case-insensitive, longest match first to handle multi-word labels.
+export function parseMentions(text: string, users: Array<{ id: number; label: string }>): number[] {
+  if (!text) return []
+  const sorted = [...users].sort((a, b) => b.label.length - a.label.length)
+  const matched = new Set<number>()
+  for (const u of sorted) {
+    if (!u.label) continue
+    const escaped = u.label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`@${escaped}(?![a-zA-Z0-9])`, 'i')
+    if (re.test(text)) matched.add(u.id)
+  }
+  return Array.from(matched)
+}
+
+// Render comment text with @mentions highlighted
+export function renderMentions(text: string, userLabels: string[]): Array<{ type: 'text' | 'mention'; value: string }> {
+  if (!text) return []
+  const sorted = [...userLabels].sort((a, b) => b.length - a.length)
+  const escaped = sorted.map(l => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (escaped.length === 0) return [{ type: 'text', value: text }]
+  const re = new RegExp(`@(${escaped.join('|')})(?![a-zA-Z0-9])`, 'gi')
+  const parts: Array<{ type: 'text' | 'mention'; value: string }> = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push({ type: 'text', value: text.slice(last, m.index) })
+    parts.push({ type: 'mention', value: m[0] })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parts.push({ type: 'text', value: text.slice(last) })
+  return parts
 }
 
 async function getToken(): Promise<string | null> {

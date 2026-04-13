@@ -1334,6 +1334,7 @@ function NotificationsSection() {
 
   const EVENT_DEFS: Array<{ field: string; label: string; view: string }> = [
     { field: 'notify_task_assigned',        label: 'Task assigned',          view: 'tasks' },
+    { field: 'notify_task_mention',         label: 'Mentioned in comment',   view: 'tasks' },
     { field: 'notify_task_overdue',         label: 'Task overdue (digest)',  view: 'tasks' },
     { field: 'notify_issue_logged',         label: 'New issue logged',       view: 'issues' },
     { field: 'notify_verification_due',     label: 'Verification due',       view: 'inspections' },
