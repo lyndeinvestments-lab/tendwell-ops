@@ -1440,6 +1440,76 @@ function NotificationsSection() {
           )
         })}
       </div>
+
+      {isAdmin && <NotificationLogViewer />}
+    </div>
+  )
+}
+
+function NotificationLogViewer() {
+  const { data: logs, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ['/supabase/notif-log'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('notification_log')
+        .select('*')
+        .order('sent_at', { ascending: false })
+        .limit(50)
+      return data || []
+    },
+  })
+
+  const total = logs?.length || 0
+  const sentCt = logs?.filter((l: any) => l.status === 'sent').length || 0
+  const failedCt = logs?.filter((l: any) => l.status === 'failed').length || 0
+
+  return (
+    <div className="border-t border-border pt-4 mt-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Recent send log</h3>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{sentCt} sent · {failedCt} failed (last {total})</span>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </div>
+      {isLoading ? (
+        <Skeleton className="h-32 w-full" />
+      ) : total === 0 ? (
+        <p className="text-xs text-muted-foreground py-3 text-center">No notifications sent yet.</p>
+      ) : (
+        <div className="max-h-64 overflow-auto rounded border border-border">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-muted">
+              <tr>
+                <th className="text-left px-2 py-1.5 font-medium">When</th>
+                <th className="text-left px-2 py-1.5 font-medium">Event</th>
+                <th className="text-left px-2 py-1.5 font-medium">Recipient</th>
+                <th className="text-left px-2 py-1.5 font-medium">Status</th>
+                <th className="text-left px-2 py-1.5 font-medium">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(logs || []).map((l: any) => (
+                <tr key={l.id} className="border-t border-border/50">
+                  <td className="px-2 py-1 text-muted-foreground whitespace-nowrap">{new Date(l.sent_at).toLocaleString()}</td>
+                  <td className="px-2 py-1">{l.event_type}</td>
+                  <td className="px-2 py-1 truncate max-w-[180px]">{l.recipient_email}</td>
+                  <td className="px-2 py-1">
+                    <span className={l.status === 'sent' ? 'text-green-600 dark:text-green-400' : l.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+                      {l.status}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1 text-muted-foreground truncate max-w-[280px]" title={l.error || l.subject || ''}>
+                    {l.error ? l.error : (l.subject || '')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }
