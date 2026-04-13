@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   getSupabaseConfig, verifyAuthHeader, getAllUsersWithViews, getAllPreferences,
   filterRecipients, sendEmail, logNotification, renderEmailLayout, escapeHtml,
-} from './_lib'
+} from './_lib.js'
 
 // POST /api/notify/send
 // Body: { eventType, subject, bodyHtml, ctaUrl?, ctaLabel?, meta? }
