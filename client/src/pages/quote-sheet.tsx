@@ -203,7 +203,7 @@ export default function QuoteSheetPage() {
       const { error } = await supabase.from('properties').insert({
         name: newProp.name,
         client: newProp.client_name || null,
-        contact_id: newProp.contact_id ? parseInt(newProp.contact_id) : null,
+        contact_id: newProp.contact_id || null,
         ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
         cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
         bedrooms: newProp.bedrooms ? parseInt(newProp.bedrooms) : null,
