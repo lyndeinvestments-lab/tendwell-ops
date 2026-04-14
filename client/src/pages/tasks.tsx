@@ -20,7 +20,7 @@ import Papa from 'papaparse'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable, useDraggable } from '@dnd-kit/core'
 
 type ViewMode = 'list' | 'board' | 'calendar'
-type StatusFilter = 'all' | 'To Do' | 'In Progress' | 'Done' | 'Blocked'
+type StatusFilter = 'all' | 'open' | 'To Do' | 'In Progress' | 'Done' | 'Blocked'
 type SortKey = 'title' | 'status' | 'priority' | 'due_date' | 'assignee_name' | 'created_at'
 
 const STATUSES = ['To Do', 'In Progress', 'Done', 'Blocked']
@@ -263,7 +263,7 @@ export default function TasksPage() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
   const [sortKey, setSortKey] = useState<SortKey>('due_date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [addOpen, setAddOpen] = useState(false)
@@ -339,7 +339,7 @@ export default function TasksPage() {
     if (!tasks) return []
     let result = tasks.filter((t: any) => {
       const matchSearch = !search.trim() || [t.title, t.description, t.assignee_name, t.property_name].some(v => v?.toLowerCase().includes(search.toLowerCase()))
-      const matchStatus = statusFilter === 'all' || t.status === statusFilter
+      const matchStatus = statusFilter === 'all' ? true : statusFilter === 'open' ? t.status !== 'Done' : t.status === statusFilter
       return matchSearch && matchStatus
     })
     result = [...result].sort((a: any, b: any) => {
@@ -544,10 +544,10 @@ export default function TasksPage() {
 
       {/* Filters */}
       <div className="flex items-center gap-2 flex-wrap">
-        {(['all', ...STATUSES] as StatusFilter[]).map(s => (
+        {(['open', 'all', ...STATUSES] as StatusFilter[]).map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${statusFilter === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}>
-            {s === 'all' ? `All (${stats.total})` : s}
+            {s === 'open' ? `Open (${stats.total - stats.done})` : s === 'all' ? `All (${stats.total})` : s}
           </button>
         ))}
         <div className="relative ml-auto">
