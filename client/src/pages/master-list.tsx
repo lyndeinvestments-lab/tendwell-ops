@@ -79,7 +79,7 @@ export default function MasterListPage() {
       const urlStage = new URLSearchParams(hash.slice(qIdx)).get('stage')
       if (urlStage) return urlStage
     }
-    try { return localStorage.getItem('ml-stage-filter') || 'all' } catch { return 'all' }
+    try { return localStorage.getItem('ml-stage-filter') || 'operational' } catch { return 'operational' }
   })
 
   // Reactively apply ?stage= param on navigation (e.g. from dashboard stat cards)
@@ -288,7 +288,10 @@ export default function MasterListPage() {
       const matchSearch = [p.name, p.client, p.address].some(v =>
         v?.toLowerCase().includes(search.toLowerCase())
       )
-      const matchStage = stageFilter === 'all' || p.pipeline_stages?.name === stageFilter
+      const stageName = p.pipeline_stages?.name
+      const matchStage = stageFilter === 'all' ? true
+        : stageFilter === 'operational' ? ['Onboarding', 'Active', 'Offboarding'].includes(stageName)
+        : stageName === stageFilter
       const matchRecent = !stageChangeLast30 || !recentTransitionIds || recentTransitionIds.has(p.id)
       return matchSearch && matchStage && matchRecent
     })
@@ -552,6 +555,7 @@ export default function MasterListPage() {
               <SelectValue placeholder="All stages" />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="operational">Operational</SelectItem>
               <SelectItem value="all">All Stages</SelectItem>
               {stages?.map((s: any) => <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>)}
             </SelectContent>
