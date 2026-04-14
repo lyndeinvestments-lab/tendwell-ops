@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useAuth } from '@/lib/auth'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -67,6 +68,7 @@ const EMPTY_PROP: NewProp = {
 export default function QuoteSheetPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
   usePageTitle('Quote Sheet')
   const { openPropertyModal } = usePropertyModal()
   const { getNumber } = useAppSettings()
@@ -232,19 +234,24 @@ export default function QuoteSheetPage() {
   const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async (prop: any) => {
       if (!onboardingStage) throw new Error('No Onboarding stage')
-      const { error: updateErr } = await supabase.from('properties').update({ stage_id: onboardingStage.id }).eq('id', prop.id)
-      if (updateErr) throw updateErr
-      await supabase.from('stage_transitions').insert({
-        property_id: prop.id,
-        from_stage_id: quoteStage?.id,
-        to_stage_id: onboardingStage.id,
-        changed_by: 'ops-user',
+      if (!quoteStage) throw new Error('No Quote stage')
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(prop.id),
+        propertyName: prop.name || '',
+        fromStageId: Number(quoteStage.id),
+        fromStageName: quoteStage.name,
+        toStageId: Number(onboardingStage.id),
+        toStageName: onboardingStage.name,
+        changedBy: effectiveUser?.label || 'unknown',
       })
+      if (!result.ok) throw new Error(result.error)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       toast({ title: 'Moved to Onboarding' })
       setConverting(null)
     },

@@ -66,6 +66,7 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 export default function MasterListPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
   const [location] = useLocation()
   usePageTitle('Master List')
   const [search, setSearch] = useState('')
@@ -172,13 +173,28 @@ export default function MasterListPage() {
 
   const { mutate: bulkChangeStage, isPending: bulkPending } = useGuardedMutation('master-list', {
     mutationFn: async ({ ids, stageId }: { ids: string[]; stageId: string }) => {
-      const { error } = await supabase.from('properties').update({ stage_id: stageId }).in('id', ids)
-      if (error) throw error
+      const toStage = stages?.find((s: any) => s.id === stageId)
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      for (const id of ids) {
+        const prop = properties?.find((p: any) => String(p.id) === String(id))
+        const fromStage = stages?.find((s: any) => s.id === prop?.stage_id)
+        const result = await executeStageTransition({
+          propertyId: Number(id),
+          propertyName: prop?.name || '',
+          fromStageId: Number(fromStage?.id),
+          fromStageName: fromStage?.name || '',
+          toStageId: Number(stageId),
+          toStageName: toStage?.name || '',
+          changedBy: effectiveUser?.label || 'unknown',
+        })
+        if (!result.ok) throw new Error(result.error)
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       setSelected(new Set())
       toast({ title: `Updated ${selected.size} properties` })
     },
