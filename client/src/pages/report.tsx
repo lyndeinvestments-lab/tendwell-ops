@@ -90,7 +90,7 @@ export default function ReportPage() {
   const activeProps = properties?.filter((p: any) => p.stage_name === 'Active') || []
   const totalRevenue = activeProps.reduce((s: number, p: any) => s + (p.monthly_revenue_estimate || 0), 0)
   const totalProfit = activeProps.reduce((s: number, p: any) => s + (p.monthly_profit_estimate || 0), 0)
-  const avgMargin = activeProps.length ? activeProps.reduce((s: number, p: any) => s + (p.profit_percentage || 0), 0) / activeProps.length : 0
+  const avgMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
   const negativeCount = activeProps.filter((p: any) => (p.estimated_profit || 0) < 0).length
   const totalCleans = cleans?.length || 0
   const totalIssues = issues?.length || 0
