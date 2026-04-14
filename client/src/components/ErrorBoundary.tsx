@@ -26,6 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
     // Auto-reload when a lazy-loaded chunk fails (stale deployment)
     if (
       error.message?.includes('Failed to fetch dynamically imported module') ||
+      error.message?.includes('Importing a module script failed') ||
       error.message?.includes('Loading chunk') ||
       error.message?.includes('Loading CSS chunk')
     ) {
@@ -50,6 +51,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       const isChunkError = this.state.error?.message?.includes('dynamically imported module') ||
+        this.state.error?.message?.includes('Importing a module script failed') ||
         this.state.error?.message?.includes('Loading chunk')
       return (
         <div className="flex flex-col items-center justify-center h-full p-8 text-center">
