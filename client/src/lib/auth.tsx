@@ -5,31 +5,36 @@ const SESSION_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000 // 7 days of inactivity
 
 // ─── VIEW_DEFINITIONS: canonical registry of all views ──────────────────────
 export const VIEW_DEFINITIONS = [
+  // Overview
   { id: 'dashboard',           label: 'Dashboard',           group: 'Overview' },
+  // Sales
   { id: 'pipeline',            label: 'Pipeline',            group: 'Sales' },
   { id: 'contacts',            label: 'Clients',             group: 'Sales' },
   { id: 'quote-sheet',         label: 'Quote Sheet',         group: 'Sales' },
-  { id: 'cost-tracking',       label: 'Cost Tracking',       group: 'Operations' },
+  // Operations
   { id: 'property-list',       label: 'Property List',       group: 'Operations' },
   { id: 'linen-tracker',       label: 'Linen Requirements',  group: 'Operations' },
   { id: 'linen-inventory',     label: 'Linen Inventory',     group: 'Operations' },
   { id: 'access-codes',        label: 'Access Codes',        group: 'Operations' },
   { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
   { id: 'inspections',         label: 'Verification',        group: 'Operations' },
-  { id: 'cleaners',            label: 'Cleaners',            group: 'Operations' },
-  { id: 'issues',              label: 'Issues',              group: 'Operations' },
+  // Management
+  { id: 'tasks',               label: 'Tasks',               group: 'Management' },
+  { id: 'issues',              label: 'Issues',              group: 'Management' },
+  { id: 'cleaners',            label: 'Cleaners',            group: 'Management' },
+  { id: 'cleaner-metrics',     label: 'Cleaner Metrics',     group: 'Management' },
+  { id: 'alerts',              label: 'Alerts',              group: 'Management' },
+  // Admin
+  { id: 'cost-tracking',       label: 'Cost Tracking',       group: 'Admin' },
   { id: 'master-list',         label: 'Master List',         group: 'Admin' },
   { id: 'revenue-report',      label: 'Revenue Report',      group: 'Admin' },
-  { id: 'alerts',              label: 'Alerts',              group: 'Admin' },
   { id: 'activity',            label: 'Activity',            group: 'Admin' },
   { id: 'pro-forma',           label: 'Pro Forma',           group: 'Admin' },
   { id: 'financial-dashboard', label: 'Financial Dashboard', group: 'Admin' },
   { id: 'previous-properties', label: 'Previous Properties', group: 'Admin' },
-  { id: 'north-star',          label: 'North Star',           group: 'Admin' },
-  { id: 'settings',            label: 'Settings',            group: 'Admin' },
-  { id: 'tasks',               label: 'Tasks',               group: 'Management' },
+  { id: 'north-star',          label: 'North Star',          group: 'Admin' },
   { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
-  { id: 'cleaner-metrics',     label: 'Cleaner Metrics',     group: 'Operations' },
+  { id: 'settings',            label: 'Settings',            group: 'Admin' },
 ] as const
 
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
