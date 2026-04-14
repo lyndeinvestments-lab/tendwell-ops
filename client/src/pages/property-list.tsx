@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -16,8 +16,8 @@ import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 
 import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 
-function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }: {
-  propertyId: string; currentStageName: string; stageColor: string; stages: any[]
+function StageBadgePopover({ propertyId, propertyName, currentStageName, stageColor, stages }: {
+  propertyId: string; propertyName: string; currentStageName: string; stageColor: string; stages: any[]
 }) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -28,23 +28,25 @@ function StageBadgePopover({ propertyId, currentStageName, stageColor, stages }:
     mutationFn: async (stageId: string) => {
       const fromStage = stages.find((s: any) => s.name === currentStageName)
       const toStage = stages.find((s: any) => s.id === stageId)
-      const { error } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propertyId)
-      if (error) throw error
-      await supabase.from('stage_transitions').insert({
-        property_id: propertyId,
-        from_stage_id: fromStage?.id,
-        to_stage_id: stageId,
-        transitioned_by: effectiveUser?.label || 'unknown',
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(propertyId),
+        propertyName: propertyName,
+        fromStageId: Number(fromStage?.id),
+        fromStageName: fromStage?.name || '',
+        toStageId: Number(stageId),
+        toStageName: toStage?.name || '',
+        changedBy: effectiveUser?.label || 'unknown',
       })
+      if (!result.ok) throw new Error(result.error)
     },
-    onSuccess: (_, stageId) => {
-      const toStage = stages?.find((s: any) => s.id === stageId)
-      logPropertyEdit(propertyId, 'stage', currentStageName, toStage?.name ?? null)
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       toast({ title: 'Stage updated' })
       setOpen(false)
     },
@@ -298,6 +300,7 @@ export default function PropertyListPage() {
                       {p.stage_name && stages?.length ? (
                         <StageBadgePopover
                           propertyId={p.id}
+                          propertyName={p.name || ''}
                           currentStageName={p.stage_name}
                           stageColor={color}
                           stages={stages}
