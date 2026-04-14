@@ -26,11 +26,18 @@ import { KeyboardShortcuts } from '@/components/KeyboardShortcuts';
 // Lazy load with automatic retry on chunk fetch failure (stale deployments)
 function lazyRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
   return lazy(() =>
-    factory().catch(() =>
-      new Promise<{ default: React.ComponentType<any> }>(resolve =>
-        setTimeout(() => resolve(factory()), 1500)
-      )
-    )
+    factory().catch(() => {
+      // Stale chunk after deploy — reload page once to get fresh assets
+      const key = 'tendwell-chunk-reload'
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, '1')
+        window.location.reload()
+        return new Promise(() => {}) // never resolves, page reloads
+      }
+      sessionStorage.removeItem(key)
+      // Second failure = genuinely broken, retry once more then give up
+      return factory()
+    })
   )
 }
 
