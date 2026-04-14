@@ -354,9 +354,9 @@ export default function CleanersPage() {
               <button
                 key={v}
                 onClick={() => setViewMode(v)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
               >
-                {v === 'list' ? 'Roster' : v === 'calendar' ? 'Calendar' : 'Reconciliation'}
+                {v === 'list' ? 'Roster' : v === 'calendar' ? 'Calendar' : <><span className="sm:hidden">Recon</span><span className="hidden sm:inline">Reconciliation</span></>}
               </button>
             ))}
           </div>

@@ -26,8 +26,11 @@ const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
   { key: 'contacts', label: 'Clients' },
 ]
 
+const SYSTEM_ENTITY_TYPES = new Set(['setting', 'role_permissions', 'user_role', 'view_as', 'app_settings'])
+
 // Map activity_log entity_type → filter category
 function entityTypeToFilter(entityType: string): FilterType {
+  if (SYSTEM_ENTITY_TYPES.has(entityType)) return 'admin' as FilterType
   switch (entityType) {
     case 'property': return 'properties'
     case 'pipeline': return 'pipeline'
@@ -217,6 +220,10 @@ export default function ActivityFeedPage() {
 
   const filtered = useMemo(() => {
     return allEntries.filter(entry => {
+      // Hide system/admin events unless explicitly filtering for them
+      const isSystem = (entry.entity_type && SYSTEM_ENTITY_TYPES.has(entry.entity_type)) ||
+        (entry.field_name && ['role_permissions', 'user_role', 'view_as'].includes(entry.field_name))
+      if (isSystem && filter !== 'all') return false
       // Financial field gate
       if (!canViewFinancials && entry.field_name && FINANCIAL_FIELDS.has(entry.field_name)) return false
       // Category filter

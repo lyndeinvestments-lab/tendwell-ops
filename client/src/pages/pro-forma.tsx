@@ -764,7 +764,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
               >
-                <span className="flex items-center gap-1">Break-Even CE <SortIcon col="total_estimated_cost" /></span>
+                <span className="flex items-center gap-1">B/E CE <SortIcon col="total_estimated_cost" /></span>
               </th>
               {/* Scenario toggle column */}
               <th className="py-2 px-2 w-8" title="Enable scenario mode for this row">

@@ -44,13 +44,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function CategoryBadge({ category }: { category: string }) {
-  const short = category === 'Cleaning Not As Expected' ? 'Cleaning Quality' :
-    category === 'Service Not As Expected' ? 'Service' :
-    category === 'Foul Smell / Odor' ? 'Odor' :
-    category === 'Linen/Towel issue' ? 'Linen/Towel' :
-    category === 'Damage/Loss' ? 'Damage' :
-    category
-  return <span className="text-xs text-muted-foreground">{short}</span>
+  return <span className="text-xs text-muted-foreground">{category}</span>
 }
 
 export default function IssuesPage() {

@@ -1115,7 +1115,6 @@ export function PropertyDetailModal() {
             <TabsContent value="overview" className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Client', field: 'client', value: property.client || '—', editable: false },
                   { label: 'Stage', field: '_stage', value: stageName, editable: false },
                 ].map(row => (
                   <div key={row.field}>
