@@ -365,21 +365,22 @@ export default function TasksPage() {
 
   // ─── Tasks query (filtered by list or global) ────────────────────────────
   const { data: tasks, isLoading } = useQuery({
-    queryKey: ['/supabase/tasks', resolvedListId],
+    queryKey: ['/supabase/tasks', resolvedListId, visibleLists.map(l => l.id).join(',')],
     queryFn: async () => {
       let query = supabase.from('tasks').select('*').order('created_at', { ascending: false })
       if (resolvedListId !== 'global') {
         query = query.eq('list_id', resolvedListId)
       } else {
-        // Global: tasks in any list the user is a member of
+        // Global: only tasks in lists the user is a member of
         const listIds = visibleLists.map(l => l.id)
-        if (listIds.length > 0) query = query.in('list_id', listIds)
+        if (listIds.length === 0) return [] // no lists = no tasks visible
+        query = query.in('list_id', listIds)
       }
       const { data, error } = await query
       if (error) throw error
       return data || []
     },
-    enabled: visibleLists.length > 0 || resolvedListId === 'global',
+    enabled: visibleLists.length > 0,
   })
 
   // ─── Task assignees + watchers for detail view ────────────────────────────
