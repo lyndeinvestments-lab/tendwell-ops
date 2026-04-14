@@ -239,8 +239,17 @@ export default function PropertyListPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted border-b border-border z-10">
             <tr>
+              <th
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap sticky left-0 z-20 bg-muted"
+                tabIndex={0}
+                role="columnheader"
+                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                onClick={() => toggleSort('name')}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
+              >
+                Property<SortIcon col="name" />
+              </th>
               {([
-                { col: 'name', label: 'Property' },
                 { col: 'address', label: 'Address' },
                 { col: 'bedrooms', label: 'Beds' },
                 { col: 'full_baths', label: 'Baths' },
@@ -287,7 +296,7 @@ export default function PropertyListPage() {
                     data-testid={`row-property-${p.id}`}
                     className="border-b border-border/50 hover:bg-muted/30 transition-colors"
                   >
-                    <td className="py-2 px-3 font-medium text-xs">
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <button onClick={() => openPropertyModal(p.id, 'property-list')} className="text-primary hover:underline text-left">{p.name}</button>
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>

@@ -364,10 +364,10 @@ export default function IssuesPage() {
       {/* Table */}
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={thCls} onClick={() => toggleSort('report_date')}>Date <SortIcon col="report_date" /></th>
               <th className={`${thCls} sticky left-0 z-20 bg-muted`} onClick={() => toggleSort('property_name')}>Property <SortIcon col="property_name" /></th>
+              <th className={thCls} onClick={() => toggleSort('report_date')}>Date <SortIcon col="report_date" /></th>
               <th className={thCls} onClick={() => toggleSort('category')}>Category <SortIcon col="category" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Touch</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap min-w-[250px]">Details</th>
@@ -387,8 +387,8 @@ export default function IssuesPage() {
                 className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${issue.status === 'In Progress' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
                 onClick={() => setDetailIssue(issue)}
               >
-                <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
                 <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{issue.property_name}</td>
+                <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
                 <td className="py-2 px-3"><CategoryBadge category={issue.category} /></td>
                 <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
                 <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
