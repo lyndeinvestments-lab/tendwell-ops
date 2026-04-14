@@ -6,6 +6,8 @@ export type NotificationEventType =
   | 'task_assigned'
   | 'task_overdue'
   | 'task_mention'
+  | 'watcher_update'
+  | 'list_added'
   | 'issue_logged'
   | 'verification_due'
   | 'onboarding_submitted'
@@ -15,17 +17,20 @@ export const EVENT_LABELS: Record<NotificationEventType, string> = {
   task_assigned: 'Task assigned to me',
   task_overdue: 'Task overdue',
   task_mention: 'Mentioned in a task comment',
+  watcher_update: 'Watcher update',
+  list_added: 'Added to a task list',
   issue_logged: 'New issue logged',
   verification_due: 'Verification due',
   onboarding_submitted: 'Onboarding form submitted',
   follow_up_due: 'Follow-up due',
 }
 
-// Map each event to the view a user must have access to (mirrors server-side _lib.ts)
 export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   task_assigned: 'tasks',
   task_overdue: 'tasks',
   task_mention: 'tasks',
+  watcher_update: 'tasks',
+  list_added: 'tasks',
   issue_logged: 'issues',
   verification_due: 'inspections',
   onboarding_submitted: 'master-list',
@@ -36,6 +41,8 @@ export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
   task_assigned: 'notify_task_assigned',
   task_overdue: 'notify_task_overdue',
   task_mention: 'notify_task_mention',
+  watcher_update: 'notify_watcher_update',
+  list_added: 'notify_list_added',
   issue_logged: 'notify_issue_logged',
   verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',

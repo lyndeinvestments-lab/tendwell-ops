@@ -1336,6 +1336,8 @@ function NotificationsSection() {
     { field: 'notify_task_assigned',        label: 'Task assigned',          view: 'tasks' },
     { field: 'notify_task_mention',         label: 'Mentioned in comment',   view: 'tasks' },
     { field: 'notify_task_overdue',         label: 'Task overdue (digest)',  view: 'tasks' },
+    { field: 'notify_watcher_update',       label: 'Watcher updates',        view: 'tasks' },
+    { field: 'notify_list_added',           label: 'Added to a task list',   view: 'tasks' },
     { field: 'notify_issue_logged',         label: 'New issue logged',       view: 'issues' },
     { field: 'notify_verification_due',     label: 'Verification due',       view: 'inspections' },
     { field: 'notify_onboarding_submitted', label: 'Onboarding submitted',   view: 'master-list' },

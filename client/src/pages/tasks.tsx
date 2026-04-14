@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
@@ -11,13 +11,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Search, X, Plus, CheckSquare, Clock, AlertCircle, ChevronDown, ChevronUp,
   MessageSquare, Send, Download, ArrowUpDown, ArrowUp, ArrowDown,
+  List, Eye, EyeOff, UserPlus, Users2, Palette, Settings2, Lock, Globe, Trash2,
 } from 'lucide-react'
 import { format, differenceInDays, isPast, isToday } from 'date-fns'
 import Papa from 'papaparse'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable, useDraggable } from '@dnd-kit/core'
+
+const LIST_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b']
 
 type ViewMode = 'list' | 'board' | 'calendar'
 type StatusFilter = 'all' | 'open' | 'To Do' | 'In Progress' | 'Done' | 'Blocked'
@@ -269,6 +274,10 @@ export default function TasksPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [detailTask, setDetailTask] = useState<any>(null)
   const [commentText, setCommentText] = useState('')
+  const [activeListId, setActiveListId] = useState<string>('global')
+  const [listDialogOpen, setListDialogOpen] = useState(false)
+  const [manageList, setManageList] = useState<any>(null)
+  const [newListName, setNewListName] = useState('')
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -278,21 +287,135 @@ export default function TasksPage() {
     due_date: '', assignee_name: '', property_name: '', category: 'General',
   })
 
-  // ─── Queries ──────────────────────────────────────────────────────────────
-  const { data: tasks, isLoading } = useQuery({
-    queryKey: ['/supabase/tasks'],
+  // ─── Users ────────────────────────────────────────────────────────────────
+  const { data: users } = useQuery({
+    queryKey: ['/supabase/task-users'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('tasks').select('*').order('created_at', { ascending: false })
+      const { data, error } = await supabase.from('app_users').select('id, label, role, google_email')
       if (error) throw error
       return data || []
     },
   })
 
-  const { data: users } = useQuery({
-    queryKey: ['/supabase/task-users'],
+  // ─── Lists ────────────────────────────────────────────────────────────────
+  const { data: myMemberships } = useQuery({
+    queryKey: ['/supabase/task-list-members', effectiveUser?.id],
+    enabled: !!effectiveUser,
     queryFn: async () => {
-      const { data, error } = await supabase.from('app_users').select('id, label, role')
+      const { data, error } = await supabase
+        .from('task_list_members')
+        .select('*, task_lists(*)')
+        .eq('user_id', effectiveUser!.id)
       if (error) throw error
+      return data || []
+    },
+  })
+
+  // Also fetch public lists the user can see (admins see type='public')
+  const { data: publicLists } = useQuery({
+    queryKey: ['/supabase/task-lists-public'],
+    enabled: effectiveUser?.role === 'admin',
+    queryFn: async () => {
+      const { data, error } = await supabase.from('task_lists').select('*').eq('type', 'public')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Merged list of lists the user can see
+  const visibleLists = useMemo(() => {
+    const byId = new Map<string, any>()
+    for (const m of (myMemberships || [])) {
+      if (m.task_lists) {
+        byId.set(m.task_lists.id, { ...m.task_lists, membership: m })
+      }
+    }
+    // Add public lists for admins if not already member
+    if (effectiveUser?.role === 'admin') {
+      for (const l of (publicLists || [])) {
+        if (!byId.has(l.id)) byId.set(l.id, { ...l, membership: null })
+      }
+    }
+    return Array.from(byId.values()).sort((a, b) => {
+      // Private first, then public, then shared
+      const order = { private: 0, public: 1, shared: 2 }
+      return (order[a.type as keyof typeof order] ?? 3) - (order[b.type as keyof typeof order] ?? 3)
+    })
+  }, [myMemberships, publicLists, effectiveUser])
+
+  // Auto-setup: ensure user has a private list
+  useEffect(() => {
+    if (!effectiveUser || !myMemberships) return
+    const hasPrivate = myMemberships.some(m => m.task_lists?.type === 'private')
+    if (!hasPrivate) {
+      (async () => {
+        const { data: list } = await supabase.from('task_lists').insert({ name: 'My Tasks', type: 'private', created_by: effectiveUser.id }).select().single()
+        if (list) {
+          await supabase.from('task_list_members').insert({ list_id: list.id, user_id: effectiveUser.id, role: 'owner', color: '#6366f1' })
+          qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+        }
+      })()
+    }
+  }, [effectiveUser, myMemberships])
+
+  // Active list ID for filtering (default to first visible list)
+  const resolvedListId = activeListId === 'global' ? 'global' : activeListId
+  const activeList = visibleLists.find(l => l.id === resolvedListId) || null
+
+  // ─── Tasks query (filtered by list or global) ────────────────────────────
+  const { data: tasks, isLoading } = useQuery({
+    queryKey: ['/supabase/tasks', resolvedListId],
+    queryFn: async () => {
+      let query = supabase.from('tasks').select('*').order('created_at', { ascending: false })
+      if (resolvedListId !== 'global') {
+        query = query.eq('list_id', resolvedListId)
+      } else {
+        // Global: tasks in any list the user is a member of
+        const listIds = visibleLists.map(l => l.id)
+        if (listIds.length > 0) query = query.in('list_id', listIds)
+      }
+      const { data, error } = await query
+      if (error) throw error
+      return data || []
+    },
+    enabled: visibleLists.length > 0 || resolvedListId === 'global',
+  })
+
+  // ─── Task assignees + watchers for detail view ────────────────────────────
+  const { data: taskAssignees } = useQuery({
+    queryKey: ['/supabase/task-assignees', detailTask?.id],
+    enabled: !!detailTask,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('task_assignees')
+        .select('*, app_users(label)')
+        .eq('task_id', detailTask.id)
+        .order('sort_order')
+      return data || []
+    },
+  })
+
+  const { data: taskWatchers } = useQuery({
+    queryKey: ['/supabase/task-watchers', detailTask?.id],
+    enabled: !!detailTask,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('task_watchers')
+        .select('*, app_users(label)')
+        .eq('task_id', detailTask.id)
+      return data || []
+    },
+  })
+
+  // ─── List members for manage dialog ───────────────────────────────────────
+  const { data: manageMembers } = useQuery({
+    queryKey: ['/supabase/list-members', manageList?.id],
+    enabled: !!manageList,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('task_list_members')
+        .select('*, app_users(label, role)')
+        .eq('list_id', manageList.id)
       return data || []
     },
   })
@@ -375,12 +498,14 @@ export default function TasksPage() {
   // ─── Mutations ────────────────────────────────────────────────────────────
   const { mutate: createTask, isPending: creating } = useGuardedMutation('tasks', {
     mutationFn: async () => {
+      const targetListId = resolvedListId !== 'global' ? resolvedListId : visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || null
       const { error } = await supabase.from('tasks').insert({
         ...newForm,
         due_date: newForm.due_date || null,
         assignee_name: newForm.assignee_name || null,
         property_name: newForm.property_name || null,
         created_by: effectiveUser?.label || null,
+        list_id: targetListId,
       })
       if (error) throw error
       try {
@@ -467,6 +592,102 @@ export default function TasksPage() {
     onError: () => toast({ title: 'Delete failed', variant: 'destructive' }),
   })
 
+  // ─── List management ───────────────────────────────────────────────────────
+  async function createList() {
+    if (!newListName.trim()) return
+    const { data: list } = await supabase.from('task_lists').insert({
+      name: newListName.trim(), type: 'shared', created_by: effectiveUser?.id || null,
+    }).select().single()
+    if (list) {
+      await supabase.from('task_list_members').insert({ list_id: list.id, user_id: effectiveUser!.id, role: 'owner', color: LIST_COLORS[visibleLists.length % LIST_COLORS.length] })
+      qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+      toast({ title: `List "${newListName.trim()}" created` })
+      setNewListName('')
+      setListDialogOpen(false)
+      setActiveListId(list.id)
+    }
+  }
+
+  async function addListMember(listId: string, userId: number) {
+    await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id || null }, { onConflict: 'list_id,user_id' })
+    qc.invalidateQueries({ queryKey: ['/supabase/list-members'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+    // Notify added user
+    try {
+      const { notify } = await import('@/lib/notify')
+      const addedUser = users?.find((u: any) => u.id === userId)
+      if (addedUser) {
+        const list = visibleLists.find(l => l.id === listId)
+        notify({
+          eventType: 'task_assigned',
+          subject: `You've been added to "${list?.name || 'a task list'}"`,
+          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label}</strong> added you to the task list <strong>${list?.name || 'Untitled'}</strong></p>`,
+          ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+          ctaLabel: 'Open Tasks',
+          targetUserIds: [userId],
+        })
+      }
+    } catch { /* ignore */ }
+    toast({ title: 'Member added' })
+  }
+
+  async function removeListMember(listId: string, userId: number) {
+    await supabase.from('task_list_members').delete().eq('list_id', listId).eq('user_id', userId)
+    qc.invalidateQueries({ queryKey: ['/supabase/list-members'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+    toast({ title: 'Member removed' })
+  }
+
+  async function updateListColor(listId: string, color: string) {
+    await supabase.from('task_list_members').update({ color }).eq('list_id', listId).eq('user_id', effectiveUser!.id)
+    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+  }
+
+  async function deleteList(listId: string) {
+    if (!confirm('Delete this list? Tasks in it will become unassigned.')) return
+    await supabase.from('tasks').update({ list_id: null }).eq('list_id', listId)
+    await supabase.from('task_lists').delete().eq('id', listId)
+    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    setActiveListId('global')
+    setManageList(null)
+    toast({ title: 'List deleted' })
+  }
+
+  // ─── Assignees / watchers ─────────────────────────────────────────────────
+  async function toggleAssignee(taskId: string, userId: number, isPrimary: boolean) {
+    const existing = taskAssignees?.find((a: any) => a.user_id === userId)
+    if (existing) {
+      await supabase.from('task_assignees').delete().eq('id', existing.id)
+    } else {
+      // If setting primary, demote current primary
+      if (isPrimary) {
+        await supabase.from('task_assignees').update({ role: 'secondary' }).eq('task_id', taskId).eq('role', 'primary')
+      }
+      await supabase.from('task_assignees').insert({
+        task_id: taskId, user_id: userId, role: isPrimary ? 'primary' : 'secondary',
+        sort_order: isPrimary ? 0 : (taskAssignees?.length || 0) + 1,
+      })
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/task-assignees', taskId] })
+  }
+
+  async function toggleWatcher(taskId: string, userId: number) {
+    const existing = taskWatchers?.find((w: any) => w.user_id === userId)
+    if (existing) {
+      await supabase.from('task_watchers').delete().eq('id', existing.id)
+    } else {
+      await supabase.from('task_watchers').insert({ task_id: taskId, user_id: userId })
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/task-watchers', taskId] })
+  }
+
+  async function moveTaskToList(taskId: string, listId: string) {
+    await supabase.from('tasks').update({ list_id: listId, updated_at: new Date().toISOString() }).eq('id', taskId)
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+    toast({ title: 'Task moved' })
+  }
+
   function handleDragEnd(e: DragEndEvent) {
     const { active, over } = e
     if (!over) return
@@ -495,10 +716,43 @@ export default function TasksPage() {
 
   return (
     <div className="p-5 h-full flex flex-col space-y-4">
+      {/* List selector bar */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <button onClick={() => setActiveListId('global')}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap flex-shrink-0 ${
+            resolvedListId === 'global' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'
+          }`}>
+          <Globe className="w-3 h-3" /> All My Tasks
+        </button>
+        {visibleLists.map(l => {
+          const color = l.membership?.color || '#6366f1'
+          const isActive = resolvedListId === l.id
+          const icon = l.type === 'private' ? <Lock className="w-3 h-3" /> : l.type === 'public' ? <Globe className="w-3 h-3" /> : <Users2 className="w-3 h-3" />
+          return (
+            <button key={l.id} onClick={() => setActiveListId(l.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap flex-shrink-0 ${
+                isActive ? 'text-white border-transparent' : 'bg-background border-border text-muted-foreground hover:bg-muted'
+              }`}
+              style={isActive ? { backgroundColor: color, borderColor: color } : undefined}>
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: isActive ? '#fff' : color }} />
+              {icon} {l.name}
+              {l.membership && isActive && l.type !== 'private' && (
+                <button onClick={(e) => { e.stopPropagation(); setManageList(l) }} className="ml-1 opacity-70 hover:opacity-100"><Settings2 className="w-3 h-3" /></button>
+              )}
+            </button>
+          )
+        })}
+        <button onClick={() => setListDialogOpen(true)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md border border-dashed border-border hover:bg-muted flex-shrink-0">
+          <Plus className="w-3 h-3" /> New List
+        </button>
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Tasks</h1>
+          <h1 className="text-xl font-semibold text-foreground">
+            {resolvedListId === 'global' ? 'All My Tasks' : activeList?.name || 'Tasks'}
+          </h1>
           <p className="text-sm text-muted-foreground">
             {stats.overdue > 0 && <span className="text-red-600 dark:text-red-400 font-medium">{stats.overdue} overdue</span>}
             {stats.overdue > 0 && ' · '}
@@ -784,6 +1038,93 @@ export default function TasksPage() {
                   )}
                 </div>
 
+                {/* Assignees */}
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <UserPlus className="w-3.5 h-3.5" /> Assignees
+                  </h3>
+                  <div className="space-y-1 mb-2">
+                    {(taskAssignees || []).map((a: any) => (
+                      <div key={a.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className={a.role === 'primary' ? 'font-medium' : ''}>{a.app_users?.label}</span>
+                          <span className={`text-[10px] px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{a.role}</span>
+                        </div>
+                        {canEdit && <button onClick={() => toggleAssignee(detailTask.id, a.user_id, false)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
+                      </div>
+                    ))}
+                    {(taskAssignees || []).length === 0 && <p className="text-xs text-muted-foreground">No assignees</p>}
+                  </div>
+                  {canEdit && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> Add assignee</Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-56 p-1" align="start">
+                        <div className="max-h-48 overflow-y-auto">
+                          {(users || []).filter((u: any) => !(taskAssignees || []).some((a: any) => a.user_id === u.id)).map((u: any) => (
+                            <div key={u.id} className="flex items-center justify-between px-2 py-1.5 text-xs hover:bg-accent rounded">
+                              <span>{u.label}</span>
+                              <div className="flex gap-1">
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, true)} className="text-primary text-[10px] hover:underline">Primary</button>
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, false)} className="text-muted-foreground text-[10px] hover:underline">Secondary</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+
+                {/* Watchers */}
+                <div className="border-t border-border pt-4">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <Eye className="w-3.5 h-3.5" /> Watchers
+                  </h3>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    {(taskWatchers || []).map((w: any) => (
+                      <span key={w.id} className="flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
+                        {w.app_users?.label}
+                        {canEdit && <button onClick={() => toggleWatcher(detailTask.id, w.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
+                      </span>
+                    ))}
+                    {(taskWatchers || []).length === 0 && <p className="text-xs text-muted-foreground">No watchers</p>}
+                  </div>
+                  {canEdit && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> Add watcher</Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-48 p-1" align="start">
+                        <div className="max-h-48 overflow-y-auto">
+                          {(users || []).filter((u: any) => !(taskWatchers || []).some((w: any) => w.user_id === u.id)).map((u: any) => (
+                            <button key={u.id} onClick={() => toggleWatcher(detailTask.id, u.id)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded">
+                              {u.label}
+                            </button>
+                          ))}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+
+                {/* Move to list */}
+                {canEdit && visibleLists.length > 1 && (
+                  <div className="border-t border-border pt-4">
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                      <List className="w-3.5 h-3.5" /> List
+                    </h3>
+                    <select
+                      value={detailTask.list_id || ''}
+                      onChange={e => { moveTaskToList(detailTask.id, e.target.value); setDetailTask({ ...detailTask, list_id: e.target.value }) }}
+                      className="h-7 w-full text-xs border border-input rounded px-1 bg-background"
+                    >
+                      {visibleLists.map(l => <option key={l.id} value={l.id}>{l.name}{l.type === 'private' ? ' (private)' : ''}</option>)}
+                    </select>
+                  </div>
+                )}
+
                 {/* Delete */}
                 {canEdit && (
                   <div className="border-t border-border pt-4">
@@ -860,6 +1201,86 @@ export default function TasksPage() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {/* ═══ CREATE LIST DIALOG ═══ */}
+      <Dialog open={listDialogOpen} onOpenChange={setListDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Create Task List</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <Input value={newListName} onChange={e => setNewListName(e.target.value)} placeholder="List name…" className="h-9 text-sm" onKeyDown={e => e.key === 'Enter' && createList()} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setListDialogOpen(false)}>Cancel</Button>
+            <Button onClick={createList} disabled={!newListName.trim()}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ MANAGE LIST DIALOG ═══ */}
+      <Dialog open={!!manageList} onOpenChange={v => !v && setManageList(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Manage: {manageList?.name}</DialogTitle></DialogHeader>
+          {manageList && (
+            <div className="space-y-4 mt-2">
+              {/* Color picker */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Your color for this list</label>
+                <div className="flex gap-2 flex-wrap">
+                  {LIST_COLORS.map(c => {
+                    const myColor = manageList.membership?.color || '#6366f1'
+                    return (
+                      <button key={c} onClick={() => updateListColor(manageList.id, c)}
+                        className={`w-7 h-7 rounded-full border-2 transition-transform ${myColor === c ? 'border-foreground scale-110' : 'border-transparent'}`}
+                        style={{ backgroundColor: c }} />
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Members */}
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Members ({(manageMembers || []).length})</label>
+                <div className="space-y-1 mb-2 max-h-48 overflow-y-auto">
+                  {(manageMembers || []).map((m: any) => (
+                    <div key={m.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{m.app_users?.label}</span>
+                        <span className="text-muted-foreground">{m.role}</span>
+                      </div>
+                      {m.role !== 'owner' && (
+                        <button onClick={() => removeListMember(manageList.id, m.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><UserPlus className="w-3 h-3" /> Add member</Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-48 p-1" align="start">
+                    <div className="max-h-48 overflow-y-auto">
+                      {(users || []).filter((u: any) => !(manageMembers || []).some((m: any) => m.user_id === u.id)).map((u: any) => (
+                        <button key={u.id} onClick={() => addListMember(manageList.id, u.id)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded">
+                          {u.label}
+                        </button>
+                      ))}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              {/* Delete list */}
+              {manageList.type !== 'public' && (
+                <div className="border-t border-border pt-3">
+                  <Button variant="outline" size="sm" className="text-xs text-destructive hover:bg-destructive/10 gap-1.5" onClick={() => deleteList(manageList.id)}>
+                    <Trash2 className="w-3 h-3" /> Delete List
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
