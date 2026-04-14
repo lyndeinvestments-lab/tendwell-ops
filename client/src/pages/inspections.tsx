@@ -555,7 +555,7 @@ export default function InspectionsPage() {
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               <th className="w-8 px-2 py-2 sticky left-0 top-0 z-30 bg-muted">
                 <Checkbox

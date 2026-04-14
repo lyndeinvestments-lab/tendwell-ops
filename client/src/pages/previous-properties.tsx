@@ -263,7 +263,7 @@ export default function PreviousPropertiesPage() {
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               {([
                 { col: 'name', label: 'Property', extraClass: 'min-w-[160px]' },

@@ -110,7 +110,7 @@ export default function CleanerMetricsPage() {
       {/* Per-cleaner table */}
       <div className="overflow-auto rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted border-b border-border z-20">
             <tr>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
               <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleans</th>

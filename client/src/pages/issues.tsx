@@ -364,7 +364,7 @@ export default function IssuesPage() {
       {/* Table */}
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('property_name')}>Property <SortIcon col="property_name" /></th>
               <th className={thCls} onClick={() => toggleSort('report_date')}>Date <SortIcon col="report_date" /></th>
