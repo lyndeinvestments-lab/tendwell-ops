@@ -557,14 +557,14 @@ export default function InspectionsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className="w-8 px-2 py-2 sticky left-0 z-20 bg-muted/80">
+              <th className="w-8 px-2 py-2 sticky left-0 top-0 z-30 bg-muted">
                 <Checkbox
                   checked={paged.length > 0 && selected.size === paged.length}
                   onCheckedChange={toggleSelectAll}
                   aria-label="Select all"
                 />
               </th>
-              <th className={`${thCls} sticky left-8 z-20 bg-muted/80`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
+              <th className={`${thCls} sticky left-8 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
               <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
               <th className={thCls} onClick={() => toggleSort('assignee')}>Assignee <SortIcon col="assignee" /></th>
               <th className={thCls} onClick={() => toggleSort('due_date')}>Due <SortIcon col="due_date" /></th>

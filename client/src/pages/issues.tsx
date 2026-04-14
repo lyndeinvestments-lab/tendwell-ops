@@ -366,7 +366,7 @@ export default function IssuesPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
-              <th className={`${thCls} sticky left-0 z-20 bg-muted`} onClick={() => toggleSort('property_name')}>Property <SortIcon col="property_name" /></th>
+              <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('property_name')}>Property <SortIcon col="property_name" /></th>
               <th className={thCls} onClick={() => toggleSort('report_date')}>Date <SortIcon col="report_date" /></th>
               <th className={thCls} onClick={() => toggleSort('category')}>Category <SortIcon col="category" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Touch</th>
