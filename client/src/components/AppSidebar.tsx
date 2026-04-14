@@ -1,6 +1,7 @@
 import { useLocation, Link } from 'wouter'
 import { useAuth } from '@/lib/auth'
 import { useTheme } from 'next-themes'
+import { useState, useEffect } from 'react'
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuItem, SidebarMenuButton,
@@ -9,7 +10,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare
+  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -74,11 +75,32 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   },
 ]
 
+const COLLAPSED_STORAGE_KEY = 'tendwell-sidebar-collapsed'
+
+function loadCollapsedState(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch {}
+  return {}
+}
+
 export function AppSidebar() {
   const { user, effectiveUser, logout } = useAuth()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadCollapsedState())
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSED_STORAGE_KEY, JSON.stringify(collapsed))
+    } catch {}
+  }, [collapsed])
+
+  function toggleSection(label: string) {
+    setCollapsed(prev => ({ ...prev, [label]: !prev[label] }))
+  }
 
   if (!user) return null
 
@@ -104,37 +126,47 @@ export function AppSidebar() {
         {NAV_SECTIONS.map((section) => {
           const visibleItems = section.items.filter(item => canAccessView(item.view, effectiveUser))
           if (visibleItems.length === 0) return null
+          const isCollapsed = !!collapsed[section.label]
           return (
             <SidebarGroup key={section.label}>
-              <SidebarGroupLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-1">
-                {section.label}
+              <SidebarGroupLabel
+                className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-1 flex items-center justify-between cursor-pointer select-none hover:text-foreground transition-colors"
+                onClick={() => toggleSection(section.label)}
+              >
+                <span>{section.label}</span>
+                {isCollapsed
+                  ? <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                  : <ChevronDown className="w-3 h-3 flex-shrink-0" />
+                }
               </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleItems.map((item) => {
-                    const isActive = location === item.href || (item.href !== '/' && location.startsWith(item.href))
-                    return (
-                      <SidebarMenuItem key={item.view}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          tooltip={item.title}
-                          data-testid={`nav-${item.view}`}
-                        >
-                          <Link
-                            href={item.href}
-                            className="flex items-center gap-2.5 px-3 py-2"
-                            onClick={() => isMobile && setOpenMobile(false)}
+              {!isCollapsed && (
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {visibleItems.map((item) => {
+                      const isActive = location === item.href || (item.href !== '/' && location.startsWith(item.href))
+                      return (
+                        <SidebarMenuItem key={item.view}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive}
+                            tooltip={item.title}
+                            data-testid={`nav-${item.view}`}
                           >
-                            <item.icon className="w-4 h-4 flex-shrink-0" />
-                            <span className="text-sm">{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
+                            <Link
+                              href={item.href}
+                              className="flex items-center gap-2.5 px-3 py-2"
+                              onClick={() => isMobile && setOpenMobile(false)}
+                            >
+                              <item.icon className="w-4 h-4 flex-shrink-0" />
+                              <span className="text-sm">{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              )}
             </SidebarGroup>
           )
         })}
