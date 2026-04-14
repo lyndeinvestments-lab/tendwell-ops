@@ -223,6 +223,6 @@ export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUr
       ${opts.bodyHtml}
       ${cta}
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 12px;"/>
-      <p style="font-size:11px;color:#64748b;margin:0;">Tendwell Cleaning Co. — <a href="https://tendwellcleaning.com/#/settings" style="color:#64748b;">manage notifications</a></p>
+      <p style="font-size:11px;color:#64748b;margin:0;">Tendwell Cleaning Co. — <a href="https://www.tendwellcleaning.com/#/settings" style="color:#64748b;">manage notifications</a></p>
     </div></body></html>`
 }

@@ -388,7 +388,7 @@ export default function TasksPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('task_assignees')
-        .select('*, app_users(label)')
+        .select('*, user:app_users!task_assignees_user_id_fkey(label)')
         .eq('task_id', detailTask.id)
         .order('sort_order')
       return data || []
@@ -401,7 +401,7 @@ export default function TasksPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('task_watchers')
-        .select('*, app_users(label)')
+        .select('*, user:app_users!task_watchers_user_id_fkey(label)')
         .eq('task_id', detailTask.id)
       return data || []
     },
@@ -414,7 +414,7 @@ export default function TasksPage() {
     queryFn: async () => {
       const { data } = await supabase
         .from('task_list_members')
-        .select('*, app_users(label, role)')
+        .select('*, user:app_users!task_list_members_user_id_fkey(label, role)')
         .eq('list_id', manageList.id)
       return data || []
     },
@@ -515,7 +515,7 @@ export default function TasksPage() {
           subject: `New task: ${newForm.title}`,
           bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${newForm.title}</strong>${newForm.description ? `<br/><span style="color:#475569;">${newForm.description}</span>` : ''}</p>
             <p style="font-size:13px;color:#475569;">Priority: ${newForm.priority} · Assigned to: ${newForm.assignee_name || 'Unassigned'}${newForm.due_date ? ` · Due: ${newForm.due_date}` : ''}${newForm.property_name ? ` · Property: ${newForm.property_name}` : ''}</p>`,
-          ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+          ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
           ctaLabel: 'Open Tasks',
           meta: { assignee: newForm.assignee_name, priority: newForm.priority },
         })
@@ -564,7 +564,7 @@ export default function TasksPage() {
             subject: `${effectiveUser?.label || 'Someone'} mentioned you on "${detailTask.title}"`,
             bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label || 'Someone'}</strong> mentioned you in a comment on <strong>${detailTask.title}</strong></p>
               <blockquote style="border-left:3px solid #cbd5e1;padding:8px 12px;margin:12px 0;color:#475569;font-size:13px;white-space:pre-wrap;">${text.replace(/[<>]/g, c => c === '<' ? '&lt;' : '&gt;')}</blockquote>`,
-            ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+            ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
             ctaLabel: 'Open Task',
             targetUserIds: targets as number[],
             meta: { task_id: detailTask.id },
@@ -623,7 +623,7 @@ export default function TasksPage() {
           eventType: 'task_assigned',
           subject: `You've been added to "${list?.name || 'a task list'}"`,
           bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label}</strong> added you to the task list <strong>${list?.name || 'Untitled'}</strong></p>`,
-          ctaUrl: 'https://tendwellcleaning.com/#/tasks',
+          ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
           ctaLabel: 'Open Tasks',
           targetUserIds: [userId],
         })
@@ -1048,7 +1048,7 @@ export default function TasksPage() {
                     {(taskAssignees || []).map((a: any) => (
                       <div key={a.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
                         <div className="flex items-center gap-2">
-                          <span className={a.role === 'primary' ? 'font-medium' : ''}>{a.app_users?.label}</span>
+                          <span className={a.role === 'primary' ? 'font-medium' : ''}>{a.user?.label}</span>
                           <span className={`text-[10px] px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{a.role}</span>
                         </div>
                         {canEdit && <button onClick={() => toggleAssignee(detailTask.id, a.user_id, false)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
@@ -1086,7 +1086,7 @@ export default function TasksPage() {
                   <div className="flex flex-wrap gap-1 mb-2">
                     {(taskWatchers || []).map((w: any) => (
                       <span key={w.id} className="flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
-                        {w.app_users?.label}
+                        {w.user?.label}
                         {canEdit && <button onClick={() => toggleWatcher(detailTask.id, w.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
                       </span>
                     ))}
@@ -1248,7 +1248,7 @@ export default function TasksPage() {
                     {(manageMembers || []).map((m: any) => (
                       <div key={m.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium">{m.app_users?.label}</span>
+                          <span className="font-medium">{m.user?.label}</span>
                           <span className="text-muted-foreground">{m.role}</span>
                         </div>
                         {m.role !== 'owner' && (
