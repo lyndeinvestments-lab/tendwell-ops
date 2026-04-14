@@ -179,7 +179,7 @@ export default function IssuesPage() {
           bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${newForm.property_name}</strong> — ${newForm.category}</p>
             ${newForm.details ? `<p style="font-size:13px;color:#475569;">${newForm.details}</p>` : ''}
             <p style="font-size:13px;color:#475569;">Status: ${newForm.status}${newForm.last_touch ? ` · Last touch: ${newForm.last_touch}` : ''}${newForm.coverage ? ` · Coverage: ${newForm.coverage}` : ''}</p>`,
-          ctaUrl: 'https://tendwellcleaning.com/#/issues',
+          ctaUrl: 'https://www.tendwellcleaning.com/#/issues',
           ctaLabel: 'View Issues',
           meta: { property: newForm.property_name, category: newForm.category },
         })
