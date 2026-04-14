@@ -68,14 +68,13 @@ async function createWorkflowTasks(
   createdBy: string,
 ) {
   // Fetch matching enabled templates
-  let query = supabase
+  const { data: templates } = await supabase
     .from('stage_workflow_templates')
     .select('*')
     .eq('to_stage', toStage)
     .eq('enabled', true)
     .order('sort_order')
 
-  const { data: templates } = await query
   if (!templates || templates.length === 0) return
 
   // Filter: match from_stage (null = any)
@@ -86,7 +85,25 @@ async function createWorkflowTasks(
   if (!listId) return
 
   const today = new Date()
-  const rows = matching.map(t => {
+  const category = toStage === 'Offboarding' ? 'Offboarding' : 'Onboarding'
+
+  // Create parent task: "{toStage}: {propertyName}"
+  const { data: parent } = await supabase.from('tasks').insert({
+    title: `${toStage}: ${propertyName}`,
+    description: `Workflow tasks for ${propertyName} moving to ${toStage}`,
+    status: 'To Do',
+    priority: 'Medium',
+    category,
+    property_name: propertyName,
+    created_by: createdBy,
+    list_id: listId,
+    parent_task_id: null,
+  }).select('id').single()
+
+  if (!parent) return
+
+  // Create subtasks from templates
+  const subtasks = matching.map(t => {
     const title = (t.title || '').replace(/\{property_name\}/g, propertyName)
     const dueDate = new Date(today)
     dueDate.setDate(dueDate.getDate() + (t.due_offset_days || 0))
@@ -102,16 +119,17 @@ async function createWorkflowTasks(
       title,
       description,
       status: 'To Do',
-      priority: 'Medium',
-      category: 'Onboarding',
+      priority: t.priority || 'Medium',
+      category,
       property_name: propertyName,
       assignee_name: t.default_assignee_name || null,
       due_date: dueDate.toISOString().split('T')[0],
       created_by: createdBy,
       list_id: listId,
       workflow_template_id: t.id,
+      parent_task_id: parent.id,
     }
   })
 
-  await supabase.from('tasks').insert(rows)
+  await supabase.from('tasks').insert(subtasks)
 }
