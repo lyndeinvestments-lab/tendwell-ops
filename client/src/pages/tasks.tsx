@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
@@ -278,6 +278,7 @@ export default function TasksPage() {
   const [listDialogOpen, setListDialogOpen] = useState(false)
   const [manageList, setManageList] = useState<any>(null)
   const [newListName, setNewListName] = useState('')
+  const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -458,12 +459,30 @@ export default function TasksPage() {
     return sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline ml-1" /> : <ArrowDown className="w-3 h-3 inline ml-1" />
   }
 
+  // Build subtask lookup
+  const subtasksByParent = useMemo(() => {
+    if (!tasks) return new Map<string, any[]>()
+    const map = new Map<string, any[]>()
+    for (const t of tasks) {
+      if (t.parent_task_id) {
+        if (!map.has(t.parent_task_id)) map.set(t.parent_task_id, [])
+        map.get(t.parent_task_id)!.push(t)
+      }
+    }
+    return map
+  }, [tasks])
+
   const filtered = useMemo(() => {
     if (!tasks) return []
+    // Only show top-level tasks (no parent) in the main list
     let result = tasks.filter((t: any) => {
+      if (t.parent_task_id) return false // subtasks shown inline
       const matchSearch = !search.trim() || [t.title, t.description, t.assignee_name, t.property_name].some(v => v?.toLowerCase().includes(search.toLowerCase()))
+      // For parents with subtasks, also match if any subtask matches search
+      const subs = subtasksByParent.get(t.id) || []
+      const subMatchSearch = !search.trim() || subs.some((s: any) => [s.title, s.assignee_name].some(v => v?.toLowerCase().includes(search.toLowerCase())))
       const matchStatus = statusFilter === 'all' ? true : statusFilter === 'open' ? t.status !== 'Done' : t.status === statusFilter
-      return matchSearch && matchStatus
+      return (matchSearch || subMatchSearch) && matchStatus
     })
     result = [...result].sort((a: any, b: any) => {
       const dir = sortDir === 'asc' ? 1 : -1
@@ -481,7 +500,21 @@ export default function TasksPage() {
       return av.localeCompare(bv) * dir
     })
     return result
-  }, [tasks, search, statusFilter, sortKey, sortDir])
+  }, [tasks, search, statusFilter, sortKey, sortDir, subtasksByParent])
+
+  function toggleExpand(taskId: string) {
+    setExpandedTasks(prev => {
+      const next = new Set(prev)
+      if (next.has(taskId)) next.delete(taskId)
+      else next.add(taskId)
+      return next
+    })
+  }
+
+  function getSubtaskProgress(taskId: string): { done: number; total: number } {
+    const subs = subtasksByParent.get(taskId) || []
+    return { done: subs.filter((s: any) => s.status === 'Done').length, total: subs.length }
+  }
 
   // ─── Board view data ──────────────────────────────────────────────────────
   const boardData = useMemo(() => {
@@ -834,28 +867,71 @@ export default function TasksPage() {
                 <tr><td colSpan={canEdit ? 7 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => setAddOpen(true) } : undefined} /></td></tr>
               ) : filtered.map((task: any) => {
                 const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
+                const subs = subtasksByParent.get(task.id) || []
+                const hasSubs = subs.length > 0
+                const isExpanded = expandedTasks.has(task.id)
+                const progress = getSubtaskProgress(task.id)
                 return (
-                  <tr key={task.id} className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
-                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                      <div>
-                        <span className={task.status === 'Done' ? 'line-through' : ''}>{task.title}</span>
-                        {task.property_name && <span className="text-muted-foreground ml-1.5">· {task.property_name}</span>}
-                      </div>
-                    </td>
-                    <td className="py-2 px-3"><StatusBadge status={task.status} /></td>
-                    <td className="py-2 px-3"><PriorityBadge priority={task.priority} /></td>
-                    <td className="py-2 px-3"><DueDateLabel date={task.due_date} /></td>
-                    <td className="py-2 px-3 text-xs">{task.assignee_name || '—'}</td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground">{task.category || '—'}</td>
-                    {canEdit && (
-                      <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
-                        <select value={task.status} onChange={e => updateTask({ id: task.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })}
-                          className="h-6 text-xs border border-input rounded px-1 bg-background">
-                          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+                  <React.Fragment key={task.id}>
+                    <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
+                      <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                        <div className="flex items-center gap-1.5">
+                          {hasSubs && (
+                            <button onClick={e => { e.stopPropagation(); toggleExpand(task.id) }} className="text-muted-foreground hover:text-foreground flex-shrink-0">
+                              {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5 rotate-90" />}
+                            </button>
+                          )}
+                          <span className={task.status === 'Done' ? 'line-through' : ''}>{task.title}</span>
+                          {task.property_name && <span className="text-muted-foreground ml-1">· {task.property_name}</span>}
+                          {hasSubs && (
+                            <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 ml-1 flex-shrink-0">
+                              {progress.done}/{progress.total}
+                            </span>
+                          )}
+                        </div>
                       </td>
-                    )}
-                  </tr>
+                      <td className="py-2 px-3"><StatusBadge status={task.status} /></td>
+                      <td className="py-2 px-3"><PriorityBadge priority={task.priority} /></td>
+                      <td className="py-2 px-3"><DueDateLabel date={task.due_date} /></td>
+                      <td className="py-2 px-3 text-xs">{task.assignee_name || '—'}</td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">{task.category || '—'}</td>
+                      {canEdit && (
+                        <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
+                          <select value={task.status} onChange={e => updateTask({ id: task.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })}
+                            className="h-6 text-xs border border-input rounded px-1 bg-background">
+                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                      )}
+                    </tr>
+                    {/* Subtask rows */}
+                    {hasSubs && isExpanded && subs.map((sub: any) => {
+                      const subOverdue = sub.due_date && isPast(new Date(sub.due_date + 'T00:00:00')) && !isToday(new Date(sub.due_date + 'T00:00:00')) && sub.status !== 'Done'
+                      return (
+                        <tr key={sub.id} className={`border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer ${subOverdue ? 'bg-red-50/20 dark:bg-red-900/5' : sub.status === 'Done' ? 'opacity-50' : ''}`} onClick={() => setDetailTask(sub)}>
+                          <td className="py-1.5 px-3 text-xs sticky left-0 z-10 bg-background">
+                            <div className="flex items-center gap-1.5 pl-6">
+                              <span className="w-1 h-1 rounded-full bg-muted-foreground/40 flex-shrink-0" />
+                              <span className={sub.status === 'Done' ? 'line-through text-muted-foreground' : ''}>{sub.title}</span>
+                            </div>
+                          </td>
+                          <td className="py-1.5 px-3"><StatusBadge status={sub.status} /></td>
+                          <td className="py-1.5 px-3"><PriorityBadge priority={sub.priority} /></td>
+                          <td className="py-1.5 px-3"><DueDateLabel date={sub.due_date} /></td>
+                          <td className="py-1.5 px-3 text-xs">{sub.assignee_name || '—'}</td>
+                          <td className="py-1.5 px-3 text-xs text-muted-foreground">{sub.category || '—'}</td>
+                          {canEdit && (
+                            <td className="py-1.5 px-3" onClick={e => e.stopPropagation()}>
+                              <select value={sub.status} onChange={e => updateTask({ id: sub.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })}
+                                className="h-6 text-xs border border-input rounded px-1 bg-background">
+                                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </React.Fragment>
                 )
               })}
             </tbody>
@@ -930,6 +1006,62 @@ export default function TasksPage() {
                     <p className="text-sm whitespace-pre-wrap">{detailTask.description}</p>
                   </div>
                 )}
+
+                {/* Subtasks */}
+                {(() => {
+                  const subs = subtasksByParent.get(detailTask.id) || []
+                  const isParent = subs.length > 0 || !detailTask.parent_task_id
+                  return isParent ? (
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-2">
+                        Subtasks {subs.length > 0 && `(${subs.filter((s: any) => s.status === 'Done').length}/${subs.length})`}
+                      </span>
+                      {subs.length > 0 && (
+                        <div className="space-y-1 mb-2">
+                          {subs.map((sub: any) => (
+                            <div key={sub.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted/30 hover:bg-muted/50 cursor-pointer" onClick={() => setDetailTask(sub)}>
+                              <button onClick={e => { e.stopPropagation(); updateTask({ id: sub.id, updates: { status: sub.status === 'Done' ? 'To Do' : 'Done', completed_at: sub.status === 'Done' ? null : new Date().toISOString() } }) }}>
+                                {sub.status === 'Done' ? <CheckSquare className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-muted-foreground" />}
+                              </button>
+                              <span className={`flex-1 ${sub.status === 'Done' ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</span>
+                              {sub.assignee_name && <span className="text-muted-foreground">{sub.assignee_name}</span>}
+                              {sub.due_date && <DueDateLabel date={sub.due_date} />}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {canEdit && (
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={async () => {
+                          const title = prompt('Subtask title:')
+                          if (!title?.trim()) return
+                          await supabase.from('tasks').insert({
+                            title: title.trim(),
+                            status: 'To Do',
+                            priority: detailTask.priority || 'Medium',
+                            category: detailTask.category || 'General',
+                            property_name: detailTask.property_name || null,
+                            list_id: detailTask.list_id,
+                            parent_task_id: detailTask.id,
+                            created_by: effectiveUser?.label || null,
+                          })
+                          qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+                        }}>
+                          <Plus className="w-3 h-3" /> Add subtask
+                        </Button>
+                      )}
+                    </div>
+                  ) : detailTask.parent_task_id ? (
+                    <div className="text-xs">
+                      <span className="text-muted-foreground">Parent: </span>
+                      <button className="text-primary hover:underline" onClick={() => {
+                        const parent = tasks?.find((t: any) => t.id === detailTask.parent_task_id)
+                        if (parent) setDetailTask(parent)
+                      }}>
+                        {tasks?.find((t: any) => t.id === detailTask.parent_task_id)?.title || 'Parent task'}
+                      </button>
+                    </div>
+                  ) : null
+                })()}
 
                 {/* Details grid */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
