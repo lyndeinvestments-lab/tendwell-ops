@@ -23,6 +23,7 @@ interface Alert {
   actionLabel?: string
   actionRoute?: string
   propertyId?: string
+  requiredView?: string // view the user must have access to in order to see this alert
 }
 
 const SEVERITY_CONFIG = {
@@ -32,6 +33,7 @@ const SEVERITY_CONFIG = {
 }
 
 export function useAlerts() {
+  const { effectiveUser } = useAuth()
   const { data: properties } = useQuery({
     queryKey: ['/supabase/alerts-properties'],
     queryFn: async () => {
@@ -98,6 +100,7 @@ export function useAlerts() {
           description: `Profit is ${(p.profit_percentage || 0).toFixed(1)}% — losing money on this property.`,
           actionRoute: '/cost-tracking',
           propertyId: p.id,
+          requiredView: 'cost-tracking',
         })
       }
 
@@ -111,6 +114,7 @@ export function useAlerts() {
           description: 'Client Charged is $0 — profit calculations are unreliable until this is set.',
           actionRoute: '/cost-tracking',
           propertyId: p.id,
+          requiredView: 'cost-tracking',
         })
       }
 
@@ -127,6 +131,7 @@ export function useAlerts() {
           description: `Missing: ${missing.join(', ')}`,
           propertyId: p.id,
           actionRoute: '/master-list',
+          requiredView: 'master-list',
         })
       }
 
@@ -140,6 +145,7 @@ export function useAlerts() {
           description: `Filter was due ${p.next_filter_due}`,
           actionRoute: '/ac-filters',
           propertyId: p.id,
+          requiredView: 'ac-filters',
         })
       }
 
@@ -166,6 +172,7 @@ export function useAlerts() {
               title: `Onboarding Stalled: ${prop.name}`,
               description: `Only ${Math.round(pct * 100)}% complete after 14+ days`,
               propertyId: pid,
+              requiredView: 'pipeline',
             })
           }
         }
@@ -184,6 +191,7 @@ export function useAlerts() {
             title: 'Unlinked Client',
             description: `Client created 7+ days ago with no properties linked`,
             actionRoute: '/contacts',
+            requiredView: 'contacts',
           })
         }
       }
@@ -208,8 +216,10 @@ export function useAlerts() {
   }, [dismissals])
 
   const activeAlerts = useMemo(() => {
-    return alerts.filter(a => !dismissedSet.has(a.id))
-  }, [alerts, dismissedSet])
+    return alerts
+      .filter(a => !dismissedSet.has(a.id))
+      .filter(a => !a.requiredView || canAccessView(a.requiredView, effectiveUser))
+  }, [alerts, dismissedSet, effectiveUser])
 
   const badgeCount = useMemo(() => {
     return activeAlerts.filter(a => a.severity === 'critical' || a.severity === 'warning').length

@@ -84,13 +84,12 @@ function AlertBellButton() {
   const [open, setOpen] = useState(false);
   const { activeAlerts } = useAlerts();
   const { effectiveUser } = useAuth();
-  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser);
+  const canViewAlertsPage = canAccessView('alerts', effectiveUser);
 
+  // activeAlerts is already filtered by requiredView in the hook
   const visibleAlerts = useMemo(() => {
-    return activeAlerts
-      .filter(a => a.severity === 'critical' || a.severity === 'warning')
-      .filter(a => canViewFinancials || a.category !== 'Financial');
-  }, [activeAlerts, canViewFinancials]);
+    return activeAlerts.filter(a => a.severity === 'critical' || a.severity === 'warning');
+  }, [activeAlerts]);
 
   const badgeCount = visibleAlerts.length;
   const previewItems = visibleAlerts.slice(0, 5);
@@ -121,12 +120,14 @@ function AlertBellButton() {
               ))
             )}
           </div>
-          <button
-            onClick={() => { setOpen(false); navigate('/alerts') }}
-            className="w-full text-xs text-primary hover:underline text-center pt-2 border-t border-border mt-1"
-          >
-            View All Alerts →
-          </button>
+          {canViewAlertsPage && (
+            <button
+              onClick={() => { setOpen(false); navigate('/alerts') }}
+              className="w-full text-xs text-primary hover:underline text-center pt-2 border-t border-border mt-1"
+            >
+              View All Alerts →
+            </button>
+          )}
         </PopoverContent>
       </Popover>
     </div>
