@@ -408,7 +408,7 @@ export default function TasksPage() {
   })
 
   // ─── List members for manage dialog ───────────────────────────────────────
-  const { data: manageMembers } = useQuery({
+  const { data: manageMembers, isLoading: membersLoading } = useQuery({
     queryKey: ['/supabase/list-members', manageList?.id],
     enabled: !!manageList,
     queryFn: async () => {
@@ -609,9 +609,10 @@ export default function TasksPage() {
   }
 
   async function addListMember(listId: string, userId: number) {
-    await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id || null }, { onConflict: 'list_id,user_id' })
-    qc.invalidateQueries({ queryKey: ['/supabase/list-members'] })
-    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+    const { error } = await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id || null }, { onConflict: 'list_id,user_id' })
+    if (error) { toast({ title: 'Failed to add member', description: error.message, variant: 'destructive' }); return }
+    await qc.invalidateQueries({ queryKey: ['/supabase/list-members', listId] })
+    await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
     // Notify added user
     try {
       const { notify } = await import('@/lib/notify')
@@ -633,8 +634,8 @@ export default function TasksPage() {
 
   async function removeListMember(listId: string, userId: number) {
     await supabase.from('task_list_members').delete().eq('list_id', listId).eq('user_id', userId)
-    qc.invalidateQueries({ queryKey: ['/supabase/list-members'] })
-    qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
+    await qc.invalidateQueries({ queryKey: ['/supabase/list-members', listId] })
+    await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
     toast({ title: 'Member removed' })
   }
 
@@ -1239,34 +1240,44 @@ export default function TasksPage() {
 
               {/* Members */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Members ({(manageMembers || []).length})</label>
-                <div className="space-y-1 mb-2 max-h-48 overflow-y-auto">
-                  {(manageMembers || []).map((m: any) => (
-                    <div key={m.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{m.app_users?.label}</span>
-                        <span className="text-muted-foreground">{m.role}</span>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Members ({membersLoading ? '…' : (manageMembers || []).length})</label>
+                {membersLoading ? (
+                  <div className="space-y-1 mb-2">{[1,2].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+                ) : (
+                  <div className="space-y-1 mb-2 max-h-48 overflow-y-auto">
+                    {(manageMembers || []).map((m: any) => (
+                      <div key={m.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{m.app_users?.label}</span>
+                          <span className="text-muted-foreground">{m.role}</span>
+                        </div>
+                        {m.role !== 'owner' && (
+                          <button onClick={() => removeListMember(manageList.id, m.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
+                        )}
                       </div>
-                      {m.role !== 'owner' && (
-                        <button onClick={() => removeListMember(manageList.id, m.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><UserPlus className="w-3 h-3" /> Add member</Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-48 p-1" align="start">
-                    <div className="max-h-48 overflow-y-auto">
-                      {(users || []).filter((u: any) => !(manageMembers || []).some((m: any) => m.user_id === u.id)).map((u: any) => (
-                        <button key={u.id} onClick={() => addListMember(manageList.id, u.id)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded">
-                          {u.label}
-                        </button>
-                      ))}
-                    </div>
-                  </PopoverContent>
-                </Popover>
+                    ))}
+                    {(manageMembers || []).length === 0 && <p className="text-xs text-muted-foreground">No members yet</p>}
+                  </div>
+                )}
+                {!membersLoading && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><UserPlus className="w-3 h-3" /> Add member</Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-48 p-1" align="start">
+                      <div className="max-h-48 overflow-y-auto">
+                        {(users || []).filter((u: any) => !(manageMembers || []).some((m: any) => m.user_id === u.id)).map((u: any) => (
+                          <button key={u.id} onClick={() => addListMember(manageList.id, u.id)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded">
+                            {u.label}
+                          </button>
+                        ))}
+                        {(users || []).filter((u: any) => !(manageMembers || []).some((m: any) => m.user_id === u.id)).length === 0 && (
+                          <p className="text-xs text-muted-foreground text-center py-2">All users added</p>
+                        )}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
 
               {/* Delete list */}
