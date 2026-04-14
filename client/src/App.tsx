@@ -58,6 +58,7 @@ const IssuesPage = lazyRetry(() => import("@/pages/issues"));
 const TasksPage = lazyRetry(() => import("@/pages/tasks"));
 const ReportPage = lazyRetry(() => import("@/pages/report"));
 const CleanerMetricsPage = lazyRetry(() => import("@/pages/cleaner-metrics"));
+const NorthStarPage = lazyRetry(() => import("@/pages/north-star"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
 const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
 
@@ -205,6 +206,7 @@ function AppRoutes() {
         <Route path="/tasks">{() => <GuardedRoute viewId="tasks" component={TasksPage} />}</Route>
         <Route path="/report">{() => <GuardedRoute viewId="report" component={ReportPage} />}</Route>
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
+        <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
