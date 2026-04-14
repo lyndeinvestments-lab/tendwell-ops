@@ -33,15 +33,54 @@ export default function NorthStarPage() {
   const qc = useQueryClient()
   const canEdit = canEditView('north-star', effectiveUser)
 
-  const [month, setMonth] = useState(() => format(new Date(), 'yyyy-MM'))
+  const [month, setMonth] = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [metricDialog, setMetricDialog] = useState<any>(null)
   const [metricForm, setMetricForm] = useState({ section: '', name: '', metric_type: 'Total', monthly_target: '', owner_name: '', source: 'manual' })
 
-  const monthLabel = format(new Date(month + '-01'), 'MMMM yyyy')
-  const prevMonth = () => setMonth(format(subMonths(new Date(month + '-01'), 1), 'yyyy-MM'))
-  const nextMonth = () => setMonth(format(addMonths(new Date(month + '-01'), 1), 'yyyy-MM'))
+  // Parse month safely (avoid timezone issues with new Date('YYYY-MM-01'))
+  const [mYear, mMonth] = month.split('-').map(Number)
+  const monthDate = new Date(mYear, mMonth - 1, 1)
+  const monthLabel = format(monthDate, 'MMMM yyyy')
+  const MIN_MONTH = '2026-03'
+  const maxMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+
+  function prevMonth() {
+    if (month <= MIN_MONTH) return
+    const d = new Date(mYear, mMonth - 2, 1)
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+  function nextMonth() {
+    if (month >= maxMonth) return
+    const d = new Date(mYear, mMonth, 1)
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+  }
+
+  // Build month options for dropdown (Mar 2026 → current month)
+  const monthOptions = useMemo(() => {
+    const opts: Array<{ value: string; label: string }> = []
+    let d = new Date(2026, 2, 1) // March 2026
+    const now = new Date()
+    const endMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    while (d <= endMonth) {
+      const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      opts.push({ value: val, label: format(d, 'MMMM yyyy') })
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
+    }
+    return opts
+  }, [])
 
   // ─── Queries ──────────────────────────────────────────────────────────────
+  const { data: users } = useQuery({
+    queryKey: ['/supabase/ns-users'],
+    queryFn: async () => {
+      const { data } = await supabase.from('app_users').select('id, label').order('label')
+      return data || []
+    },
+  })
+
   const { data: metrics, isLoading: metricsLoading } = useQuery({
     queryKey: ['/supabase/north-star-metrics'],
     queryFn: async () => {
@@ -60,7 +99,7 @@ export default function NorthStarPage() {
 
   // Auto-source data for the month
   const monthStart = `${month}-01`
-  const monthEnd = format(endOfMonth(new Date(month + '-01')), 'yyyy-MM-dd')
+  const monthEnd = format(endOfMonth(monthDate), 'yyyy-MM-dd')
 
   const { data: autoIssues } = useQuery({
     queryKey: ['/supabase/ns-issues', month],
@@ -230,11 +269,13 @@ export default function NorthStarPage() {
           </h1>
           <p className="text-sm text-muted-foreground">KPI scorecard — {monthLabel}</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={prevMonth}><ChevronLeft className="w-4 h-4" /></Button>
-            <span className="text-sm font-medium min-w-[120px] text-center">{monthLabel}</span>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={nextMonth}><ChevronRight className="w-4 h-4" /></Button>
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={prevMonth} disabled={month <= MIN_MONTH}><ChevronLeft className="w-4 h-4" /></Button>
+            <select value={month} onChange={e => setMonth(e.target.value)} className="h-8 text-sm font-medium border border-input rounded-md px-2 bg-background min-w-[150px] text-center">
+              {monthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={nextMonth} disabled={month >= maxMonth}><ChevronRight className="w-4 h-4" /></Button>
           </div>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv}>
             <Download className="w-3.5 h-3.5" /> Export
@@ -391,7 +432,10 @@ export default function NorthStarPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">Owner</label>
-                <Input value={metricForm.owner_name} onChange={e => setMetricForm(f => ({ ...f, owner_name: e.target.value }))} className="h-8 text-xs" />
+                <select value={metricForm.owner_name} onChange={e => setMetricForm(f => ({ ...f, owner_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
+                  <option value="">Unassigned</option>
+                  {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                </select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">Data Source</label>
