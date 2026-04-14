@@ -479,33 +479,31 @@ export default function PipelinePage() {
 
   const { mutate: moveProperty, isPending: isMoving } = useGuardedMutation('pipeline', {
     mutationFn: async ({ propId, stageId, fromStageId }: { propId: string; stageId: string; fromStageId: string }) => {
-      const { error: updateErr } = await supabase.from('properties').update({ stage_id: stageId }).eq('id', propId)
-      if (updateErr) throw updateErr
-      const { error: transitionErr } = await supabase.from('stage_transitions').insert({
-        property_id: propId,
-        from_stage_id: fromStageId || null,
-        to_stage_id: stageId,
+      const fromStage = stages?.find((s: any) => s.id === fromStageId)
+      const toStage = stages?.find((s: any) => s.id === stageId)
+      const prop = displayProperties?.find((p: any) => p.id === propId)
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(propId),
+        propertyName: prop?.name || '',
+        fromStageId: Number(fromStageId),
+        fromStageName: fromStage?.name || '',
+        toStageId: Number(stageId),
+        toStageName: toStage?.name || '',
+        changedBy: user?.label || '',
       })
-      if (transitionErr) throw transitionErr
+      if (!result.ok) throw new Error(result.error)
     },
     onSuccess: (_data, variables) => {
-      const fromStage = stages?.find((s: any) => s.id === variables.fromStageId)
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
-      const prop = displayProperties?.find((p: any) => p.id === variables.propId)
-      logPropertyEdit(variables.propId, 'stage', fromStage?.name ?? null, toStage?.name ?? null, prop?.name ?? null, user?.label ?? null)
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-
-      // Auto-set offboarded_at timestamp when moving to Offboarded
-      if (toStage?.name === 'Offboarded') {
-        supabase.from('properties').update({ offboarded_at: new Date().toISOString() }).eq('id', variables.propId).then(() => {
-          qc.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
-        })
-      }
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      if (toStage?.name === 'Offboarded') qc.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
 
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
@@ -543,6 +541,21 @@ export default function PipelinePage() {
     staleTime: 10_000,
   })
 
+  // Workflow-generated tasks for this property
+  const { data: workflowTasks } = useQuery({
+    queryKey: ['/supabase/workflow-tasks', detailPanel?.id],
+    enabled: !!detailPanel?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('tasks')
+        .select('id, title, status, assignee_name, due_date')
+        .eq('property_name', detailPanel.name)
+        .not('workflow_template_id', 'is', null)
+        .order('due_date')
+      return data ?? []
+    },
+  })
+
   const { mutate: toggleTask } = useGuardedMutation('pipeline', {
     mutationFn: async ({ taskId, is_complete }: { taskId: string; is_complete: boolean }) => {
       const { error } = await supabase.from('onboarding_tasks').update({ is_complete }).eq('id', taskId)
@@ -551,6 +564,21 @@ export default function PipelinePage() {
     onSuccess: () => {
       refetchPanelTasks()
       qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks-pipeline'] })
+    },
+  })
+
+  const { mutate: toggleWorkflowTask } = useGuardedMutation('pipeline', {
+    mutationFn: async ({ taskId, done }: { taskId: string; done: boolean }) => {
+      const { error } = await supabase.from('tasks').update({
+        status: done ? 'Done' : 'To Do',
+        completed_at: done ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', taskId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/workflow-tasks', detailPanel?.id] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
     },
   })
 
@@ -936,28 +964,71 @@ export default function PipelinePage() {
                   </div>
                   )}
 
-                  {/* Onboarding checklist */}
+                  {/* Onboarding checklist — workflow tasks + legacy fallback */}
                   {isOnboarding && (
                     <div>
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Onboarding Checklist</p>
-                      {(panelTasks ?? []).length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No tasks — open full details to add.</p>
-                      ) : (
+                      {/* Missing fields alert */}
+                      {(() => {
+                        const missing = []
+                        if (!detailPanel.address) missing.push('Address')
+                        if (!detailPanel.bedrooms) missing.push('Bedrooms')
+                        if (!detailPanel.full_baths && detailPanel.full_baths !== 0) missing.push('Full Baths')
+                        if (!detailPanel.number_of_beds) missing.push('Number of Beds')
+                        if (!detailPanel.auto_code && !detailPanel.door_code) missing.push('Access Codes')
+                        if (!detailPanel.ce_charged) missing.push('Client Charged')
+                        if (!detailPanel.cleaner_pay) missing.push('Cleaner Pay')
+                        return missing.length > 0 ? (
+                          <div className="rounded-md border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-2 mb-2">
+                            <p className="text-xs font-medium text-red-700 dark:text-red-400 mb-1">Missing fields:</p>
+                            <div className="flex flex-wrap gap-1">
+                              {missing.map(f => (
+                                <span key={f} className="text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-1.5 py-0.5 rounded">{f}</span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null
+                      })()}
+
+                      {/* Workflow tasks (new system) */}
+                      {(workflowTasks ?? []).length > 0 ? (
+                        <div className="space-y-1">
+                          {(workflowTasks ?? []).map((task: any) => {
+                            const done = task.status === 'Done'
+                            return (
+                              <button
+                                key={task.id}
+                                onClick={() => toggleWorkflowTask({ taskId: task.id, done: !done })}
+                                className="flex items-center gap-2 w-full text-left py-1.5 px-1.5 rounded hover:bg-muted transition-colors"
+                              >
+                                {done
+                                  ? <CheckSquare className="w-4 h-4 text-green-500 flex-shrink-0" />
+                                  : <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                }
+                                <div className="flex-1 min-w-0">
+                                  <span className={`text-xs block ${done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{task.title}</span>
+                                  <div className="flex items-center gap-2 mt-0.5">
+                                    {task.assignee_name && <span className="text-[10px] text-muted-foreground">{task.assignee_name}</span>}
+                                    {task.due_date && <span className="text-[10px] text-muted-foreground">Due {task.due_date}</span>}
+                                  </div>
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (panelTasks ?? []).length > 0 ? (
+                        /* Legacy onboarding_tasks fallback */
                         <div className="space-y-1">
                           {(panelTasks ?? []).map((task: any) => (
-                            <button
-                              key={task.id}
-                              onClick={() => toggleTask({ taskId: task.id, is_complete: !task.is_complete })}
-                              className="flex items-center gap-2 w-full text-left py-1 px-1.5 rounded hover:bg-muted transition-colors"
-                            >
-                              {task.is_complete
-                                ? <CheckSquare className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                : <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                              }
+                            <button key={task.id} onClick={() => toggleTask({ taskId: task.id, is_complete: !task.is_complete })}
+                              className="flex items-center gap-2 w-full text-left py-1 px-1.5 rounded hover:bg-muted transition-colors">
+                              {task.is_complete ? <CheckSquare className="w-4 h-4 text-green-500 flex-shrink-0" /> : <Square className="w-4 h-4 text-muted-foreground flex-shrink-0" />}
                               <span className={`text-xs ${task.is_complete ? 'line-through text-muted-foreground' : 'text-foreground'}`}>{task.task_name}</span>
                             </button>
                           ))}
                         </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No workflow tasks yet. Move to Onboarding to auto-generate.</p>
                       )}
                     </div>
                   )}

@@ -1531,6 +1531,193 @@ function NotificationLogViewer() {
   )
 }
 
+// ─── Workflow Templates Section ──────────────────────────────────────────────
+
+const STAGES = ['Lead', 'Quote', 'Onboarding', 'Active', 'Offboarding', 'Offboarded']
+
+function WorkflowTemplatesSection() {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [addOpen, setAddOpen] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState({ from_stage: '', to_stage: 'Onboarding', title: '', description: '', default_assignee_name: '', due_offset_days: '0', checklist_items: '' })
+
+  const { data: templates, isLoading } = useQuery({
+    queryKey: ['/supabase/workflow-templates'],
+    queryFn: async () => {
+      const { data } = await supabase.from('stage_workflow_templates').select('*').order('from_stage').order('to_stage').order('sort_order')
+      return data || []
+    },
+  })
+
+  const { data: users } = useQuery({
+    queryKey: ['/supabase/workflow-users'],
+    queryFn: async () => {
+      const { data } = await supabase.from('app_users').select('id, label').order('label')
+      return data || []
+    },
+  })
+
+  // Group by transition
+  const groups = useMemo(() => {
+    const map = new Map<string, any[]>()
+    for (const t of (templates || [])) {
+      const key = `${t.from_stage || 'Any'} → ${t.to_stage}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(t)
+    }
+    return Array.from(map.entries())
+  }, [templates])
+
+  async function saveTemplate() {
+    const checklist = form.checklist_items.split('\n').map(s => s.trim()).filter(Boolean)
+    const payload = {
+      from_stage: form.from_stage || null,
+      to_stage: form.to_stage,
+      title: form.title,
+      description: form.description || null,
+      default_assignee_name: form.default_assignee_name || null,
+      due_offset_days: parseInt(form.due_offset_days) || 0,
+      checklist_items: checklist,
+      updated_at: new Date().toISOString(),
+    }
+    if (editId) {
+      await supabase.from('stage_workflow_templates').update(payload).eq('id', editId)
+    } else {
+      await supabase.from('stage_workflow_templates').insert({ ...payload, sort_order: (templates?.length || 0) + 1 })
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/workflow-templates'] })
+    toast({ title: editId ? 'Template updated' : 'Template created' })
+    setAddOpen(false)
+    setEditId(null)
+    setForm({ from_stage: '', to_stage: 'Onboarding', title: '', description: '', default_assignee_name: '', due_offset_days: '0', checklist_items: '' })
+  }
+
+  function startEdit(t: any) {
+    setForm({
+      from_stage: t.from_stage || '',
+      to_stage: t.to_stage,
+      title: t.title,
+      description: t.description || '',
+      default_assignee_name: t.default_assignee_name || '',
+      due_offset_days: String(t.due_offset_days || 0),
+      checklist_items: Array.isArray(t.checklist_items) ? t.checklist_items.join('\n') : '',
+    })
+    setEditId(t.id)
+    setAddOpen(true)
+  }
+
+  async function toggleEnabled(id: string, enabled: boolean) {
+    await supabase.from('stage_workflow_templates').update({ enabled }).eq('id', id)
+    qc.invalidateQueries({ queryKey: ['/supabase/workflow-templates'] })
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!confirm('Delete this workflow template?')) return
+    await supabase.from('stage_workflow_templates').delete().eq('id', id)
+    qc.invalidateQueries({ queryKey: ['/supabase/workflow-templates'] })
+    toast({ title: 'Template deleted' })
+  }
+
+  return (
+    <div className="rounded-lg border border-border p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2 className="text-base font-medium flex items-center gap-2">
+            <SlidersHorizontal className="w-4 h-4" /> Stage Workflows
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Auto-create tasks when properties change stage</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => { setEditId(null); setForm({ from_stage: '', to_stage: 'Onboarding', title: '', description: '', default_assignee_name: '', due_offset_days: '0', checklist_items: '' }); setAddOpen(true) }}>
+          <Plus className="w-3.5 h-3.5 mr-1" /> Add Template
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : groups.length === 0 ? (
+        <p className="text-xs text-muted-foreground text-center py-4">No workflow templates configured.</p>
+      ) : (
+        <div className="space-y-4">
+          {groups.map(([label, items]) => (
+            <div key={label}>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{label}</p>
+              <div className="space-y-1">
+                {items.map((t: any) => (
+                  <div key={t.id} className={`flex items-center gap-3 text-xs rounded-md border px-3 py-2 ${t.enabled ? 'border-border' : 'border-border/50 opacity-50'}`}>
+                    <Checkbox checked={t.enabled} onCheckedChange={(v) => toggleEnabled(t.id, !!v)} />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{t.title}</p>
+                      <p className="text-muted-foreground">
+                        {t.default_assignee_name || 'Unassigned'} · +{t.due_offset_days}d
+                        {Array.isArray(t.checklist_items) && t.checklist_items.length > 0 && ` · ${t.checklist_items.length} items`}
+                      </p>
+                    </div>
+                    <button onClick={() => startEdit(t)} className="text-muted-foreground hover:text-foreground"><Pencil className="w-3 h-3" /></button>
+                    <button onClick={() => deleteTemplate(t.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={addOpen} onOpenChange={v => { if (!v) { setAddOpen(false); setEditId(null) } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{editId ? 'Edit Template' : 'Add Workflow Template'}</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">From Stage</label>
+                <select value={form.from_stage} onChange={e => setForm(f => ({ ...f, from_stage: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
+                  <option value="">Any</option>
+                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">To Stage *</label>
+                <select value={form.to_stage} onChange={e => setForm(f => ({ ...f, to_stage: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
+                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Task Title * <span className="text-muted-foreground/60">(use {'{property_name}'} placeholder)</span></label>
+              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="h-8 text-xs" placeholder="e.g. Get access codes for {'{property_name}'}" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+              <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="w-full h-16 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Default Assignee</label>
+                <select value={form.default_assignee_name} onChange={e => setForm(f => ({ ...f, default_assignee_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
+                  <option value="">Unassigned</option>
+                  {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Due (days from transition)</label>
+                <Input type="number" value={form.due_offset_days} onChange={e => setForm(f => ({ ...f, due_offset_days: e.target.value }))} className="h-8 text-xs" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Checklist Items <span className="text-muted-foreground/60">(one per line)</span></label>
+              <textarea value={form.checklist_items} onChange={e => setForm(f => ({ ...f, checklist_items: e.target.value }))} className="w-full h-20 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" placeholder="Door code&#10;Lockbox combo&#10;Gate code" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddOpen(false); setEditId(null) }}>Cancel</Button>
+            <Button onClick={saveTemplate} disabled={!form.title.trim() || !form.to_stage}>{editId ? 'Update' : 'Create'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -1548,6 +1735,7 @@ export default function SettingsPage() {
       <UsersSection />
       <PermissionsSection />
       <NotificationsSection />
+      <WorkflowTemplatesSection />
       <AppSettingsSection />
       <OnboardingTemplateSection />
     </div>
