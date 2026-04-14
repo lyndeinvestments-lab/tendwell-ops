@@ -321,7 +321,7 @@ export default function LinenTrackerPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
             <tr>
               <th
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] cursor-pointer select-none hover:text-foreground sticky left-0 z-20 bg-muted"
+                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] cursor-pointer select-none hover:text-foreground sticky left-0 top-0 z-30 bg-muted"
                 onClick={() => toggleSort('name')}
               >
                 <span className="flex items-center gap-1">
@@ -415,7 +415,7 @@ export default function LinenTrackerPage() {
             )}
             {!isLoading && companyTotals && filtered.length > 0 && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/90">Company Totals ({properties?.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-20 bg-muted">Company Totals ({properties?.length})</td>
                 {LINEN_COLS.map(c => (
                   <td key={c.key} className="py-2 px-3 text-xs tabular-nums font-semibold">
                     {c.key === 'linen_notes' ? '' : companyTotals[c.key]?.toLocaleString() ?? 0}
