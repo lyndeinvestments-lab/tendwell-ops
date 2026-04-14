@@ -296,7 +296,7 @@ export default function NorthStarPage() {
       ) : (
         <div className="overflow-auto rounded-lg border border-border">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-muted border-b border-border z-10">
+            <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>
                 <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[200px] sticky left-0 bg-muted z-20">Metric</th>
                 <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Wk 1</th>

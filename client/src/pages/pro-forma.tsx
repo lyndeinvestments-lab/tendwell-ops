@@ -645,7 +645,7 @@ export default function ProFormaPage() {
 
       <div className={`overflow-auto flex-1 rounded-lg border border-border ${selected.size > 0 ? 'pb-16' : ''}`}>
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               <th className="py-2 px-3 w-8 sticky left-0 top-0 z-30 bg-muted">
                 <Checkbox

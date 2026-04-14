@@ -850,7 +850,7 @@ export default function TasksPage() {
       {viewMode === 'list' && (
         <div className="overflow-auto flex-1 rounded-lg border border-border">
           <table className="w-full text-sm">
-            <thead className="sticky top-0 bg-muted border-b border-border z-10">
+            <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>
                 <th className={`${thCls} sticky left-0 z-20 bg-muted`} onClick={() => toggleSort('title')}>Task <SortIcon col="title" /></th>
                 <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
