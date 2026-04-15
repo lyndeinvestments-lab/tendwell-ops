@@ -391,6 +391,7 @@ export default function TasksPage() {
   const [newForm, setNewForm] = useState({
     title: '', description: '', status: 'To Do', priority: 'Medium',
     due_date: '', assignee_name: '', property_name: '', category: 'General',
+    list_id: '',
   })
 
   // ─── Users ────────────────────────────────────────────────────────────────
@@ -637,7 +638,7 @@ export default function TasksPage() {
   // ─── Mutations ────────────────────────────────────────────────────────────
   const { mutate: createTask, isPending: creating } = useGuardedMutation('tasks', {
     mutationFn: async () => {
-      const targetListId = resolvedListId !== 'global' ? resolvedListId : visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || null
+      const targetListId = newForm.list_id || (resolvedListId !== 'global' ? resolvedListId : visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || null)
       const { error } = await supabase.from('tasks').insert({
         ...newForm,
         due_date: newForm.due_date || null,
@@ -664,7 +665,7 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       toast({ title: 'Task created' })
       setAddOpen(false)
-      setNewForm({ title: '', description: '', status: 'To Do', priority: 'Medium', due_date: '', assignee_name: '', property_name: '', category: 'General' })
+      setNewForm({ title: '', description: '', status: 'To Do', priority: 'Medium', due_date: '', assignee_name: '', property_name: '', category: 'General', list_id: '' })
     },
     onError: () => toast({ title: 'Failed to create task', variant: 'destructive' }),
   })
@@ -986,7 +987,13 @@ export default function TasksPage() {
             <Download className="w-3.5 h-3.5" /> Export
           </Button>
           {canEdit && (
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAddOpen(true)}>
+            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => {
+              const defaultListId = resolvedListId !== 'global'
+                ? resolvedListId
+                : (visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || '')
+              setNewForm(f => ({ ...f, list_id: defaultListId }))
+              setAddOpen(true)
+            }}>
               <Plus className="w-3.5 h-3.5" /> New Task
             </Button>
           )}
@@ -1066,7 +1073,11 @@ export default function TasksPage() {
               {isLoading ? (
                 [...Array(6)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={canEdit ? 8 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => setAddOpen(true) } : undefined} /></td></tr>
+                <tr><td colSpan={canEdit ? 8 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => {
+                  const defaultListId = resolvedListId !== 'global' ? resolvedListId : (visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || '')
+                  setNewForm(f => ({ ...f, list_id: defaultListId }))
+                  setAddOpen(true)
+                } } : undefined} /></td></tr>
               ) : filtered.map((task: any) => {
                 const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
                 const subs = subtasksByParent.get(task.id) || []
@@ -1553,6 +1564,21 @@ export default function TasksPage() {
               <Input value={newForm.title} onChange={e => setNewForm(f => ({ ...f, title: e.target.value }))} className="h-9 text-sm" placeholder="What needs to be done?" />
             </div>
             <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">List *</label>
+              <select
+                value={newForm.list_id}
+                onChange={e => setNewForm(f => ({ ...f, list_id: e.target.value }))}
+                className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background"
+              >
+                {visibleLists.length === 0 && <option value="">No lists available</option>}
+                {visibleLists.map(l => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}{l.type === 'private' ? ' (private)' : l.type === 'public' ? ' (public)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
               <textarea value={newForm.description} onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))}
                 className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Details…" />
@@ -1596,7 +1622,7 @@ export default function TasksPage() {
                 <Input value={newForm.property_name} onChange={e => setNewForm(f => ({ ...f, property_name: e.target.value }))} className="h-9 text-sm" placeholder="Optional" />
               </div>
             </div>
-            <Button className="w-full h-10" disabled={!newForm.title.trim() || creating} onClick={() => createTask()}>
+            <Button className="w-full h-10" disabled={!newForm.title.trim() || !newForm.list_id || creating} onClick={() => createTask()}>
               {creating ? 'Creating…' : 'Create Task'}
             </Button>
           </div>
