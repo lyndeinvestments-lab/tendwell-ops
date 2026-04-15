@@ -13,12 +13,11 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Eye, EyeOff, Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 
-// ── Access code reveal cell ──────────────────────────────────────────────────
-function RevealCell({ value, field, id }: { value: string | null; field: string; id: string }) {
-  const [revealed, setRevealed] = useState(false)
+// ── Access code cell (always visible, click to copy) ────────────────────────
+function RevealCell({ value }: { value: string | null; field: string; id: string }) {
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
@@ -29,39 +28,11 @@ function RevealCell({ value, field, id }: { value: string | null; field: string;
     })
   }
 
-  async function handleReveal() {
-    setRevealed(true)
-    try {
-      await supabase.from('access_audit_log').insert({
-        property_id: id,
-        field_name: field,
-        action: 'reveal',
-        timestamp: new Date().toISOString(),
-      })
-    } catch { /* silent */ }
-  }
-
   if (!value) return <span className="text-muted-foreground text-xs">—</span>
-
-  if (!revealed) {
-    return (
-      <button
-        onClick={handleReveal}
-        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors group"
-        data-testid={`modal-reveal-${field}`}
-      >
-        <span className="tracking-widest">••••••</span>
-        <Eye className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </button>
-    )
-  }
 
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs font-mono">{value}</span>
-      <button onClick={() => setRevealed(false)} className="text-muted-foreground hover:text-foreground">
-        <EyeOff className="w-3 h-3" />
-      </button>
       <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground" title={copied ? 'Copied!' : 'Copy'}>
         {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
       </button>
