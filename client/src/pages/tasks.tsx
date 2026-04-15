@@ -13,10 +13,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Search, X, Plus, CheckSquare, Clock, AlertCircle, ChevronDown, ChevronUp,
   MessageSquare, Send, Download, ArrowUpDown, ArrowUp, ArrowDown,
   List, Eye, EyeOff, UserPlus, Users2, Palette, Settings2, Lock, Globe, Trash2,
+  Layers, CornerDownRight,
 } from 'lucide-react'
 import { format, differenceInDays, isPast, isToday } from 'date-fns'
 import Papa from 'papaparse'
@@ -259,6 +261,106 @@ function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: a
   )
 }
 
+function ReparentPopover({
+  open, onOpenChange, trigger, taskIds, candidates, onPickExisting, onCreateParent, align = 'start',
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  trigger: React.ReactNode
+  taskIds: string[]
+  candidates: any[]
+  onPickExisting: (parentId: string) => void
+  onCreateParent: (title: string) => void
+  align?: 'start' | 'center' | 'end'
+}) {
+  const [mode, setMode] = useState<'existing' | 'new'>('existing')
+  const [query, setQuery] = useState('')
+  const [newTitle, setNewTitle] = useState('')
+
+  useEffect(() => {
+    if (!open) {
+      setMode('existing')
+      setQuery('')
+      setNewTitle('')
+    }
+  }, [open])
+
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const pool = candidates.filter((t: any) => !taskIds.includes(t.id))
+    if (!q) return pool.slice(0, 20)
+    return pool.filter((t: any) => (t.title || '').toLowerCase().includes(q)).slice(0, 20)
+  }, [candidates, taskIds, query])
+
+  const countLabel = taskIds.length === 1 ? '1 task' : `${taskIds.length} tasks`
+
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align={align}>
+        <div className="flex border-b border-border">
+          <button
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${mode === 'existing' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setMode('existing')}
+          >Existing task</button>
+          <button
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${mode === 'new' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setMode('new')}
+          >New parent</button>
+        </div>
+        {mode === 'existing' ? (
+          <div className="p-2">
+            <Input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search tasks…"
+              className="h-8 text-xs mb-2"
+            />
+            <div className="max-h-60 overflow-y-auto">
+              {matches.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">
+                  {query ? 'No matching top-level tasks' : 'No eligible parents available'}
+                </p>
+              ) : matches.map((t: any) => (
+                <button
+                  key={t.id}
+                  onClick={() => onPickExisting(t.id)}
+                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent"
+                >
+                  <div className="font-medium truncate">{t.title}</div>
+                  {t.property_name && <div className="text-muted-foreground text-[10px] truncate">{t.property_name}</div>}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="p-2 space-y-2">
+            <label className="text-xs font-medium text-muted-foreground block">Parent task title</label>
+            <Input
+              autoFocus
+              value={newTitle}
+              onChange={e => setNewTitle(e.target.value)}
+              placeholder="e.g. Onboarding — 123 Main St"
+              className="h-8 text-xs"
+              onKeyDown={e => { if (e.key === 'Enter' && newTitle.trim()) onCreateParent(newTitle.trim()) }}
+            />
+            <Button
+              size="sm"
+              className="w-full h-8 text-xs"
+              disabled={!newTitle.trim()}
+              onClick={() => onCreateParent(newTitle.trim())}
+            >
+              Create & move {countLabel}
+            </Button>
+            <p className="text-[10px] text-muted-foreground">List, priority, and category inherit from the first selected task. You can edit details after creation.</p>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export default function TasksPage() {
   usePageTitle('Tasks')
   const { toast } = useToast()
@@ -279,6 +381,9 @@ export default function TasksPage() {
   const [manageList, setManageList] = useState<any>(null)
   const [newListName, setNewListName] = useState('')
   const [expandedTasks, setExpandedTasks] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [reparentOpen, setReparentOpen] = useState(false)
+  const [detailReparentOpen, setDetailReparentOpen] = useState(false)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -626,6 +731,80 @@ export default function TasksPage() {
     onError: () => toast({ title: 'Delete failed', variant: 'destructive' }),
   })
 
+  // ─── Reparenting: move tasks under an existing or new parent ──────────────
+  const { mutate: reparentToExisting } = useGuardedMutation('tasks', {
+    mutationFn: async ({ taskIds, parentId }: { taskIds: string[]; parentId: string }) => {
+      const parent = tasks?.find((t: any) => t.id === parentId)
+      if (!parent) throw new Error('Parent task not found')
+      const { error } = await supabase
+        .from('tasks')
+        .update({ parent_task_id: parentId, list_id: parent.list_id, updated_at: new Date().toISOString() })
+        .in('id', taskIds)
+      if (error) throw error
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      setSelectedIds(new Set())
+      setReparentOpen(false)
+      setDetailReparentOpen(false)
+      setExpandedTasks(prev => new Set(prev).add(vars.parentId))
+      toast({ title: vars.taskIds.length > 1 ? `Moved ${vars.taskIds.length} tasks under parent` : 'Moved task under parent' })
+    },
+    onError: (err: any) => toast({ title: 'Reparent failed', description: err?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: reparentToNew } = useGuardedMutation('tasks', {
+    mutationFn: async ({ taskIds, title }: { taskIds: string[]; title: string }) => {
+      if (!tasks) throw new Error('Tasks not loaded')
+      const first = tasks.find((t: any) => taskIds.includes(t.id))
+      if (!first) throw new Error('No selected task found')
+      const { data: parent, error: insertErr } = await supabase
+        .from('tasks')
+        .insert({
+          title: title.trim(),
+          status: 'To Do',
+          priority: first.priority || 'Medium',
+          category: first.category || 'General',
+          list_id: first.list_id,
+          created_by: effectiveUser?.label || null,
+        })
+        .select()
+        .single()
+      if (insertErr || !parent) throw insertErr || new Error('Parent creation failed')
+      const { error: updateErr } = await supabase
+        .from('tasks')
+        .update({ parent_task_id: parent.id, list_id: parent.list_id, updated_at: new Date().toISOString() })
+        .in('id', taskIds)
+      if (updateErr) throw updateErr
+      return parent.id as string
+    },
+    onSuccess: (parentId, vars) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      setSelectedIds(new Set())
+      setReparentOpen(false)
+      setDetailReparentOpen(false)
+      if (parentId) setExpandedTasks(prev => new Set(prev).add(parentId))
+      toast({ title: `Created parent with ${vars.taskIds.length} ${vars.taskIds.length === 1 ? 'subtask' : 'subtasks'}` })
+    },
+    onError: (err: any) => toast({ title: 'Failed to create parent', description: err?.message, variant: 'destructive' }),
+  })
+
+  // A task is eligible to become a subtask if it's not already a subtask and has no children.
+  const isEligibleSubtask = useCallback((task: any) => {
+    if (!task) return false
+    if (task.parent_task_id) return false
+    const subs = subtasksByParent.get(task.id) || []
+    return subs.length === 0
+  }, [subtasksByParent])
+
+  // Candidate parents for a given set of selected task IDs.
+  const parentCandidates = useMemo(() => {
+    if (!tasks) return []
+    return tasks.filter((t: any) =>
+      !t.parent_task_id && !selectedIds.has(t.id)
+    )
+  }, [tasks, selectedIds])
+
   // ─── List management ───────────────────────────────────────────────────────
   async function createList() {
     if (!newListName.trim()) return
@@ -852,7 +1031,29 @@ export default function TasksPage() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>
-                <th className={`${thCls} sticky left-0 z-20 bg-muted`} onClick={() => toggleSort('title')}>Task <SortIcon col="title" /></th>
+                {canEdit && (
+                  <th className="sticky left-0 z-20 bg-muted w-8 py-2 pl-3 pr-1">
+                    {(() => {
+                      const eligibleFiltered = filtered.filter((t: any) => isEligibleSubtask(t))
+                      const allSelected = eligibleFiltered.length > 0 && eligibleFiltered.every((t: any) => selectedIds.has(t.id))
+                      const someSelected = selectedIds.size > 0 && !allSelected
+                      return (
+                        <Checkbox
+                          checked={allSelected ? true : someSelected ? 'indeterminate' : false}
+                          onCheckedChange={(v) => {
+                            if (v) {
+                              setSelectedIds(new Set(eligibleFiltered.map((t: any) => t.id)))
+                            } else {
+                              setSelectedIds(new Set())
+                            }
+                          }}
+                          aria-label="Select all eligible tasks"
+                        />
+                      )
+                    })()}
+                  </th>
+                )}
+                <th className={`${thCls} ${canEdit ? '' : 'sticky left-0 z-20'} bg-muted`} onClick={() => toggleSort('title')}>Task <SortIcon col="title" /></th>
                 <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
                 <th className={thCls} onClick={() => toggleSort('priority')}>Priority <SortIcon col="priority" /></th>
                 <th className={thCls} onClick={() => toggleSort('due_date')}>Due <SortIcon col="due_date" /></th>
@@ -863,19 +1064,39 @@ export default function TasksPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(6)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 7 : 6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+                [...Array(6)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={canEdit ? 7 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => setAddOpen(true) } : undefined} /></td></tr>
+                <tr><td colSpan={canEdit ? 8 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => setAddOpen(true) } : undefined} /></td></tr>
               ) : filtered.map((task: any) => {
                 const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
                 const subs = subtasksByParent.get(task.id) || []
                 const hasSubs = subs.length > 0
                 const isExpanded = expandedTasks.has(task.id)
                 const progress = getSubtaskProgress(task.id)
+                const eligible = isEligibleSubtask(task)
+                const isSelected = selectedIds.has(task.id)
                 return (
                   <React.Fragment key={task.id}>
-                    <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
-                      <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                    <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
+                      {canEdit && (
+                        <td className="py-2 pl-3 pr-1 sticky left-0 z-10 bg-background w-8" onClick={e => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            disabled={!eligible}
+                            onCheckedChange={(v) => {
+                              setSelectedIds(prev => {
+                                const next = new Set(prev)
+                                if (v) next.add(task.id)
+                                else next.delete(task.id)
+                                return next
+                              })
+                            }}
+                            aria-label={`Select ${task.title}`}
+                            title={!eligible ? (hasSubs ? 'Has subtasks — cannot become a subtask' : 'Already a subtask') : undefined}
+                          />
+                        </td>
+                      )}
+                      <td className={`py-2 px-3 font-medium text-xs ${canEdit ? '' : 'sticky left-0 z-10'} bg-background`}>
                         <div className="flex items-center gap-1.5">
                           {hasSubs && (
                             <button onClick={e => { e.stopPropagation(); toggleExpand(task.id) }} className="text-muted-foreground hover:text-foreground flex-shrink-0">
@@ -910,7 +1131,8 @@ export default function TasksPage() {
                       const subOverdue = sub.due_date && isPast(new Date(sub.due_date + 'T00:00:00')) && !isToday(new Date(sub.due_date + 'T00:00:00')) && sub.status !== 'Done'
                       return (
                         <tr key={sub.id} className={`border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer ${subOverdue ? 'bg-red-50/20 dark:bg-red-900/5' : sub.status === 'Done' ? 'opacity-50' : ''}`} onClick={() => setDetailTask(sub)}>
-                          <td className="py-1.5 px-3 text-xs sticky left-0 z-10 bg-background">
+                          {canEdit && <td className="py-1.5 pl-3 pr-1 sticky left-0 z-10 bg-background w-8" />}
+                          <td className={`py-1.5 px-3 text-xs ${canEdit ? '' : 'sticky left-0 z-10'} bg-background`}>
                             <div className="flex items-center gap-1.5 pl-6">
                               <span className="w-1 h-1 rounded-full bg-muted-foreground/40 flex-shrink-0" />
                               <span className={sub.status === 'Done' ? 'line-through text-muted-foreground' : ''}>{sub.title}</span>
@@ -937,6 +1159,33 @@ export default function TasksPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* ═══ BULK ACTION BAR ═══ */}
+      {viewMode === 'list' && canEdit && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full border border-border bg-background shadow-lg px-3 py-2">
+          <span className="text-xs font-medium tabular-nums pl-1">
+            {selectedIds.size} selected
+          </span>
+          <ReparentPopover
+            open={reparentOpen}
+            onOpenChange={setReparentOpen}
+            align="center"
+            taskIds={Array.from(selectedIds)}
+            candidates={parentCandidates}
+            onPickExisting={(parentId) => reparentToExisting({ taskIds: Array.from(selectedIds), parentId })}
+            onCreateParent={(title) => reparentToNew({ taskIds: Array.from(selectedIds), title })}
+            trigger={
+              <Button size="sm" className="h-8 text-xs gap-1.5">
+                <Layers className="w-3.5 h-3.5" />
+                Make subtasks of…
+              </Button>
+            }
+          />
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelectedIds(new Set())}>
+            Clear
+          </Button>
         </div>
       )}
 
@@ -1032,23 +1281,41 @@ export default function TasksPage() {
                         </div>
                       )}
                       {canEdit && (
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={async () => {
-                          const title = prompt('Subtask title:')
-                          if (!title?.trim()) return
-                          await supabase.from('tasks').insert({
-                            title: title.trim(),
-                            status: 'To Do',
-                            priority: detailTask.priority || 'Medium',
-                            category: detailTask.category || 'General',
-                            property_name: detailTask.property_name || null,
-                            list_id: detailTask.list_id,
-                            parent_task_id: detailTask.id,
-                            created_by: effectiveUser?.label || null,
-                          })
-                          qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-                        }}>
-                          <Plus className="w-3 h-3" /> Add subtask
-                        </Button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={async () => {
+                            const title = prompt('Subtask title:')
+                            if (!title?.trim()) return
+                            await supabase.from('tasks').insert({
+                              title: title.trim(),
+                              status: 'To Do',
+                              priority: detailTask.priority || 'Medium',
+                              category: detailTask.category || 'General',
+                              property_name: detailTask.property_name || null,
+                              list_id: detailTask.list_id,
+                              parent_task_id: detailTask.id,
+                              created_by: effectiveUser?.label || null,
+                            })
+                            qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+                          }}>
+                            <Plus className="w-3 h-3" /> Add subtask
+                          </Button>
+                          {isEligibleSubtask(detailTask) && (
+                            <ReparentPopover
+                              open={detailReparentOpen}
+                              onOpenChange={setDetailReparentOpen}
+                              align="start"
+                              taskIds={[detailTask.id]}
+                              candidates={parentCandidates.filter((c: any) => c.id !== detailTask.id)}
+                              onPickExisting={(parentId) => reparentToExisting({ taskIds: [detailTask.id], parentId })}
+                              onCreateParent={(title) => reparentToNew({ taskIds: [detailTask.id], title })}
+                              trigger={
+                                <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
+                                  <CornerDownRight className="w-3 h-3" /> Move under…
+                                </Button>
+                              }
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   ) : detailTask.parent_task_id ? (
