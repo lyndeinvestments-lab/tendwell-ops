@@ -168,7 +168,7 @@ export default function CostTrackingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes')
+        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes, estimated_deep_clean_cost, deep_clean_3x_ce, profit_deep_clean')
       if (error) throw error
       return data || []
     },
@@ -380,20 +380,23 @@ export default function CostTrackingPage() {
               <th className={thCls} onClick={() => toggleSort('estimated_profit')}>Profit <SortIcon col="estimated_profit" /></th>
               <th className={thCls} onClick={() => toggleSort('profit_percentage')}>Profit % <SortIcon col="profit_percentage" /></th>
               <th className={thCls} onClick={() => toggleSort('break_even_ce')} title={`CE needed to break even at ${Math.round(breakEvenMargin * 100)}% margin`}>B/E CE <SortIcon col="break_even_ce" /></th>
+              <th className={thCls} title="$0.30 / sq ft">DC Cost</th>
+              <th className={thCls} title="3× Client Charged">DC Income</th>
+              <th className={thCls} title="DC Income − DC Cost">DC Profit</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(12)].map((_, j) => (
+                  {[...Array(15)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={12}>
+                <td colSpan={15}>
                   <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
                 </td>
               </tr>
@@ -485,6 +488,9 @@ export default function CostTrackingPage() {
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">
                     {p.total_estimated_cost != null ? '$' + (p.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2) : '—'}
                   </td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{p.estimated_deep_clean_cost != null ? '$' + Number(p.estimated_deep_clean_cost).toFixed(2) : '—'}</td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{p.deep_clean_3x_ce != null ? '$' + Number(p.deep_clean_3x_ce).toFixed(2) : '—'}</td>
+                  <td className={`py-2 px-3 tabular-nums text-xs font-medium ${(p.profit_deep_clean || 0) < 0 ? 'text-destructive' : ''}`}>{p.profit_deep_clean != null ? '$' + Number(p.profit_deep_clean).toFixed(2) : '—'}</td>
                 </tr>
                   </ContextMenuTrigger>
                   <ContextMenuContent>

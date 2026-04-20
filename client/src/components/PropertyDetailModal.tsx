@@ -712,6 +712,9 @@ function FinancialsEnhancement({ property }: { property: any }) {
     { label: 'Total Cost', value: fmt(totalCost) },
     { label: 'Profit', value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
     { label: 'Profit %', value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
+    { label: 'DC Cost', value: property.estimated_deep_clean_cost != null ? fmt(Number(property.estimated_deep_clean_cost)) : '—' },
+    { label: 'DC Income (3x)', value: property.deep_clean_3x_ce != null ? fmt(Number(property.deep_clean_3x_ce)) : '—' },
+    { label: 'DC Profit', value: property.profit_deep_clean != null ? fmt(Number(property.profit_deep_clean)) : '—', color: Number(property.profit_deep_clean || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
   ]
 
   return (
@@ -1284,6 +1287,22 @@ export function PropertyDetailModal() {
                       'text-destructive'
                     }`}>
                       {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+                    </span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
+                  <div>
+                    <span className="text-xs text-muted-foreground block">DC Cost</span>
+                    <span className="text-sm font-medium">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">DC Income (3x)</span>
+                    <span className="text-sm font-medium">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">DC Profit</span>
+                    <span className={`text-sm font-medium ${(property.profit_deep_clean || 0) < 0 ? 'text-destructive' : ''}`}>
+                      {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
                     </span>
                   </div>
                 </div>
