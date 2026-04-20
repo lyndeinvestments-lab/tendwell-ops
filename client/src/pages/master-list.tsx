@@ -1008,6 +1008,20 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
               {property.total_estimated_cost ? `$${(property.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2)}` : '—'}
             </span>
           </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">DC Cost</span>
+            <span className="text-sm font-medium">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">DC Income (3x)</span>
+            <span className="text-sm font-medium">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
+          </div>
+          <div>
+            <span className="text-xs text-muted-foreground block">DC Profit</span>
+            <span className={`text-sm font-medium ${(property.profit_deep_clean || 0) < 0 ? 'text-destructive' : ''}`}>
+              {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
+            </span>
+          </div>
         </div>}
 
         {/* Editable fields by section */}
