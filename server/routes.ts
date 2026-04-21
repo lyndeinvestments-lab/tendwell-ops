@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -15,6 +16,14 @@ export async function registerRoutes(
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
+  }));
+
+  // Rate limit every /api route: 100 req per 15-minute window per IP.
+  app.use("/api", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
   }));
 
   // All auth is handled via Google OAuth through Supabase Auth.

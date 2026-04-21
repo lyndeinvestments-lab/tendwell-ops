@@ -649,12 +649,12 @@ export default function TasksPage() {
       })
       if (error) throw error
       try {
-        const { notify } = await import('@/lib/notify')
+        const { notify, escapeHtml } = await import('@/lib/notify')
         notify({
           eventType: 'task_assigned',
           subject: `New task: ${newForm.title}`,
-          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${newForm.title}</strong>${newForm.description ? `<br/><span style="color:#475569;">${newForm.description}</span>` : ''}</p>
-            <p style="font-size:13px;color:#475569;">Priority: ${newForm.priority} · Assigned to: ${newForm.assignee_name || 'Unassigned'}${newForm.due_date ? ` · Due: ${newForm.due_date}` : ''}${newForm.property_name ? ` · Property: ${newForm.property_name}` : ''}</p>`,
+          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${escapeHtml(newForm.title)}</strong>${newForm.description ? `<br/><span style="color:#475569;">${escapeHtml(newForm.description)}</span>` : ''}</p>
+            <p style="font-size:13px;color:#475569;">Priority: ${escapeHtml(newForm.priority)} · Assigned to: ${escapeHtml(newForm.assignee_name || 'Unassigned')}${newForm.due_date ? ` · Due: ${escapeHtml(newForm.due_date)}` : ''}${newForm.property_name ? ` · Property: ${escapeHtml(newForm.property_name)}` : ''}</p>`,
           ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
           ctaLabel: 'Open Tasks',
           meta: { assignee: newForm.assignee_name, priority: newForm.priority },
@@ -693,7 +693,7 @@ export default function TasksPage() {
       if (error) throw error
       // Parse mentions and notify
       try {
-        const { parseMentions, notify } = await import('@/lib/notify')
+        const { parseMentions, notify, escapeHtml } = await import('@/lib/notify')
         const mentionedIds = parseMentions(text, (users || []).map((u: any) => ({ id: u.id, label: u.label })))
         // Don't notify yourself
         const myId = effectiveUser?.id
@@ -702,8 +702,8 @@ export default function TasksPage() {
           notify({
             eventType: 'task_mention',
             subject: `${effectiveUser?.label || 'Someone'} mentioned you on "${detailTask.title}"`,
-            bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label || 'Someone'}</strong> mentioned you in a comment on <strong>${detailTask.title}</strong></p>
-              <blockquote style="border-left:3px solid #cbd5e1;padding:8px 12px;margin:12px 0;color:#475569;font-size:13px;white-space:pre-wrap;">${text.replace(/[<>]/g, c => c === '<' ? '&lt;' : '&gt;')}</blockquote>`,
+            bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${escapeHtml(effectiveUser?.label || 'Someone')}</strong> mentioned you in a comment on <strong>${escapeHtml(detailTask.title)}</strong></p>
+              <blockquote style="border-left:3px solid #cbd5e1;padding:8px 12px;margin:12px 0;color:#475569;font-size:13px;white-space:pre-wrap;">${escapeHtml(text)}</blockquote>`,
             ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
             ctaLabel: 'Open Task',
             targetUserIds: targets as number[],
@@ -829,14 +829,14 @@ export default function TasksPage() {
     await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
     // Notify added user
     try {
-      const { notify } = await import('@/lib/notify')
+      const { notify, escapeHtml } = await import('@/lib/notify')
       const addedUser = users?.find((u: any) => u.id === userId)
       if (addedUser) {
         const list = visibleLists.find(l => l.id === listId)
         notify({
           eventType: 'task_assigned',
           subject: `You've been added to "${list?.name || 'a task list'}"`,
-          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${effectiveUser?.label}</strong> added you to the task list <strong>${list?.name || 'Untitled'}</strong></p>`,
+          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${escapeHtml(effectiveUser?.label)}</strong> added you to the task list <strong>${escapeHtml(list?.name || 'Untitled')}</strong></p>`,
           ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
           ctaLabel: 'Open Tasks',
           targetUserIds: [userId],
