@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useAuth, canAccessView } from '@/lib/auth'
@@ -373,9 +373,40 @@ export default function MasterListPage() {
     toast({ title: `Exported ${filtered.length} properties` })
   }
 
-  // ── CSV Import (fill-only mode) ──
-  const [importPreview, setImportPreview] = useState<any[] | null>(null)
+  // ── CSV Import ──
+  type ImportChangeKind = 'fill' | 'overwrite'
+  type ImportChange = { field: string; oldValue: any; newValue: any; kind: ImportChangeKind }
+  type ImportPreviewRow = {
+    rowIdx: number
+    csvName: string
+    match: any | null
+    changes: ImportChange[]
+    invalidFields: string[]
+  }
+
+  const [importPreview, setImportPreview] = useState<ImportPreviewRow[] | null>(null)
   const [importRunning, setImportRunning] = useState(false)
+  const [overwriteMode, setOverwriteMode] = useState(false)
+  const [excludedChanges, setExcludedChanges] = useState<Set<string>>(new Set())
+  const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set())
+
+  // Strict numeric parse: rejects garbage that would silently corrupt calculations.
+  // Strips $ £ € ¥ % , whitespace; requires remainder to be a well-formed number.
+  function parseNumericCell(raw: string): number | null {
+    const trimmed = raw.trim()
+    if (!trimmed) return null
+    const cleaned = trimmed.replace(/[$£€¥%,\s]/g, '')
+    if (!/^-?\d+(\.\d+)?$/.test(cleaned)) return null
+    const n = parseFloat(cleaned)
+    return isFinite(n) ? n : null
+  }
+
+  function parseBooleanCell(raw: string): boolean | null {
+    const v = raw.trim().toLowerCase()
+    if (['true', 'yes', '1', 'y', 't'].includes(v)) return true
+    if (['false', 'no', '0', 'n', 'f'].includes(v)) return false
+    return null
+  }
 
   function handleImportFile(file: File) {
     Papa.parse(file, {
@@ -389,14 +420,12 @@ export default function MasterListPage() {
         const csvRows = result.data as Record<string, string>[]
         const csvHeaders = Object.keys(csvRows[0])
 
-        // Determine how to match: by ID if available, else by name
         const hasId = csvHeaders.some(h => h.toLowerCase().trim() === 'id')
         const nameCol = csvHeaders.find(h => h.toLowerCase().trim() === 'name')
 
-        const preview: any[] = []
+        const preview: ImportPreviewRow[] = []
 
-        for (const csvRow of csvRows) {
-          // Find matching property
+        csvRows.forEach((csvRow, rowIdx) => {
           let match: any = null
           const csvId = hasId ? (csvRow['id'] || csvRow['ID'] || csvRow['Id'] || '').trim() : ''
           const csvName = nameCol ? (csvRow[nameCol] || '').trim() : ''
@@ -411,48 +440,50 @@ export default function MasterListPage() {
           }
 
           if (!match) {
-            preview.push({ csvName: csvName || csvId, match: null, fills: [], skips: 0 })
-            continue
+            preview.push({ rowIdx, csvName: csvName || csvId || '(no name)', match: null, changes: [], invalidFields: [] })
+            return
           }
 
-          // Compare each importable field: fill only if DB is empty and CSV has data
-          const fills: { field: string; value: any }[] = []
-          let skips = 0
+          const changes: ImportChange[] = []
+          const invalidFields: string[] = []
 
           for (const csvCol of csvHeaders) {
             const field = csvCol.toLowerCase().trim()
             if (!IMPORTABLE_FIELDS.has(field)) continue
             const csvVal = (csvRow[csvCol] || '').trim()
-            if (!csvVal) continue // empty CSV cell → skip, never erase
+            if (!csvVal) continue // empty CSV cell never erases DB data
+
+            let typedVal: any = csvVal
+            if (NUMERIC_FIELDS.has(field)) {
+              const n = parseNumericCell(csvVal)
+              if (n == null) { invalidFields.push(field); continue }
+              typedVal = n
+            } else if (BOOLEAN_FIELDS.has(field)) {
+              const b = parseBooleanCell(csvVal)
+              if (b == null) { invalidFields.push(field); continue }
+              typedVal = b
+            }
 
             const dbVal = match[field]
             const dbEmpty = dbVal == null || dbVal === '' || dbVal === 0
 
-            if (dbEmpty) {
-              // Convert value to correct type
-              let typedVal: any = csvVal
-              if (NUMERIC_FIELDS.has(field)) {
-                typedVal = parseFloat(csvVal)
-                if (isNaN(typedVal)) continue
-              } else if (BOOLEAN_FIELDS.has(field)) {
-                typedVal = csvVal.toLowerCase() === 'true' || csvVal === '1' || csvVal.toLowerCase() === 'yes'
-              }
-              fills.push({ field, value: typedVal })
-            } else {
-              // DB already has data — never overwrite
-              skips++
-            }
+            // Skip no-op writes (identical value after type coercion)
+            if (String(dbVal ?? '') === String(typedVal)) continue
+
+            changes.push({
+              field,
+              oldValue: dbVal,
+              newValue: typedVal,
+              kind: dbEmpty ? 'fill' : 'overwrite',
+            })
           }
 
-          preview.push({
-            csvName: match.name,
-            match,
-            fills,
-            skips,
-          })
-        }
+          preview.push({ rowIdx, csvName: match.name, match, changes, invalidFields })
+        })
 
         setImportPreview(preview)
+        setExcludedChanges(new Set())
+        setExpandedRows(new Set())
       },
       error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
     })
@@ -461,24 +492,32 @@ export default function MasterListPage() {
   async function executeImport() {
     if (!importPreview) return
     setImportRunning(true)
-    let updated = 0, fieldsAdded = 0
+    let updated = 0, fieldsApplied = 0
 
     for (const row of importPreview) {
-      if (!row.match || row.fills.length === 0) continue
+      if (!row.match) continue
+      if (excludedChanges.has(`row:${row.rowIdx}`)) continue
+
+      const activeChanges = row.changes.filter(c => {
+        if (c.kind === 'overwrite' && !overwriteMode) return false
+        if (excludedChanges.has(`${row.rowIdx}:${c.field}`)) return false
+        return true
+      })
+      if (activeChanges.length === 0) continue
+
       const updates: Record<string, any> = {}
-      for (const fill of row.fills) {
-        updates[fill.field] = fill.value
-      }
+      for (const c of activeChanges) updates[c.field] = c.newValue
+
       const { error } = await supabase.from('properties').update(updates).eq('id', row.match.id)
       if (!error) {
         updated++
-        fieldsAdded += row.fills.length
+        fieldsApplied += activeChanges.length
       }
     }
 
     qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
     qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-    toast({ title: 'Import complete', description: `${updated} properties updated, ${fieldsAdded} fields filled in` })
+    toast({ title: 'Import complete', description: `${updated} properties updated, ${fieldsApplied} fields changed` })
     setImportPreview(null)
     setImportRunning(false)
   }
@@ -728,16 +767,58 @@ export default function MasterListPage() {
 
       {/* Import CSV Preview Dialog */}
       <Dialog open={!!importPreview} onOpenChange={v => !v && !importRunning && setImportPreview(null)}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Import Preview — Fill Missing Data Only</DialogTitle>
+            <DialogTitle>Import Preview</DialogTitle>
           </DialogHeader>
           {importPreview && (() => {
             const matched = importPreview.filter(r => r.match)
             const unmatched = importPreview.filter(r => !r.match)
-            const withFills = matched.filter(r => r.fills.length > 0)
-            const totalFills = matched.reduce((s: number, r: any) => s + r.fills.length, 0)
-            const totalSkips = matched.reduce((s: number, r: any) => s + r.skips, 0)
+
+            const isActive = (row: ImportPreviewRow, c: ImportChange): boolean => {
+              if (c.kind === 'overwrite' && !overwriteMode) return false
+              if (excludedChanges.has(`row:${row.rowIdx}`)) return false
+              if (excludedChanges.has(`${row.rowIdx}:${c.field}`)) return false
+              return true
+            }
+
+            const totalFills = matched.reduce((s, r) => s + r.changes.filter(c => c.kind === 'fill').length, 0)
+            const totalOverwrites = matched.reduce((s, r) => s + r.changes.filter(c => c.kind === 'overwrite').length, 0)
+            const totalInvalid = matched.reduce((s, r) => s + r.invalidFields.length, 0)
+            const totalActive = matched.reduce(
+              (s, r) => s + r.changes.filter(c => isActive(r, c)).length,
+              0,
+            )
+
+            const toggleRow = (rowIdx: number) => {
+              setExcludedChanges(prev => {
+                const next = new Set(prev)
+                const key = `row:${rowIdx}`
+                if (next.has(key)) next.delete(key); else next.add(key)
+                return next
+              })
+            }
+            const toggleField = (rowIdx: number, field: string) => {
+              setExcludedChanges(prev => {
+                const next = new Set(prev)
+                const key = `${rowIdx}:${field}`
+                if (next.has(key)) next.delete(key); else next.add(key)
+                return next
+              })
+            }
+            const toggleExpand = (rowIdx: number) => {
+              setExpandedRows(prev => {
+                const next = new Set(prev)
+                if (next.has(rowIdx)) next.delete(rowIdx); else next.add(rowIdx)
+                return next
+              })
+            }
+            const fmtVal = (v: any): string => {
+              if (v == null || v === '') return '(empty)'
+              if (typeof v === 'boolean') return v ? 'true' : 'false'
+              return String(v)
+            }
+
             return (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -746,55 +827,159 @@ export default function MasterListPage() {
                     <p className="text-lg font-semibold">{matched.length}</p>
                   </div>
                   <div className="rounded-md border border-green-200 dark:border-green-800 p-2 bg-green-50/50 dark:bg-green-900/10">
-                    <p className="text-green-700 dark:text-green-400">Fields to fill</p>
+                    <p className="text-green-700 dark:text-green-400">Fills (empty → filled)</p>
                     <p className="text-lg font-semibold text-green-700 dark:text-green-400">{totalFills}</p>
                   </div>
-                  <div className="rounded-md border border-border p-2">
-                    <p className="text-muted-foreground">Already have data (skipped)</p>
-                    <p className="text-lg font-semibold">{totalSkips}</p>
+                  <div className={`rounded-md border p-2 ${overwriteMode ? 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10' : 'border-border'}`}>
+                    <p className={overwriteMode ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}>
+                      Overwrites {overwriteMode ? '' : '(disabled)'}
+                    </p>
+                    <p className={`text-lg font-semibold ${overwriteMode ? 'text-amber-700 dark:text-amber-400' : ''}`}>{totalOverwrites}</p>
                   </div>
                   <div className="rounded-md border border-border p-2">
-                    <p className="text-muted-foreground">Unmatched (skipped)</p>
-                    <p className="text-lg font-semibold">{unmatched.length}</p>
+                    <p className="text-muted-foreground">Unmatched / invalid</p>
+                    <p className="text-lg font-semibold">{unmatched.length + totalInvalid}</p>
                   </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Checkbox
+                    id="ml-overwrite-toggle"
+                    checked={overwriteMode}
+                    onCheckedChange={v => setOverwriteMode(!!v)}
+                  />
+                  <Label htmlFor="ml-overwrite-toggle" className="text-xs cursor-pointer">
+                    Allow overwriting existing data
+                  </Label>
+                  {overwriteMode && totalOverwrites > 0 && (
+                    <span className="text-xs text-amber-600 dark:text-amber-400">
+                      {totalOverwrites} existing value{totalOverwrites === 1 ? '' : 's'} will be replaced — review each row.
+                    </span>
+                  )}
                 </div>
 
                 <div className="overflow-auto flex-1 rounded-lg border border-border mt-2">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border">
                       <tr>
+                        <th className="w-8 py-1.5 px-2"></th>
                         <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Property</th>
-                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
-                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Fields to Fill</th>
-                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Skipped (has data)</th>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Changes</th>
+                        <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Fields</th>
+                        <th className="w-20 py-1.5 px-2"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {withFills.map((row: any, i: number) => (
-                        <tr key={i} className="border-b border-border/30">
-                          <td className="py-1.5 px-2 font-medium">{row.csvName}</td>
-                          <td className="py-1.5 px-2">
-                            <span className="text-green-600 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> {row.fills.length} to fill</span>
-                          </td>
-                          <td className="py-1.5 px-2 text-muted-foreground">
-                            {row.fills.map((f: any) => f.field).join(', ')}
-                          </td>
-                          <td className="py-1.5 px-2 text-muted-foreground">{row.skips}</td>
-                        </tr>
-                      ))}
-                      {matched.filter((r: any) => r.fills.length === 0).map((row: any, i: number) => (
-                        <tr key={`skip-${i}`} className="border-b border-border/30 opacity-50">
-                          <td className="py-1.5 px-2">{row.csvName}</td>
-                          <td className="py-1.5 px-2 text-muted-foreground">No changes</td>
-                          <td className="py-1.5 px-2 text-muted-foreground">—</td>
-                          <td className="py-1.5 px-2 text-muted-foreground">{row.skips} kept</td>
-                        </tr>
-                      ))}
-                      {unmatched.map((row: any, i: number) => (
+                      {matched.map(row => {
+                        const rowExcluded = excludedChanges.has(`row:${row.rowIdx}`)
+                        const visibleChanges = row.changes.filter(c => c.kind === 'fill' || overwriteMode)
+                        const activeCount = row.changes.filter(c => isActive(row, c)).length
+                        const hiddenOverwrites = row.changes.filter(c => c.kind === 'overwrite').length
+                        const expanded = expandedRows.has(row.rowIdx)
+
+                        if (visibleChanges.length === 0 && row.invalidFields.length === 0) {
+                          return (
+                            <tr key={row.rowIdx} className="border-b border-border/30 opacity-40">
+                              <td></td>
+                              <td className="py-1.5 px-2">{row.csvName}</td>
+                              <td className="py-1.5 px-2 text-muted-foreground" colSpan={3}>
+                                {hiddenOverwrites > 0
+                                  ? `${hiddenOverwrites} potential overwrite${hiddenOverwrites === 1 ? '' : 's'} — enable overwrite toggle to review`
+                                  : 'No changes'}
+                              </td>
+                            </tr>
+                          )
+                        }
+
+                        return (
+                          <Fragment key={row.rowIdx}>
+                            <tr className={`border-b border-border/30 ${rowExcluded ? 'opacity-40' : ''}`}>
+                              <td className="py-1.5 px-2">
+                                <Checkbox
+                                  checked={!rowExcluded && visibleChanges.length > 0}
+                                  onCheckedChange={() => toggleRow(row.rowIdx)}
+                                  disabled={visibleChanges.length === 0}
+                                />
+                              </td>
+                              <td className="py-1.5 px-2 font-medium">{row.csvName}</td>
+                              <td className="py-1.5 px-2">
+                                <span className="inline-flex items-center gap-2">
+                                  {activeCount > 0 ? (
+                                    <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+                                      <Check className="w-3 h-3" /> {activeCount} to apply
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">0 to apply</span>
+                                  )}
+                                  {row.invalidFields.length > 0 && (
+                                    <span className="text-red-500 flex items-center gap-1">
+                                      <AlertCircle className="w-3 h-3" /> {row.invalidFields.length} invalid
+                                    </span>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="py-1.5 px-2 text-muted-foreground truncate max-w-[280px]">
+                                {visibleChanges.length > 0 ? visibleChanges.map(c => c.field).join(', ') : '—'}
+                              </td>
+                              <td className="py-1.5 px-2 text-right">
+                                {(visibleChanges.length > 0 || row.invalidFields.length > 0) && (
+                                  <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => toggleExpand(row.rowIdx)}>
+                                    {expanded ? 'Hide' : 'Details'}
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                            {expanded && (
+                              <tr className="bg-muted/30">
+                                <td colSpan={5} className="py-2 px-4">
+                                  <div className="space-y-1">
+                                    {visibleChanges.map(c => {
+                                      const fieldExcluded = rowExcluded || excludedChanges.has(`${row.rowIdx}:${c.field}`)
+                                      return (
+                                        <div key={c.field} className={`flex items-center gap-2 text-xs ${fieldExcluded ? 'opacity-40' : ''}`}>
+                                          <Checkbox
+                                            checked={!fieldExcluded}
+                                            onCheckedChange={() => toggleField(row.rowIdx, c.field)}
+                                            disabled={rowExcluded}
+                                          />
+                                          <span className="font-mono font-medium w-36 truncate">{c.field}</span>
+                                          <span className={`text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wide shrink-0 ${c.kind === 'fill' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                            {c.kind}
+                                          </span>
+                                          <span className="text-muted-foreground font-mono truncate">
+                                            {c.kind === 'overwrite' ? (
+                                              <>
+                                                <span>{fmtVal(c.oldValue)}</span>
+                                                <span className="mx-1">→</span>
+                                                <span className="text-foreground">{fmtVal(c.newValue)}</span>
+                                              </>
+                                            ) : (
+                                              <span className="text-foreground">{fmtVal(c.newValue)}</span>
+                                            )}
+                                          </span>
+                                        </div>
+                                      )
+                                    })}
+                                    {row.invalidFields.length > 0 && (
+                                      <div className="text-xs text-red-500 pt-1 flex items-start gap-1">
+                                        <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                                        <span>
+                                          Rejected (won't be written): <span className="font-mono">{row.invalidFields.join(', ')}</span>
+                                        </span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })}
+                      {unmatched.map((row, i) => (
                         <tr key={`unm-${i}`} className="border-b border-border/30 opacity-40">
+                          <td></td>
                           <td className="py-1.5 px-2">{row.csvName}</td>
-                          <td className="py-1.5 px-2 text-red-500">No match</td>
-                          <td className="py-1.5 px-2" colSpan={2}>Property not found in database — skipped</td>
+                          <td className="py-1.5 px-2 text-red-500" colSpan={3}>No match in database — skipped</td>
                         </tr>
                       ))}
                     </tbody>
@@ -803,12 +988,12 @@ export default function MasterListPage() {
 
                 <div className="flex items-center justify-between pt-2 text-xs">
                   <p className="text-muted-foreground">
-                    Only empty fields will be filled. Existing data is never changed or erased.
+                    Empty CSV cells never erase data. Invalid numeric/boolean values are rejected. Computed fields (profit_percentage, stage, name, id) are never touched.
                   </p>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setImportPreview(null)} disabled={importRunning}>Cancel</Button>
-                    <Button size="sm" className="gap-1.5" onClick={executeImport} disabled={importRunning || totalFills === 0}>
-                      {importRunning ? 'Importing…' : `Fill ${totalFills} Fields`}
+                    <Button size="sm" className="gap-1.5" onClick={executeImport} disabled={importRunning || totalActive === 0}>
+                      {importRunning ? 'Importing…' : `Apply ${totalActive} Change${totalActive === 1 ? '' : 's'}`}
                     </Button>
                   </div>
                 </div>
