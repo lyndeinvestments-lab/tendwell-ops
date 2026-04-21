@@ -226,7 +226,8 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       if (photos.length > 0) {
         setUploading(true)
         for (const file of photos.slice(0, 5)) {
-          const path = `inspections/${propertyId}/${Date.now()}_${file.name}`
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+          const path = `inspections/${propertyId}/${Date.now()}_${safeName}`
           const { error: uploadError } = await supabase.storage.from('inspections').upload(path, file)
           if (!uploadError) {
             const { data: urlData } = supabase.storage.from('inspections').getPublicUrl(path)

@@ -59,6 +59,11 @@ interface NotifyOpts {
   targetUserIds?: number[]
 }
 
+export function escapeHtml(s: string | null | undefined): string {
+  if (!s) return ''
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
+}
+
 // Parse @mentions from text given list of user labels.
 // Matches @<label> case-insensitive, longest match first to handle multi-word labels.
 export function parseMentions(text: string, users: Array<{ id: number; label: string }>): number[] {
