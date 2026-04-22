@@ -750,6 +750,33 @@ function FinancialsEnhancement({ property }: { property: any }) {
   )
 }
 
+// ── Editable field groups ─────────────────────────────────────────────────────
+const LINEN_FIELD_KEYS = [
+  'king_beds', 'queen_beds', 'full_beds', 'twin_beds',
+  'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels',
+] as const
+const ACCESS_FIELD_KEYS = ['auto_code', 'door_code', 'other_codes', 'wifi_info'] as const
+const AC_FIELD_KEYS = ['filter_size', 'last_filter_changed'] as const
+
+function buildFormFromProperty(property: any): Record<string, any> {
+  const form: Record<string, any> = {
+    address: property.address || '',
+    bedrooms: property.bedrooms ?? '',
+    full_baths: property.full_baths ?? '',
+    square_footage: property.square_footage ?? '',
+    guest_count: property.guest_count ?? '',
+    ce_charged: property.ce_charged ?? '',
+    cleaner_pay: property.cleaner_pay ?? '',
+    notes: property.notes || '',
+    linen_notes: property.linen_notes || '',
+  }
+  for (const k of LINEN_FIELD_KEYS) form[k] = property[k] ?? ''
+  for (const k of ACCESS_FIELD_KEYS) form[k] = property[k] || ''
+  form.filter_size = property.filter_size || ''
+  form.last_filter_changed = property.last_filter_changed ? String(property.last_filter_changed).slice(0, 10) : ''
+  return form
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function PropertyDetailModal() {
   const { modalState, closePropertyModal } = usePropertyModal()
@@ -825,38 +852,51 @@ export function PropertyDetailModal() {
   // Reset form when property changes
   useEffect(() => {
     if (property) {
-      setForm({
-        address: property.address || '',
-        bedrooms: property.bedrooms ?? '',
-        full_baths: property.full_baths ?? '',
-        square_footage: property.square_footage ?? '',
-        guest_count: property.guest_count ?? '',
-        ce_charged: property.ce_charged ?? '',
-        cleaner_pay: property.cleaner_pay ?? '',
-        notes: property.notes || '',
-      })
+      setForm(buildFormFromProperty(property))
       setIsEditing(false)
     }
   }, [property?.id])
 
   const { mutate: saveEdits, isPending: saving } = useMutation({
     mutationFn: async () => {
-      const updates: Record<string, any> = {
-        address: form.address || null,
-        bedrooms: form.bedrooms !== '' ? parseFloat(String(form.bedrooms)) : null,
-        full_baths: form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null,
-        square_footage: form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null,
-        guest_count: form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null,
-        ce_charged: form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null,
-        cleaner_pay: form.cleaner_pay !== '' ? parseFloat(String(form.cleaner_pay)) : null,
-        notes: form.notes || null,
+      const updates: Record<string, any> = {}
+      if (canEditProperty) {
+        updates.address = form.address || null
+        updates.bedrooms = form.bedrooms !== '' ? parseFloat(String(form.bedrooms)) : null
+        updates.full_baths = form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null
+        updates.square_footage = form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null
+        updates.guest_count = form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null
+        updates.notes = form.notes || null
       }
+      if (canEditFinancials) {
+        updates.ce_charged = form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null
+        updates.cleaner_pay = form.cleaner_pay !== '' ? parseFloat(String(form.cleaner_pay)) : null
+      }
+      if (canEditAccess) {
+        for (const k of ACCESS_FIELD_KEYS) updates[k] = form[k] || null
+      }
+      if (canEditLinens) {
+        for (const k of LINEN_FIELD_KEYS) {
+          updates[k] = form[k] !== '' ? parseFloat(String(form[k])) : null
+        }
+        updates.linen_notes = form.linen_notes || null
+      }
+      if (canEditAC) {
+        updates.filter_size = form.filter_size || null
+        updates.last_filter_changed = form.last_filter_changed || null
+      }
+      if (Object.keys(updates).length === 0) return
       const { error } = await supabase.from('properties').update(updates).eq('id', propertyId!)
       if (error) throw error
     },
     onSuccess: () => {
       // Log each changed field to activity_log
-      const changedFields = ['address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', 'notes']
+      const changedFields: string[] = []
+      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'notes')
+      if (canEditFinancials) changedFields.push('ce_charged', 'cleaner_pay')
+      if (canEditAccess) changedFields.push(...ACCESS_FIELD_KEYS)
+      if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS, 'linen_notes')
+      if (canEditAC) changedFields.push(...AC_FIELD_KEYS)
       for (const field of changedFields) {
         const oldVal = property?.[field] ?? null
         const newVal = form[field] !== '' ? form[field] : null
@@ -878,7 +918,7 @@ export function PropertyDetailModal() {
   // Per-field inline save (click a field to edit it without pencil icon)
   const { mutate: saveInlineField } = useMutation({
     mutationFn: async ({ field, value }: { field: string; value: any }) => {
-      const numFields = ['bedrooms', 'full_baths', 'square_footage', 'ce_charged', 'cleaner_pay']
+      const numFields = ['bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', ...LINEN_FIELD_KEYS]
       const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
       const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', propertyId!)
       if (error) throw error
@@ -905,8 +945,8 @@ export function PropertyDetailModal() {
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
   })
 
-  function startInlineEdit(field: string, currentValue: any) {
-    if (!canEdit || isEditing) return
+  function startInlineEdit(field: string, currentValue: any, allowed: boolean = canEditProperty) {
+    if (!allowed || isEditing) return
     setInlineField(field)
     setInlineValue(String(currentValue ?? ''))
   }
@@ -915,7 +955,12 @@ export function PropertyDetailModal() {
     saveInlineField({ field, value: inlineValue })
   }
 
-  const canEdit = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser) || canEditView('cost-tracking', effectiveUser)
+  const canEditProperty = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser)
+  const canEditFinancials = canEditView('cost-tracking', effectiveUser)
+  const canEditAccess = canEditView('access-codes', effectiveUser)
+  const canEditLinens = canEditView('linen-tracker', effectiveUser)
+  const canEditAC = canEditView('ac-filters', effectiveUser)
+  const canEdit = canEditProperty || canEditFinancials || canEditAccess || canEditLinens || canEditAC
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
   const canViewAssignments = canAccessView('cleaners', effectiveUser)
@@ -983,7 +1028,7 @@ export function PropertyDetailModal() {
             {canEdit && !isLoading && (
               isEditing ? (
                 <button
-                  onClick={() => { setIsEditing(false); setForm({ address: property?.address || '', bedrooms: property?.bedrooms ?? '', full_baths: property?.full_baths ?? '', square_footage: property?.square_footage ?? '', guest_count: property?.guest_count ?? '', ce_charged: property?.ce_charged ?? '', cleaner_pay: property?.cleaner_pay ?? '', notes: property?.notes || '' }) }}
+                  onClick={() => { setIsEditing(false); if (property) setForm(buildFormFromProperty(property)) }}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
                   title="Cancel editing"
                   data-testid="modal-cancel-edit"
@@ -1110,13 +1155,13 @@ export function PropertyDetailModal() {
                       {linkedContact.payment_method && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
                       )}
-                      {canEdit && (
+                      {canEditProperty && (
                         <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title="Unlink client">
                           <X className="w-3 h-3" />
                         </button>
                       )}
                     </div>
-                  ) : canEdit ? (
+                  ) : canEditProperty ? (
                     <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-dashed border-border hover:border-primary/40">
@@ -1157,7 +1202,7 @@ export function PropertyDetailModal() {
               <div className="grid grid-cols-1 gap-2">
                 <div>
                   <Label className="text-xs text-muted-foreground">Address</Label>
-                  {isEditing ? (
+                  {isEditing && canEditProperty ? (
                     <Input
                       value={form.address}
                       onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
@@ -1175,8 +1220,8 @@ export function PropertyDetailModal() {
                       className="mt-0.5 h-7 text-xs"
                     />
                   ) : (
-                    <p className={`text-sm mt-0.5 ${canEdit ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                       onClick={() => startInlineEdit('address', property.address)}>
+                    <p className={`text-sm mt-0.5 ${canEditProperty ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                       onClick={() => startInlineEdit('address', property.address, canEditProperty)}>
                       {property.address || '—'}
                     </p>
                   )}
@@ -1191,7 +1236,7 @@ export function PropertyDetailModal() {
                 ] as { label: string; field: string; value: any; editable: boolean }[]).map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>
-                    {isEditing && row.editable !== false && row.field !== 'full_baths' ? (
+                    {isEditing && canEditProperty && row.editable !== false && row.field !== 'full_baths' ? (
                       <Input
                         type="number"
                         value={form[row.field] ?? ''}
@@ -1211,8 +1256,8 @@ export function PropertyDetailModal() {
                         className="mt-0.5 h-7 text-xs"
                       />
                     ) : (
-                      <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''} ${canEdit && row.editable !== false ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                         onClick={() => row.editable !== false && startInlineEdit(row.field, property[row.field])}>
+                      <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''} ${canEditProperty && row.editable !== false ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                         onClick={() => row.editable !== false && startInlineEdit(row.field, property[row.field], canEditProperty)}>
                         {row.value ?? '—'}
                       </p>
                     )}
@@ -1238,7 +1283,7 @@ export function PropertyDetailModal() {
                   ].map(row => (
                     <div key={row.field}>
                       <Label className="text-xs text-muted-foreground">{row.label}</Label>
-                      {isEditing ? (
+                      {isEditing && canEditFinancials ? (
                         <Input
                           type="number"
                           step="0.01"
@@ -1260,8 +1305,8 @@ export function PropertyDetailModal() {
                           className="mt-0.5 h-7 text-xs"
                         />
                       ) : (
-                        <p className={`text-sm mt-0.5 ${canEdit ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                           onClick={() => startInlineEdit(row.field, row.value)}>
+                        <p className={`text-sm mt-0.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                           onClick={() => startInlineEdit(row.field, row.value, canEditFinancials)}>
                           {row.value != null ? `$${Number(row.value).toFixed(2)}` : '—'}
                         </p>
                       )}
@@ -1319,16 +1364,48 @@ export function PropertyDetailModal() {
                   {LINEN_COLS.map(col => (
                     <div key={col.key} className="bg-muted/40 rounded p-2">
                       <span className="text-xs text-muted-foreground block">{col.label}</span>
-                      <span className="text-sm font-medium">{property[col.key] ?? '—'}</span>
+                      {isEditing && canEditLinens ? (
+                        <Input
+                          type="number"
+                          value={form[col.key] ?? ''}
+                          onChange={e => setForm(f => ({ ...f, [col.key]: e.target.value }))}
+                          className="mt-0.5 h-7 text-xs"
+                          data-testid={`modal-input-${col.key}`}
+                        />
+                      ) : inlineField === col.key ? (
+                        <Input
+                          autoFocus
+                          type="number"
+                          value={inlineValue}
+                          onChange={e => setInlineValue(e.target.value)}
+                          onBlur={() => commitInlineEdit(col.key)}
+                          onKeyDown={e => e.key === 'Enter' && commitInlineEdit(col.key)}
+                          className="mt-0.5 h-7 text-xs"
+                        />
+                      ) : (
+                        <span
+                          className={`text-sm font-medium ${canEditLinens ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors inline-block' : ''}`}
+                          onClick={() => startInlineEdit(col.key, property[col.key], canEditLinens)}
+                        >
+                          {property[col.key] ?? '—'}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
-                {property.linen_notes && (
-                  <div className="mt-2">
-                    <span className="text-xs text-muted-foreground block">Notes</span>
-                    <p className="text-sm mt-0.5">{property.linen_notes}</p>
-                  </div>
-                )}
+                <div className="mt-2">
+                  <span className="text-xs text-muted-foreground block">Notes</span>
+                  {isEditing && canEditLinens ? (
+                    <textarea
+                      value={form.linen_notes ?? ''}
+                      onChange={e => setForm(f => ({ ...f, linen_notes: e.target.value }))}
+                      className="mt-0.5 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                      data-testid="modal-input-linen_notes"
+                    />
+                  ) : (
+                    <p className="text-sm mt-0.5">{property.linen_notes || <span className="text-muted-foreground italic">—</span>}</p>
+                  )}
+                </div>
               </div>
               <Separator />
               <div>
@@ -1336,11 +1413,44 @@ export function PropertyDetailModal() {
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <span className="text-xs text-muted-foreground block">Filter Size</span>
-                    <span className="text-sm">{property.filter_size || '—'}</span>
+                    {isEditing && canEditAC ? (
+                      <Input
+                        value={form.filter_size ?? ''}
+                        onChange={e => setForm(f => ({ ...f, filter_size: e.target.value }))}
+                        className="mt-0.5 h-7 text-xs"
+                        data-testid="modal-input-filter_size"
+                      />
+                    ) : inlineField === 'filter_size' ? (
+                      <Input
+                        autoFocus
+                        value={inlineValue}
+                        onChange={e => setInlineValue(e.target.value)}
+                        onBlur={() => commitInlineEdit('filter_size')}
+                        onKeyDown={e => e.key === 'Enter' && commitInlineEdit('filter_size')}
+                        className="mt-0.5 h-7 text-xs"
+                      />
+                    ) : (
+                      <span
+                        className={`text-sm ${canEditAC ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors inline-block' : ''}`}
+                        onClick={() => startInlineEdit('filter_size', property.filter_size, canEditAC)}
+                      >
+                        {property.filter_size || '—'}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground block">Last Changed</span>
-                    <span className="text-sm">{property.last_filter_changed ? property.last_filter_changed.slice(0, 10) : '—'}</span>
+                    {isEditing && canEditAC ? (
+                      <Input
+                        type="date"
+                        value={form.last_filter_changed ?? ''}
+                        onChange={e => setForm(f => ({ ...f, last_filter_changed: e.target.value }))}
+                        className="mt-0.5 h-7 text-xs"
+                        data-testid="modal-input-last_filter_changed"
+                      />
+                    ) : (
+                      <span className="text-sm">{property.last_filter_changed ? property.last_filter_changed.slice(0, 10) : '—'}</span>
+                    )}
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground block">Next Due</span>
@@ -1355,17 +1465,38 @@ export function PropertyDetailModal() {
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access & WiFi</h4>
                     <div className="space-y-2">
-                      {[
-                        { key: 'auto_code', label: 'Auto Code' },
-                        { key: 'door_code', label: 'Door Code' },
-                        { key: 'other_codes', label: 'Other Codes' },
-                        { key: 'wifi_info', label: 'WiFi Info' },
-                      ].map(col => (
-                        <div key={col.key}>
-                          <span className="text-xs text-muted-foreground block mb-0.5">{col.label}</span>
-                          <span className="text-sm">{property[col.key] || '—'}</span>
-                        </div>
-                      ))}
+                      {ACCESS_FIELD_KEYS.map(k => {
+                        const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
+                        return (
+                          <div key={k}>
+                            <span className="text-xs text-muted-foreground block mb-0.5">{label}</span>
+                            {isEditing && canEditAccess ? (
+                              <Input
+                                value={form[k] ?? ''}
+                                onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                                className="mt-0.5 h-7 text-xs"
+                                data-testid={`modal-input-${k}`}
+                              />
+                            ) : inlineField === k ? (
+                              <Input
+                                autoFocus
+                                value={inlineValue}
+                                onChange={e => setInlineValue(e.target.value)}
+                                onBlur={() => commitInlineEdit(k)}
+                                onKeyDown={e => e.key === 'Enter' && commitInlineEdit(k)}
+                                className="mt-0.5 h-7 text-xs"
+                              />
+                            ) : (
+                              <span
+                                className={`text-sm ${canEditAccess ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors inline-block' : ''}`}
+                                onClick={() => startInlineEdit(k, property[k], canEditAccess)}
+                              >
+                                {property[k] || '—'}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 </>
@@ -1378,17 +1509,40 @@ export function PropertyDetailModal() {
                 <div>
                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access Codes</h4>
                   <div className="space-y-3">
-                    {[
-                      { key: 'auto_code', label: 'Auto Code' },
-                      { key: 'door_code', label: 'Door Code' },
-                      { key: 'other_codes', label: 'Other Codes' },
-                      { key: 'wifi_info', label: 'WiFi Info' },
-                    ].map(col => (
-                      <div key={col.key}>
-                        <span className="text-xs text-muted-foreground block mb-0.5">{col.label}</span>
-                        <RevealCell value={property[col.key]} field={col.key} id={property.id} />
-                      </div>
-                    ))}
+                    {ACCESS_FIELD_KEYS.map(k => {
+                      const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
+                      return (
+                        <div key={k}>
+                          <span className="text-xs text-muted-foreground block mb-0.5">{label}</span>
+                          {isEditing && canEditAccess ? (
+                            <Input
+                              value={form[k] ?? ''}
+                              onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                              className="mt-0.5 h-7 text-xs"
+                              data-testid={`modal-input-${k}`}
+                            />
+                          ) : inlineField === k ? (
+                            <Input
+                              autoFocus
+                              value={inlineValue}
+                              onChange={e => setInlineValue(e.target.value)}
+                              onBlur={() => commitInlineEdit(k)}
+                              onKeyDown={e => e.key === 'Enter' && commitInlineEdit(k)}
+                              className="mt-0.5 h-7 text-xs"
+                            />
+                          ) : canEditAccess ? (
+                            <span
+                              className="text-sm font-mono cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors inline-block"
+                              onClick={() => startInlineEdit(k, property[k], canEditAccess)}
+                            >
+                              {property[k] || '—'}
+                            </span>
+                          ) : (
+                            <RevealCell value={property[k]} field={k} id={property.id} />
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
                 {stageName === 'Onboarding' && (
@@ -1405,7 +1559,7 @@ export function PropertyDetailModal() {
 
             {/* ── Notes Tab ── */}
             <TabsContent value="notes" className="mt-3">
-              {isEditing ? (
+              {isEditing && canEditProperty ? (
                 <div>
                   <Label className="text-xs text-muted-foreground">Notes</Label>
                   <textarea
