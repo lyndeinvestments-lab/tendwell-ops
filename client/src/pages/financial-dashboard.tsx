@@ -101,7 +101,10 @@ function KpiCard({
           <div className="flex-1 min-w-0">
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
             {loading ? (
-              <Skeleton className="h-7 w-24 mt-1.5" />
+              <>
+                <Skeleton className="h-7 w-24 mt-1.5" />
+                <Skeleton className="h-3 w-16 mt-2" />
+              </>
             ) : (
               <>
                 <div className="flex items-end gap-3 mt-1 flex-wrap">

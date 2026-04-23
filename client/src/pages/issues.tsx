@@ -106,15 +106,28 @@ export default function IssuesPage() {
   })
 
   // ─── Summary stats ────────────────────────────────────────────────────────
+  // All counters derive from the same `issues` array so the header subtitle
+  // reconciles with the category tiles. Every status is counted so the user
+  // can see why total ≠ in_progress + completed.
   const stats = useMemo(() => {
-    if (!issues) return { total: 0, inProgress: 0, completed: 0, byCategory: {} as Record<string, number> }
-    const inProgress = issues.filter((i: any) => i.status === 'In Progress').length
-    const completed = issues.filter((i: any) => i.status === 'Completed').length
+    if (!issues) return {
+      total: 0, inProgress: 0, completed: 0, fyi: 0, disregarded: 0,
+      byCategory: {} as Record<string, number>,
+    }
+    const byStatus: Record<string, number> = {}
     const byCategory: Record<string, number> = {}
     for (const i of issues) {
+      byStatus[i.status] = (byStatus[i.status] || 0) + 1
       byCategory[i.category] = (byCategory[i.category] || 0) + 1
     }
-    return { total: issues.length, inProgress, completed, byCategory }
+    return {
+      total: issues.length,
+      inProgress: byStatus['In Progress'] || 0,
+      completed: byStatus['Completed'] || 0,
+      fyi: byStatus['Just FYI'] || 0,
+      disregarded: byStatus['Disregard'] || 0,
+      byCategory,
+    }
   }, [issues])
 
   // ─── Filtering & sorting ──────────────────────────────────────────────────
@@ -293,6 +306,8 @@ export default function IssuesPage() {
           <h1 className="text-xl font-semibold text-foreground">Issues Tracker</h1>
           <p className="text-sm text-muted-foreground">
             {stats.total} total · <span className="text-amber-600 dark:text-amber-400">{stats.inProgress} in progress</span> · {stats.completed} completed
+            {stats.fyi > 0 && <> · {stats.fyi} FYI</>}
+            {stats.disregarded > 0 && <> · {stats.disregarded} disregarded</>}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
