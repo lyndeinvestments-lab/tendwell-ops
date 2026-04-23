@@ -1291,8 +1291,12 @@ export function PropertyDetailModal() {
                     const pricePerSqft = sqft > 0 && liveValue != null && !Number.isNaN(liveValue)
                       ? liveValue / sqft
                       : null
+                    // 10% tolerance band: still green if within 10% of target on the worse side
+                    const TOLERANCE = 0.1
                     const meetsTarget = pricePerSqft == null ? null :
-                      row.field === 'ce_charged' ? pricePerSqft >= row.target : pricePerSqft <= row.target
+                      row.field === 'ce_charged'
+                        ? pricePerSqft >= row.target * (1 - TOLERANCE)
+                        : pricePerSqft <= row.target * (1 + TOLERANCE)
                     const pctCls = meetsTarget == null ? 'text-muted-foreground'
                       : meetsTarget ? 'text-green-600 dark:text-green-400' : 'text-destructive'
                     return (

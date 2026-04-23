@@ -35,7 +35,6 @@ function fmt(n: number | null | undefined) {
 
 type NewProp = {
   name: string
-  client_name: string
   ce_charged: string
   cleaner_pay: string
   bedrooms: string
@@ -51,7 +50,6 @@ type NewProp = {
 
 const EMPTY_PROP: NewProp = {
   name: '',
-  client_name: '',
   ce_charged: '',
   cleaner_pay: '',
   bedrooms: '',
@@ -202,9 +200,12 @@ export default function QuoteSheetPage() {
         number_of_beds: beds,
         hot_tub: newProp.hot_tub,
       })
+      const linkedContactName = newProp.contact_id
+        ? (contacts || []).find((c: any) => String(c.id) === String(newProp.contact_id))?.full_name || null
+        : null
       const { error } = await supabase.from('properties').insert({
         name: newProp.name,
-        client: newProp.client_name || null,
+        client: linkedContactName,
         contact_id: newProp.contact_id || null,
         ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
         cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
@@ -261,7 +262,6 @@ export default function QuoteSheetPage() {
   function handleDuplicate(prop: any) {
     setNewProp({
       name: '',
-      client_name: prop.client || '',
       ce_charged: prop.ce_charged != null ? String(prop.ce_charged) : '',
       cleaner_pay: prop.cleaner_pay != null ? String(prop.cleaner_pay) : '',
       bedrooms: prop.bedrooms != null ? String(prop.bedrooms) : '',
@@ -507,10 +507,6 @@ export default function QuoteSheetPage() {
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Address</Label>
               <Input value={newProp.address} onChange={e => setNewProp(prev => ({ ...prev, address: e.target.value }))} className="h-8 text-sm" data-testid="input-new-address" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Client Name</Label>
-              <Input value={newProp.client_name} onChange={e => setNewProp(prev => ({ ...prev, client_name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-client_name" />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Client</Label>
