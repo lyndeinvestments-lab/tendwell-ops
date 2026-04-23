@@ -1277,41 +1277,64 @@ export function PropertyDetailModal() {
             {canViewFinancials && (
               <TabsContent value="financials" className="mt-3 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { label: 'Client Charged', field: 'ce_charged', value: property.ce_charged },
-                    { label: 'Cleaner Pay', field: 'cleaner_pay', value: property.cleaner_pay },
-                  ].map(row => (
-                    <div key={row.field}>
-                      <Label className="text-xs text-muted-foreground">{row.label}</Label>
-                      {isEditing && canEditFinancials ? (
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={form[row.field] ?? ''}
-                          onChange={e => setForm(f => ({ ...f, [row.field]: e.target.value }))}
-                          className={`mt-0.5 ${fieldCls(row.field)}`}
-                          data-testid={`modal-input-${row.field}`}
-                          autoFocus={highlightFields[0] === row.field}
-                        />
-                      ) : inlineField === row.field ? (
-                        <Input
-                          autoFocus
-                          type="number"
-                          step="0.01"
-                          value={inlineValue}
-                          onChange={e => setInlineValue(e.target.value)}
-                          onBlur={() => commitInlineEdit(row.field)}
-                          onKeyDown={e => e.key === 'Enter' && commitInlineEdit(row.field)}
-                          className="mt-0.5 h-7 text-xs"
-                        />
-                      ) : (
-                        <p className={`text-sm mt-0.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                           onClick={() => startInlineEdit(row.field, row.value, canEditFinancials)}>
-                          {row.value != null ? `$${Number(row.value).toFixed(2)}` : '—'}
+                  {([
+                    { label: 'Client Charged', field: 'ce_charged', value: property.ce_charged, target: 0.14 },
+                    { label: 'Cleaner Pay', field: 'cleaner_pay', value: property.cleaner_pay, target: 0.07 },
+                  ] as { label: string; field: string; value: any; target: number }[]).map(row => {
+                    const editingThisField = isEditing && canEditFinancials
+                    const liveValue = editingThisField
+                      ? (form[row.field] !== '' && form[row.field] != null ? Number(form[row.field]) : null)
+                      : inlineField === row.field
+                        ? (inlineValue !== '' ? Number(inlineValue) : null)
+                        : (row.value != null ? Number(row.value) : null)
+                    const sqft = Number(property.square_footage || 0)
+                    const pricePerSqft = sqft > 0 && liveValue != null && !Number.isNaN(liveValue)
+                      ? liveValue / sqft
+                      : null
+                    const meetsTarget = pricePerSqft == null ? null :
+                      row.field === 'ce_charged' ? pricePerSqft >= row.target : pricePerSqft <= row.target
+                    const pctCls = meetsTarget == null ? 'text-muted-foreground'
+                      : meetsTarget ? 'text-green-600 dark:text-green-400' : 'text-destructive'
+                    return (
+                      <div key={row.field}>
+                        <Label className="text-xs text-muted-foreground">{row.label}</Label>
+                        {editingThisField ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={form[row.field] ?? ''}
+                            onChange={e => setForm(f => ({ ...f, [row.field]: e.target.value }))}
+                            className={`mt-0.5 ${fieldCls(row.field)}`}
+                            data-testid={`modal-input-${row.field}`}
+                            autoFocus={highlightFields[0] === row.field}
+                          />
+                        ) : inlineField === row.field ? (
+                          <Input
+                            autoFocus
+                            type="number"
+                            step="0.01"
+                            value={inlineValue}
+                            onChange={e => setInlineValue(e.target.value)}
+                            onBlur={() => commitInlineEdit(row.field)}
+                            onKeyDown={e => e.key === 'Enter' && commitInlineEdit(row.field)}
+                            className="mt-0.5 h-7 text-xs"
+                          />
+                        ) : (
+                          <p className={`text-sm mt-0.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                             onClick={() => startInlineEdit(row.field, row.value, canEditFinancials)}>
+                            {row.value != null ? `$${Number(row.value).toFixed(2)}` : '—'}
+                          </p>
+                        )}
+                        <p className={`text-[11px] mt-0.5 ${pctCls}`} data-testid={`modal-${row.field}-psf`}>
+                          {pricePerSqft != null
+                            ? `$${pricePerSqft.toFixed(3)}/sqft · target $${row.target.toFixed(2)}`
+                            : sqft > 0
+                              ? `— · target $${row.target.toFixed(2)}/sqft`
+                              : `target $${row.target.toFixed(2)}/sqft (set sqft)`}
                         </p>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    )
+                  })}
                 </div>
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
