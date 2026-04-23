@@ -44,6 +44,7 @@ type NewProp = {
   half_baths: string
   number_of_kitchens: string
   hot_tub: boolean
+  linen_program: boolean
   sq_ft: string
   address: string
   contact_id: string
@@ -59,6 +60,7 @@ const EMPTY_PROP: NewProp = {
   half_baths: '',
   number_of_kitchens: '',
   hot_tub: false,
+  linen_program: false,
   sq_ft: '',
   address: '',
   contact_id: '',
@@ -225,6 +227,7 @@ export default function QuoteSheetPage() {
         half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : null,
         kitchens,
         hot_tub: newProp.hot_tub,
+        linen_program: newProp.linen_program,
         square_footage: newProp.sq_ft ? parseFloat(newProp.sq_ft) : null,
         address: newProp.address || null,
         est_laundry: estLaundry || null,
@@ -280,6 +283,7 @@ export default function QuoteSheetPage() {
       half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
       number_of_kitchens: prop.number_of_kitchens != null ? String(prop.number_of_kitchens) : '',
       hot_tub: prop.hot_tub || false,
+      linen_program: prop.linen_program || false,
       sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
       address: '',
       contact_id: '',
@@ -777,6 +781,24 @@ export default function QuoteSheetPage() {
               </div>
             </div>
 
+            {/* Linen Program toggle — adds (beds × 300)/12/4 per clean */}
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newProp.linen_program}
+                onChange={e => setNewProp(prev => ({ ...prev, linen_program: e.target.checked }))}
+                className="mt-0.5 h-4 w-4 rounded border-input"
+                data-testid="input-new-linen_program"
+              />
+              <div className="text-xs">
+                <div className="font-medium">Linen Program</div>
+                <div className="text-muted-foreground">
+                  Adds {newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0'}/clean
+                  {newProp.number_of_beds ? ` (${newProp.number_of_beds} beds × $300 / 12 / 4)` : ''}
+                </div>
+              </div>
+            </label>
+
             {/* CE Charged and Cleaner Pay — with auto-suggestions */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
@@ -835,7 +857,8 @@ export default function QuoteSheetPage() {
                     number_of_beds: beds,
                     hot_tub: newProp.hot_tub,
                   })
-                  const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST
+                  const linenProgramCost = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
+                  const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + linenProgramCost
                   const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
                   const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
                   const totalWithPay = totalCost + (pay || 0)
@@ -847,6 +870,9 @@ export default function QuoteSheetPage() {
                       <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
                       <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
+                      {newProp.linen_program && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Linen Program</span><span className="tabular-nums">{fmt(linenProgramCost)}</span></div>
+                      )}
                       <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
                       {ce != null && (
                         <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
