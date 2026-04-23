@@ -168,7 +168,7 @@ export default function CostTrackingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes, estimated_deep_clean_cost, deep_clean_3x_ce, profit_deep_clean')
+        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes, estimated_deep_clean_cost, deep_clean_3x_ce, profit_deep_clean, number_of_beds, linen_program, linen_program_cost')
       if (error) throw error
       return data || []
     },
@@ -201,8 +201,12 @@ export default function CostTrackingPage() {
       const pay = Number(updated.cleaner_pay) || 0
       const laundry = Number(updated.est_laundry) || 0
       const consumables = Number(updated.est_consumables) || 0
-      const totalCost = pay + laundry + consumables + inspectionCost + trashCost
+      const linen = updated.linen_program
+        ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
+        : 0
+      const totalCost = pay + laundry + consumables + inspectionCost + trashCost + linen
       updated.total_estimated_cost = Math.round(totalCost * 100) / 100
+      updated.linen_program_cost = Math.round(linen * 100) / 100
       const ce = Number(updated.ce_charged) || 0
       updated.estimated_profit = Math.round((ce - totalCost) * 100) / 100
       updated.profit_percentage = ce > 0
@@ -232,8 +236,12 @@ export default function CostTrackingPage() {
           const pay = Number(updated.cleaner_pay) || 0
           const laundry = Number(updated.est_laundry) || 0
           const consumables = Number(updated.est_consumables) || 0
-          const totalCost = pay + laundry + consumables + inspectionCost + trashCost
+          const linen = updated.linen_program
+            ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
+            : 0
+          const totalCost = pay + laundry + consumables + inspectionCost + trashCost + linen
           updated.total_estimated_cost = Math.round(totalCost * 100) / 100
+          updated.linen_program_cost = Math.round(linen * 100) / 100
           const ce = Number(updated.ce_charged) || 0
           updated.estimated_profit = Math.round((ce - totalCost) * 100) / 100
           updated.profit_percentage = ce > 0

@@ -307,17 +307,17 @@ export default function QuoteSheetPage() {
     const consumables = hasEdit
       ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
       : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens }))
+    const linenProgramCost = p.linen_program ? (beds * 300) / 12 / 4 : 0
     const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
     const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
     let profitPct: number | null
     if (hasEdit && ce != null && ce > 0) {
-      // Recompute locally for instant feedback
-      const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0)
+      const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0) + linenProgramCost
       profitPct = ((ce - totalCost) / ce) * 100
     } else {
       profitPct = p.profit_percentage != null ? Number(p.profit_percentage) : null
     }
-    return { laundry, consumables, profitPct }
+    return { laundry, consumables, linenProgramCost, profitPct }
   }
 
   // Persist a single field change to Supabase. Fires on blur/Enter of inline cells.
