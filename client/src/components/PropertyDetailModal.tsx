@@ -942,6 +942,31 @@ export function PropertyDetailModal() {
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
   })
 
+  const { mutate: toggleLinenProgram } = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', propertyId!)
+      if (error) throw error
+      return next
+    },
+    onSuccess: (next: boolean) => {
+      logPropertyEdit(
+        propertyId!,
+        'linen_program',
+        String(property?.linen_program ?? false),
+        String(next),
+        property?.name ?? null,
+        user?.label ?? null,
+      )
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
+      toast({ title: next ? 'Linen program enabled' : 'Linen program disabled' })
+    },
+    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+  })
+
   function startInlineEdit(field: string, currentValue: any, allowed: boolean = canEditProperty) {
     if (!allowed || isEditing) return
     setInlineField(field)
@@ -1426,6 +1451,33 @@ export function PropertyDetailModal() {
                     </span>
                   </div>
                 </div>
+                {/* Linen Program toggle — adds (beds × 300)/12/4 per clean to total cost */}
+                {(() => {
+                  const beds = Number(property.number_of_beds) || 0
+                  const cost = (beds * 300) / 12 / 4
+                  const enabled = !!property.linen_program
+                  return (
+                    <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
+                      <input
+                        type="checkbox"
+                        checked={enabled}
+                        disabled={!canEditFinancials}
+                        onChange={e => toggleLinenProgram(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-input"
+                        data-testid="modal-input-linen_program"
+                      />
+                      <div className="text-xs flex-1">
+                        <div className="font-medium">Linen Program</div>
+                        <div className="text-muted-foreground">
+                          {enabled
+                            ? <>Adds <span className="tabular-nums font-medium text-foreground">${cost.toFixed(2)}</span>/clean ({beds} beds × $300 / 12 / 4)</>
+                            : <>Adds {beds > 0 ? <span className="tabular-nums">${cost.toFixed(2)}</span> : '$0.00'}/clean when enabled ({beds > 0 ? `${beds} beds` : 'set beds'} × $300 / 12 / 4)</>
+                          }
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })()}
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
                     <span className="text-xs text-muted-foreground block">DC Cost</span>
