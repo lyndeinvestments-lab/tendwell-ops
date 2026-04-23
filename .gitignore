@@ -10,3 +10,10 @@ vite.config.ts.*
 *.db-shm
 *.db-wal
 .vercel
+
+# Playwright
+playwright-report/
+test-results/
+tests/.auth/
+.env.cron
+.env*
