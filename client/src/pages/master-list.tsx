@@ -109,6 +109,44 @@ export default function MasterListPage() {
   const [highlightHandled, setHighlightHandled] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  // Live-preview edits: per-row field overrides merged at render time so
+  // Profit % (and any other derived column) updates while the user types.
+  const [liveEdits, setLiveEdits] = useState<Record<string, Record<string, any>>>({})
+
+  function mergedRow(p: any): any {
+    const e = liveEdits[p.id]
+    if (!e) return p
+    return { ...p, ...e }
+  }
+
+  function previewCostEdit(id: string, field: 'ce_charged' | 'cleaner_pay', draft: string) {
+    const prop = properties?.find((p: any) => p.id === id)
+    if (!prop) return
+    const parsed = draft === '' ? null : parseFloat(draft)
+    const nextValue = parsed != null && Number.isNaN(parsed) ? null : parsed
+    const oldPay = Number(prop.cleaner_pay) || 0
+    const oldTotalCost = Number(prop.total_estimated_cost) || 0
+    // Recover cost-excluding-pay from the server row so we only isolate
+    // the pay/ce delta here; other cost components stay server-authoritative.
+    const costMinusPay = oldTotalCost - oldPay
+    const nextCe = field === 'ce_charged' ? nextValue : prop.ce_charged
+    const nextPay = field === 'cleaner_pay' ? nextValue : prop.cleaner_pay
+    const ceNum = Number(nextCe) || 0
+    const payNum = Number(nextPay) || 0
+    const newTotalCost = costMinusPay + payNum
+    const newProfit = ceNum - newTotalCost
+    const newProfitPct = ceNum > 0 ? (newProfit / ceNum) * 100 : 0
+    setLiveEdits(prev => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || {}),
+        [field]: nextValue,
+        total_estimated_cost: Math.round(newTotalCost * 100) / 100,
+        estimated_profit: Math.round(newProfit * 100) / 100,
+        profit_percentage: Math.round(newProfitPct * 10) / 10,
+      },
+    }))
+  }
 
   // Detect ?stageChangeLast30=true in hash URL
   const stageChangeLast30 = useMemo(() => {
@@ -252,6 +290,8 @@ export default function MasterListPage() {
     onSuccess: (_, { id, field, value }) => {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, field, prop?.[field] ?? null, value, prop?.name)
+      // Drop the live-preview override so the refetched row becomes the source of truth
+      setLiveEdits(prev => { const { [id]: _removed, ...rest } = prev; return rest })
       qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
@@ -698,8 +738,9 @@ export default function MasterListPage() {
                   <td className="py-1.5 px-3 tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit
-                      value={p.ce_charged}
+                      value={mergedRow(p).ce_charged}
                       type="number"
+                      onDraftChange={v => previewCostEdit(p.id, 'ce_charged', v)}
                       onSave={v => quickUpdate({ id: p.id, field: 'ce_charged', value: v ? parseFloat(v) : null })}
                       testId={`inline-ce-${p.id}`}
                       placeholder="—"
@@ -707,19 +748,23 @@ export default function MasterListPage() {
                   </td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit
-                      value={p.cleaner_pay}
+                      value={mergedRow(p).cleaner_pay}
                       type="number"
+                      onDraftChange={v => previewCostEdit(p.id, 'cleaner_pay', v)}
                       onSave={v => quickUpdate({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
                       testId={`inline-pay-${p.id}`}
                       placeholder="—"
                     />
                   </td>
                   <td className="py-1.5 px-3 tabular-nums">
-                    {p.profit_percentage != null ? (
-                      <span className={`font-medium ${profitColorClass(p.profit_percentage)}`}>
-                        {p.profit_percentage.toFixed(1)}%
-                      </span>
-                    ) : '—'}
+                    {(() => {
+                      const m = mergedRow(p)
+                      return m.profit_percentage != null ? (
+                        <span className={`font-medium ${profitColorClass(m.profit_percentage)}`}>
+                          {Number(m.profit_percentage).toFixed(1)}%
+                        </span>
+                      ) : '—'
+                    })()}
                   </td>
                   <td className="py-1.5 px-3">
                     <span className="px-1.5 py-0.5 rounded font-medium text-xs"
