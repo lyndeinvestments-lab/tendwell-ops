@@ -18,12 +18,17 @@ function getEnv(): { url: string; serviceKey: string } {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Fail closed: missing CRON_SECRET in env is a misconfiguration, not a
+  // permit-all. Previously this was an `if (cronSecret)` wrapper that left
+  // the endpoint public when the var wasn't set.
   const cronSecret = process.env.CRON_SECRET
-  if (cronSecret) {
-    const header = req.headers.authorization || ''
-    if (header !== `Bearer ${cronSecret}`) {
-      return res.status(401).json({ error: 'Unauthorized' })
-    }
+  if (!cronSecret) {
+    console.error('CRON_SECRET not configured; refusing to run')
+    return res.status(500).json({ error: 'Server misconfigured' })
+  }
+  const header = req.headers.authorization || ''
+  if (header !== `Bearer ${cronSecret}`) {
+    return res.status(401).json({ error: 'Unauthorized' })
   }
 
   let cfg
@@ -31,64 +36,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: e.message })
   }
 
-  const cutoff = new Date(Date.now() - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString()
-
   try {
-    // List expired soft-deletes. Need names too so we can cascade delete
-    // tasks that reference properties by property_name (text, not FK).
-    const listRes = await fetch(
-      `${cfg.url}/rest/v1/properties?select=id,name&deleted_at=lt.${encodeURIComponent(cutoff)}`,
+    // Delegate the purge to a SECURITY DEFINER RPC so all deletes run as
+    // parameterized SQL. Eliminates the PostgREST `in.(...)` filter
+    // injection vector the bounty-hunter flagged for property names with
+    // special characters (finding #4).
+    const rpcRes = await fetch(
+      `${cfg.url}/rest/v1/rpc/purge_deleted_properties`,
       {
+        method: 'POST',
         headers: {
           apikey: cfg.serviceKey,
           Authorization: `Bearer ${cfg.serviceKey}`,
-        },
-      },
-    )
-    if (!listRes.ok) {
-      return res.status(500).json({ error: `List failed: ${listRes.status} ${await listRes.text()}` })
-    }
-    const doomed = (await listRes.json()) as Array<{ id: number; name: string }>
-    if (doomed.length === 0) return res.json({ ok: true, purged: 0, cutoff })
-
-    // Remove workflow tasks keyed by property_name (no FK cascade exists).
-    const names = doomed.map(p => `"${p.name.replace(/"/g, '\\"')}"`).join(',')
-    await fetch(
-      `${cfg.url}/rest/v1/tasks?property_name=in.(${encodeURIComponent(names)})`,
-      {
-        method: 'DELETE',
-        headers: {
-          apikey: cfg.serviceKey,
-          Authorization: `Bearer ${cfg.serviceKey}`,
+          'Content-Type': 'application/json',
           Prefer: 'count=none',
         },
+        body: JSON.stringify({ retention_days: RETENTION_DAYS }),
       },
     )
-
-    // Hard-delete the properties. Related tables with ON DELETE CASCADE FKs
-    // (property_notes, stage_transitions, property_photos, property_supplies,
-    // issues, etc.) clean up automatically.
-    const ids = doomed.map(p => p.id).join(',')
-    const delRes = await fetch(
-      `${cfg.url}/rest/v1/properties?id=in.(${ids})`,
-      {
-        method: 'DELETE',
-        headers: {
-          apikey: cfg.serviceKey,
-          Authorization: `Bearer ${cfg.serviceKey}`,
-          Prefer: 'count=none',
-        },
-      },
-    )
-    if (!delRes.ok) {
-      return res.status(500).json({ error: `Delete failed: ${delRes.status} ${await delRes.text()}` })
+    if (!rpcRes.ok) {
+      return res.status(500).json({ error: `Purge RPC failed: ${rpcRes.status} ${await rpcRes.text()}` })
     }
+    const purged = (await rpcRes.json()) as Array<{ purged_id: number; purged_name: string }>
 
     return res.json({
       ok: true,
-      purged: doomed.length,
-      cutoff,
-      ids: doomed.map(p => p.id),
+      purged: purged.length,
+      ids: purged.map(p => p.purged_id),
     })
   } catch (err: any) {
     console.error('purge-properties error:', err)
