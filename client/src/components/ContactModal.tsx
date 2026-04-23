@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
+import { ContactNotesFeed } from '@/components/ContactNotesFeed'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
@@ -42,7 +43,6 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   const [tagInput, setTagInput] = useState('')
   const [interactionType, setInteractionType] = useState('Note')
   const [interactionSummary, setInteractionSummary] = useState('')
-  const [noteInput, setNoteInput] = useState('')
 
   const isCreate = mode === 'create'
 
@@ -78,20 +78,6 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contact_interactions')
-        .select('*')
-        .eq('contact_id', contactId!)
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-    enabled: !!contactId && !isCreate,
-  })
-
-  const { data: contactNotes } = useQuery({
-    queryKey: ['/supabase/contact-notes', contactId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_notes')
         .select('*')
         .eq('contact_id', contactId!)
         .order('created_at', { ascending: false })
@@ -200,23 +186,6 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       setInteractionSummary('')
     },
     onError: () => toast({ title: 'Failed to log interaction', variant: 'destructive' }),
-  })
-
-  // Add note
-  const { mutate: addNote, isPending: addingNote } = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.from('contact_notes').insert({
-        contact_id: contactId,
-        content: noteInput.trim(),
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/contact-notes', contactId] })
-      toast({ title: 'Note added' })
-      setNoteInput('')
-    },
-    onError: () => toast({ title: 'Failed to add note', variant: 'destructive' }),
   })
 
   function handleFieldBlur(field: string) {
@@ -376,16 +345,22 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                   </div>
                 </div>
               </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">Notes</Label>
-                <textarea
-                  value={form.notes ?? ''}
-                  onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                  onBlur={() => handleFieldBlur('notes')}
-                  className="mt-0.5 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="Additional notes..."
-                />
-              </div>
+              {!isCreate && contactId ? (
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Notes</Label>
+                  <ContactNotesFeed contactId={contactId} compact />
+                </div>
+              ) : isCreate ? (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Notes</Label>
+                  <textarea
+                    value={form.notes ?? ''}
+                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    className="mt-0.5 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    placeholder="Initial notes (taggable once saved)..."
+                  />
+                </div>
+              ) : null}
               {isCreate ? (
                 <div className="flex gap-2 pt-2">
                   <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
@@ -456,41 +431,9 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
             )}
 
             {/* Notes Tab */}
-            {!isCreate && (
-              <TabsContent value="notes" className="mt-3 space-y-3">
-                <div className="flex gap-2">
-                  <textarea
-                    value={noteInput}
-                    onChange={e => setNoteInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && noteInput.trim()) addNote() }}
-                    placeholder="Add a note… (⌘+Enter to save)"
-                    rows={2}
-                    className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  <Button
-                    size="sm"
-                    className="self-end h-8 text-xs"
-                    disabled={!noteInput.trim() || addingNote}
-                    onClick={() => addNote()}
-                  >
-                    {addingNote ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Add'}
-                  </Button>
-                </div>
-                {!contactNotes || contactNotes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No notes yet</p>
-                ) : (
-                  <div className="space-y-2">
-                    {contactNotes.map((n: any) => (
-                      <div key={n.id} className="py-2 border-b border-border/50 last:border-0">
-                        <p className="text-xs">{n.content}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}
-                          {n.created_by && ` · ${n.created_by}`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+            {!isCreate && contactId && (
+              <TabsContent value="notes" className="mt-3">
+                <ContactNotesFeed contactId={contactId} />
               </TabsContent>
             )}
 
