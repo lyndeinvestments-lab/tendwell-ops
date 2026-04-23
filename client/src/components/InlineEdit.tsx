@@ -5,13 +5,16 @@ import { format, parseISO } from 'date-fns'
 interface InlineEditProps {
   value: string | number | null | undefined
   onSave: (val: string) => void
+  // Optional: fires on every keystroke while editing, so callers can live-preview
+  // derived columns (e.g. profit %, totals) that depend on this value.
+  onDraftChange?: (val: string) => void
   type?: 'text' | 'number' | 'date'
   placeholder?: string
   className?: string
   testId?: string
 }
 
-export function InlineEdit({ value, onSave, type = 'text', placeholder = '—', className = '', testId }: InlineEditProps) {
+export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeholder = '—', className = '', testId }: InlineEditProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -45,7 +48,7 @@ export function InlineEdit({ value, onSave, type = 'text', placeholder = '—', 
         ref={inputRef}
         type={type}
         value={draft}
-        onChange={e => setDraft(e.target.value)}
+        onChange={e => { setDraft(e.target.value); onDraftChange?.(e.target.value) }}
         onBlur={commit}
         onKeyDown={handleKeyDown}
         data-testid={testId}

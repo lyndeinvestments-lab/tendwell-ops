@@ -186,6 +186,32 @@ export default function CostTrackingPage() {
     setTimeout(() => setFlashedCells(prev => { const s = new Set(prev); s.delete(cellId); return s }), 1500)
   }
 
+  // Live-preview the derivatives while the user is still typing into a cell.
+  // Doesn't hit the DB — just patches localProperties so Total Cost / Profit /
+  // Profit % / Totals row reflect the in-progress draft value. On blur/Enter,
+  // updateProperty.onMutate does the same recompute and persists.
+  function previewCostChange(id: string, field: string, draft: string) {
+    const COST_FIELDS = new Set(['ce_charged', 'cleaner_pay', 'est_laundry', 'est_consumables'])
+    if (!COST_FIELDS.has(field)) return
+    const parsed = draft === '' ? null : parseFloat(draft)
+    const nextValue = parsed != null && Number.isNaN(parsed) ? null : parsed
+    setLocalProperties(prev => prev ? prev.map(p => {
+      if (p.id !== id) return p
+      const updated: any = { ...p, [field]: nextValue }
+      const pay = Number(updated.cleaner_pay) || 0
+      const laundry = Number(updated.est_laundry) || 0
+      const consumables = Number(updated.est_consumables) || 0
+      const totalCost = pay + laundry + consumables + inspectionCost + trashCost
+      updated.total_estimated_cost = Math.round(totalCost * 100) / 100
+      const ce = Number(updated.ce_charged) || 0
+      updated.estimated_profit = Math.round((ce - totalCost) * 100) / 100
+      updated.profit_percentage = ce > 0
+        ? Math.round(((ce - totalCost) / ce * 100) * 10) / 10
+        : 0
+      return updated
+    }) : prev)
+  }
+
   const { mutate: updateProperty } = useGuardedMutation('cost-tracking', {
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
@@ -196,7 +222,26 @@ export default function CostTrackingPage() {
       const oldProp = snapshot?.find(p => p.id === id)
       const oldValue = oldProp?.[field] ?? null
       const propName = oldProp?.name ?? null
-      setLocalProperties(prev => prev ? prev.map(p => p.id === id ? { ...p, [field]: value } : p) : prev)
+      const COST_FIELDS = new Set(['ce_charged', 'cleaner_pay', 'est_laundry', 'est_consumables'])
+      setLocalProperties(prev => prev ? prev.map(p => {
+        if (p.id !== id) return p
+        const updated: any = { ...p, [field]: value }
+        // Live-recompute derivatives so Total Cost / Profit / Profit % update
+        // immediately. Mirrors the DB trigger in 20260413_fix_laundry_constant.sql.
+        if (COST_FIELDS.has(field)) {
+          const pay = Number(updated.cleaner_pay) || 0
+          const laundry = Number(updated.est_laundry) || 0
+          const consumables = Number(updated.est_consumables) || 0
+          const totalCost = pay + laundry + consumables + inspectionCost + trashCost
+          updated.total_estimated_cost = Math.round(totalCost * 100) / 100
+          const ce = Number(updated.ce_charged) || 0
+          updated.estimated_profit = Math.round((ce - totalCost) * 100) / 100
+          updated.profit_percentage = ce > 0
+            ? Math.round(((ce - totalCost) / ce * 100) * 10) / 10
+            : 0
+        }
+        return updated
+      }) : prev)
       return { snapshot, oldValue, propName }
     },
     onSuccess: (_, { id, field, value }, ctx: any) => {
@@ -436,6 +481,7 @@ export default function CostTrackingPage() {
                     <InlineEdit
                       value={p.ce_charged}
                       type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'ce_charged', v)}
                       onSave={v => {
                         const parsed = v ? parseFloat(v) : null
                         if ((parsed === 0 || parsed === null) && p.stage_name === 'Active') {
@@ -459,6 +505,7 @@ export default function CostTrackingPage() {
                       <InlineEdit
                         value={p.cleaner_pay}
                         type="number"
+                        onDraftChange={v => previewCostChange(p.id, 'cleaner_pay', v)}
                         onSave={v => updateProperty({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
                         testId={`inline-pay-${p.id}`}
                       />
@@ -468,6 +515,7 @@ export default function CostTrackingPage() {
                     <InlineEdit
                       value={p.est_laundry}
                       type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'est_laundry', v)}
                       onSave={v => updateProperty({ id: p.id, field: 'est_laundry', value: v ? parseFloat(v) : null })}
                       testId={`inline-laundry-${p.id}`}
                     />
@@ -476,6 +524,7 @@ export default function CostTrackingPage() {
                     <InlineEdit
                       value={p.est_consumables}
                       type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'est_consumables', v)}
                       onSave={v => updateProperty({ id: p.id, field: 'est_consumables', value: v ? parseFloat(v) : null })}
                       testId={`inline-consumables-${p.id}`}
                     />
