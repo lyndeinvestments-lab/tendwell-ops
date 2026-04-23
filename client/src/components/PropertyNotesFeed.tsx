@@ -81,7 +81,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
 
       // Fire @-mention email notifications (best-effort — don't block the user)
       try {
-        const { parseMentions, notify, escapeHtml } = await import('@/lib/notify')
+        const { parseMentions, notify } = await import('@/lib/notify')
         const users = (taggable || []).map(u => ({ id: u.id, label: u.label }))
         const mentionedIds = parseMentions(trimmed, users).filter(id => String(id) !== String(user?.id))
         if (mentionedIds.length > 0) {
@@ -95,8 +95,10 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
           await notify({
             eventType: 'property_note_mention',
             subject: `${user?.label || 'Someone'} mentioned you on ${propName}${ctxLabel}`,
-            bodyHtml: `<p><strong>${escapeHtml(user?.label || 'A teammate')}</strong> mentioned you in a note on <strong>${escapeHtml(propName)}</strong>${escapeHtml(ctxLabel)}:</p>
-              <blockquote style="border-left:3px solid #e2e8f0;margin:8px 0;padding:4px 12px;color:#334155;">${escapeHtml(trimmed)}</blockquote>`,
+            bodyLines: [
+              `${user?.label || 'A teammate'} mentioned you in a note on ${propName}${ctxLabel}.`,
+            ],
+            quoteText: trimmed,
             ctaUrl: `${window.location.origin}/property-list?property=${propertyId}`,
             ctaLabel: 'View property',
             targetUserIds: mentionedIds,

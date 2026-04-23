@@ -179,13 +179,20 @@ export default function IssuesPage() {
       })
       if (error) throw error
       try {
-        const { notify, escapeHtml } = await import('@/lib/notify')
+        const { notify } = await import('@/lib/notify')
+        const trailing = [
+          `Status: ${newForm.status}`,
+          newForm.last_touch ? `Last touch: ${newForm.last_touch}` : null,
+          newForm.coverage ? `Coverage: ${newForm.coverage}` : null,
+        ].filter(Boolean) as string[]
         notify({
           eventType: 'issue_logged',
           subject: `New issue: ${newForm.property_name} — ${newForm.category}`,
-          bodyHtml: `<p style="font-size:14px;line-height:1.6;"><strong>${escapeHtml(newForm.property_name)}</strong> — ${escapeHtml(newForm.category)}</p>
-            ${newForm.details ? `<p style="font-size:13px;color:#475569;">${escapeHtml(newForm.details)}</p>` : ''}
-            <p style="font-size:13px;color:#475569;">Status: ${escapeHtml(newForm.status)}${newForm.last_touch ? ` · Last touch: ${escapeHtml(newForm.last_touch)}` : ''}${newForm.coverage ? ` · Coverage: ${escapeHtml(newForm.coverage)}` : ''}</p>`,
+          bodyLines: [
+            `${newForm.property_name} — ${newForm.category}`,
+            ...(newForm.details ? [newForm.details] : []),
+            trailing.join(' · '),
+          ],
           ctaUrl: 'https://www.tendwellcleaning.com/#/issues',
           ctaLabel: 'View Issues',
           meta: { property: newForm.property_name, category: newForm.category },

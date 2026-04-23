@@ -220,9 +220,45 @@ export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!))
 }
 
+// Allowlist for CTA URLs so an attacker with a session token can't smuggle
+// phishing links or `javascript:` URIs into outbound emails (bounty finding
+// #1). Accepts same-origin Tendwell + Vercel preview deploys only.
+const CTA_HOST_ALLOWLIST = [
+  'www.tendwellcleaning.com',
+  'tendwellcleaning.com',
+]
+
+export function validateCtaUrl(raw: unknown): string | null {
+  if (typeof raw !== 'string' || !raw) return null
+  let u: URL
+  try { u = new URL(raw) } catch { return null }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
+  const host = u.host.toLowerCase()
+  const allowed = CTA_HOST_ALLOWLIST.includes(host)
+    || (host.endsWith('.vercel.app') && host.includes('tendwell'))
+  return allowed ? u.toString() : null
+}
+
+// Safely compose the email body from structured inputs. Prevents the arbitrary
+// HTML / form injection vector that was possible when bodyHtml was passed raw
+// from the client (bounty finding #2).
+export function composeBodyHtml(opts: { lines?: string[]; quote?: string | null }): string {
+  const escapedLines = (opts.lines || [])
+    .filter(l => typeof l === 'string' && l.trim().length > 0)
+    .map(l => `<p style="font-size:14px;line-height:1.6;color:#0f172a;">${escapeHtml(l)}</p>`)
+    .join('')
+  const quote = opts.quote
+    ? `<blockquote style="border-left:3px solid #e2e8f0;margin:8px 0;padding:4px 12px;color:#334155;">${escapeHtml(opts.quote)}</blockquote>`
+    : ''
+  return escapedLines + quote
+}
+
 export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUrl?: string; ctaLabel?: string }): string {
-  const cta = opts.ctaUrl
-    ? `<p style="margin:24px 0;"><a href="${opts.ctaUrl}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">${escapeHtml(opts.ctaLabel || 'View')}</a></p>`
+  // ctaUrl is expected to already have passed validateCtaUrl(). Defensive
+  // attribute encoding below in case a future caller forgets.
+  const safeCta = opts.ctaUrl ? escapeHtml(opts.ctaUrl) : ''
+  const cta = safeCta
+    ? `<p style="margin:24px 0;"><a href="${safeCta}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">${escapeHtml(opts.ctaLabel || 'View')}</a></p>`
     : ''
   return `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#f8fafc;margin:0;padding:24px;color:#0f172a;">
     <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
