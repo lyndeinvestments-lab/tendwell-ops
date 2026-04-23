@@ -1342,6 +1342,8 @@ function NotificationsSection() {
     { field: 'notify_verification_due',     label: 'Verification due',       view: 'inspections' },
     { field: 'notify_onboarding_submitted', label: 'Onboarding submitted',   view: 'master-list' },
     { field: 'notify_follow_up_due',        label: 'Follow-up due',          view: 'contacts' },
+    { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
+    { field: 'notify_contact_note_mention',  label: 'Mentioned in a contact note',  view: 'contacts' },
   ]
 
   return (

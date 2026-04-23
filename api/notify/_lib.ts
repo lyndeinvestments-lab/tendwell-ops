@@ -16,6 +16,8 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   verification_due: 'inspections',
   onboarding_submitted: 'master-list',
   follow_up_due: 'contacts',
+  property_note_mention: 'property-list',
+  contact_note_mention: 'contacts',
 }
 
 export const EVENT_PREF_FIELD: Record<string, string> = {
@@ -28,6 +30,8 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',
   follow_up_due: 'notify_follow_up_due',
+  property_note_mention: 'notify_property_note_mention',
+  contact_note_mention: 'notify_contact_note_mention',
 }
 
 export interface SupabaseClient {
@@ -118,10 +122,13 @@ export interface NotifPrefs {
   email_enabled: boolean
   notify_task_assigned: boolean
   notify_task_overdue: boolean
+  notify_task_mention: boolean
   notify_issue_logged: boolean
   notify_verification_due: boolean
   notify_onboarding_submitted: boolean
   notify_follow_up_due: boolean
+  notify_property_note_mention: boolean
+  notify_contact_note_mention: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
 }
 
