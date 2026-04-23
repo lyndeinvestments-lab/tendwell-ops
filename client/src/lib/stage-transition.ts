@@ -86,29 +86,57 @@ async function createWorkflowTasks(
 
   const today = new Date()
   const category = toStage === 'Offboarding' ? 'Offboarding' : 'Onboarding'
+  const parentTitle = `${toStage}: ${propertyName}`
+  const OPEN_STATUSES = ['To Do', 'In Progress', 'Blocked']
 
-  // Create parent task: "{toStage}: {propertyName}"
-  const { data: parent } = await supabase.from('tasks').insert({
-    title: `${toStage}: ${propertyName}`,
-    description: `Workflow tasks for ${propertyName} moving to ${toStage}`,
-    status: 'To Do',
-    priority: 'Medium',
-    category,
-    property_name: propertyName,
-    created_by: createdBy,
-    list_id: listId,
-    parent_task_id: null,
-  }).select('id').single()
+  // Idempotency: reuse an existing OPEN parent task for this property + stage
+  // so repeated transitions don't create duplicate workflow groups.
+  const { data: existingParent } = await supabase
+    .from('tasks')
+    .select('id')
+    .eq('property_name', propertyName)
+    .eq('title', parentTitle)
+    .is('parent_task_id', null)
+    .in('status', OPEN_STATUSES)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
-  if (!parent) return
+  let parentId: string
+  if (existingParent?.id) {
+    parentId = existingParent.id
+  } else {
+    const { data: parent } = await supabase.from('tasks').insert({
+      title: parentTitle,
+      description: `Workflow tasks for ${propertyName} moving to ${toStage}`,
+      status: 'To Do',
+      priority: 'Medium',
+      category,
+      property_name: propertyName,
+      created_by: createdBy,
+      list_id: listId,
+      parent_task_id: null,
+    }).select('id').single()
+    if (!parent) return
+    parentId = parent.id
+  }
 
-  // Create subtasks from templates
-  const subtasks = matching.map(t => {
+  // Which template IDs already have a subtask under this parent? Skip those.
+  const { data: existingSubtasks } = await supabase
+    .from('tasks')
+    .select('workflow_template_id')
+    .eq('parent_task_id', parentId)
+    .not('workflow_template_id', 'is', null)
+  const existingTemplateIds = new Set((existingSubtasks || []).map((t: any) => t.workflow_template_id))
+
+  const toCreate = matching.filter(t => !existingTemplateIds.has(t.id))
+  if (toCreate.length === 0) return
+
+  const subtasks = toCreate.map(t => {
     const title = (t.title || '').replace(/\{property_name\}/g, propertyName)
     const dueDate = new Date(today)
     dueDate.setDate(dueDate.getDate() + (t.due_offset_days || 0))
 
-    // Build description from checklist items
     let description = t.description || ''
     const items = Array.isArray(t.checklist_items) ? t.checklist_items : []
     if (items.length > 0) {
@@ -127,7 +155,7 @@ async function createWorkflowTasks(
       created_by: createdBy,
       list_id: listId,
       workflow_template_id: t.id,
-      parent_task_id: parent.id,
+      parent_task_id: parentId,
     }
   })
 
