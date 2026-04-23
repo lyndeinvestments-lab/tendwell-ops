@@ -70,6 +70,8 @@ export default function MasterListPage() {
   const [location] = useLocation()
   usePageTitle('Master List')
   const [search, setSearch] = useState('')
+  const [showArchived, setShowArchived] = useState(false)
+  const isAdmin = effectiveUser?.role === 'admin'
 
   const [stageFilter, setStageFilter] = useState(() => {
     // Check URL params first, then localStorage
@@ -189,6 +191,32 @@ export default function MasterListPage() {
       if (error) throw error
       return data || []
     },
+    enabled: !showArchived,
+  })
+
+  const { data: archivedProperties, isLoading: isArchivedLoading } = useQuery({
+    queryKey: ['/supabase/master-list-archived'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('admin_list_deleted_properties')
+      if (error) throw error
+      return (data || []) as any[]
+    },
+    enabled: showArchived && isAdmin,
+  })
+
+  const { mutate: restoreProperty } = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc('admin_restore_property', { p_id: Number(id) })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list-archived'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      toast({ title: 'Property restored' })
+    },
+    onError: (e: any) => toast({ title: 'Restore failed', description: e.message || '', variant: 'destructive' }),
   })
 
   // Auto-open detail panel when ?highlight= param is present
@@ -242,7 +270,12 @@ export default function MasterListPage() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const { mutate: bulkDelete, isPending: deletePending } = useGuardedMutation('master-list', {
     mutationFn: async (ids: string[]) => {
-      const { error } = await supabase.from('properties').delete().in('id', ids)
+      // Soft-delete: rows remain in the DB for 30 days so admins can restore
+      // from the Archive page. Scheduled purge hard-removes after expiry.
+      const { error } = await supabase
+        .from('properties')
+        .update({ deleted_at: new Date().toISOString() })
+        .in('id', ids)
       if (error) throw error
     },
     onSuccess: () => {
@@ -642,6 +675,20 @@ export default function MasterListPage() {
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCSV} data-testid="button-export-csv">
             <Download className="w-3 h-3" /> Export CSV
           </Button>
+          {isAdmin && (
+            <Button
+              variant={showArchived ? 'default' : 'outline'}
+              size="sm"
+              className="h-8 gap-1.5 text-xs"
+              onClick={() => setShowArchived(v => !v)}
+              data-testid="button-toggle-archive"
+              title="View soft-deleted properties from the last 30 days"
+            >
+              <Trash2 className="w-3 h-3" />
+              {showArchived ? 'Hide Archive' : 'Archive'}
+              {showArchived && archivedProperties && <span className="tabular-nums opacity-70">({archivedProperties.length})</span>}
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -662,11 +709,65 @@ export default function MasterListPage() {
         </div>
       </div>
 
-      {!isLoading && filtered.length > 0 && (
+      {!isLoading && filtered.length > 0 && !showArchived && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {showArchived && (
+        <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-900/10 p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">Archived Properties</h3>
+              <p className="text-xs text-muted-foreground">Soft-deleted within the last 30 days. Auto-purged permanently after 30 days.</p>
+            </div>
+          </div>
+          {isArchivedLoading ? (
+            <p className="text-xs text-muted-foreground italic">Loading…</p>
+          ) : !archivedProperties || archivedProperties.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">No archived properties.</p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-left text-muted-foreground uppercase tracking-wide">
+                  <th className="py-1.5 px-2 font-medium">Name</th>
+                  <th className="py-1.5 px-2 font-medium">Address</th>
+                  <th className="py-1.5 px-2 font-medium">Deleted</th>
+                  <th className="py-1.5 px-2 font-medium">Purges in</th>
+                  <th className="py-1.5 px-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedProperties.map((p: any) => {
+                  const deletedAt = new Date(p.deleted_at)
+                  const purgeAt = new Date(deletedAt.getTime() + 30 * 24 * 60 * 60 * 1000)
+                  const daysLeft = Math.max(0, Math.ceil((purgeAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+                  return (
+                    <tr key={p.id} className="border-t border-amber-200/50 dark:border-amber-800/50">
+                      <td className="py-1.5 px-2 font-medium">{p.name}</td>
+                      <td className="py-1.5 px-2 text-muted-foreground">{p.address || '—'}</td>
+                      <td className="py-1.5 px-2 tabular-nums">{deletedAt.toLocaleDateString()}</td>
+                      <td className="py-1.5 px-2 tabular-nums">{daysLeft}d</td>
+                      <td className="py-1.5 px-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 text-xs"
+                          onClick={() => restoreProperty(p.id)}
+                          data-testid={`button-restore-${p.id}`}
+                        >
+                          Restore
+                        </Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {!showArchived && <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -794,9 +895,9 @@ export default function MasterListPage() {
             })}
           </tbody>
         </table>
-      </div>
+      </div>}
 
-      {!isLoading && filtered.length > 0 && (
+      {!isLoading && filtered.length > 0 && !showArchived && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
