@@ -875,7 +875,6 @@ export default function TasksPage() {
     if (existing) {
       await supabase.from('task_assignees').delete().eq('id', existing.id)
     } else {
-      // If setting primary, demote current primary
       if (isPrimary) {
         await supabase.from('task_assignees').update({ role: 'secondary' }).eq('task_id', taskId).eq('role', 'primary')
       }
@@ -884,7 +883,18 @@ export default function TasksPage() {
         sort_order: isPrimary ? 0 : (taskAssignees?.length || 0) + 1,
       })
     }
+    // Keep legacy tasks.assignee_name in sync with the current primary so the
+    // list column matches what the detail panel shows.
+    const { data: freshAssignees } = await supabase
+      .from('task_assignees')
+      .select('user_id, role, user:app_users!task_assignees_user_id_fkey(label)')
+      .eq('task_id', taskId)
+    const primary = (freshAssignees || []).find((a: any) => a.role === 'primary')
+    const primaryLabel = (primary?.user as any)?.label ?? null
+    await supabase.from('tasks').update({ assignee_name: primaryLabel }).eq('id', taskId)
+
     qc.invalidateQueries({ queryKey: ['/supabase/task-assignees', taskId] })
+    qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
   }
 
   async function toggleWatcher(taskId: string, userId: number) {
