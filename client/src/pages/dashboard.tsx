@@ -198,46 +198,83 @@ export default function DashboardPage() {
   const { data: onboardingVelocity } = useQuery({
     queryKey: ['/supabase/dashboard-velocity', sinceDate, untilDate],
     queryFn: async () => {
-      // Get transitions TO active in the period
+      const activeStageId = stages?.find((s: any) => s.name === 'Active')?.id
+      const onboardingStageId = stages?.find((s: any) => s.name === 'Onboarding')?.id
+
+      // 1. Onboarding → Active conversions in the period
       const { data: toActive, error: e1 } = await supabase
         .from('stage_transitions')
         .select('property_id, created_at')
-        .eq('to_stage_id', stages?.find((s: any) => s.name === 'Active')?.id)
+        .eq('to_stage_id', activeStageId)
         .gte('created_at', sinceDate)
         .lte('created_at', untilDate)
       if (e1) throw e1
 
-      // Get transitions TO onboarding for those same properties
-      const propIds = (toActive || []).map((t: any) => t.property_id)
-      if (propIds.length === 0) return { avgDays: null, conversions: 0 }
-
-      const { data: toOnboarding, error: e2 } = await supabase
-        .from('stage_transitions')
-        .select('property_id, created_at')
-        .in('property_id', propIds)
-        .eq('to_stage_id', stages?.find((s: any) => s.name === 'Onboarding')?.id)
-      if (e2) throw e2
-
-      // Compute avg days between onboarding → active for each property
-      const onboardMap: Record<string, string> = {}
-      for (const t of (toOnboarding || [])) {
-        if (!onboardMap[t.property_id] || t.created_at > onboardMap[t.property_id]) {
-          onboardMap[t.property_id] = t.created_at
+      let conversionAvg: number | null = null
+      const conversionCount = (toActive || []).length
+      const convertedPropIds = (toActive || []).map((t: any) => t.property_id)
+      if (convertedPropIds.length > 0) {
+        const { data: toOnboardingForConverted, error: e2 } = await supabase
+          .from('stage_transitions')
+          .select('property_id, created_at')
+          .in('property_id', convertedPropIds)
+          .eq('to_stage_id', onboardingStageId)
+        if (e2) throw e2
+        const onboardMap: Record<string, string> = {}
+        for (const t of (toOnboardingForConverted || [])) {
+          if (!onboardMap[t.property_id] || t.created_at > onboardMap[t.property_id]) {
+            onboardMap[t.property_id] = t.created_at
+          }
         }
+        let totalDays = 0, count = 0
+        for (const t of (toActive || [])) {
+          const start = onboardMap[t.property_id]
+          if (start) {
+            const days = (new Date(t.created_at).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
+            if (days >= 0) { totalDays += days; count++ }
+          }
+        }
+        if (count > 0) conversionAvg = Math.round(totalDays / count)
       }
 
-      let totalDays = 0, count = 0
-      for (const t of (toActive || [])) {
-        const start = onboardMap[t.property_id]
-        if (start) {
-          const days = (new Date(t.created_at).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
-          if (days >= 0) { totalDays += days; count++ }
+      // 2. Fallback: average time properties CURRENTLY in Onboarding have been there.
+      // Answers "how long is onboarding taking right now?" when no conversions
+      // happened in the selected period — otherwise the tile just says "No data".
+      let currentAvg: number | null = null
+      let currentCount = 0
+      const { data: currentOnboarding } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('stage_id', onboardingStageId)
+      const currentIds = (currentOnboarding || []).map((p: any) => p.id)
+      if (currentIds.length > 0) {
+        const { data: lastTransitions } = await supabase
+          .from('stage_transitions')
+          .select('property_id, created_at')
+          .in('property_id', currentIds)
+          .eq('to_stage_id', onboardingStageId)
+        const latestByProp: Record<string, string> = {}
+        for (const t of (lastTransitions || [])) {
+          if (!latestByProp[t.property_id] || t.created_at > latestByProp[t.property_id]) {
+            latestByProp[t.property_id] = t.created_at
+          }
         }
+        const now = Date.now()
+        let total = 0, n = 0
+        for (const propId of currentIds) {
+          const start = latestByProp[propId]
+          if (!start) continue
+          const days = (now - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
+          if (days >= 0) { total += days; n++ }
+        }
+        if (n > 0) { currentAvg = Math.round(total / n); currentCount = n }
       }
 
       return {
-        avgDays: count > 0 ? Math.round(totalDays / count) : null,
-        conversions: (toActive || []).length,
+        avgDays: conversionAvg,
+        conversions: conversionCount,
+        currentAvgDays: currentAvg,
+        currentCount,
       }
     },
     enabled: !!stages,
@@ -430,11 +467,25 @@ export default function DashboardPage() {
         />
         <KpiCard
           title="Avg Onboarding"
-          value={onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d` : 'No data'}
-          subtitle={onboardingVelocity?.avgDays != null ? 'days to active' : 'no transitions yet'}
+          value={
+            onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d`
+            : onboardingVelocity?.currentAvgDays != null ? `${onboardingVelocity.currentAvgDays}d`
+            : 'No data'
+          }
+          subtitle={
+            onboardingVelocity?.avgDays != null ? 'days to active (this period)'
+            : onboardingVelocity?.currentAvgDays != null ? `days in progress (${onboardingVelocity.currentCount} open)`
+            : 'no transitions yet'
+          }
           icon={Activity}
           loading={isLoading || !onboardingVelocity}
-          hint={onboardingVelocity?.avgDays != null ? "Average days from Onboarding to Active stage for conversions in this period" : "No Onboarding → Active transitions recorded in this period. Properties added directly to Active bypass this metric."}
+          hint={
+            onboardingVelocity?.avgDays != null
+              ? "Average days from Onboarding to Active stage for conversions in the selected period."
+              : onboardingVelocity?.currentAvgDays != null
+                ? "No conversions in the selected period — showing how long properties currently in Onboarding have been there."
+                : "No onboarding activity recorded. A property needs at least one stage_transitions row to appear here."
+          }
         />
       </div>
 
