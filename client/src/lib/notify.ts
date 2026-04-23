@@ -60,7 +60,13 @@ export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
 interface NotifyOpts {
   eventType: NotificationEventType
   subject: string
-  bodyHtml: string
+  // Structured body. Server escapes + renders safely. Replaces the old raw
+  // bodyHtml contract which allowed HTML injection from any authenticated
+  // caller (bounty finding #2).
+  bodyLines: string[]
+  // Optional blockquote for user-provided content (e.g. the note text the
+  // mention was in). Server escapes on render.
+  quoteText?: string
   ctaUrl?: string
   ctaLabel?: string
   meta?: Record<string, any>

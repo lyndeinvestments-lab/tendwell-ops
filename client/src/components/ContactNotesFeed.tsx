@@ -69,7 +69,7 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
 
       // Fire mention notifications (best-effort)
       try {
-        const { parseMentions, notify, escapeHtml } = await import('@/lib/notify')
+        const { parseMentions, notify } = await import('@/lib/notify')
         const users = (taggable || []).map(u => ({ id: u.id, label: u.label }))
         const mentionedIds = parseMentions(trimmed, users).filter(id => String(id) !== String(user?.id))
         if (mentionedIds.length > 0) {
@@ -82,8 +82,10 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
           await notify({
             eventType: 'contact_note_mention',
             subject: `${user?.label || 'Someone'} mentioned you on ${contactName}`,
-            bodyHtml: `<p><strong>${escapeHtml(user?.label || 'A teammate')}</strong> mentioned you in a note on <strong>${escapeHtml(contactName)}</strong>:</p>
-              <blockquote style="border-left:3px solid #e2e8f0;margin:8px 0;padding:4px 12px;color:#334155;">${escapeHtml(trimmed)}</blockquote>`,
+            bodyLines: [
+              `${user?.label || 'A teammate'} mentioned you in a note on ${contactName}.`,
+            ],
+            quoteText: trimmed,
             ctaUrl: `${window.location.origin}/contacts?contact=${contactId}`,
             ctaLabel: 'View contact',
             targetUserIds: mentionedIds,

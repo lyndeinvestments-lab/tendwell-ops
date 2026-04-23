@@ -1,12 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
   getSupabaseConfig, verifyAuthHeader, getAllUsersWithViews, getAllPreferences,
-  filterRecipients, sendEmail, logNotification, renderEmailLayout, escapeHtml,
+  filterRecipients, sendEmail, logNotification, renderEmailLayout, composeBodyHtml, validateCtaUrl,
 } from './_lib.js'
 
 // POST /api/notify/send
-// Body: { eventType, subject, bodyHtml, ctaUrl?, ctaLabel?, meta? }
-// Fans out to all users who: (a) can see the related view, (b) have the pref enabled, (c) have instant digest.
+// Body: { eventType, subject, bodyLines: string[], quoteText?, ctaUrl?, ctaLabel?, meta?, targetUserIds? }
+//
+// Server composes the email body from structured fields so callers can't
+// inject arbitrary HTML (bounty finding #2). Any `bodyHtml` from clients is
+// ignored. ctaUrl is allowlisted to tendwellcleaning.com + preview hosts
+// (bounty finding #1).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
@@ -18,10 +22,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = await verifyAuthHeader(sb, req.headers.authorization)
   if (!session) return res.status(401).json({ error: 'Unauthorized' })
 
-  const { eventType, subject, bodyHtml, ctaUrl, ctaLabel, meta, targetUserIds } = (req.body || {}) as any
-  if (!eventType || !subject || !bodyHtml) {
-    return res.status(400).json({ error: 'eventType, subject, bodyHtml required' })
+  const { eventType, subject, bodyLines, quoteText, ctaUrl, ctaLabel, meta, targetUserIds } = (req.body || {}) as any
+  if (!eventType || !subject) {
+    return res.status(400).json({ error: 'eventType and subject required' })
   }
+  const lines = Array.isArray(bodyLines)
+    ? bodyLines.filter((l: any) => typeof l === 'string').slice(0, 8)
+    : []
+  if (lines.length === 0) {
+    return res.status(400).json({ error: 'bodyLines must be a non-empty string array' })
+  }
+  const quote = typeof quoteText === 'string' && quoteText.trim().length > 0
+    ? quoteText.slice(0, 2000)
+    : null
+  const safeCta = validateCtaUrl(ctaUrl)
+  const safeCtaLabel = typeof ctaLabel === 'string' ? ctaLabel.slice(0, 64) : undefined
 
   try {
     const [users, prefs] = await Promise.all([
@@ -33,7 +48,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : undefined
     const recipients = filterRecipients(users, prefs, eventType, { onlyUserIds })
 
-    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl, ctaLabel })
+    const bodyHtml = composeBodyHtml({ lines, quote })
+    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: safeCta || undefined, ctaLabel: safeCtaLabel })
     const results = await Promise.all(recipients.map(async u => {
       const r = await sendEmail({ to: u.google_email, subject, html })
       await logNotification(sb, {
