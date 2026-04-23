@@ -298,9 +298,19 @@ export default function AccessCodesPage() {
               </tr>
             ) : (
               paged.map((p: any) => {
-                const codeKeys = ['auto_code', 'door_code', 'other_codes']
-                const missingCodes = codeKeys.filter(k => !p[k] || !p[k].trim())
-                const isMissing = missingCodes.length > 0
+                const codeKeys: Array<{ key: string; label: string }> = [
+                  { key: 'auto_code', label: 'Auto Code' },
+                  { key: 'door_code', label: 'Door Code' },
+                  { key: 'other_codes', label: 'Other Codes' },
+                ]
+                const missingCodes = codeKeys.filter(c => !p[c.key] || !String(p[c.key]).trim())
+                const filledCount = codeKeys.length - missingCodes.length
+                // "Missing" = no codes at all. "Incomplete" = at least one but not all.
+                const badgeState: 'missing' | 'incomplete' | 'complete' =
+                  filledCount === 0 ? 'missing' :
+                  missingCodes.length > 0 ? 'incomplete' :
+                  'complete'
+                const missingLabel = missingCodes.map(c => c.label).join(', ')
                 return (
                   <tr key={p.id} data-testid={`row-access-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="py-2 px-3 text-xs sticky left-0 z-10 bg-background">
@@ -313,8 +323,11 @@ export default function AccessCodesPage() {
                         >
                           {p.name}
                         </button>
-                        {isMissing && (
-                          <Badge variant="destructive" className="text-xs py-0 px-1 h-4">Missing</Badge>
+                        {badgeState === 'missing' && (
+                          <Badge variant="destructive" className="text-xs py-0 px-1 h-4" title={`No access codes set. Missing: ${missingLabel}`}>Missing</Badge>
+                        )}
+                        {badgeState === 'incomplete' && (
+                          <Badge className="text-xs py-0 px-1 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80" title={`Missing: ${missingLabel}`}>Incomplete</Badge>
                         )}
                       </div>
                     </td>

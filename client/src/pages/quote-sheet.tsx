@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { profitColorClass } from '@/lib/profit-colors'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
+import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 
@@ -577,8 +578,24 @@ export default function QuoteSheetPage() {
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" step="0.5" /></td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" step="0.5" /></td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" /></td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(laundry)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(consumables)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <LaundryFormulaTooltip numberOfBeds={p.number_of_beds} override={p.est_laundry}>
+                        <span>{fmt(laundry)}</span>
+                      </LaundryFormulaTooltip>
+                    </td>
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <ConsumablesFormulaTooltip
+                        fullBaths={p.full_baths}
+                        halfBaths={p.half_baths}
+                        kitchens={p.number_of_kitchens}
+                        numberOfBeds={p.number_of_beds}
+                        hotTub={p.hot_tub}
+                        costs={amenityCosts}
+                        override={p.est_consumables}
+                      >
+                        <span>{fmt(consumables)}</span>
+                      </ConsumablesFormulaTooltip>
+                    </td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">

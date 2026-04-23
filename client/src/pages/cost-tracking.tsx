@@ -417,8 +417,8 @@ export default function CostTrackingPage() {
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>Client Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
-              <th className={thCls} onClick={() => toggleSort('est_laundry')}>Laundry <SortIcon col="est_laundry" /></th>
-              <th className={thCls} onClick={() => toggleSort('est_consumables')}>Consumables <SortIcon col="est_consumables" /></th>
+              <th className={thCls} onClick={() => toggleSort('est_laundry')} title="Formula: beds × 11.5 lbs × $0.69/lb (≈ $7.94 per bed). Editable per row.">Laundry <SortIcon col="est_laundry" /></th>
+              <th className={thCls} onClick={() => toggleSort('est_consumables')} title="Formula: (baths × (bath + TP)) + (kitchens × kitchen) + (beds × trash bag) + (hot tub chems). Rates from Settings. Editable per row.">Consumables <SortIcon col="est_consumables" /></th>
               <th className={thCls}>Inspection</th>
               <th className={thCls}>Trash</th>
               <th className={thCls} onClick={() => toggleSort('total_estimated_cost')}>Total Cost <SortIcon col="total_estimated_cost" /></th>
