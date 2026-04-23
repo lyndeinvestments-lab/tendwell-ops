@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
+import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 
 // ── Access code cell (always visible, click to copy) ────────────────────────
 function RevealCell({ value }: { value: string | null; field: string; id: string }) {
@@ -767,8 +768,6 @@ function buildFormFromProperty(property: any): Record<string, any> {
     guest_count: property.guest_count ?? '',
     ce_charged: property.ce_charged ?? '',
     cleaner_pay: property.cleaner_pay ?? '',
-    notes: property.notes || '',
-    linen_notes: property.linen_notes || '',
   }
   for (const k of LINEN_FIELD_KEYS) form[k] = property[k] ?? ''
   for (const k of ACCESS_FIELD_KEYS) form[k] = property[k] || ''
@@ -866,7 +865,6 @@ export function PropertyDetailModal() {
         updates.full_baths = form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null
         updates.square_footage = form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null
         updates.guest_count = form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null
-        updates.notes = form.notes || null
       }
       if (canEditFinancials) {
         updates.ce_charged = form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null
@@ -879,7 +877,6 @@ export function PropertyDetailModal() {
         for (const k of LINEN_FIELD_KEYS) {
           updates[k] = form[k] !== '' ? parseFloat(String(form[k])) : null
         }
-        updates.linen_notes = form.linen_notes || null
       }
       if (canEditAC) {
         updates.filter_size = form.filter_size || null
@@ -892,10 +889,10 @@ export function PropertyDetailModal() {
     onSuccess: () => {
       // Log each changed field to activity_log
       const changedFields: string[] = []
-      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'notes')
+      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count')
       if (canEditFinancials) changedFields.push('ce_charged', 'cleaner_pay')
       if (canEditAccess) changedFields.push(...ACCESS_FIELD_KEYS)
-      if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS, 'linen_notes')
+      if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS)
       if (canEditAC) changedFields.push(...AC_FIELD_KEYS)
       for (const field of changedFields) {
         const oldVal = property?.[field] ?? null
@@ -1420,18 +1417,8 @@ export function PropertyDetailModal() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-2">
-                  <span className="text-xs text-muted-foreground block">Notes</span>
-                  {isEditing && canEditLinens ? (
-                    <textarea
-                      value={form.linen_notes ?? ''}
-                      onChange={e => setForm(f => ({ ...f, linen_notes: e.target.value }))}
-                      className="mt-0.5 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                      data-testid="modal-input-linen_notes"
-                    />
-                  ) : (
-                    <p className="text-sm mt-0.5">{property.linen_notes || <span className="text-muted-foreground italic">—</span>}</p>
-                  )}
+                <div className="mt-3">
+                  <PropertyNotesFeed propertyId={property.id} context="linen" title="Linen Notes" compact />
                 </div>
               </div>
               <Separator />
@@ -1586,19 +1573,7 @@ export function PropertyDetailModal() {
 
             {/* ── Notes Tab ── */}
             <TabsContent value="notes" className="mt-3">
-              {isEditing && canEditProperty ? (
-                <div>
-                  <Label className="text-xs text-muted-foreground">Notes</Label>
-                  <textarea
-                    value={form.notes}
-                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
-                    className="mt-1 w-full h-32 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                    data-testid="modal-input-notes"
-                  />
-                </div>
-              ) : (
-                <p className="text-sm whitespace-pre-wrap">{property.notes || <span className="text-muted-foreground italic">No notes</span>}</p>
-              )}
+              <PropertyNotesFeed propertyId={property.id} />
             </TabsContent>
 
             {/* ── Inspections Tab ── */}
