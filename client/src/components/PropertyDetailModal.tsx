@@ -1261,13 +1261,79 @@ export function PropertyDetailModal() {
                   </div>
                 ))}
               </div>
-              {/* Cleaner Pay — shown in property-list context */}
-              {sourceContext === 'property-list' && canViewFinancials && (
-                <div className="bg-muted/40 rounded-md p-3">
-                  <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
-                  <span className="text-sm font-medium">{property.cleaner_pay ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+              {/* Additional property facts — non-sensitive chips */}
+              <div className="flex flex-wrap gap-2 text-xs">
+                {property.number_of_beds != null && (
+                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                    Beds: <span className="tabular-nums text-foreground font-medium">{property.number_of_beds}</span>
+                  </span>
+                )}
+                {property.number_of_kitchens != null && (
+                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                    Kitchens: <span className="tabular-nums text-foreground font-medium">{property.number_of_kitchens}</span>
+                  </span>
+                )}
+                {property.hot_tub && (
+                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">Hot tub</span>
+                )}
+                {property.follow_up_date && (
+                  <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+                    Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
+                  </span>
+                )}
+              </div>
+
+              {/* Financials snapshot — only for users who already see Financials */}
+              {canViewFinancials && (
+                <div className="rounded-md border border-border bg-muted/30 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <span className="text-xs text-muted-foreground block">Client Charged</span>
+                      <span className="text-sm font-medium tabular-nums">{property.ce_charged != null ? `$${Number(property.ce_charged).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
+                      <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">Profit %</span>
+                      <span className={`text-sm font-medium tabular-nums ${
+                        property.profit_percentage == null ? 'text-muted-foreground' :
+                        property.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' :
+                        property.profit_percentage >= 15 ? 'text-amber-600' :
+                        'text-destructive'
+                      }`}>
+                        {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               )}
+
+              {/* Access-config status — only for users who already see Access */}
+              {canViewAccess && (() => {
+                const accessKeys = ['auto_code', 'door_code', 'other_codes', 'wifi_info'] as const
+                const filled = accessKeys.filter(k => property[k] && String(property[k]).trim() !== '').length
+                const missing = accessKeys.length - filled
+                return (
+                  <div className="rounded-md border border-border bg-muted/30 p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Access Setup</p>
+                      <p className="text-xs text-muted-foreground">
+                        {missing === 0 ? 'All codes configured.' : `${filled} of ${accessKeys.length} fields filled.`}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                      missing === 0 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
+                      filled === 0 ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' :
+                      'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400'
+                    }`}>
+                      {missing === 0 ? 'Complete' : filled === 0 ? 'Not set' : 'Partial'}
+                    </span>
+                  </div>
+                )
+              })()}
             </TabsContent>
 
             {/* ── Financials Tab ── */}
