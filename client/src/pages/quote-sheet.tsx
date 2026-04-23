@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canEditView } from '@/lib/auth'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -87,6 +87,15 @@ export default function QuoteSheetPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  // Google-sheet-style live edits: per-row field overrides that merge with the
+  // server row during render so derived columns recompute while the user types.
+  const [edits, setEdits] = useState<Record<number, Record<string, any>>>({})
+  const canEdit = canEditView('quote-sheet', effectiveUser)
+
+  function merged(p: any): any {
+    const e = edits[p.id]
+    return e ? { ...p, ...e } : p
+  }
 
   function toggleSort(key: string) {
     if (sortKey === key) {
@@ -283,12 +292,151 @@ export default function QuoteSheetPage() {
     setConverting({ prop, missing })
   }
 
-  // Compute estimates for display (fall back to client-side calc if DB value absent)
+  // Compute estimates for display. When a row has local edits, always recompute
+  // laundry/consumables/profit from the merged values rather than stale DB rows,
+  // so numbers update live as the user types.
   function getEstimates(p: any) {
-    const beds = p.number_of_beds || 0
-    const laundry = p.est_laundry ?? calcLaundry(beds)
-    const consumables = p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
-    return { laundry, consumables }
+    const hasEdit = !!edits[p.id]
+    const beds = Number(p.number_of_beds) || 0
+    const laundry = hasEdit ? calcLaundry(beds) : (p.est_laundry ?? calcLaundry(beds))
+    const consumables = hasEdit
+      ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
+      : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens }))
+    const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
+    const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
+    let profitPct: number | null
+    if (hasEdit && ce != null && ce > 0) {
+      // Recompute locally for instant feedback
+      const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0)
+      profitPct = ((ce - totalCost) / ce) * 100
+    } else {
+      profitPct = p.profit_percentage != null ? Number(p.profit_percentage) : null
+    }
+    return { laundry, consumables, profitPct }
+  }
+
+  // Persist a single field change to Supabase. Fires on blur/Enter of inline cells.
+  const { mutate: persistField } = useMutation({
+    mutationFn: async ({ id, field, value }: { id: number; field: string; value: any }) => {
+      const numFields = ['ce_charged', 'cleaner_pay', 'bedrooms', 'number_of_beds', 'full_baths', 'half_baths', 'square_footage']
+      const intFields = ['bedrooms', 'number_of_beds', 'square_footage']
+      let dbValue: any = value
+      if (value === '' || value == null) {
+        dbValue = null
+      } else if (numFields.includes(field)) {
+        dbValue = intFields.includes(field) ? parseInt(String(value), 10) : parseFloat(String(value))
+        if (Number.isNaN(dbValue)) dbValue = null
+      }
+      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_data, vars) => {
+      // Clear the local edit for this field now that it's persisted; keep other
+      // edits on the same row (server-side profit_percentage may still be stale
+      // so derived values re-use the merged value until refetch completes).
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      setEdits(prev => {
+        const row = prev[vars.id]
+        if (!row) return prev
+        const { [vars.field]: _removed, ...rest } = row
+        const next = { ...prev }
+        if (Object.keys(rest).length === 0) delete next[vars.id]
+        else next[vars.id] = rest
+        return next
+      })
+    },
+    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+  })
+
+  function EditableNumberCell({
+    p, field, step = '1', prefix = '', className = '',
+  }: { p: any; field: string; step?: string; prefix?: string; className?: string }) {
+    const m = merged(p)
+    const [editing, setEditing] = useState(false)
+    const [draft, setDraft] = useState<string>(() => {
+      const v = m[field]
+      return v == null ? '' : String(v)
+    })
+
+    function commit() {
+      setEditing(false)
+      const current = p[field]
+      const nextVal = draft === '' ? null : Number(draft)
+      const isSame = String(current ?? '') === String(nextVal ?? '')
+      if (!isSame) {
+        persistField({ id: p.id, field, value: draft })
+      } else {
+        // No-op commit: drop any lingering edit override
+        setEdits(prev => {
+          const row = prev[p.id]
+          if (!row) return prev
+          const { [field]: _removed, ...rest } = row
+          const next = { ...prev }
+          if (Object.keys(rest).length === 0) delete next[p.id]
+          else next[p.id] = rest
+          return next
+        })
+      }
+    }
+
+    if (!canEdit) {
+      const v = m[field]
+      return <span className="tabular-nums">{v == null || v === '' ? '—' : (prefix ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}` : (typeof v === 'number' ? v.toLocaleString() : v))}</span>
+    }
+
+    if (editing) {
+      return (
+        <input
+          autoFocus
+          type="number"
+          step={step}
+          value={draft}
+          onChange={e => {
+            setDraft(e.target.value)
+            setEdits(prev => ({ ...prev, [p.id]: { ...(prev[p.id] || {}), [field]: e.target.value === '' ? null : Number(e.target.value) } }))
+          }}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
+            if (e.key === 'Escape') {
+              setEdits(prev => {
+                const row = prev[p.id]
+                if (!row) return prev
+                const { [field]: _removed, ...rest } = row
+                const next = { ...prev }
+                if (Object.keys(rest).length === 0) delete next[p.id]
+                else next[p.id] = rest
+                return next
+              })
+              const v = p[field]
+              setDraft(v == null ? '' : String(v))
+              setEditing(false)
+            }
+          }}
+          className={`h-6 w-20 rounded border border-input bg-background px-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
+          data-testid={`qs-cell-${field}-${p.id}`}
+        />
+      )
+    }
+
+    const v = m[field]
+    const display = v == null || v === '' ? '—'
+      : prefix
+        ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}`
+        : (typeof v === 'number' ? v.toLocaleString() : String(v))
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(v == null ? '' : String(v))
+          setEditing(true)
+        }}
+        className={`tabular-nums text-left w-full hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
+        data-testid={`qs-cell-${field}-${p.id}`}
+      >
+        {display}
+      </button>
+    )
   }
 
   function exportCsv() {
@@ -414,28 +562,29 @@ export default function QuoteSheetPage() {
                 </td>
               </tr>
             ) : (
-              paged.map((p: any) => {
-                const { laundry, consumables } = getEstimates(p)
+              paged.map((rawP: any) => {
+                const p = merged(rawP)
+                const { laundry, consumables, profitPct } = getEstimates(p)
                 return (
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
                     </td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.ce_charged)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.cleaner_pay)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.number_of_beds ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.half_baths ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="bedrooms" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="number_of_beds" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" /></td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(laundry)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(consumables)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">
-                      {p.profit_percentage != null ? (
-                        <span className={`font-medium ${profitColorClass(p.profit_percentage)}`}>
-                          {p.profit_percentage.toFixed(1)}%
+                      {profitPct != null ? (
+                        <span className={`font-medium ${profitColorClass(profitPct)}`}>
+                          {profitPct.toFixed(1)}%
                         </span>
                       ) : '—'}
                     </td>
@@ -466,27 +615,37 @@ export default function QuoteSheetPage() {
                 )
               })
             )}
-            {filtered.length > 0 && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.ce_charged || 0), 0))}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (p.cleaner_pay || 0), 0))}</td>
-                <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).laundry || 0), 0))}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.reduce((s: number, p: any) => s + (getEstimates(p).consumables || 0), 0))}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * INSPECTION_COST)}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
-                <td className="py-2 px-3 text-xs tabular-nums">
-                  {(() => {
-                    const validProfit = filtered.filter((p: any) => p.profit_percentage != null)
-                    if (validProfit.length === 0) return '—'
-                    const avg = validProfit.reduce((s: number, p: any) => s + p.profit_percentage, 0) / validProfit.length
-                    return <span className={`font-medium ${profitColorClass(avg)}`} title="Average profit %">{avg.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span></span>
-                  })()}
-                </td>
-                <td></td>
-              </tr>
-            )}
+            {filtered.length > 0 && (() => {
+              const mergedRows = filtered.map(merged)
+              const sum = (pick: (p: any) => number | null | undefined) =>
+                mergedRows.reduce((s, p) => s + (Number(pick(p)) || 0), 0)
+              const validProfit = mergedRows
+                .map(p => getEstimates(p).profitPct)
+                .filter((x): x is number => x != null)
+              const avgProfit = validProfit.length > 0
+                ? validProfit.reduce((s, v) => s + v, 0) / validProfit.length
+                : null
+              return (
+                <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                  <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.cleaner_pay))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).laundry || 0), 0))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).consumables || 0), 0))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * INSPECTION_COST)}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">
+                    {avgProfit == null ? '—' : (
+                      <span className={`font-medium ${profitColorClass(avgProfit)}`} title="Average profit %">
+                        {avgProfit.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span>
+                      </span>
+                    )}
+                  </td>
+                  <td></td>
+                </tr>
+              )
+            })()}
           </tbody>
         </table>
       </div>
