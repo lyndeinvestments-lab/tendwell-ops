@@ -1,7 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
-// Returns today's Trellis tasks. Self-contained (no _lib import) while we
-// diagnose why importing from ./\_lib fails at runtime in Vercel.
+// Returns today's Trellis task count by asking a Trellis agent.
+// Trellis's public API doesn't expose a plain "list tasks" REST endpoint,
+// so we POST to /v1/agent/invoke with a count-only prompt and parse the
+// integer out of the reply. Lightweight but each pageview bills one invoke.
+//
+// Self-contained (no _lib import) — sibling _lib bundling via includeFiles
+// was not reliably bundling at runtime, and this endpoint is small enough
+// to inline.
 
 const TRELLIS_API_BASE = 'https://api.trellistech.com/v1'
 
@@ -17,6 +23,41 @@ function todayInCentral(): string {
   return new Date(now.getTime() - offsetHours * 60 * 60 * 1000).toISOString().slice(0, 10)
 }
 
+// Tries x-api-key first (matches Jordan's internal docs). If Trellis
+// rejects with 401/403 we retry with Authorization: Bearer (matches the
+// published OpenAPI spec). Whichever succeeds first wins.
+async function invokeTrellis(key: string, message: string): Promise<{ ok: true; data: any } | { ok: false; status: number; body: string }> {
+  const body = JSON.stringify({ message })
+  const base: Record<string, string> = { 'Content-Type': 'application/json' }
+  const attempts = [
+    { ...base, 'x-api-key': key },
+    { ...base, Authorization: `Bearer ${key}` },
+  ]
+  let lastStatus = 0
+  let lastBody = ''
+  for (const headers of attempts) {
+    const r = await fetch(`${TRELLIS_API_BASE}/agent/invoke`, { method: 'POST', headers, body })
+    const text = await r.text()
+    if (r.ok) {
+      try { return { ok: true, data: JSON.parse(text) } } catch { return { ok: true, data: { response: text } } }
+    }
+    lastStatus = r.status
+    lastBody = text
+    if (r.status !== 401 && r.status !== 403) break
+  }
+  return { ok: false, status: lastStatus, body: lastBody }
+}
+
+// Extract a non-negative integer from the agent's reply. The agent is
+// instructed to answer with one integer only, but models drift.
+function parseCount(reply: string): number | null {
+  if (!reply) return null
+  const m = reply.match(/(?<![\d.])(\d+)(?![\d.])/)
+  if (!m) return null
+  const n = parseInt(m[1], 10)
+  return Number.isFinite(n) && n >= 0 ? n : null
+}
+
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
   try {
     const key = process.env.TRELLIS_API_KEY
@@ -25,27 +66,28 @@ export default async function handler(_req: VercelRequest, res: VercelResponse) 
       return
     }
     const date = todayInCentral()
-    const upstream = await fetch(`${TRELLIS_API_BASE}/operations/tasks?due_date=${date}&status=open`, {
-      method: 'GET',
-      headers: {
-        'x-api-key': key,
-        'Content-Type': 'application/json',
-      },
-    })
-    const text = await upstream.text()
-    if (!upstream.ok) {
-      res.status(upstream.status).json({
-        error: `Trellis API ${upstream.status}`,
-        body: text.slice(0, 500),
-        hint: 'Verify the Trellis task filter — param name or status value may differ from the assumed due_date/status=open.',
+    const prompt = `How many open tasks are due on ${date} (today, America/Chicago)? Reply with a single non-negative integer and nothing else. If no tasks are due, reply 0.`
+    const result = await invokeTrellis(key, prompt)
+    if (!result.ok) {
+      res.status(result.status || 502).json({
+        error: `Trellis invoke failed (${result.status})`,
+        body: result.body.slice(0, 500),
+        hint: 'Check that TRELLIS_API_KEY is a valid Workspace API key.',
       })
       return
     }
-    let parsed: any
-    try { parsed = text ? JSON.parse(text) : {} } catch { parsed = {} }
-    const tasks = Array.isArray(parsed) ? parsed : (parsed.data ?? parsed.items ?? parsed.results ?? parsed.tasks ?? [])
-    res.status(200).json({ date, count: tasks.length, tasks })
+    const reply = typeof result.data?.response === 'string' ? result.data.response : String(result.data?.response ?? '')
+    const count = parseCount(reply)
+    if (count == null) {
+      res.status(502).json({
+        error: 'Agent reply did not include an integer count',
+        reply: reply.slice(0, 500),
+        hint: 'Open /api/trellis/tasks-today in the browser to see the raw agent reply, then adjust the prompt if needed.',
+      })
+      return
+    }
+    res.status(200).json({ date, count, source: 'agent', reply: reply.slice(0, 200), timed_out: Boolean(result.data?.timed_out) })
   } catch (e) {
-    res.status(500).json({ error: e instanceof Error ? e.message : String(e), stack: e instanceof Error ? e.stack : undefined })
+    res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
   }
 }
