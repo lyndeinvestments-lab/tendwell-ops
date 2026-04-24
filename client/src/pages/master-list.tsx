@@ -24,6 +24,7 @@ import Papa from 'papaparse'
 import { InlineEdit } from '@/components/InlineEdit'
 import { TablePagination } from '@/components/TablePagination'
 import { profitColorClass } from '@/lib/profit-colors'
+import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { useAppSettings } from '@/hooks/use-app-settings'
 
 function fmt(n: number | null | undefined) {
@@ -1200,6 +1201,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
   const [form, setForm] = useState<Record<string, any>>({})
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
+  const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
@@ -1429,7 +1431,37 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
             return true
           }).map(section => (
             <div key={section.title}>
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{section.title}</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{section.title}</h3>
+                {section.title === 'Linen Counts' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const c = calculateLinens({
+                        king_beds: form.king_beds,
+                        queen_beds: form.queen_beds,
+                        full_beds: form.full_beds,
+                        twin_beds: form.twin_beds,
+                        full_baths: form.full_baths,
+                        hot_tub: !!form.hot_tub,
+                      })
+                      setForm(prev => ({
+                        ...prev,
+                        bath_towels: c.bath_towels,
+                        hand_towels: c.hand_towels,
+                        washcloths: c.washcloths,
+                        bathmats: c.bathmats,
+                        pool_towels: c.pool_towels,
+                      }))
+                      toast({ title: `Auto-filled linens (sleep count ${sleepCount({ king_beds: form.king_beds, queen_beds: form.queen_beds, full_beds: form.full_beds, twin_beds: form.twin_beds })})` })
+                    }}
+                    className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
+                    title="Compute from bed counts + baths + hot tub"
+                  >
+                    Auto-fill from beds
+                  </button>
+                )}
+              </div>
               <div className="space-y-2.5">
                 {section.fields.map((field: any) => (
                   <div key={field.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
