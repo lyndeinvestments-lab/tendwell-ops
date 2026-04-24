@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
+import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
@@ -1501,7 +1502,38 @@ export function PropertyDetailModal() {
             {/* ── Operations Tab (Linens, AC Filter, Supplies) ── */}
             <TabsContent value="operations" className="mt-3 space-y-4">
               <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Linens</h4>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linens</h4>
+                  {isEditing && canEditLinens && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const src = {
+                          king_beds: form.king_beds ?? property.king_beds,
+                          queen_beds: form.queen_beds ?? property.queen_beds,
+                          full_beds: form.full_beds ?? property.full_beds,
+                          twin_beds: form.twin_beds ?? property.twin_beds,
+                          full_baths: form.full_baths ?? property.full_baths,
+                          hot_tub: (form.hot_tub ?? property.hot_tub) ? true : false,
+                        }
+                        const c = calculateLinens(src)
+                        setForm(f => ({
+                          ...f,
+                          bath_towels: c.bath_towels,
+                          hand_towels: c.hand_towels,
+                          washcloths: c.washcloths,
+                          bathmats: c.bathmats,
+                          pool_towels: c.pool_towels,
+                        }))
+                        toast({ title: `Auto-filled linens (sleep count ${sleepCount(src)})` })
+                      }}
+                      className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
+                      title="Compute from bed counts + baths + hot tub"
+                    >
+                      Auto-fill from beds
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {LINEN_COLS.map(col => (
                     <div key={col.key} className="bg-muted/40 rounded p-2">
