@@ -3,6 +3,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
+import { profitTier } from '@/lib/profit-colors'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
@@ -56,12 +57,12 @@ function ProfitBadge({ pct, stageName }: { pct: number | null | undefined; stage
     }
     return null
   }
-  const tier = pct >= 30 ? 'High' : pct >= 15 ? 'Mid' : pct >= 0 ? 'Low' : 'Negative'
+  const t = profitTier(pct)
+  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
   const cls =
-    pct >= 30 ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
-    pct >= 15 ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400' :
-    pct >= 0  ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400' :
-                'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
+    t === 'high' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
+    t === 'mid'  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400' :
+                   'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
   return (
     <span className={`text-xs px-1.5 py-0.5 rounded font-medium tabular-nums ${cls}`}>
       {pct.toFixed(0)}%<span className="sr-only"> ({tier} profit)</span>

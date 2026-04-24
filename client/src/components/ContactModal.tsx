@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
+import { profitColorClass } from '@/lib/profit-colors'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
@@ -416,7 +417,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
                             {p.ce_charged != null && <span>${Number(p.ce_charged).toFixed(2)}</span>}
                             {p.profit_percentage != null && (
-                              <span className={p.profit_percentage >= 30 ? 'text-green-600' : p.profit_percentage >= 15 ? 'text-amber-600' : 'text-destructive'}>
+                              <span className={profitColorClass(p.profit_percentage)}>
                                 {p.profit_percentage.toFixed(1)}%
                               </span>
                             )}

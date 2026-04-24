@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { TablePagination } from '@/components/TablePagination'
+import { profitTier } from '@/lib/profit-colors'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
@@ -20,10 +21,11 @@ function fmt(n: number | null | undefined) {
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
-  const tier = pct >= 30 ? 'High' : pct >= 15 ? 'Mid' : 'Low'
-  const cls = pct >= 30
+  const t = profitTier(pct)
+  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
+  const cls = t === 'high'
     ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-    : pct >= 15
+    : t === 'mid'
     ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
     : 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
   return (

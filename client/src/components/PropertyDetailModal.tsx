@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
+import { profitColorClass } from '@/lib/profit-colors'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
@@ -1324,12 +1325,7 @@ export function PropertyDetailModal() {
                     </div>
                     <div>
                       <span className="text-xs text-muted-foreground block">Profit %</span>
-                      <span className={`text-sm font-medium tabular-nums ${
-                        property.profit_percentage == null ? 'text-muted-foreground' :
-                        property.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' :
-                        property.profit_percentage >= 15 ? 'text-amber-600' :
-                        'text-destructive'
-                      }`}>
+                      <span className={`text-sm font-medium tabular-nums ${property.profit_percentage == null ? 'text-muted-foreground' : profitColorClass(property.profit_percentage)}`}>
                         {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
                       </span>
                     </div>
@@ -1442,12 +1438,7 @@ export function PropertyDetailModal() {
                   </div>
                   <div>
                     <span className="text-xs text-muted-foreground block">Profit %</span>
-                    <span className={`text-sm font-medium ${
-                      property.profit_percentage == null ? '' :
-                      property.profit_percentage >= 30 ? 'text-green-600 dark:text-green-400' :
-                      property.profit_percentage >= 15 ? 'text-amber-600' :
-                      'text-destructive'
-                    }`}>
+                    <span className={`text-sm font-medium ${profitColorClass(property.profit_percentage)}`}>
                       {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
                     </span>
                   </div>

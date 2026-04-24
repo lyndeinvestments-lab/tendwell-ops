@@ -21,6 +21,7 @@ import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
+import { profitTier } from '@/lib/profit-colors'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage' | 'break_even_ce'
 
@@ -28,12 +29,11 @@ const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding', 'Offboarded']
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
-  const isHigh = pct >= 30, isMid = pct >= 15, isPos = pct >= 0
-  const cls = isHigh ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
-              isMid ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
-              isPos ? 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' :
-              'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-  const tier = isHigh ? 'High' : isMid ? 'Mid' : isPos ? 'Low' : 'Neg'
+  const t = profitTier(pct)
+  const cls = t === 'high' ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
+              t === 'mid'  ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
+                             'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
   return (
     <div className="flex items-center gap-1">
       <span data-testid={`badge-profit-${Math.round(pct)}`} className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>

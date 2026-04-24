@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import {
   DollarSign,
   TrendingUp,
@@ -254,19 +255,15 @@ export default function FinancialDashboardPage() {
   // ── Profitability distribution ──
   const distributionData = useMemo(() => {
     if (!properties?.length) return []
-    const high = properties.filter((p) => (p.profit_percentage ?? 0) >= 30).length
-    const mid = properties.filter(
-      (p) => (p.profit_percentage ?? 0) >= 15 && (p.profit_percentage ?? 0) < 30
-    ).length
-    const low = properties.filter(
-      (p) => (p.profit_percentage ?? 0) > 0 && (p.profit_percentage ?? 0) < 15
-    ).length
-    const negative = properties.filter((p) => (p.profit_percentage ?? 0) < 0).length
+    const buckets = { high: 0, mid: 0, low: 0 }
+    for (const p of properties) {
+      const t = profitTier(p.profit_percentage ?? 0)
+      if (t) buckets[t]++
+    }
     return [
-      { label: 'High (≥30%)', count: high, color: '#22c55e' },
-      { label: 'Mid (15–30%)', count: mid, color: '#3b82f6' },
-      { label: 'Low (0–15%)', count: low, color: '#f59e0b' },
-      { label: 'Negative (<0%)', count: negative, color: '#ef4444' },
+      { label: PROFIT_TIER_LABELS.high, count: buckets.high, color: PROFIT_COLOR_HEX.high },
+      { label: PROFIT_TIER_LABELS.mid, count: buckets.mid, color: PROFIT_COLOR_HEX.mid },
+      { label: PROFIT_TIER_LABELS.low, count: buckets.low, color: PROFIT_COLOR_HEX.low },
     ]
   }, [properties])
 

@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
+import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
@@ -347,13 +348,10 @@ export default function DashboardPage() {
   }) || []
 
   // Profit distribution buckets (exclude SCounty/excluded properties)
-  const profitBuckets = { high: 0, mid: 0, low: 0, negative: 0 }
+  const profitBuckets = { high: 0, mid: 0, low: 0 }
   financialProps.forEach((p: any) => {
-    const pct = p.profit_percentage || 0
-    if (pct >= 30) profitBuckets.high++
-    else if (pct >= 15) profitBuckets.mid++
-    else if (pct >= 0) profitBuckets.low++
-    else profitBuckets.negative++
+    const t = profitTier(p.profit_percentage ?? 0)
+    if (t) profitBuckets[t]++
   })
 
   // 30-day activity metrics
@@ -674,10 +672,9 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-2.5">
                 {[
-                  { label: 'High (≥30%)', count: profitBuckets.high, color: '#22c55e', pct: active > 0 ? (profitBuckets.high / active * 100) : 0 },
-                  { label: 'Mid (15-30%)', count: profitBuckets.mid, color: '#f59e0b', pct: active > 0 ? (profitBuckets.mid / active * 100) : 0 },
-                  { label: 'Low (0-15%)', count: profitBuckets.low, color: '#ef4444', pct: active > 0 ? (profitBuckets.low / active * 100) : 0 },
-                  { label: 'Negative', count: profitBuckets.negative, color: '#dc2626', pct: active > 0 ? (profitBuckets.negative / active * 100) : 0 },
+                  { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high, pct: active > 0 ? (profitBuckets.high / active * 100) : 0 },
+                  { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid, pct: active > 0 ? (profitBuckets.mid / active * 100) : 0 },
+                  { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low, pct: active > 0 ? (profitBuckets.low / active * 100) : 0 },
                 ].map(b => (
                   <div key={b.label} className="cursor-pointer" onClick={() => navigate('/cost-tracking')}>
                     <div className="flex justify-between text-xs mb-1">
