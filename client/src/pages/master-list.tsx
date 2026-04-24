@@ -17,8 +17,9 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
-import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check } from 'lucide-react'
+import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check, X, ChevronsUpDown } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Papa from 'papaparse'
 import { InlineEdit } from '@/components/InlineEdit'
 import { TablePagination } from '@/components/TablePagination'
@@ -1197,12 +1198,37 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
   onSave: (updates: Record<string, any>) => void; saving: boolean
 }) {
   const [form, setForm] = useState<Record<string, any>>({})
+  const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
+  const [contactSearch, setContactSearch] = useState('')
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
 
   const { getNumber } = useAppSettings()
   const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
+
+  // Contacts list for the Client dropdown (mirrors PropertyDetailModal contacts-lite)
+  const { data: allContacts } = useQuery({
+    queryKey: ['/supabase/contacts-lite'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, company, payment_method')
+        .order('full_name')
+      if (error) throw error
+      return data || []
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  const filteredContacts = useMemo(() => {
+    if (!allContacts) return []
+    const q = contactSearch.toLowerCase().trim()
+    if (!q) return allContacts
+    return allContacts.filter((c: any) =>
+      c.full_name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q)
+    )
+  }, [allContacts, contactSearch])
 
   const propId = property?.id
   useEffect(() => {
@@ -1284,7 +1310,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
   const SECTIONS = [
     { title: 'Basic Info', fields: [
       { key: 'name', label: 'Property Name', type: 'text' },
-      { key: 'client', label: 'Client', type: 'text' },
+      { key: 'client', label: 'Client', type: 'contacts-select' },
       { key: 'address', label: 'Address', type: 'text' },
     ]},
     { title: 'Property Details', fields: [
@@ -1428,6 +1454,78 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                           {field.options?.map((o: string) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    ) : field.type === 'contacts-select' ? (
+                      <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className="h-7 w-full flex items-center justify-between rounded-md border border-input bg-background px-2 text-xs hover:bg-muted/30"
+                          >
+                            <span className={form[field.key] ? '' : 'text-muted-foreground'}>
+                              {form[field.key] || 'Select client…'}
+                            </span>
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              {form[field.key] && (
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={e => { e.stopPropagation(); updateForm(field.key, '') }}
+                                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); updateForm(field.key, '') } }}
+                                  className="hover:text-destructive inline-flex"
+                                  aria-label="Clear client"
+                                >
+                                  <X className="w-3 h-3" />
+                                </span>
+                              )}
+                              <ChevronsUpDown className="w-3 h-3 opacity-50" />
+                            </div>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64 p-2" align="start">
+                          <Input
+                            value={contactSearch}
+                            onChange={e => setContactSearch(e.target.value)}
+                            placeholder="Search clients…"
+                            className="h-7 text-xs mb-2"
+                            autoFocus
+                          />
+                          <div className="max-h-48 overflow-y-auto space-y-0.5">
+                            {filteredContacts.length === 0 ? (
+                              <p className="text-xs text-muted-foreground text-center py-2">No clients found</p>
+                            ) : (
+                              filteredContacts.map((c: any) => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => {
+                                    updateForm(field.key, c.full_name)
+                                    setContactSearch('')
+                                    setContactPopoverOpen(false)
+                                  }}
+                                  className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors flex items-center gap-2"
+                                >
+                                  {form[field.key] === c.full_name && <Check className="w-3 h-3 text-primary" />}
+                                  <span className="font-medium">{c.full_name}</span>
+                                  {c.company && <span className="text-muted-foreground">({c.company})</span>}
+                                </button>
+                              ))
+                            )}
+                            {contactSearch.trim() && !filteredContacts.some((c: any) => c.full_name?.toLowerCase() === contactSearch.toLowerCase()) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  updateForm(field.key, contactSearch.trim())
+                                  setContactSearch('')
+                                  setContactPopoverOpen(false)
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors border-t border-border mt-1 pt-2 text-muted-foreground"
+                              >
+                                Use "<span className="text-foreground font-medium">{contactSearch.trim()}</span>" as typed
+                              </button>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     ) : field.type === 'textarea' ? (
                       <textarea
                         value={form[field.key] ?? ''}
