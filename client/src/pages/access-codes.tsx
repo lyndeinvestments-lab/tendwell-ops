@@ -5,6 +5,7 @@ import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -324,10 +325,24 @@ export default function AccessCodesPage() {
                           {p.name}
                         </button>
                         {badgeState === 'missing' && (
-                          <Badge variant="destructive" className="text-xs py-0 px-1 h-4" title={`No access codes set. Missing: ${missingLabel}`}>Missing</Badge>
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="destructive" className="text-xs py-0 px-1 h-4 cursor-help">Missing</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>No access codes set. Missing: {missingLabel}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                         {badgeState === 'incomplete' && (
-                          <Badge className="text-xs py-0 px-1 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80" title={`Missing: ${missingLabel}`}>Incomplete</Badge>
+                          <TooltipProvider delayDuration={200}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge className="text-xs py-0 px-1 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80 cursor-help">Incomplete</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>Missing: {missingLabel}</TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                       </div>
                     </td>

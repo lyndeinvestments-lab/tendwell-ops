@@ -77,6 +77,19 @@ function dateGroupLabel(dateStr: string): string {
   }
 }
 
+// Returns YYYY-MM-DD for an ISO timestamp in the browser's local timezone.
+// Prevents the +1 day offset that happens when slicing the raw UTC string —
+// e.g. an 8pm Central edit has a UTC prefix of the next day.
+function toLocalDateKey(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date(iso))
+  } catch {
+    return iso.slice(0, 10)
+  }
+}
+
 const FIELD_LABELS: Record<string, string> = {
   ce_charged: 'Client Charged',
   cleaner_pay: 'Cleaner Pay',
@@ -233,9 +246,10 @@ export default function ActivityFeedPage() {
           : fieldToFilter(entry.field_name ?? '')
         if (cat !== filter) return false
       }
-      // Date range
-      if (dateFrom && entry.created_at < dateFrom) return false
-      if (dateTo && entry.created_at > dateTo + 'T23:59:59') return false
+      // Date range (compare on local-TZ calendar day, not UTC)
+      const localDay = toLocalDateKey(entry.created_at)
+      if (dateFrom && localDay < dateFrom) return false
+      if (dateTo && localDay > dateTo) return false
       // Text search
       if (search.trim()) {
         const q = search.toLowerCase()
@@ -254,7 +268,7 @@ export default function ActivityFeedPage() {
   const grouped = useMemo(() => {
     const map: Record<string, any[]> = {}
     for (const entry of filtered) {
-      const dateKey = entry.created_at?.slice(0, 10) || 'unknown'
+      const dateKey = entry.created_at ? toLocalDateKey(entry.created_at) : 'unknown'
       if (!map[dateKey]) map[dateKey] = []
       map[dateKey].push(entry)
     }

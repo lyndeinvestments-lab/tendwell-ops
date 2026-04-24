@@ -32,6 +32,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  LabelList,
 } from 'recharts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -607,11 +608,11 @@ export default function FinancialDashboardPage() {
             ) : !properties?.length ? (
               <p className="text-xs text-muted-foreground py-12 text-center">No data available</p>
             ) : (
-              <ResponsiveContainer width="100%" height={200}>
+              <ResponsiveContainer width="100%" height={240}>
                 <BarChart
                   data={distributionData}
                   layout="vertical"
-                  margin={{ top: 4, right: 16, left: 4, bottom: 4 }}
+                  margin={{ top: 4, right: 36, left: 4, bottom: 4 }}
                 >
                   <XAxis
                     type="number"
@@ -642,6 +643,12 @@ export default function FinancialDashboardPage() {
                     {distributionData.map((entry, index) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
+                    <LabelList
+                      dataKey="count"
+                      position="right"
+                      className="fill-foreground"
+                      style={{ fontSize: 11, fontWeight: 600 }}
+                    />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

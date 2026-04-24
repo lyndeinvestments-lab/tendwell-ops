@@ -85,6 +85,11 @@ export async function logPropertyEdit(
   propertyName?: string | null,
   changedBy?: string | null,
 ): Promise<void> {
+  // Suppress no-op edits (value unchanged) so the audit log isn't noisy.
+  const normalize = (v: string | number | null | undefined) =>
+    v == null || v === '' ? null : String(v).trim()
+  if (normalize(oldValue) === normalize(newValue)) return
+
   // If no property name provided, try to look it up (best-effort)
   let resolvedName = propertyName ?? null
   if (!resolvedName) {

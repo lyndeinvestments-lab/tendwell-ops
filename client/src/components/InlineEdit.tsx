@@ -90,7 +90,7 @@ export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeh
       onClick={startEdit}
       data-testid={testId}
       title="Click to edit"
-      className={`cursor-text rounded px-1 py-0.5 hover:bg-muted transition-colors text-xs ${value == null || value === '' ? 'text-muted-foreground' : ''} ${className}`}
+      className={`inline-flex items-center cursor-text rounded px-1 py-0.5 hover:bg-muted transition-colors text-xs touch-manipulation min-h-[32px] sm:min-h-0 ${value == null || value === '' ? 'text-muted-foreground' : ''} ${className}`}
     >
       {display}
     </span>

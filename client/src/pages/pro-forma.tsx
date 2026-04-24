@@ -229,13 +229,34 @@ export default function ProFormaPage() {
   const [profitFilter, setProfitFilter] = useState('all')
   const [missingDataFilter, setMissingDataFilter] = useState(false)
 
-  // Feature 5: Dismissed duplicates — persisted to localStorage
-  const [dismissedDuplicates, setDismissedDuplicates] = useState<Set<string>>(() => {
+  // Feature 5: Dismissed duplicates — persisted to alert_dismissals (team-wide)
+  // with localStorage as a legacy fallback. Marking a pair as "intentionally
+  // separate" writes to Supabase so every teammate sees the banner cleared.
+  const [localDismissed, setLocalDismissed] = useState<Set<string>>(() => {
     try {
       const saved = localStorage.getItem('tendwell-dismissed-duplicates')
       return saved ? new Set(JSON.parse(saved)) : new Set()
     } catch { return new Set() }
   })
+
+  const { data: remoteDismissed } = useQuery({
+    queryKey: ['/supabase/alert-dismissals/duplicate-pair'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('alert_dismissals')
+        .select('alert_key')
+        .like('alert_key', 'duplicate-pair::%')
+      if (error) { console.warn('duplicate dismissals fetch failed:', error.message); return [] }
+      return (data || []).map(r => r.alert_key.replace(/^duplicate-pair::/, ''))
+    },
+    staleTime: 60_000,
+  })
+
+  const dismissedDuplicates = useMemo(() => {
+    const s = new Set<string>(localDismissed)
+    ;(remoteDismissed || []).forEach(k => s.add(k))
+    return s
+  }, [localDismissed, remoteDismissed])
 
   // Import history panel
   const [showHistory, setShowHistory] = useState(false)
@@ -623,15 +644,26 @@ export default function ProFormaPage() {
                   {' — '}CE: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, Cost: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
                 </span>
                 <button
-                  className="shrink-0 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200"
-                  onClick={() => setDismissedDuplicates(prev => {
-                    const n = new Set(prev); n.add(pair.key)
-                    try { localStorage.setItem('tendwell-dismissed-duplicates', JSON.stringify(Array.from(n))) } catch {}
-                    return n
-                  })}
-                  title="Dismiss"
+                  className="shrink-0 text-[11px] px-2 py-0.5 rounded border border-amber-400/50 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-600/50 dark:hover:bg-amber-900/40"
+                  onClick={async () => {
+                    setLocalDismissed(prev => {
+                      const n = new Set(prev); n.add(pair.key)
+                      try { localStorage.setItem('tendwell-dismissed-duplicates', JSON.stringify(Array.from(n))) } catch {}
+                      return n
+                    })
+                    const { error } = await supabase
+                      .from('alert_dismissals')
+                      .upsert({ alert_key: `duplicate-pair::${pair.key}` }, { onConflict: 'alert_key' })
+                    if (error) {
+                      toast({ title: 'Saved locally — sync failed', description: error.message, variant: 'destructive' })
+                    } else {
+                      qc.invalidateQueries({ queryKey: ['/supabase/alert-dismissals/duplicate-pair'] })
+                      toast({ title: 'Marked as intentionally separate' })
+                    }
+                  }}
+                  title="These are distinct units — suppress this alert for everyone on the team"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  Intentionally separate
                 </button>
               </li>
             ))}
