@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
@@ -362,9 +362,16 @@ export default function QuoteSheetPage() {
       const v = m[field]
       return v == null ? '' : String(v)
     })
+    // Set when the user presses Escape so the trailing blur from unmount
+    // doesn't commit the typed draft (April 2026 audit P0 fix).
+    const cancelRef = useRef(false)
 
     function commit() {
       setEditing(false)
+      if (cancelRef.current) {
+        cancelRef.current = false
+        return
+      }
       const current = p[field]
       const nextVal = draft === '' ? null : Number(draft)
       const isSame = String(current ?? '') === String(nextVal ?? '')
@@ -404,6 +411,7 @@ export default function QuoteSheetPage() {
           onKeyDown={e => {
             if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
             if (e.key === 'Escape') {
+              cancelRef.current = true
               setEdits(prev => {
                 const row = prev[p.id]
                 if (!row) return prev

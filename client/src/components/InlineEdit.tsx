@@ -18,6 +18,10 @@ export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeh
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  // Set when the user presses Escape so the trailing blur fired by unmount
+  // doesn't commit the draft. Fixes the data-corruption regression caught in
+  // the April 2026 production audit ($564.48 → $6.00 accident).
+  const cancelRef = useRef(false)
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -27,11 +31,16 @@ export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeh
 
   function startEdit() {
     setDraft(value != null ? String(value) : '')
+    cancelRef.current = false
     setEditing(true)
   }
 
   function commit() {
     setEditing(false)
+    if (cancelRef.current) {
+      cancelRef.current = false
+      return
+    }
     if (draft !== String(value ?? '')) {
       onSave(draft)
     }
@@ -39,7 +48,10 @@ export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeh
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter') commit()
-    if (e.key === 'Escape') setEditing(false)
+    if (e.key === 'Escape') {
+      cancelRef.current = true
+      setEditing(false)
+    }
   }
 
   if (editing) {

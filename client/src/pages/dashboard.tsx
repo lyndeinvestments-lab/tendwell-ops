@@ -242,16 +242,21 @@ export default function DashboardPage() {
       // happened in the selected period — otherwise the tile just says "No data".
       let currentAvg: number | null = null
       let currentCount = 0
+      // Anchor on stage_transitions when available, fall back to
+      // properties.created_at. Production has 35 Onboarding properties with
+      // 0 matching transition rows, so without this fallback the metric
+      // always returns null (April 2026 audit P0 finding).
       const { data: currentOnboarding } = await supabase
         .from('properties')
-        .select('id')
+        .select('id, created_at')
         .eq('stage_id', onboardingStageId)
-      const currentIds = (currentOnboarding || []).map((p: any) => p.id)
-      if (currentIds.length > 0) {
+      const current = currentOnboarding || []
+      if (current.length > 0) {
+        const ids = current.map((p: any) => p.id)
         const { data: lastTransitions } = await supabase
           .from('stage_transitions')
           .select('property_id, created_at')
-          .in('property_id', currentIds)
+          .in('property_id', ids)
           .eq('to_stage_id', onboardingStageId)
         const latestByProp: Record<string, string> = {}
         for (const t of (lastTransitions || [])) {
@@ -261,8 +266,8 @@ export default function DashboardPage() {
         }
         const now = Date.now()
         let total = 0, n = 0
-        for (const propId of currentIds) {
-          const start = latestByProp[propId]
+        for (const p of current) {
+          const start = latestByProp[p.id] ?? p.created_at
           if (!start) continue
           const days = (now - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
           if (days >= 0) { total += days; n++ }
