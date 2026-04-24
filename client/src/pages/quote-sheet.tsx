@@ -625,7 +625,7 @@ export default function QuoteSheetPage() {
                           size="sm"
                           variant="ghost"
                           className="h-6 text-xs gap-1 hover:text-primary px-2"
-                          onClick={() => handleConvert(p)}
+                          onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
                           data-testid={`button-convert-${p.id}`}
                         >
                           <ArrowRight className="w-3 h-3" /> Onboard

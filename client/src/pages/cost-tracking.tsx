@@ -3,6 +3,7 @@ import { useAlerts } from '@/pages/alerts'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
@@ -254,8 +255,7 @@ export default function CostTrackingPage() {
     },
     onSuccess: (_, { id, field, value }, ctx: any) => {
       logPropertyEdit(id, field, ctx?.oldValue, value, ctx?.propName)
-      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       flashCell(`${id}-${field}`)
@@ -272,7 +272,7 @@ export default function CostTrackingPage() {
       .update({ est_laundry: null, est_consumables: null })
       .eq('id', id)
     if (error) { toast({ title: 'Reset failed', variant: 'destructive' }); return }
-    qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
+    invalidateAllPropertyQueries(qc)
     toast({ title: 'Row reset to defaults' })
   }, [qc, toast])
 
@@ -348,8 +348,7 @@ export default function CostTrackingPage() {
           supabase.from('properties').update({ cleaner_pay: value }).eq('id', id).then(({ error }) => { if (error) throw error })
         )
       )
-      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       toast({ title: `Updated ${Object.keys(bulkChanges).length} properties` })
       setBulkEditMode(false)
       setBulkChanges({})
