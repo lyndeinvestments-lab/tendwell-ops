@@ -58,6 +58,7 @@ const PreviousPropertiesPage = lazyRetry(() => import("@/pages/previous-properti
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
 const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
+const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
 const CleanersPage = lazyRetry(() => import("@/pages/cleaners"));
 const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
 const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
@@ -207,8 +208,7 @@ function AppRoutes() {
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
         <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
-        {/* Legacy URL — old bookmarks and notification emails still point here. */}
-        <Route path="/inspections">{() => <Redirect to="/property-verifications" />}</Route>
+        <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
         <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
         <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
