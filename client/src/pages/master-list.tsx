@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { supabase, STAGE_COLORS, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { format, subDays } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -210,10 +211,7 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list-archived'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       toast({ title: 'Property restored' })
     },
     onError: (e: any) => toast({ title: 'Restore failed', description: e.message || '', variant: 'destructive' }),
@@ -226,8 +224,7 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list-archived'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       setConfirmHardDeleteId(null)
       toast({ title: 'Property permanently deleted', variant: 'destructive' })
@@ -273,9 +270,7 @@ export default function MasterListPage() {
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       setSelected(new Set())
       toast({ title: `Updated ${selected.size} properties` })
@@ -295,10 +290,7 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      invalidateAllPropertyQueries(qc)
       const count = selected.size
       setSelected(new Set())
       setConfirmDelete(false)
@@ -314,10 +306,7 @@ export default function MasterListPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      invalidateAllPropertyQueries(qc)
       toast({ title: 'Property updated' })
       setDetailProperty(null)
     },
@@ -341,8 +330,7 @@ export default function MasterListPage() {
       logPropertyEdit(id, field, prop?.[field] ?? null, value, prop?.name)
       // Drop the live-preview override so the refetched row becomes the source of truth
       setLiveEdits(prev => { const { [id]: _removed, ...rest } = prev; return rest })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({
@@ -604,8 +592,7 @@ export default function MasterListPage() {
       }
     }
 
-    qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-    qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+    invalidateAllPropertyQueries(qc)
     toast({ title: 'Import complete', description: `${updated} properties updated, ${fieldsApplied} fields changed` })
     setImportPreview(null)
     setImportRunning(false)

@@ -188,7 +188,7 @@ function AppRoutes() {
         <Skeleton className="h-64 rounded-lg" />
       </div>
     }>
-      <Switch>
+      <Switch key={location}>
         <Route path="/">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
         <Route path="/dashboard">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
         <Route path="/pipeline">{() => <GuardedRoute viewId="pipeline" component={PipelinePage} />}</Route>
