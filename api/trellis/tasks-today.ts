@@ -43,7 +43,11 @@ async function invokeTrellis(key: string, message: string): Promise<{ ok: true; 
     }
     lastStatus = r.status
     lastBody = text
-    if (r.status !== 401 && r.status !== 403) break
+    // 401/403 = key rejected by that auth scheme; 422 = Trellis complaining
+    // the expected header (Authorization per OpenAPI) was missing because we
+    // sent x-api-key instead. Any other status means the call reached the
+    // right place — don't retry and risk double-billing an invoke.
+    if (![401, 403, 422].includes(r.status)) break
   }
   return { ok: false, status: lastStatus, body: lastBody }
 }
