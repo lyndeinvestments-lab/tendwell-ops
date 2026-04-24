@@ -28,8 +28,9 @@ interface TrellisTaskListResponse {
 }
 
 export default async function handler(_req: VercelRequest, res: VercelResponse) {
-  const date = todayInCentral()
+  let date = ''
   try {
+    date = todayInCentral()
     const raw = await trellisGet<TrellisTaskListResponse | TrellisTask[]>(
       `/operations/tasks?due_date=${date}&status=open`,
     )
