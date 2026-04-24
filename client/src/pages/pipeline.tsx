@@ -3,7 +3,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
-import { profitTier } from '@/lib/profit-colors'
+import { profitTier, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import {
@@ -690,10 +690,9 @@ export default function PipelinePage() {
                 <span className="ml-1.5 text-xs text-muted-foreground/60 cursor-help underline decoration-dotted">profit legend</span>
               </TooltipTrigger>
               <TooltipContent className="text-xs space-y-1">
-                <p><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5" />High: 30%+</p>
-                <p><span className="inline-block w-2 h-2 rounded-full bg-yellow-500 mr-1.5" />Mid: 15-30%</p>
-                <p><span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1.5" />Low: 0-15%</p>
-                <p><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />Negative: &lt;0%</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5" />{PROFIT_TIER_LABELS.high}</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-yellow-500 mr-1.5" />{PROFIT_TIER_LABELS.mid}</p>
+                <p><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />{PROFIT_TIER_LABELS.low}</p>
               </TooltipContent>
             </Tooltip>
           </p>
