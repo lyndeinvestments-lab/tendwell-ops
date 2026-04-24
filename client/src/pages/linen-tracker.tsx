@@ -18,6 +18,7 @@ import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
 const LINEN_COLS = [
+  { key: 'guest_count', label: 'Guests' },
   { key: 'king_beds', label: 'King' },
   { key: 'queen_beds', label: 'Queen' },
   { key: 'full_beds', label: 'Full' },
@@ -60,7 +61,7 @@ export default function LinenTrackerPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, bedrooms, full_baths, hot_tub, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
+        .select('id, name, stage_name, bedrooms, full_baths, hot_tub, guest_count, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
         .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
       return data || []
@@ -220,6 +221,7 @@ export default function LinenTrackerPage() {
   // CSV column name → DB field mapping (case-insensitive, flexible)
   const COL_MAP: Record<string, string> = {
     'property': '_name', 'name': '_name',
+    'guests': 'guest_count', 'guest count': 'guest_count', 'guest_count': 'guest_count', 'sleeps': 'guest_count', 'max guests': 'guest_count',
     'king': 'king_beds', 'king beds': 'king_beds', 'king_beds': 'king_beds',
     'queen': 'queen_beds', 'queen beds': 'queen_beds', 'queen_beds': 'queen_beds',
     'full': 'full_beds', 'full beds': 'full_beds', 'full_beds': 'full_beds',
