@@ -219,6 +219,22 @@ export default function MasterListPage() {
     onError: (e: any) => toast({ title: 'Restore failed', description: e.message || '', variant: 'destructive' }),
   })
 
+  const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null)
+  const { mutate: hardDeleteProperty, isPending: hardDeletePending } = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.rpc('admin_hard_delete_property', { p_id: Number(id) })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list-archived'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      setConfirmHardDeleteId(null)
+      toast({ title: 'Property permanently deleted', variant: 'destructive' })
+    },
+    onError: (e: any) => toast({ title: 'Delete failed', description: e.message || '', variant: 'destructive' }),
+  })
+
   // Auto-open detail panel when ?highlight= param is present
   useEffect(() => {
     if (highlightHandled || !properties || properties.length === 0) return
@@ -286,9 +302,9 @@ export default function MasterListPage() {
       const count = selected.size
       setSelected(new Set())
       setConfirmDelete(false)
-      toast({ title: `Deleted ${count} ${count === 1 ? 'property' : 'properties'}` })
+      toast({ title: `Archived ${count} ${count === 1 ? 'property' : 'properties'}`, description: 'Recoverable for 30 days from the Archive panel.' })
     },
-    onError: (e: any) => toast({ title: 'Delete failed: ' + (e.message || 'Unknown error'), variant: 'destructive' }),
+    onError: (e: any) => toast({ title: 'Archive failed: ' + (e.message || 'Unknown error'), variant: 'destructive' }),
   })
 
   // Detail panel save
@@ -641,14 +657,14 @@ export default function MasterListPage() {
                 <Download className="w-3 h-3" /> Export Selected
               </Button>
               {!confirmDelete ? (
-                <Button variant="destructive" size="sm" className="h-7 text-xs gap-1" onClick={() => setConfirmDelete(true)}>
-                  <Trash2 className="w-3 h-3" /> Delete
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setConfirmDelete(true)} title="Move selected properties to the 30-day archive">
+                  <Trash2 className="w-3 h-3" /> Archive
                 </Button>
               ) : (
                 <div className="flex items-center gap-1">
-                  <Button variant="destructive" size="sm" className="h-7 text-xs" disabled={deletePending}
+                  <Button size="sm" className="h-7 text-xs" disabled={deletePending}
                     onClick={() => bulkDelete(Array.from(selected))}>
-                    {deletePending ? 'Deleting…' : `Confirm Delete (${selected.size})`}
+                    {deletePending ? 'Archiving…' : `Confirm Archive (${selected.size})`}
                   </Button>
                   <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setConfirmDelete(false)}>
                     Cancel
@@ -748,15 +764,52 @@ export default function MasterListPage() {
                       <td className="py-1.5 px-2 tabular-nums">{deletedAt.toLocaleDateString()}</td>
                       <td className="py-1.5 px-2 tabular-nums">{daysLeft}d</td>
                       <td className="py-1.5 px-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-6 text-xs"
-                          onClick={() => restoreProperty(p.id)}
-                          data-testid={`button-restore-${p.id}`}
-                        >
-                          Restore
-                        </Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs"
+                            onClick={() => restoreProperty(p.id)}
+                            disabled={hardDeletePending && confirmHardDeleteId === p.id}
+                            data-testid={`button-restore-${p.id}`}
+                          >
+                            Restore
+                          </Button>
+                          {confirmHardDeleteId === p.id ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                className="h-6 text-xs"
+                                onClick={() => hardDeleteProperty(p.id)}
+                                disabled={hardDeletePending}
+                                data-testid={`button-hard-delete-confirm-${p.id}`}
+                              >
+                                {hardDeletePending ? 'Deleting…' : 'Confirm'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-xs"
+                                onClick={() => setConfirmHardDeleteId(null)}
+                                disabled={hardDeletePending}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setConfirmHardDeleteId(p.id)}
+                              data-testid={`button-hard-delete-${p.id}`}
+                              title="Permanently delete this property (cannot be undone)"
+                            >
+                              Delete
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
