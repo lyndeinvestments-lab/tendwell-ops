@@ -11,7 +11,8 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check, Sparkles } from 'lucide-react'
+import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
@@ -59,7 +60,7 @@ export default function LinenTrackerPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, bedrooms, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
+        .select('id, name, stage_name, bedrooms, full_baths, hot_tub, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
         .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
       return data || []
@@ -80,6 +81,77 @@ export default function LinenTrackerPage() {
     },
     onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
   })
+
+  // Computes the 5 towel/mat counts from bed config + baths + hot tub, then
+  // writes them in one update. Never runs silently — always a user action.
+  const { mutate: autoFillLinens, isPending: autoFilling } = useGuardedMutation('linen-tracker', {
+    mutationFn: async ({ p, overwrite }: { p: any; overwrite: boolean }) => {
+      const c = calculateLinens({
+        king_beds: p.king_beds,
+        queen_beds: p.queen_beds,
+        full_beds: p.full_beds,
+        twin_beds: p.twin_beds,
+        full_baths: p.full_baths,
+        hot_tub: !!p.hot_tub,
+      })
+      // Only touch fields that are empty unless the caller opted into overwrite
+      const updates: Record<string, number> = {}
+      for (const key of ['bath_towels', 'hand_towels', 'washcloths', 'bathmats', 'pool_towels'] as const) {
+        const current = p[key]
+        if (overwrite || current == null || current === 0) updates[key] = c[key]
+      }
+      if (Object.keys(updates).length === 0) return { id: p.id, changed: 0, sleep: sleepCount(p) }
+      const { error } = await supabase.from('properties').update(updates).eq('id', p.id)
+      if (error) throw error
+      for (const [field, value] of Object.entries(updates)) {
+        logPropertyEdit(p.id, field, p[field], value, p.name)
+      }
+      return { id: p.id, changed: Object.keys(updates).length, sleep: sleepCount(p) }
+    },
+    onSuccess: (r: any) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+      if (r.changed === 0) toast({ title: 'Nothing to fill — all towel fields already set' })
+      else toast({ title: `Auto-filled ${r.changed} field${r.changed === 1 ? '' : 's'} (sleep count ${r.sleep})` })
+    },
+    onError: () => toast({ title: 'Auto-fill failed', variant: 'destructive' }),
+  })
+
+  async function bulkAutoFillEmpty() {
+    if (!canEditView('linen-tracker', effectiveUser)) {
+      toast({ title: 'Edit access required', variant: 'destructive' })
+      return
+    }
+    const candidates = (properties || []).filter((p: any) => {
+      const hasBeds = (p.king_beds || 0) + (p.queen_beds || 0) + (p.full_beds || 0) + (p.twin_beds || 0) > 0
+      const allTowelsEmpty = ['bath_towels', 'hand_towels', 'washcloths', 'bathmats', 'pool_towels']
+        .every(k => p[k] == null || p[k] === 0)
+      return hasBeds && allTowelsEmpty
+    })
+    if (candidates.length === 0) {
+      toast({ title: 'No rows to fill', description: 'Every row either has no beds yet or already has towel data.' })
+      return
+    }
+    let ok = 0
+    for (const p of candidates) {
+      const c = calculateLinens({
+        king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds,
+        full_baths: p.full_baths, hot_tub: !!p.hot_tub,
+      })
+      const { error } = await supabase.from('properties').update({
+        bath_towels: c.bath_towels, hand_towels: c.hand_towels, washcloths: c.washcloths,
+        bathmats: c.bathmats, pool_towels: c.pool_towels,
+      }).eq('id', p.id)
+      if (!error) {
+        ok++
+        for (const [field, value] of Object.entries(c)) logPropertyEdit(p.id, field, (p as any)[field], value, p.name)
+      }
+    }
+    qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+    toast({ title: `Auto-filled ${ok} of ${candidates.length} rows` })
+  }
 
   const filtered = useMemo(() => {
     if (!properties) return []
@@ -265,6 +337,18 @@ export default function LinenTrackerPage() {
               {incompleteCount} incomplete
             </button>
           )}
+          {canEditView('linen-tracker', effectiveUser) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={bulkAutoFillEmpty}
+              className="h-8 text-xs gap-1.5"
+              title="Compute towel/mat par levels from bed counts for every row with beds entered but no towel data. Never touches rows that already have any towel values."
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Auto-fill empty rows
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5">
             <Download className="w-3.5 h-3.5" />
             Export CSV
@@ -380,13 +464,24 @@ export default function LinenTrackerPage() {
                           {p.name}
                         </button>
                         {canEditView('linen-tracker', effectiveUser) && (
-                          <button
-                            onClick={() => setCopyTarget(p)}
-                            className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-                            aria-label="Copy linen data from another property"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
+                          <>
+                            <button
+                              onClick={() => autoFillLinens({ p, overwrite: false })}
+                              disabled={autoFilling}
+                              className="p-0.5 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                              aria-label="Auto-fill empty towel fields from beds"
+                              title={`Auto-fill empty towel fields from beds (sleep ${sleepCount(p)}). Manual values are kept.`}
+                            >
+                              <Sparkles className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => setCopyTarget(p)}
+                              className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                              aria-label="Copy linen data from another property"
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
