@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
+import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
@@ -51,6 +52,8 @@ export default function DashboardPage() {
   usePageTitle('Dashboard')
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
+
+  const { data: trellisTasks, isLoading: trellisLoading, error: trellisError } = useTrellisTasksToday()
 
   type Preset = '7d' | '30d' | '90d' | 'custom'
   const [preset, setPreset] = useState<Preset>(() => {
@@ -488,6 +491,18 @@ export default function DashboardPage() {
               : onboardingVelocity?.currentAvgDays != null
                 ? "No conversions in the selected period — showing how long properties currently in Onboarding have been there."
                 : "No onboarding activity recorded. A property needs at least one stage_transitions row to appear here."
+          }
+        />
+        <KpiCard
+          title="Trellis Tasks Today"
+          value={trellisError ? '—' : (trellisTasks?.count ?? 0)}
+          subtitle={trellisError ? 'Not configured' : `due ${trellisTasks?.date ?? 'today'}`}
+          icon={ClipboardCheck}
+          loading={trellisLoading}
+          hint={
+            trellisError
+              ? `Couldn't reach Trellis: ${trellisError instanceof Error ? trellisError.message : String(trellisError)}`
+              : 'Open Trellis tasks with a due date of today (America/Chicago). Pulled live from api.trellistech.com via the server-side proxy.'
           }
         />
       </div>
