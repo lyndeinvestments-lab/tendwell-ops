@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
   DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
-  ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle, CheckSquare,
+  ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle, CheckSquare, Star,
 } from 'lucide-react'
 
 const PAGE_ROUTES = [
@@ -29,6 +29,7 @@ const PAGE_ROUTES = [
   { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
   { name: 'Revenue Report', path: '/revenue-report', viewId: 'revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
   { name: 'Property Verifications', path: '/property-verifications', viewId: 'property-verifications', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'property verifications'], icon: ClipboardCheck },
+  { name: 'Inspections', path: '/inspections', viewId: 'inspections', keywords: ['inspection', 'inspections', 'quality', 'score', 'clean quality', 'ratings'], icon: Star },
   { name: 'Cleaners', path: '/cleaners', viewId: 'cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
   { name: 'Alerts', path: '/alerts', viewId: 'alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },
   { name: 'Activity', path: '/activity', viewId: 'activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },
