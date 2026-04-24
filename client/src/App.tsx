@@ -1,4 +1,4 @@
-import { Switch, Route, Router, useLocation } from "wouter";
+import { Switch, Route, Router, useLocation, Redirect } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -57,7 +57,7 @@ const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const PreviousPropertiesPage = lazyRetry(() => import("@/pages/previous-properties"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
 const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
-const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
+const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const CleanersPage = lazyRetry(() => import("@/pages/cleaners"));
 const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
 const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
@@ -206,7 +206,9 @@ function AppRoutes() {
         <Route path="/previous-properties">{() => <GuardedRoute viewId="previous-properties" component={PreviousPropertiesPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
         <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
-        <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
+        <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
+        {/* Legacy URL — old bookmarks and notification emails still point here. */}
+        <Route path="/inspections">{() => <Redirect to="/property-verifications" />}</Route>
         <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
         <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>

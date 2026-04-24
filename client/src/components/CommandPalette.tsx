@@ -28,7 +28,7 @@ const PAGE_ROUTES = [
   { name: 'Previous Properties', path: '/previous-properties', viewId: 'previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
   { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
   { name: 'Revenue Report', path: '/revenue-report', viewId: 'revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
-  { name: 'Verification', path: '/inspections', viewId: 'inspections', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'inspections'], icon: ClipboardCheck },
+  { name: 'Property Verifications', path: '/property-verifications', viewId: 'property-verifications', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'property verifications'], icon: ClipboardCheck },
   { name: 'Cleaners', path: '/cleaners', viewId: 'cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
   { name: 'Alerts', path: '/alerts', viewId: 'alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },
   { name: 'Activity', path: '/activity', viewId: 'activity', keywords: ['activity', 'audit', 'log', 'history', 'changes'], icon: Activity },

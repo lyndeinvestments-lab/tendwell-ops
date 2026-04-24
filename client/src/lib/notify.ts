@@ -36,7 +36,7 @@ export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   watcher_update: 'tasks',
   list_added: 'tasks',
   issue_logged: 'issues',
-  verification_due: 'inspections',
+  verification_due: 'property-verifications',
   onboarding_submitted: 'master-list',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',

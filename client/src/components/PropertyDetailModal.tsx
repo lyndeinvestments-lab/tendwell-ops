@@ -988,7 +988,7 @@ export function PropertyDetailModal() {
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
   const canViewAssignments = canAccessView('cleaners', effectiveUser)
-  const canViewVerification = canAccessView('inspections', effectiveUser)
+  const canViewVerification = canAccessView('property-verifications', effectiveUser)
 
   const stageColor = property?.pipeline_stages?.color || '#6b7280'
   const stageName = property?.pipeline_stages?.name || '—'

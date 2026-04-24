@@ -45,7 +45,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Linen Inventory', href: '/linen-inventory', view: 'linen-inventory', icon: Boxes },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
-      { title: 'Verification', href: '/inspections', view: 'inspections', icon: ClipboardCheck },
+      { title: 'Property Verifications', href: '/property-verifications', view: 'property-verifications', icon: ClipboardCheck },
     ],
   },
   {
