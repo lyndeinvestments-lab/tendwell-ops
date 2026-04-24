@@ -201,7 +201,7 @@ export default function InspectionsPage() {
 
   async function saveVerification() {
     if (!activeProperty) return
-    if (!canEditView('inspections', effectiveUser)) {
+    if (!canEditView('property-verifications', effectiveUser)) {
       toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
       return
     }
@@ -708,10 +708,10 @@ export default function InspectionsPage() {
                   <Button
                     className="flex-1 gap-1.5"
                     onClick={saveVerification}
-                    disabled={saving || !canEditView('inspections', effectiveUser)}
+                    disabled={saving || !canEditView('property-verifications', effectiveUser)}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    {saving ? 'Saving…' : canEditView('inspections', effectiveUser) ? 'Confirm Verification' : 'View Only'}
+                    {saving ? 'Saving…' : canEditView('property-verifications', effectiveUser) ? 'Confirm Verification' : 'View Only'}
                   </Button>
                   <Button
                     variant="outline"

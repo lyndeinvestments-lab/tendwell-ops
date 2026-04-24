@@ -13,7 +13,7 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   watcher_update: 'tasks',
   list_added: 'tasks',
   issue_logged: 'issues',
-  verification_due: 'inspections',
+  verification_due: 'property-verifications',
   onboarding_submitted: 'master-list',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
@@ -78,10 +78,10 @@ export async function verifyAuthHeader(sb: SupabaseClient, authHeader: string | 
 
 // Resolve user's allowed views (matches auth.tsx logic)
 const ROLE_VIEWS_FALLBACK: Record<string, string[]> = {
-  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics'],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics'],
+  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'property-verifications', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics'],
   cleaning: ['linen-tracker', 'linen-inventory'],
-  viewer: ['dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list', 'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'revenue-report', 'inspections', 'alerts', 'activity', 'financial-dashboard'],
+  viewer: ['dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list', 'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'revenue-report', 'property-verifications', 'alerts', 'activity', 'financial-dashboard'],
 }
 
 export interface AppUserMin {

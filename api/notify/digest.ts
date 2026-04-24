@@ -75,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             `${escapeHtml(t.title)} <span style="color:#64748b;">— due ${t.due_date || '—'} (${escapeHtml(t.priority || '')})</span>`)))
         }
       }
-      if (p.notify_verification_due && u.allowedViews.includes('inspections') && verificationsDue.length > 0) {
+      if (p.notify_verification_due && u.allowedViews.includes('property-verifications') && verificationsDue.length > 0) {
         sections.push(sectionHtml('Verifications due (6+ months)', verificationsDue.map((p: any) => escapeHtml(p.name))))
       }
       if (p.notify_follow_up_due && u.allowedViews.includes('contacts') && contacts.length > 0) {
