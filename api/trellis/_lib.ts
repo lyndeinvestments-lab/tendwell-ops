@@ -51,10 +51,21 @@ export function trellisGet<T>(path: string): Promise<T> {
 }
 
 // YYYY-MM-DD for "today" in America/Chicago (Haven's local timezone).
-// Put this in the lib so every endpoint agrees on what "today" means.
+// Don't use Intl.DateTimeFormat with timeZone — Vercel's small-icu Node
+// runtime doesn't ship tz data, so that path throws at runtime.
+// Compute offset manually. Central = UTC-6 in winter, UTC-5 in DST.
+// DST in the US: 2nd Sunday of March → 1st Sunday of November.
 export function todayInCentral(): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Chicago',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date())
+  const now = new Date()
+  const year = now.getUTCFullYear()
+  // 2nd Sunday of March
+  const marchStart = new Date(Date.UTC(year, 2, 1))
+  const dstStart = new Date(Date.UTC(year, 2, 1 + ((14 - marchStart.getUTCDay()) % 7) + 7, 8, 0, 0))
+  // 1st Sunday of November
+  const novStart = new Date(Date.UTC(year, 10, 1))
+  const dstEnd = new Date(Date.UTC(year, 10, 1 + ((7 - novStart.getUTCDay()) % 7), 7, 0, 0))
+  const isDst = now >= dstStart && now < dstEnd
+  const offsetHours = isDst ? 5 : 6
+  const central = new Date(now.getTime() - offsetHours * 60 * 60 * 1000)
+  return central.toISOString().slice(0, 10)
 }
