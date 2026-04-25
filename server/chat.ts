@@ -251,17 +251,25 @@ async function executeTool(
 
       case 'search_properties': {
         const { query, stage, limit = 15 } = input as { query?: string; stage?: string; limit?: number };
+        // Resolve stage name → id in SQL so the limit applies after filtering
+        let stageId: number | null = null;
+        if (stage) {
+          const { data: stageRow } = await supabaseAdmin
+            .from('pipeline_stages').select('id').ilike('name', stage).single();
+          if (!stageRow) return JSON.stringify({ error: `Stage "${stage}" not found` });
+          stageId = stageRow.id;
+        }
         let q = supabaseAdmin
           .from('properties')
           .select('id, name, stage_id, pipeline_stages(name), follow_up_date')
+          .is('deleted_at', null)
           .order('name')
           .limit(Math.min(Number(limit) || 15, 50));
         if (query) q = q.ilike('name', `%${query}%`);
+        if (stageId !== null) q = q.eq('stage_id', stageId);
         const { data, error } = await q;
         if (error) return JSON.stringify({ error: error.message });
-        let rows = data ?? [];
-        if (stage) rows = rows.filter((p: any) => (p.pipeline_stages as any)?.name?.toLowerCase() === stage.toLowerCase());
-        return JSON.stringify(rows.map((p: any) => ({
+        return JSON.stringify((data ?? []).map((p: any) => ({
           id: p.id,
           name: p.name,
           stage: (p.pipeline_stages as any)?.name ?? 'Unknown',
@@ -272,7 +280,7 @@ async function executeTool(
       case 'get_pipeline_summary': {
         const [{ data: stages }, { data: props }] = await Promise.all([
           supabaseAdmin.from('pipeline_stages').select('id, name').order('display_order'),
-          supabaseAdmin.from('properties').select('stage_id'),
+          supabaseAdmin.from('properties').select('stage_id').is('deleted_at', null),
         ]);
         if (!stages || !props) return JSON.stringify({ error: 'Failed to fetch pipeline data' });
         return JSON.stringify(
@@ -320,15 +328,38 @@ async function executeTool(
       }
 
       case 'get_alerts': {
-        // alerts are computed on the client from various tables; return recent activity as proxy
-        const { data, error } = await supabaseAdmin
-          .from('activity_log')
-          .select('entity_name, action, field_name, old_value, new_value, changed_by, created_at')
-          .in('action', ['create', 'update', 'stage_change'])
-          .order('created_at', { ascending: false })
-          .limit(20);
-        if (error) return JSON.stringify({ error: error.message });
-        return JSON.stringify(data ?? []);
+        const today = new Date().toISOString().split('T')[0];
+        const [{ data: overdueFilters }, { data: followUps }] = await Promise.all([
+          supabaseAdmin
+            .from('ac_filters')
+            .select('properties(name), next_due')
+            .lte('next_due', today)
+            .order('next_due', { ascending: true })
+            .limit(20),
+          supabaseAdmin
+            .from('properties')
+            .select('name, follow_up_date, pipeline_stages(name)')
+            .not('follow_up_date', 'is', null)
+            .lte('follow_up_date', today)
+            .is('deleted_at', null)
+            .limit(20),
+        ]);
+        const alerts: Array<{ type: string; property: string; message: string }> = [];
+        for (const f of (overdueFilters ?? [])) {
+          alerts.push({
+            type: 'overdue_ac_filter',
+            property: (f.properties as any)?.name ?? 'Unknown',
+            message: `AC filter overdue since ${f.next_due}`,
+          });
+        }
+        for (const p of (followUps ?? [])) {
+          alerts.push({
+            type: 'follow_up_due',
+            property: (p as any).name,
+            message: `Follow-up due ${(p as any).follow_up_date} (${(p as any).pipeline_stages?.name ?? 'unknown stage'})`,
+          });
+        }
+        return JSON.stringify(alerts.length > 0 ? alerts : [{ message: 'No current alerts' }]);
       }
 
       case 'get_access_codes': {
@@ -414,12 +445,18 @@ async function executeTool(
         if (!ALLOWED.includes(field as any)) {
           return JSON.stringify({ error: `Field '${field}' cannot be updated via chat` });
         }
+        // Capture current value for audit trail
+        const { data: current } = await supabaseAdmin
+          .from('properties')
+          .select(field)
+          .eq('id', property_id)
+          .single();
+        const oldValue = current ? String((current as any)[field] ?? '') : null;
         const { error } = await supabaseAdmin
           .from('properties')
           .update({ [field]: value })
           .eq('id', property_id);
         if (error) return JSON.stringify({ error: error.message });
-        // Audit log
         try {
           await supabaseAdmin.from('activity_log').insert({
             entity_type: 'property',
@@ -427,6 +464,7 @@ async function executeTool(
             entity_name: property_name ?? null,
             action: 'update',
             field_name: field,
+            old_value: oldValue,
             new_value: String(value),
             changed_by: user.label,
             metadata: { via: 'chatbot' },
@@ -439,29 +477,53 @@ async function executeTool(
         const { property_id, property_name, new_stage } = input as {
           property_id: string; property_name?: string; new_stage: string;
         };
+        // Look up target stage
         const { data: stageRow, error: stageErr } = await supabaseAdmin
           .from('pipeline_stages')
           .select('id')
           .eq('name', new_stage)
           .single();
         if (stageErr || !stageRow) return JSON.stringify({ error: `Stage "${new_stage}" not found` });
+        // Fetch current stage for audit trail and stage_transitions record
+        const { data: current } = await supabaseAdmin
+          .from('properties')
+          .select('stage_id, pipeline_stages(name)')
+          .eq('id', property_id)
+          .single();
+        const fromStageId: number | null = (current as any)?.stage_id ?? null;
+        const fromStageName: string | null = (current as any)?.pipeline_stages?.name ?? null;
+        // Update property (set offboarded_at when transitioning to Offboarded)
+        const updates: Record<string, unknown> = { stage_id: stageRow.id };
+        if (new_stage === 'Offboarded') updates.offboarded_at = new Date().toISOString();
         const { error } = await supabaseAdmin
           .from('properties')
-          .update({ stage_id: stageRow.id })
+          .update(updates)
           .eq('id', property_id);
         if (error) return JSON.stringify({ error: error.message });
+        // Insert stage_transitions so pipeline velocity/history stays accurate
+        try {
+          await supabaseAdmin.from('stage_transitions').insert({
+            property_id: Number(property_id),
+            from_stage_id: fromStageId,
+            to_stage_id: stageRow.id,
+            changed_by: user.label,
+            transitioned_at: new Date().toISOString(),
+          });
+        } catch { /* non-fatal */ }
+        // Activity log (matches format used by stage-transition.ts)
         try {
           await supabaseAdmin.from('activity_log').insert({
-            entity_type: 'property',
+            entity_type: 'pipeline',
             entity_id: String(property_id),
             entity_name: property_name ?? null,
-            action: 'stage_change',
+            action: 'update',
             field_name: 'stage',
+            old_value: fromStageName,
             new_value: new_stage,
             changed_by: user.label,
             metadata: { via: 'chatbot' },
           });
-        } catch { /* audit log failures are non-fatal */ }
+        } catch { /* non-fatal */ }
         return JSON.stringify({ success: true, message: `Moved "${property_name ?? property_id}" to ${new_stage}` });
       }
 
@@ -516,14 +578,20 @@ export async function handleChat(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: 'messages required' }); return;
   }
 
-  const user = await resolveUserFromToken(token);
+  let user: ResolvedUser | null = null;
+  try {
+    user = await resolveUserFromToken(token);
+  } catch {
+    res.status(500).json({ error: 'Authentication service unavailable' }); return;
+  }
   if (!user) {
     res.status(401).json({ error: 'Unauthorized' }); return;
   }
 
-  const tools = buildToolsForUser(user);
+  try {
+    const tools = buildToolsForUser(user);
 
-  const systemPrompt = `You are an AI assistant embedded in Tendwell Ops, a property management and short-term rental operations platform.
+    const systemPrompt = `You are an AI assistant embedded in Tendwell Ops, a property management and short-term rental operations platform.
 
 You are helping ${user.label} (role: ${user.role}).
 Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.
@@ -541,50 +609,56 @@ Guidelines:
 - When presenting property or stage data, highlight counts and important status items
 - Never guess data — use the available tools to retrieve accurate information`;
 
-  // Keep last 20 turns to stay within context limits
-  const apiMessages: Anthropic.MessageParam[] = messages.slice(-20).map(m => ({
-    role: m.role,
-    content: m.content,
-  }));
+    // Keep last 20 turns to stay within context limits
+    const apiMessages: Anthropic.MessageParam[] = messages.slice(-20).map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
 
-  // Agentic loop — Claude may call tools before giving a final answer
-  const MAX_ROUNDS = 5;
-  let finalText = '';
+    // Agentic loop — Claude may call tools before giving a final answer
+    const MAX_ROUNDS = 5;
+    let finalText = '';
 
-  for (let round = 0; round < MAX_ROUNDS; round++) {
-    const response = await anthropic.messages.create({
-      model: 'claude-opus-4-7',
-      max_tokens: 2048,
-      system: systemPrompt,
-      tools: tools.length > 0 ? tools : undefined,
-      messages: apiMessages,
-    });
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      const response = await anthropic.messages.create({
+        model: 'claude-opus-4-7',
+        max_tokens: 2048,
+        system: systemPrompt,
+        tools: tools.length > 0 ? tools : undefined,
+        messages: apiMessages,
+      });
 
-    const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
-    const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+      const textBlocks = response.content.filter((b): b is Anthropic.TextBlock => b.type === 'text');
+      const toolUseBlocks = response.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
 
-    if (response.stop_reason === 'end_turn' || toolUseBlocks.length === 0) {
-      finalText = textBlocks.map(b => b.text).join('');
-      break;
+      if (response.stop_reason === 'end_turn' || toolUseBlocks.length === 0) {
+        finalText = textBlocks.map(b => b.text).join('');
+        break;
+      }
+
+      // Append assistant turn and execute tools
+      apiMessages.push({ role: 'assistant', content: response.content });
+
+      const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+        toolUseBlocks.map(async tool => ({
+          type: 'tool_result' as const,
+          tool_use_id: tool.id,
+          content: await executeTool(tool.name, tool.input as Record<string, unknown>, user!),
+        }))
+      );
+
+      apiMessages.push({ role: 'user', content: toolResults });
     }
 
-    // Append assistant turn and execute tools
-    apiMessages.push({ role: 'assistant', content: response.content });
+    if (!finalText) {
+      finalText = 'I was unable to complete your request. Please try again.';
+    }
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
-      toolUseBlocks.map(async tool => ({
-        type: 'tool_result' as const,
-        tool_use_id: tool.id,
-        content: await executeTool(tool.name, tool.input as Record<string, unknown>, user),
-      }))
-    );
-
-    apiMessages.push({ role: 'user', content: toolResults });
+    res.json({ message: finalText });
+  } catch (err: unknown) {
+    console.error('[chat] Unexpected error:', err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Something went wrong. Please try again.' });
+    }
   }
-
-  if (!finalText) {
-    finalText = 'I was unable to complete your request. Please try again.';
-  }
-
-  res.json({ message: finalText });
 }

@@ -27,9 +27,7 @@ function renderMessageContent(text: string) {
     let key = 0;
 
     while (remaining.length > 0) {
-      // Bold: **text**
       const boldMatch = remaining.match(/^([\s\S]*?)\*\*([\s\S]+?)\*\*([\s\S]*)/);
-      // Inline code: `text`
       const codeMatch = remaining.match(/^([\s\S]*?)`([\s\S]+?)`([\s\S]*)/);
 
       const boldIdx = boldMatch ? (boldMatch[1]?.length ?? 0) : Infinity;
@@ -111,11 +109,7 @@ export function ChatBot() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Don't render at all when not logged in
-  if (!user) return null;
-
   // Auto-scroll to bottom when new messages arrive
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (!scrollAreaRef.current) return;
     const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
@@ -123,19 +117,20 @@ export function ChatBot() {
   }, [messages, isLoading]);
 
   // Focus textarea when panel opens
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => textareaRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
+  // textOverride lets suggestion pills send without waiting for state update
+  const sendMessage = useCallback(async (textOverride?: string) => {
+    const text = textOverride !== undefined ? textOverride.trim() : input.trim();
     if (!text || isLoading) return;
 
     setInput('');
+    // Reset textarea height when clearing
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setError(null);
 
     const userMsg: Message = {
@@ -182,7 +177,6 @@ export function ChatBot() {
     }
   }, [input, isLoading, messages]);
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -194,6 +188,9 @@ export function ChatBot() {
     setMessages([]);
     setError(null);
   };
+
+  // Guard after all hooks — never return early before hooks
+  if (!user) return null;
 
   return (
     <>
@@ -276,7 +273,7 @@ export function ChatBot() {
                 ].map(suggestion => (
                   <button
                     key={suggestion}
-                    onClick={() => { setInput(suggestion); textareaRef.current?.focus(); }}
+                    onClick={() => sendMessage(suggestion)}
                     className="text-xs px-2.5 py-1 rounded-full border border-border hover:bg-muted transition-colors"
                   >
                     {suggestion}
@@ -318,7 +315,7 @@ export function ChatBot() {
             />
             <Button
               size="icon"
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={!input.trim() || isLoading}
               className="h-[38px] w-[38px] flex-shrink-0"
             >
