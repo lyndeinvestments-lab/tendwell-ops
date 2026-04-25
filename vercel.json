@@ -9,6 +9,9 @@
     },
     "api/trellis/*.ts": {
       "includeFiles": "api/trellis/_lib.ts"
+    },
+    "api/chat.ts": {
+      "includeFiles": "server/chat.ts"
     }
   },
   "rewrites": [
