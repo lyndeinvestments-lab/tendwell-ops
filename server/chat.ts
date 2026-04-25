@@ -9,6 +9,51 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
+// ─── Perplexity helper ────────────────────────────────────────────────────────
+// One shared client all web tools share. Returns the assistant text plus any
+// citations Perplexity attaches. Tools pick the cheapest model that works
+// for their use case to keep credit usage down.
+
+interface PerplexityOpts {
+  model?: 'sonar' | 'sonar-pro' | 'sonar-reasoning-pro' | 'sonar-deep-research';
+  maxTokens?: number;
+  searchDomainFilter?: string[];
+  searchRecencyFilter?: 'hour' | 'day' | 'week' | 'month' | 'year';
+  systemPrompt?: string;
+}
+
+async function callPerplexity(prompt: string, opts: PerplexityOpts = {}): Promise<string> {
+  const key = process.env.PERPLEXITY_API_KEY;
+  if (!key) return JSON.stringify({ error: 'PERPLEXITY_API_KEY not configured' });
+
+  const body: Record<string, unknown> = {
+    model: opts.model ?? 'sonar',
+    max_tokens: opts.maxTokens ?? 400,
+    messages: [
+      ...(opts.systemPrompt ? [{ role: 'system', content: opts.systemPrompt }] : []),
+      { role: 'user', content: prompt },
+    ],
+  };
+  if (opts.searchDomainFilter?.length) body.search_domain_filter = opts.searchDomainFilter;
+  if (opts.searchRecencyFilter) body.search_recency_filter = opts.searchRecencyFilter;
+
+  try {
+    const r = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const text = await r.text();
+    if (!r.ok) return JSON.stringify({ error: `Perplexity ${r.status}: ${text.slice(0, 300)}` });
+    const parsed = JSON.parse(text);
+    const reply: string = parsed?.choices?.[0]?.message?.content ?? '';
+    const citations: string[] = Array.isArray(parsed?.citations) ? parsed.citations : [];
+    return JSON.stringify({ answer: reply, citations: citations.slice(0, 8) });
+  } catch (e) {
+    return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 // ─── Role default views (mirrors client/src/lib/auth.tsx) ────────────────────
 
 const ROLE_VIEWS: Record<string, string[]> = {
@@ -227,6 +272,64 @@ const TOOL_DEFS: ToolDef[] = [
         content: { type: 'string', description: 'Note text content' },
       },
       required: ['contact_id', 'content'],
+    },
+  },
+  // ── Perplexity-powered web search tools (credit-aware: sonar by default) ────
+  {
+    name: 'web_search',
+    description: 'Search the live web for any factual question that internal data tools cannot answer. Cheap (Perplexity sonar). Use this FIRST for any general web question; only escalate to web_research_deep when the user asks for a multi-source synthesis.',
+    requiredViews: ['dashboard', 'linen-tracker'],   // every role has at least one
+    needsEdit: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The question to ask the web. Be specific.' },
+        recency: { type: 'string', enum: ['hour', 'day', 'week', 'month', 'year'], description: 'Optional: only return sources from this recency window.' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'competitor_pricing',
+    description: 'Look up nightly/weekly rates of comparable short-term rentals on Airbnb/VRBO/Booking. Restricted to those domains so results stay relevant. Cheap (sonar).',
+    requiredViews: ['cleaners', 'tasks'],   // admin + operations only
+    needsEdit: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'City, neighborhood, or address area to search (e.g. "Frisco TX 3 bedroom").' },
+        bedrooms: { type: 'number', description: 'Optional: bedroom count to filter on.' },
+        notes: { type: 'string', description: 'Optional: extra criteria like "pet friendly" or "lakefront".' },
+      },
+      required: ['location'],
+    },
+  },
+  {
+    name: 'local_events_lookup',
+    description: 'Find upcoming local events, festivals, or attractions near a property — useful for guest welcome content. Cheap (sonar). Recency-filtered to the next month.',
+    requiredViews: ['cleaners', 'tasks'],   // admin + operations only
+    needsEdit: false,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        location: { type: 'string', description: 'City or area (e.g. "Lake Travis TX").' },
+        date_window: { type: 'string', description: 'Optional: human description of when, e.g. "this weekend" or "next month".' },
+      },
+      required: ['location'],
+    },
+  },
+  {
+    name: 'web_research_deep',
+    description: 'Multi-source web research with synthesis. EXPENSIVE — uses Perplexity sonar-pro (~3-5x sonar cost). Only use when the user explicitly asks for a thorough writeup, comparison, or report; never as a default fallback.',
+    requiredViews: ['cleaners', 'tasks'],
+    needsEdit: true,   // admin-only because it costs more credits
+    inputSchema: {
+      type: 'object',
+      properties: {
+        topic: { type: 'string', description: 'What to research in depth.' },
+        focus: { type: 'string', description: 'Optional: specific angle or constraint.' },
+      },
+      required: ['topic'],
     },
   },
 ];
@@ -538,6 +641,53 @@ async function executeTool(
         });
         if (error) return JSON.stringify({ error: error.message });
         return JSON.stringify({ success: true, message: `Note added to "${contact_name ?? contact_id}"` });
+      }
+
+      case 'web_search': {
+        const { query, recency } = input as { query: string; recency?: PerplexityOpts['searchRecencyFilter'] };
+        return await callPerplexity(query, {
+          model: 'sonar',
+          maxTokens: 400,
+          searchRecencyFilter: recency,
+          systemPrompt: 'Answer concisely with citations. Skip preamble. Use bullet points only when listing 3+ items.',
+        });
+      }
+
+      case 'competitor_pricing': {
+        const { location, bedrooms, notes } = input as { location: string; bedrooms?: number; notes?: string };
+        const parts = [
+          `Find current short-term rental listings in ${location}`,
+          bedrooms ? `with ${bedrooms} bedrooms` : null,
+          notes ? `(${notes})` : null,
+          '— report typical nightly rates, ranges, and any standout listings.',
+        ].filter(Boolean);
+        return await callPerplexity(parts.join(' '), {
+          model: 'sonar',
+          maxTokens: 500,
+          searchDomainFilter: ['airbnb.com', 'vrbo.com', 'booking.com'],
+          searchRecencyFilter: 'month',
+          systemPrompt: 'Focus only on rental pricing data. Lead with the typical nightly range, then list 3–5 representative listings with rate + bed count.',
+        });
+      }
+
+      case 'local_events_lookup': {
+        const { location, date_window } = input as { location: string; date_window?: string };
+        const prompt = `Upcoming events, festivals, concerts, or attractions near ${location}${date_window ? ` (${date_window})` : ' in the next month'}. Include event name, date, and venue.`;
+        return await callPerplexity(prompt, {
+          model: 'sonar',
+          maxTokens: 500,
+          searchRecencyFilter: 'week',
+          systemPrompt: 'List events with bullet points: name — date — venue/area. Skip preamble.',
+        });
+      }
+
+      case 'web_research_deep': {
+        const { topic, focus } = input as { topic: string; focus?: string };
+        return await callPerplexity(`${topic}${focus ? ` — focus on: ${focus}` : ''}`, {
+          model: 'sonar-pro',
+          maxTokens: 1000,
+          systemPrompt: 'Provide a thorough, well-cited writeup. Use clear headers and bullet points where helpful.',
+        });
       }
 
       default:
