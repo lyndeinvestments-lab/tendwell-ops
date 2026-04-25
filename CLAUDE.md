@@ -47,6 +47,7 @@ tendwell-ops/
 │   │   ├── StageTransitionModal.tsx
 │   │   ├── CommandPalette.tsx   # Cmd+K global search
 │   │   ├── CsvImportModal.tsx
+│   │   ├── ChatBot.tsx          # Floating agentic chatbot (Claude API)
 │   │   └── ui/                  # ~50 Shadcn components
 │   ├── hooks/
 │   │   ├── use-auth.tsx         # Auth context hook
@@ -60,7 +61,8 @@ tendwell-ops/
 │       └── utils.ts             # cn() Tailwind merge util
 ├── server/
 │   ├── index.ts                 # Express app, middleware, error handling
-│   ├── routes.ts                # API routes (/api/auth/login + CORS)
+│   ├── routes.ts                # API routes (/api/chat + CORS)
+│   ├── chat.ts                  # Claude API agentic chat handler + tool definitions
 │   ├── storage.ts               # Drizzle ORM interface (SQLite fallback)
 │   └── vite.ts                  # Vite dev middleware setup
 ├── api/auth/login.ts            # Vercel serverless login endpoint

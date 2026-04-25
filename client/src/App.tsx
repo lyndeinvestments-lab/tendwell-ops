@@ -18,6 +18,7 @@ import { useState, useEffect, useMemo, lazy, Suspense, ComponentType } from 'rea
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Bell, HelpCircle } from 'lucide-react';
+import { ChatBot } from '@/components/ChatBot';
 import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -314,6 +315,7 @@ function AppLayout() {
       <PropertyDetailModal />
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <ChatBot />
     </PropertyModalProvider>
   );
 }
