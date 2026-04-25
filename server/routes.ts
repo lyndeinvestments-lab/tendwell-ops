@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
+import { handleChat } from "./chat";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -18,7 +19,16 @@ export async function registerRoutes(
     allowedHeaders: ["Content-Type", "Authorization"],
   }));
 
-  // Rate limit every /api route: 100 req per 15-minute window per IP.
+  // Stricter rate limit for the chat endpoint — each request calls the Claude API.
+  app.use("/api/chat", rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: "Too many chat requests, please wait a few minutes." },
+  }));
+
+  // General /api rate limit: 100 req per 15-minute window per IP.
   app.use("/api", rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -26,9 +36,12 @@ export async function registerRoutes(
     legacyHeaders: false,
   }));
 
-  // All auth is handled via Google OAuth through Supabase Auth.
-  // All data access goes client → Supabase directly with RLS enforcement.
-  // No Express API endpoints are needed for application data.
+  // ── Chat endpoint ──────────────────────────────────────────────────────────
+  // Accepts: POST /api/chat { messages: [{role, content}], token: string }
+  // Returns: { message: string }
+  // The token is the caller's Supabase access_token; tools are filtered to
+  // only what the user's role permits, and writes require admin role.
+  app.post("/api/chat", handleChat);
 
   return httpServer;
 }
