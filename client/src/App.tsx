@@ -17,7 +17,7 @@ import { useAlerts } from "@/pages/alerts";
 import { useState, useEffect, useMemo, lazy, Suspense, ComponentType } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Bell, HelpCircle } from 'lucide-react';
+import { Search, Bell, HelpCircle, Bot } from 'lucide-react';
 import { ChatBot } from '@/components/ChatBot';
 import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
@@ -231,6 +231,7 @@ function AppLayout() {
   const [location] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useKeyboardShortcuts({
     onOpenCheatSheet: () => setShortcutsOpen(true),
@@ -300,6 +301,16 @@ function AppLayout() {
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                 </button>
+                {user && (
+                  <button
+                    onClick={() => setChatOpen(o => !o)}
+                    className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted"
+                    aria-label="AI Assistant"
+                    title="AI Assistant"
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <AlertBellButton />
               </div>
             </header>
@@ -315,7 +326,7 @@ function AppLayout() {
       <PropertyDetailModal />
       <CommandPalette open={cmdOpen} onClose={() => setCmdOpen(false)} />
       <KeyboardShortcuts open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      <ChatBot />
+      <ChatBot open={chatOpen} onOpenChange={setChatOpen} />
     </PropertyModalProvider>
   );
 }
