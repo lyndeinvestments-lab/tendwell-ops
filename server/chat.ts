@@ -621,7 +621,7 @@ Guidelines:
 
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await anthropic.messages.create({
-        model: 'claude-opus-4-7',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         system: systemPrompt,
         tools: tools.length > 0 ? tools : undefined,
