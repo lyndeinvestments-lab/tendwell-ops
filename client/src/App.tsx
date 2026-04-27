@@ -51,7 +51,6 @@ const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
 const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
 const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
-const MasterListPage = lazyRetry(() => import("@/pages/master-list"));
 const ProFormaPage = lazyRetry(() => import("@/pages/pro-forma"));
 const ForecasterPage = lazyRetry(() => import("@/pages/forecaster"));
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
@@ -152,10 +151,15 @@ function NoAccess() {
   );
 }
 
-// Route guard: checks canAccessView before rendering the page component
-function GuardedRoute({ viewId, component: Component }: { viewId: string; component: ComponentType }) {
+// Route guard: checks canAccessView before rendering the page component.
+// `viewId` may be a string or array of strings — when an array is passed, the
+// user only needs access to one of them. Used by the unified Master List /
+// Cost Tracking page so users with either historical permission can land there.
+function GuardedRoute({ viewId, component: Component }: { viewId: string | string[]; component: ComponentType }) {
   const { effectiveUser } = useAuth();
-  if (!effectiveUser || !canAccessView(viewId, effectiveUser)) {
+  const ids = Array.isArray(viewId) ? viewId : [viewId];
+  const ok = !!effectiveUser && ids.some(id => canAccessView(id, effectiveUser));
+  if (!ok) {
     return <NoAccess />;
   }
   return <Component />;
@@ -196,14 +200,19 @@ function AppRoutes() {
         <Route path="/dashboard">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
         <Route path="/pipeline">{() => <GuardedRoute viewId="pipeline" component={PipelinePage} />}</Route>
         <Route path="/contacts">{() => <GuardedRoute viewId="contacts" component={ContactsPage} />}</Route>
-        <Route path="/cost-tracking">{() => <GuardedRoute viewId="cost-tracking" component={CostTrackingPage} />}</Route>
+        <Route path="/cost-tracking">{() => <GuardedRoute viewId={["cost-tracking", "master-list"]} component={CostTrackingPage} />}</Route>
+        {/* Master List has been merged into the unified Cost Tracking page. The
+            old /master-list route now renders the same component so old links
+            from the dashboard / command palette / KPI cards keep working. Users
+            with either the legacy `master-list` view or the `cost-tracking`
+            view can access it. */}
+        <Route path="/master-list">{() => <GuardedRoute viewId={["cost-tracking", "master-list"]} component={CostTrackingPage} />}</Route>
         <Route path="/property-list">{() => <GuardedRoute viewId="property-list" component={PropertyListPage} />}</Route>
         <Route path="/linen-tracker">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
         <Route path="/linen-inventory">{() => <GuardedRoute viewId="linen-inventory" component={LinenInventoryPage} />}</Route>
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
-        <Route path="/master-list">{() => <GuardedRoute viewId="master-list" component={MasterListPage} />}</Route>
         <Route path="/pro-forma">{() => <GuardedRoute viewId="pro-forma" component={ProFormaPage} />}</Route>
         <Route path="/forecaster">{() => <GuardedRoute viewId="forecaster" component={ForecasterPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>

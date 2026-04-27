@@ -18,7 +18,10 @@ import { canAccessView } from '@/lib/auth'
 interface NavItem {
   title: string
   href: string
-  view: string
+  // string OR array of view ids — when an array is given the user needs access
+  // to at least one of them. Lets the merged Master List entry show up for
+  // legacy custom-role users that only have `master-list` permission.
+  view: string | string[]
   icon: React.ComponentType<{ className?: string }>
 }
 
@@ -62,12 +65,11 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Admin',
     items: [
-      { title: 'Cost Tracking', href: '/cost-tracking', view: 'cost-tracking', icon: DollarSign },
-      { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
+      { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
       { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
-      { title: 'Forecaster', href: '/forecaster', view: 'forecaster', icon: TrendingUp },
+      { title: 'Live Pro Forma', href: '/forecaster', view: 'forecaster', icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
@@ -126,7 +128,10 @@ export function AppSidebar() {
 
       <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter(item => canAccessView(item.view, effectiveUser))
+          const visibleItems = section.items.filter(item => {
+            const ids = Array.isArray(item.view) ? item.view : [item.view]
+            return ids.some(v => canAccessView(v, effectiveUser))
+          })
           if (visibleItems.length === 0) return null
           const isCollapsed = !!collapsed[section.label]
           return (
@@ -146,13 +151,14 @@ export function AppSidebar() {
                   <SidebarMenu>
                     {visibleItems.map((item) => {
                       const isActive = location === item.href || (item.href !== '/' && location.startsWith(item.href))
+                      const viewKey = Array.isArray(item.view) ? item.view[0] : item.view
                       return (
-                        <SidebarMenuItem key={item.view}>
+                        <SidebarMenuItem key={viewKey}>
                           <SidebarMenuButton
                             asChild
                             isActive={isActive}
                             tooltip={item.title}
-                            data-testid={`nav-${item.view}`}
+                            data-testid={`nav-${viewKey}`}
                           >
                             <Link
                               href={item.href}
