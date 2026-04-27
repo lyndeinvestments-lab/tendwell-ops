@@ -84,7 +84,7 @@ export default function MasterListPage() {
       const urlStage = new URLSearchParams(hash.slice(qIdx)).get('stage')
       if (urlStage) return urlStage
     }
-    try { return localStorage.getItem('ml-stage-filter') || 'operational' } catch { return 'operational' }
+    try { return localStorage.getItem('ml-stage-filter') || 'all' } catch { return 'all' }
   })
 
   // Reactively apply ?stage= param on navigation (e.g. from dashboard stat cards)
