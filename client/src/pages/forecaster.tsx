@@ -40,6 +40,8 @@ function todayMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
+
 function priorMonth(yyyymm: string, n = 1): string {
   const [y, m] = yyyymm.split('-').map(Number)
   const d = new Date(y, m - 1 - n, 1)
@@ -91,6 +93,40 @@ export default function ForecasterPage() {
         .order('month', { ascending: true })
       if (error) throw error
       return (data || []) as Array<Record<string, any>>
+    },
+  })
+
+  // ── QBO P&L fallback ─────────────────────────
+  // Live Pro Forma actuals come from `proforma_months`. If a row is missing
+  // for the selected month (or its values are zero) we synthesize one from
+  // the same QBO P&L blob the Financial Dashboard reads, keyed under
+  // `app_settings.qbo_pl_data`. Same source label is shown so users know
+  // the variance row is comparing against QBO totals, not a manually-entered
+  // proforma row. Refreshes from the scheduled overnight QBO import.
+  const { data: qboPL } = useQuery({
+    queryKey: ['/supabase/qbo-pl-data-forecaster'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'qbo_pl_data')
+        .single()
+      if (error || !data?.value) return null
+      const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value
+      return parsed as {
+        company?: string
+        totalIncome?: number
+        totalCOGS?: number
+        totalExpenses?: number
+        netIncome?: number
+        period?: string
+        monthly?: Record<string, { totalIncome?: number; totalExpenses?: number; netIncome?: number; totalCOGS?: number }>
+        cogsBreakdown?: Record<string, number>
+        incomeBreakdown?: Record<string, number>
+        expenseBreakdown?: Record<string, number>
+        updated_at?: string
+      }
     },
   })
 
@@ -166,11 +202,77 @@ export default function ForecasterPage() {
     return rollupEstimates(properties as any[], tasksByProperty)
   }, [properties, tasksByProperty])
 
-  // Actuals for the selected month from proforma_months row, if present
-  const actualsRow = useMemo(() => {
-    if (!histData.length) return null
-    return histData.find(m => m.month === selectedMonth) || null
-  }, [histData, selectedMonth])
+  // Pulls the QBO monthly entry that matches a YYYY-MM key. The QBO blob
+  // can key months by either "YYYY-MM" or by a label like "Jan 2026" / "January 2026"
+  // depending on how the import normalizes them — try both.
+  function lookupQboMonth(yyyymm: string): { totalIncome?: number; totalExpenses?: number; totalCOGS?: number; netIncome?: number } | null {
+    const monthly = qboPL?.monthly
+    if (!monthly) return null
+    if (monthly[yyyymm]) return monthly[yyyymm]
+    const [y, m] = yyyymm.split('-').map(Number)
+    if (!y || !m) return null
+    const longLabel = `${MONTH_NAMES[m - 1]} ${y}`           // e.g. "March 2026"
+    const shortLabel = `${MONTH_NAMES[m - 1].slice(0, 3)} ${y}` // e.g. "Mar 2026"
+    return monthly[longLabel] || monthly[shortLabel] || null
+  }
+
+  // Synthesizes a DerivedMonth from the QBO P&L blob for a single month so
+  // Live Pro Forma can show actuals when proforma_months has no row yet.
+  // Only fills the totals required by computeVariance; per-category splits
+  // (laundry vs supplies vs trash) are not in the QBO summary, so those
+  // variance rows show "Actual = 0" and are flagged unfavorable until the
+  // nightly import populates the proforma_months row.
+  const qboFallbackRow = useMemo<DerivedMonth | null>(() => {
+    const q = lookupQboMonth(selectedMonth)
+    if (!q) return null
+    const revenue = Number(q.totalIncome) || 0
+    const totalCosts = Number(q.totalExpenses) || 0
+    const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCosts
+    // We cannot decompose totalExpenses into COGS vs OpEx from this blob,
+    // so we treat everything as COGS for the actuals view — the variance
+    // table compares per-category estimates to actuals individually anyway.
+    const cogs = Number(q.totalCOGS) || totalCosts
+    const grossProfit = revenue - cogs
+    const opex = Math.max(0, totalCosts - cogs)
+    return {
+      month: selectedMonth,
+      label: `${MONTH_NAMES[Number(selectedMonth.split('-')[1]) - 1].slice(0, 3)} ${selectedMonth.split('-')[0].slice(2)}`,
+      cleaningFee: 0, services: 0, onboardingRevenue: 0, otherIncome: 0,
+      contractorPay: 0, laundry: 0, leadership: 0, supplies: 0,
+      inspections: 0, trash: 0, otherCOGS: cogs, opex,
+      tasks: undefined, properties: undefined,
+      revenue,
+      cogs,
+      totalCOGS: cogs,
+      grossProfit,
+      grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+      netIncome,
+      netMargin: revenue > 0 ? (netIncome / revenue) * 100 : 0,
+    }
+  }, [qboPL, selectedMonth])
+
+  // Actuals for the selected month: prefer a real proforma_months row when
+  // it exists AND has any non-zero financial signal. Otherwise fall back to
+  // the QBO P&L blob. We treat an all-zeros proforma row as "no data" so a
+  // placeholder upsert (e.g. tasks-only count) doesn't suppress the QBO
+  // fallback the user actually wants to see.
+  const actualsRow = useMemo<DerivedMonth | null>(() => {
+    const proforma = histData.find(m => m.month === selectedMonth) || null
+    const hasFinancialSignal = proforma && (
+      (proforma.revenue ?? 0) > 0 ||
+      (proforma.cogs ?? 0) > 0 ||
+      (proforma.netIncome ?? 0) !== 0
+    )
+    if (hasFinancialSignal) return proforma
+    return qboFallbackRow ?? proforma ?? null
+  }, [histData, selectedMonth, qboFallbackRow])
+
+  const actualsSource: 'proforma' | 'qbo' | null = useMemo(() => {
+    if (!actualsRow) return null
+    const proforma = histData.find(m => m.month === selectedMonth)
+    if (proforma && actualsRow === proforma) return 'proforma'
+    return 'qbo'
+  }, [actualsRow, histData, selectedMonth])
 
   // Variance per category — uses estimates × actuals
   const variance = useMemo(() => {
@@ -296,6 +398,12 @@ export default function ForecasterPage() {
         </Card>
       )}
 
+      {actualsSource === 'qbo' && (
+        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="actuals-source-banner">
+          Showing QuickBooks actuals for {selectedMonth} — the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
+        </div>
+      )}
+
       {/* KPI row — actuals vs prior month */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {isLoading ? (
@@ -305,7 +413,7 @@ export default function ForecasterPage() {
             <KpiCard
               title="Revenue"
               value={fmt(actualsRow.revenue)}
-              subtitle={prevMonth ? `${actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼'} ${fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100)} vs ${prevMonth.label}` : undefined}
+              subtitle={prevMonth ? `${actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼'} ${fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100)} vs ${prevMonth.label}` : actualsSource === 'qbo' ? 'Source: QBO P&L' : undefined}
             />
             <KpiCard
               title="Net Income"
@@ -330,7 +438,7 @@ export default function ForecasterPage() {
               <EmptyState
                 icon={Calculator}
                 title="No actuals yet for this month"
-                description="Upload completed tasks or pull QBO P&L to populate."
+                description="Actuals refresh nightly from the scheduled QuickBooks import. You can also enter the completed-task count for this period above to populate task estimates."
               />
             </CardContent>
           </Card>

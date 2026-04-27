@@ -17,7 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
-import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check, X, ChevronsUpDown, ChevronRight, ChevronDown } from 'lucide-react'
+import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check, X, ChevronsUpDown, ChevronRight, ChevronDown, BedDouble, Lock, Wifi, Wind, ExternalLink } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Papa from 'papaparse'
@@ -75,7 +75,6 @@ export default function MasterListPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const isAdmin = effectiveUser?.role === 'admin'
-  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   // Per-row inline detail drawer (master-list table). Keyed by property id.
   // Distinct from the CSV import preview's `expandedRows` (which keys by rowIdx).
   const [rowDrawers, setRowDrawers] = useState<Set<string>>(new Set())
@@ -201,7 +200,7 @@ export default function MasterListPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('*, pipeline_stages!properties_stage_id_fkey(id, name, color)')
+        .select('*, pipeline_stages!properties_stage_id_fkey(id, name, color), contact:contacts(id, full_name, company, payment_method)')
         .order("name")
       if (error) throw error
       return data || []
@@ -437,6 +436,30 @@ export default function MasterListPage() {
   }, [properties, search, stageFilter, sortKey, sortDir, stageChangeLast30, recentTransitionIds])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  // Aggregate totals across the filtered set so the sticky footer reflects
+  // every row the user is viewing — not just the current page. Live edits
+  // are merged in so unsaved CE/Pay drafts feed into the running totals.
+  const tableTotals = useMemo(() => {
+    if (!filtered || !filtered.length) return null
+    let ce = 0, pay = 0, sqft = 0, beds = 0, baths = 0
+    let ceCount = 0, payCount = 0
+    for (const p of filtered) {
+      const m = mergedRow(p)
+      if (m.ce_charged != null) { ce += Number(m.ce_charged) || 0; ceCount++ }
+      if (m.cleaner_pay != null) { pay += Number(m.cleaner_pay) || 0; payCount++ }
+      sqft += Number(m.square_footage) || 0
+      beds += Number(m.bedrooms) || 0
+      baths += Number(m.full_baths) || 0
+    }
+    const profitPct = ce > 0 ? ((ce - pay - (filtered.reduce((s, p) => {
+      const m = mergedRow(p)
+      const totalCost = Number(m.total_estimated_cost) || 0
+      const cleanerPay = Number(m.cleaner_pay) || 0
+      return s + Math.max(0, totalCost - cleanerPay)
+    }, 0))) / ce) * 100 : null
+    return { ce, pay, sqft, beds, baths, ceCount, payCount, profitPct, count: filtered.length }
+  }, [filtered, liveEdits])
 
   function toggleSelect(id: string) {
     setSelected(prev => {
@@ -933,7 +956,12 @@ export default function MasterListPage() {
                       </button>
                     </div>
                   </td>
-                  <td className="py-1.5 px-3 text-muted-foreground">{p.client || '—'}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground" title={p.contact?.company || p.client || ''}>
+                    {p.contact?.full_name || p.client || '—'}
+                    {p.contact?.company && (
+                      <span className="ml-1 text-[10px] opacity-70">({p.contact.company})</span>
+                    )}
+                  </td>
                   <td className="py-1.5 px-3 text-muted-foreground text-xs max-w-[140px] truncate" title={p.address || undefined}>{p.address || '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit
@@ -1043,9 +1071,8 @@ export default function MasterListPage() {
                     <td colSpan={isAdmin ? 14 : 13} className="p-0">
                       <ExpandedPropertyDrawer
                         property={m}
-                        canViewFinancials={canViewFinancials}
                         onUpdate={(field, value) => quickUpdate({ id: p.id, field, value })}
-                        onDraftCost={(field, draft) => previewCostEdit(p.id, field, draft)}
+                        onOpenFullModal={() => setDetailProperty(p)}
                       />
                     </td>
                   </tr>
@@ -1053,6 +1080,32 @@ export default function MasterListPage() {
                 </Fragment>
               )
             })}
+            {!isLoading && tableTotals && (
+              <tr className="bg-muted/70 border-t-2 border-border font-semibold sticky bottom-0 z-20" data-testid="row-master-totals">
+                <td className="py-2 px-3 sticky left-0 bottom-0 z-30 bg-muted/90 backdrop-blur" />
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-[44px] bottom-0 z-30 bg-muted/90 backdrop-blur">
+                  Totals ({tableTotals.count})
+                </td>
+                <td className="py-2 px-3" />
+                <td className="py-2 px-3" />
+                <td className="py-2 px-3 text-xs tabular-nums">{tableTotals.beds || ''}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{tableTotals.baths || ''}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">{tableTotals.sqft ? tableTotals.sqft.toLocaleString() : ''}</td>
+                <td className="py-2 px-3" />
+                <td className="py-2 px-3 text-xs tabular-nums">${tableTotals.ce.toFixed(2)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">${tableTotals.pay.toFixed(2)}</td>
+                <td className="py-2 px-3 text-xs tabular-nums">
+                  {tableTotals.profitPct != null ? (
+                    <span className={profitColorClass(tableTotals.profitPct)}>
+                      {tableTotals.profitPct.toFixed(1)}%
+                    </span>
+                  ) : ''}
+                </td>
+                <td className="py-2 px-3" />
+                <td className="py-2 px-3" />
+                {isAdmin && <td className="py-2 px-3" />}
+              </tr>
+            )}
           </tbody>
         </table>
       </div>}
@@ -1368,18 +1421,17 @@ export default function MasterListPage() {
 }
 
 // Inline tray that expands beneath a property row in the master-list table.
-// Lets admins edit every property detail field and (if permitted) view the
-// full financial breakdown without opening the side-panel sheet.
+// Operationally focused: surfaces setup status (linen, lock access, wi-fi, AC
+// filter) and lets admins edit the most-used setup fields inline. Financial
+// breakdown lives in the main row + Pro Forma — intentionally absent here.
 function ExpandedPropertyDrawer({
   property,
-  canViewFinancials,
   onUpdate,
-  onDraftCost,
+  onOpenFullModal,
 }: {
   property: any
-  canViewFinancials: boolean
   onUpdate: (field: string, value: number | string | boolean | null) => void
-  onDraftCost: (field: 'ce_charged' | 'cleaner_pay', draft: string) => void
+  onOpenFullModal: () => void
 }) {
   function NumberCell({ label, field }: { label: string; field: string }) {
     return (
@@ -1413,23 +1465,6 @@ function ExpandedPropertyDrawer({
     )
   }
 
-  function MoneyCell({ label, field }: { label: string; field: 'ce_charged' | 'cleaner_pay' }) {
-    return (
-      <div className="flex flex-col gap-0.5">
-        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-        <div className="text-xs tabular-nums">
-          <InlineEdit
-            value={property[field]}
-            type="number"
-            onDraftChange={v => onDraftCost(field, v)}
-            onSave={v => onUpdate(field, v ? parseFloat(v) : null)}
-            placeholder="—"
-          />
-        </div>
-      </div>
-    )
-  }
-
   function ToggleCell({ label, field }: { label: string; field: string }) {
     const v = !!property[field]
     return (
@@ -1446,17 +1481,151 @@ function ExpandedPropertyDrawer({
     )
   }
 
+  // ── Setup status ───────────────────────────────────────────────────────
+  // Status legend:
+  //   complete = all required signal fields present
+  //   partial  = at least one signal present but core required field missing
+  //   missing  = no signals at all
+  // Zero is NOT treated as "missing" for individual bed-type fields because a
+  // property may legitimately have no king/queen/full/twin. Linen completeness
+  // requires the *aggregate* bed count and at least the core towel set.
+
+  const bedTotal = (Number(property.king_beds) || 0)
+    + (Number(property.queen_beds) || 0)
+    + (Number(property.full_beds) || 0)
+    + (Number(property.twin_beds) || 0)
+  const coreTowels = ['bath_towels', 'hand_towels', 'washcloths'] as const
+  const hasAnyTowel = coreTowels.some(k => property[k] != null && Number(property[k]) > 0)
+  const hasAllCoreTowels = coreTowels.every(k => property[k] != null && Number(property[k]) > 0)
+  const hasBathmats = property.bathmats != null && Number(property.bathmats) > 0
+  const hasBedConfig = bedTotal > 0
+  const linenMissingFields: string[] = []
+  if (!hasBedConfig) linenMissingFields.push('bed counts')
+  if (!hasAllCoreTowels) {
+    for (const t of coreTowels) {
+      if (property[t] == null || Number(property[t]) === 0) linenMissingFields.push(t.replace('_', ' '))
+    }
+  }
+  if (!hasBathmats && (Number(property.full_baths) || 0) > 0) linenMissingFields.push('bathmats')
+  const linenStatus: 'complete' | 'partial' | 'missing' = (
+    !hasAnyTowel && !hasBedConfig
+      ? 'missing'
+      : hasBedConfig && hasAllCoreTowels
+        ? 'complete'
+        : 'partial'
+  )
+
+  // Lock/door access — complete if any one of the three lock signals exists.
+  // Wi-Fi is intentionally tracked as its own tile.
+  const hasAuto = !!(property.auto_code && String(property.auto_code).trim())
+  const hasDoor = !!(property.door_code && String(property.door_code).trim())
+  const hasOther = !!(property.other_codes && String(property.other_codes).trim())
+  const hasAnyLock = hasAuto || hasDoor || hasOther
+  const lockStatus: 'complete' | 'missing' = hasAnyLock ? 'complete' : 'missing'
+
+  const hasWifi = !!(property.wifi_info && String(property.wifi_info).trim())
+  const wifiStatus: 'complete' | 'missing' = hasWifi ? 'complete' : 'missing'
+
+  const hasFilterSize = !!(property.filter_size && String(property.filter_size).trim())
+  const filterStatus: 'complete' | 'missing' = hasFilterSize ? 'complete' : 'missing'
+
+  const STATUS_STYLES: Record<string, string> = {
+    complete: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200 dark:border-green-800',
+    partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    missing: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800',
+  }
+  const STATUS_LABELS: Record<string, string> = { complete: 'Complete', partial: 'Partial', missing: 'Missing' }
+
+  function StatusBadge({ status }: { status: 'complete' | 'partial' | 'missing' }) {
+    return (
+      <span className={`inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${STATUS_STYLES[status]}`}>
+        {STATUS_LABELS[status]}
+      </span>
+    )
+  }
+
+  function SetupTile({
+    icon: Icon,
+    title,
+    status,
+    children,
+    href,
+  }: {
+    icon: React.ComponentType<{ className?: string }>
+    title: string
+    status: 'complete' | 'partial' | 'missing'
+    children: React.ReactNode
+    href?: string
+  }) {
+    return (
+      <div className="rounded-md border border-border bg-card p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold">{title}</span>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+        <div className="text-xs text-muted-foreground space-y-1">{children}</div>
+        {href && (
+          <a
+            href={href}
+            className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
+            data-testid={`tile-link-${title.toLowerCase().replace(/\s+/g, '-')}`}
+          >
+            Open {title} <ExternalLink className="w-3 h-3" />
+          </a>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="px-6 py-4 space-y-4">
+      {/* Identity + linked client */}
       <div>
-        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Identity</h4>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-2">
+          Identity
+          <button
+            type="button"
+            onClick={onOpenFullModal}
+            className="text-[10px] font-normal text-primary hover:underline normal-case tracking-normal inline-flex items-center gap-0.5"
+            data-testid="open-full-modal"
+          >
+            Open full property modal <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        </h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
           <TextCell label="Name" field="name" wide />
           <TextCell label="Address" field="address" wide />
-          <TextCell label="Pet Friendly" field="pet_friendly" />
+          <div className="flex flex-col gap-0.5 col-span-2">
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Client</span>
+            <span className="text-xs">
+              {property.contact?.full_name ? (
+                <>
+                  <span className="font-medium">{property.contact.full_name}</span>
+                  {property.contact.company && <span className="text-muted-foreground"> ({property.contact.company})</span>}
+                  {property.contact.payment_method && (
+                    <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{property.contact.payment_method}</span>
+                  )}
+                </>
+              ) : property.client ? (
+                <span>{property.client}</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenFullModal}
+                  className="text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                >
+                  Assign client…
+                </button>
+              )}
+            </span>
+          </div>
         </div>
       </div>
 
+      {/* Property details + bed configuration drive linen totals */}
       <div>
         <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Property Details</h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
@@ -1464,9 +1633,7 @@ function ExpandedPropertyDrawer({
           <NumberCell label="Full Baths" field="full_baths" />
           <NumberCell label="Half Baths" field="half_baths" />
           <NumberCell label="Sq Footage" field="square_footage" />
-          <NumberCell label="Total Beds" field="number_of_beds" />
           <NumberCell label="Max Guests" field="guest_count" />
-          <NumberCell label="Kitchens" field="kitchens" />
           <ToggleCell label="Hot Tub" field="hot_tub" />
         </div>
       </div>
@@ -1481,53 +1648,100 @@ function ExpandedPropertyDrawer({
         </div>
       </div>
 
-      {canViewFinancials && (
-        <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials (live)</h4>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
-            <MoneyCell label="Client Charged" field="ce_charged" />
-            <MoneyCell label="Cleaner Pay" field="cleaner_pay" />
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Cost</span>
-              <span className="text-xs tabular-nums">${(Number(property.total_estimated_cost) || 0).toFixed(2)}</span>
+      {/* Setup status tiles */}
+      <div>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Setup Status</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Linen */}
+          <SetupTile icon={BedDouble} title="Linen Setup" status={linenStatus} href="#/linen-tracker">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+              <span>Bath towels</span>
+              <span className="text-foreground tabular-nums text-right">{property.bath_towels ?? '—'}</span>
+              <span>Hand towels</span>
+              <span className="text-foreground tabular-nums text-right">{property.hand_towels ?? '—'}</span>
+              <span>Washcloths</span>
+              <span className="text-foreground tabular-nums text-right">{property.washcloths ?? '—'}</span>
+              <span>Bathmats</span>
+              <span className="text-foreground tabular-nums text-right">{property.bathmats ?? '—'}</span>
+              <span>Pool towels</span>
+              <span className="text-foreground tabular-nums text-right">{property.pool_towels ?? '—'}</span>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Laundry</span>
-              <span className="text-xs tabular-nums">${(Number(property.est_laundry) || 0).toFixed(2)}</span>
+            {linenStatus !== 'complete' && linenMissingFields.length > 0 && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                Missing: {linenMissingFields.join(', ')}
+              </p>
+            )}
+          </SetupTile>
+
+          {/* Lock/door access — complete if any one signal is present */}
+          <SetupTile icon={Lock} title="Lock Access Setup" status={lockStatus} href="#/access-codes">
+            <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+              <span>Auto code</span>
+              <span className="text-foreground truncate text-right">{hasAuto ? property.auto_code : '—'}</span>
+              <span>Door code</span>
+              <span className="text-foreground truncate text-right">{hasDoor ? property.door_code : '—'}</span>
+              <span>Other</span>
+              <span className="text-foreground truncate text-right">{hasOther ? property.other_codes : '—'}</span>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Consumables</span>
-              <span className="text-xs tabular-nums">${(Number(property.est_consumables) || 0).toFixed(2)}</span>
+            {lockStatus === 'missing' && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                Add at least one: auto code, door code, or other access info.
+              </p>
+            )}
+          </SetupTile>
+
+          {/* Wi-Fi — separate from door/access */}
+          <SetupTile icon={Wifi} title="Wi-Fi Setup" status={wifiStatus} href="#/access-codes">
+            {hasWifi ? (
+              <p className="text-foreground whitespace-pre-wrap break-words">{property.wifi_info}</p>
+            ) : (
+              <p className="text-[11px] text-amber-700 dark:text-amber-400">No Wi-Fi info captured.</p>
+            )}
+          </SetupTile>
+
+          {/* AC Filter */}
+          <SetupTile icon={Wind} title="AC Filter Setup" status={filterStatus} href="#/ac-filters">
+            <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+              <span>Filter size</span>
+              <span className="text-foreground text-right">{hasFilterSize ? property.filter_size : '—'}</span>
+              {property.last_filter_change && (
+                <>
+                  <span>Last change</span>
+                  <span className="text-foreground text-right">{String(property.last_filter_change).slice(0, 10)}</span>
+                </>
+              )}
+              {property.next_filter_due && (
+                <>
+                  <span>Next due</span>
+                  <span className="text-foreground text-right">{String(property.next_filter_due).slice(0, 10)}</span>
+                </>
+              )}
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit / Clean</span>
-              <span className={`text-xs tabular-nums font-medium ${(Number(property.estimated_profit) || 0) < 0 ? 'text-destructive' : ''}`}>
-                ${(Number(property.estimated_profit) || 0).toFixed(2)}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit %</span>
-              <span className={`text-xs tabular-nums font-medium ${profitColorClass(property.profit_percentage)}`}>
-                {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
-              </span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Cost</span>
-              <span className="text-xs tabular-nums">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Income (3x)</span>
-              <span className="text-xs tabular-nums">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Profit</span>
-              <span className={`text-xs tabular-nums font-medium ${(Number(property.profit_deep_clean) || 0) < 0 ? 'text-destructive' : ''}`}>
-                {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
-              </span>
-            </div>
-          </div>
+            {filterStatus === 'missing' && (
+              <p className="text-[10px] text-amber-700 dark:text-amber-400">Filter size required for filter scheduling.</p>
+            )}
+          </SetupTile>
         </div>
-      )}
+      </div>
+
+      {/* Inline editors for the setup fields surfaced above */}
+      <div>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Edit Setup Fields</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-2.5">
+          <TextCell label="Auto Code" field="auto_code" />
+          <TextCell label="Door Code" field="door_code" />
+          <TextCell label="Other Codes" field="other_codes" />
+          <TextCell label="Wi-Fi Info" field="wifi_info" wide />
+          <TextCell label="AC Filter Size" field="filter_size" />
+          <TextCell label="Cleaning Frequency" field="cleaning_frequency" />
+          <TextCell label="Pet Friendly" field="pet_friendly" />
+          <NumberCell label="Bath Towels" field="bath_towels" />
+          <NumberCell label="Hand Towels" field="hand_towels" />
+          <NumberCell label="Washcloths" field="washcloths" />
+          <NumberCell label="Bathmats" field="bathmats" />
+          <NumberCell label="Pool Towels" field="pool_towels" />
+        </div>
+      </div>
     </div>
   )
 }
