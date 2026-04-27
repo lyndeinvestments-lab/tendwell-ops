@@ -82,6 +82,14 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
 
 const COLLAPSED_STORAGE_KEY = 'tendwell-sidebar-collapsed'
 
+function getInitials(text: string): string {
+  const cleaned = text.split('@')[0].replace(/[._-]+/g, ' ').trim()
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'U'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
 function loadCollapsedState(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(COLLAPSED_STORAGE_KEY)
@@ -111,7 +119,9 @@ export function AppSidebar() {
 
   return (
     <Sidebar role="navigation" aria-label="Main navigation">
-      {/* Brand header */}
+      {/* Brand header — single brand mark + product name. The user identity
+          lives in the footer (avoids the user-label appearing alongside the
+          identical footer block which previously read as a duplicated tile). */}
       <SidebarHeader className="px-4 py-3 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
@@ -120,9 +130,9 @@ export function AppSidebar() {
               <path d="M9 22V12h6v10" stroke="currentColor" strokeLinecap="round"/>
             </svg>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-semibold text-sidebar-foreground leading-none">Tendwell Ops</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{user.label}</div>
+            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">Property operations</div>
           </div>
         </div>
       </SidebarHeader>
@@ -183,6 +193,25 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="px-3 py-3 border-t border-sidebar-border space-y-1">
+        {/* User identity row — distinct from the Tendwell brand mark in the
+            header (avoids the "two of the same image" look the previous
+            footer had when both sections rendered the same SVG). */}
+        <div className="flex items-center gap-2 px-1 pb-1">
+          <div
+            aria-hidden="true"
+            className="w-7 h-7 rounded-full bg-muted text-foreground/80 text-[11px] font-semibold flex items-center justify-center flex-shrink-0 border border-border"
+          >
+            {getInitials(user.label || 'U')}
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-sidebar-foreground truncate" title={user.label}>
+              {user.label || 'Signed in'}
+            </div>
+            {effectiveUser?.role && (
+              <div className="text-[10px] text-muted-foreground capitalize truncate">{effectiveUser.role}</div>
+            )}
+          </div>
+        </div>
         <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground/60 mb-1">
           <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">⌘K</kbd>
           <span>Search</span>

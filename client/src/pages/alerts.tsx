@@ -8,10 +8,12 @@ import { useLocation } from 'wouter'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Badge } from '@/components/ui/badge'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
-  X, Clock, ExternalLink
+  X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
 } from 'lucide-react'
 
 interface Alert {
@@ -228,6 +230,8 @@ export function useAlerts() {
   return { alerts, activeAlerts, badgeCount, dismissedSet }
 }
 
+type SeverityFilter = 'all' | 'critical' | 'warning' | 'info'
+
 export default function AlertsPage() {
   usePageTitle('Alerts')
   const [, navigate] = useLocation()
@@ -236,6 +240,8 @@ export default function AlertsPage() {
   const qcAlerts = useQueryClient()
   const [showDismissed, setShowDismissed] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string>('All')
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
@@ -243,8 +249,9 @@ export default function AlertsPage() {
     let base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
     if (!canViewFinancials) base = base.filter(a => a.category !== 'Financial')
     if (categoryFilter !== 'All') base = base.filter(a => a.category === categoryFilter)
+    if (severityFilter !== 'all') base = base.filter(a => a.severity === severityFilter)
     return base
-  }, [alerts, showDismissed, dismissedSet, categoryFilter, canViewFinancials])
+  }, [alerts, showDismissed, dismissedSet, categoryFilter, severityFilter, canViewFinancials])
 
   const categoryCounts = useMemo(() => {
     const base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
@@ -271,17 +278,76 @@ export default function AlertsPage() {
     qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
   }, [qcAlerts])
 
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds(prev => {
+      const visibleIds = visibleAlerts.filter(a => !dismissedSet.has(a.id)).map(a => a.id)
+      if (visibleIds.length > 0 && visibleIds.every(id => prev.has(id))) {
+        return new Set()
+      }
+      return new Set(visibleIds)
+    })
+  }, [visibleAlerts, dismissedSet])
+
+  const bulkDismiss = useCallback(async () => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    await Promise.all(ids.map(id =>
+      supabase.from('alert_dismissals').upsert(
+        { alert_key: id, dismissed_at: new Date().toISOString(), snoozed_until: null },
+        { onConflict: 'alert_key' }
+      )
+    ))
+    setSelectedIds(new Set())
+    qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+  }, [selectedIds, qcAlerts])
+
+  const bulkSnooze = useCallback(async (days: number) => {
+    const ids = Array.from(selectedIds)
+    if (ids.length === 0) return
+    const snoozedUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+    await Promise.all(ids.map(id =>
+      supabase.from('alert_dismissals').upsert(
+        { alert_key: id, snoozed_until: snoozedUntil },
+        { onConflict: 'alert_key' }
+      )
+    ))
+    setSelectedIds(new Set())
+    qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+  }, [selectedIds, qcAlerts])
+
   const criticalCount = alerts.filter(a => a.severity === 'critical' && !dismissedSet.has(a.id)).length
   const warningCount = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id)).length
   const infoCount = alerts.filter(a => a.severity === 'info' && !dismissedSet.has(a.id)).length
+
+  const selectableVisible = visibleAlerts.filter(a => !dismissedSet.has(a.id))
+  const allVisibleSelected = selectableVisible.length > 0 && selectableVisible.every(a => selectedIds.has(a.id))
+  const dismissedCount = alerts.filter(a => dismissedSet.has(a.id)).length
+
+  const SEVERITY_PILLS: Array<{ value: SeverityFilter; label: string; count: number; cls: string }> = [
+    { value: 'all', label: 'All', count: criticalCount + warningCount + infoCount, cls: 'border-border' },
+    { value: 'critical', label: 'Critical', count: criticalCount, cls: 'border-red-300 dark:border-red-800 text-red-700 dark:text-red-400' },
+    { value: 'warning', label: 'Warning', count: warningCount, cls: 'border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400' },
+    { value: 'info', label: 'Info', count: infoCount, cls: 'border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' },
+  ]
 
   return (
     <div className="p-5 space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Alerts</h1>
-          <p className="text-sm text-muted-foreground">
-            {criticalCount} critical, {warningCount} warnings, {infoCount} info
+          <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {criticalCount} critical</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> {warningCount} warning</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> {infoCount} info</span>
+            {dismissedCount > 0 && <span className="text-muted-foreground/70">· {dismissedCount} dismissed</span>}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -298,13 +364,33 @@ export default function AlertsPage() {
           )}
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-            Show dismissed ({alerts.filter(a => dismissedSet.has(a.id)).length})
+            Show dismissed ({dismissedCount})
           </label>
         </div>
       </div>
 
+      {/* Severity filter pills */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Severity</span>
+        {SEVERITY_PILLS.map(p => (
+          <button
+            key={p.value}
+            onClick={() => setSeverityFilter(p.value)}
+            className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${
+              severityFilter === p.value
+                ? 'bg-primary text-primary-foreground border-primary'
+                : `bg-background ${p.cls} hover:bg-muted`
+            }`}
+          >
+            {p.label}
+            <span className="ml-1.5 tabular-nums opacity-80">{p.count}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Category filter tabs */}
       <div className="flex items-center gap-1.5 flex-wrap -mt-1">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Category</span>
         {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM']
           .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
           .map(cat => (
@@ -323,11 +409,52 @@ export default function AlertsPage() {
           ))}
       </div>
 
+      {/* Bulk actions bar */}
+      {selectableVisible.length > 0 && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-border bg-muted/40">
+          <label className="flex items-center gap-2 text-xs">
+            <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all visible alerts" />
+            <span className="text-muted-foreground">
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : `Select all (${selectableVisible.length})`}
+            </span>
+          </label>
+          <div className="flex items-center gap-1.5">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled={selectedIds.size === 0}>
+                  <Clock className="w-3 h-3" /> Snooze
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-36 p-1">
+                {[{ label: '1 day', days: 1 }, { label: '3 days', days: 3 }, { label: '1 week', days: 7 }].map(opt => (
+                  <button
+                    key={opt.days}
+                    onClick={() => bulkSnooze(opt.days)}
+                    className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled={selectedIds.size === 0} onClick={bulkDismiss}>
+              <X className="w-3 h-3" /> Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         {visibleAlerts.length === 0 ? (
           <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
-            <CardContent className="p-6 text-center">
+            <CardContent className="p-8 text-center space-y-1">
+              <CheckCircle2 className="w-7 h-7 text-green-600 dark:text-green-400 mx-auto" />
               <p className="text-sm text-green-700 dark:text-green-400 font-medium">All clear! No active alerts.</p>
+              <p className="text-xs text-muted-foreground">
+                {categoryFilter !== 'All' || severityFilter !== 'all'
+                  ? 'Try clearing filters above to see alerts in other categories or severities.'
+                  : 'New alerts surface automatically when issues are detected.'}
+              </p>
             </CardContent>
           </Card>
         ) : (
@@ -335,12 +462,29 @@ export default function AlertsPage() {
             const config = SEVERITY_CONFIG[alert.severity]
             const Icon = config.icon
             const dismissed = dismissedSet.has(alert.id)
+            const isSelected = selectedIds.has(alert.id)
             return (
-              <Card key={alert.id} className={`border ${config.bg} ${dismissed ? 'opacity-50' : ''}`}>
+              <Card key={alert.id} className={`border ${config.bg} ${dismissed ? 'opacity-50' : ''} ${isSelected ? 'ring-2 ring-primary/40' : ''}`}>
                 <CardContent className="p-3 flex items-start gap-3">
+                  {!dismissed && (
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={isSelected}
+                      onCheckedChange={() => toggleSelect(alert.id)}
+                      aria-label={`Select alert: ${alert.title}`}
+                    />
+                  )}
                   <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${config.color}`} />
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${config.color}`}>{alert.title}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className={`text-sm font-medium ${config.color}`}>{alert.title}</p>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal">
+                        {alert.category}
+                      </Badge>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 font-normal capitalize ${config.color} border-current/30`}>
+                        {alert.severity}
+                      </Badge>
+                    </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{alert.description}</p>
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">

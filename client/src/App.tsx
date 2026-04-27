@@ -208,6 +208,10 @@ function AppRoutes() {
         <Route path="/master-list">{() => <GuardedRoute viewId={["cost-tracking", "master-list"]} component={CostTrackingPage} />}</Route>
         <Route path="/property-list">{() => <GuardedRoute viewId="property-list" component={PropertyListPage} />}</Route>
         <Route path="/linen-tracker">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
+        {/* Alias: production QA hits /linen-requirements (404'd before this PR).
+            Linen Requirements is the same page as Linen Tracker — both routes
+            now render the same component so old/external links continue to work. */}
+        <Route path="/linen-requirements">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
         <Route path="/linen-inventory">{() => <GuardedRoute viewId="linen-inventory" component={LinenInventoryPage} />}</Route>
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>

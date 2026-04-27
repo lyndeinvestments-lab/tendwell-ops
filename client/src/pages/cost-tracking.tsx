@@ -752,7 +752,13 @@ export default function CostTrackingPage() {
                             <Field label="Washcloths" value={p.washcloths ?? '—'} />
                             <Field label="Bath Mats" value={p.bathmats ?? '—'} />
                             <Field label="Pool Towels" value={p.pool_towels ?? '—'} />
-                            <Field label="Bed Sizes" value={p.bed_sizes_text || '—'} />
+                            {/* Bed Sizes free-text was redundant with the
+                                King/Queen/Full/Twin counts above — only show
+                                it as a fallback if no individual counts exist
+                                AND the legacy text is non-empty. */}
+                            {p.bed_sizes_text && (p.king_beds == null && p.queen_beds == null && p.full_beds == null && p.twin_beds == null) && (
+                              <Field label="Bed Sizes (legacy)" value={p.bed_sizes_text} />
+                            )}
                           </div>
                           {p.linen_notes && (
                             <div className="text-xs text-muted-foreground mt-2"><span className="font-medium">Linen notes:</span> {p.linen_notes}</div>

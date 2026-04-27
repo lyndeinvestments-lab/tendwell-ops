@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, createContext, useContext } from 'react'
 import { useLocation } from 'wouter'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TrendingUp, Building2 } from 'lucide-react'
 
 // Live Pro Forma (formerly /forecaster) — variance + historical + forecast.
 // Per-Property Pro Forma — the legacy table showing per-property economics.
@@ -10,10 +11,29 @@ const ProFormaTablePage = lazy(() => import('@/pages/pro-forma'))
 
 type TabValue = 'live' | 'per-property'
 
+// Children inspect this context and hide their own page h1 / sub-title so the
+// unified wrapper renders the single page chrome. Default false → child pages
+// still render their own header when rendered standalone (e.g. tests).
+export const ProFormaWrapperContext = createContext<{ inWrapper: boolean }>({ inWrapper: false })
+export function useInProFormaWrapper() {
+  return useContext(ProFormaWrapperContext).inWrapper
+}
+
 function defaultTabFromLocation(loc: string): TabValue {
   // /forecaster lands on Live; /pro-forma lands on Per-Property by default.
   if (loc.startsWith('/forecaster')) return 'live'
   return 'per-property'
+}
+
+const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
+  'live': {
+    title: 'Live Pro Forma',
+    subtitle: 'Actuals from completed tasks & QBO compared to estimated cost formulas — month-by-month variance and 12-month forecast.',
+  },
+  'per-property': {
+    title: 'Per-Property Pro Forma',
+    subtitle: 'Estimated monthly revenue, cost, and profit per property — with what-if scenarios and CSV import.',
+  },
 }
 
 export default function ProFormaWrapperPage() {
@@ -26,29 +46,45 @@ export default function ProFormaWrapperPage() {
     setTab(defaultTabFromLocation(location))
   }, [location])
 
+  const meta = TAB_META[tab]
+
   return (
-    <div className="h-full flex flex-col">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)} className="h-full flex flex-col">
-        <div className="px-5 pt-4">
-          <TabsList>
-            <TabsTrigger value="live" data-testid="tab-pro-forma-live">Live Pro Forma</TabsTrigger>
-            <TabsTrigger value="per-property" data-testid="tab-pro-forma-per-property">Per-Property</TabsTrigger>
-          </TabsList>
+    <ProFormaWrapperContext.Provider value={{ inWrapper: true }}>
+      <div className="h-full flex flex-col">
+        <div className="px-5 pt-4 pb-2 border-b border-border/40 bg-background sticky top-0 z-10">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-xl font-semibold text-foreground" data-testid="page-title-pro-forma">Pro Forma</h1>
+              <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
+            </div>
+          </div>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)} className="mt-3">
+            <TabsList>
+              <TabsTrigger value="live" data-testid="tab-pro-forma-live" className="gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" /> Live Pro Forma
+              </TabsTrigger>
+              <TabsTrigger value="per-property" data-testid="tab-pro-forma-per-property" className="gap-1.5">
+                <Building2 className="w-3.5 h-3.5" /> Per-Property
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
-        <TabsContent value="live" className="flex-1 mt-0 data-[state=inactive]:hidden">
-          <Suspense fallback={<TabFallback />}>
-            <ForecasterPage />
-          </Suspense>
-        </TabsContent>
+        <Tabs value={tab} className="flex-1 flex flex-col min-h-0">
+          <TabsContent value="live" className="flex-1 mt-0 data-[state=inactive]:hidden overflow-auto">
+            <Suspense fallback={<TabFallback />}>
+              <ForecasterPage />
+            </Suspense>
+          </TabsContent>
 
-        <TabsContent value="per-property" className="flex-1 mt-0 data-[state=inactive]:hidden">
-          <Suspense fallback={<TabFallback />}>
-            <ProFormaTablePage />
-          </Suspense>
-        </TabsContent>
-      </Tabs>
-    </div>
+          <TabsContent value="per-property" className="flex-1 mt-0 data-[state=inactive]:hidden overflow-auto">
+            <Suspense fallback={<TabFallback />}>
+              <ProFormaTablePage />
+            </Suspense>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </ProFormaWrapperContext.Provider>
   )
 }
 

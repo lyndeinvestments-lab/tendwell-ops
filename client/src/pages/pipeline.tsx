@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -895,12 +896,12 @@ export default function PipelinePage() {
             {/* Row 2: Property Address (full width) */}
             <div className="space-y-2">
               <Label htmlFor="lead-address">Property Address</Label>
-              <Input
+              <AddressAutocomplete
                 id="lead-address"
                 placeholder="Enter property address"
                 value={newLeadAddress}
-                onChange={(e) => setNewLeadAddress(e.target.value)}
-                data-testid="input-lead-address"
+                onChange={setNewLeadAddress}
+                testId="input-lead-address"
               />
             </div>
             {/* Row 3: Email + Phone */}
