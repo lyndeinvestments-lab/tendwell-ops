@@ -51,8 +51,7 @@ const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
 const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
 const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
-const ProFormaPage = lazyRetry(() => import("@/pages/pro-forma"));
-const ForecasterPage = lazyRetry(() => import("@/pages/forecaster"));
+const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"));
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const PreviousPropertiesPage = lazyRetry(() => import("@/pages/previous-properties"))
@@ -213,8 +212,13 @@ function AppRoutes() {
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
-        <Route path="/pro-forma">{() => <GuardedRoute viewId="pro-forma" component={ProFormaPage} />}</Route>
-        <Route path="/forecaster">{() => <GuardedRoute viewId="forecaster" component={ForecasterPage} />}</Route>
+        {/* Pro Forma now hosts the Live Pro Forma (forecaster) and Per-Property
+            tabs in a single wrapper. The /forecaster path stays valid as a deep
+            link into the Live tab; either historical permission grants access
+            so admins/owners with the legacy `pro-forma` view see the new live
+            forecaster without a DB permission update. */}
+        <Route path="/pro-forma">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
+        <Route path="/forecaster">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
         <Route path="/previous-properties">{() => <GuardedRoute viewId="previous-properties" component={PreviousPropertiesPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
