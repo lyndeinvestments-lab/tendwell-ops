@@ -23,6 +23,7 @@ import {
   computeDerived, generateForecast, FORECAST_PRESETS, rollupEstimates, computeVariance,
   type ForecastSliders, type DerivedMonth,
 } from '@/lib/forecaster'
+import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 
 function fmt(n: number | null | undefined, prefix = '$') {
   if (n == null) return '—'
@@ -71,7 +72,8 @@ function KpiCard({ title, value, subtitle, alert }: {
 }
 
 export default function ForecasterPage() {
-  usePageTitle('Forecaster')
+  const inWrapper = useInProFormaWrapper()
+  usePageTitle(inWrapper ? 'Pro Forma — Live' : 'Forecaster')
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -270,12 +272,18 @@ export default function ForecasterPage() {
   return (
     <div className="p-5 h-full flex flex-col space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Forecaster</h1>
-          <p className="text-sm text-muted-foreground">
-            Live proforma — actuals from completed tasks &amp; QBO compared to estimated cost formulas.
-          </p>
-        </div>
+        {inWrapper ? (
+          <div className="text-xs text-muted-foreground">
+            Period &amp; sources
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Forecaster</h1>
+            <p className="text-sm text-muted-foreground">
+              Live proforma — actuals from completed tasks &amp; QBO compared to estimated cost formulas.
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
           <Select value={selectedMonth} onValueChange={setSelectedMonth}>
             <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-forecaster-month">

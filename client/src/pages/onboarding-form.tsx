@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Building2 } from 'lucide-react'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 
 // Public page — uses anon key directly (no auth required)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -130,7 +131,12 @@ export default function OnboardingFormPage() {
             </div>
             <div>
               <label className={labelCls}>Address *</label>
-              <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputCls} placeholder="123 Cabin Road, Gatlinburg, TN 37738" />
+              <AddressAutocomplete
+                value={form.address}
+                onChange={(v) => setForm(f => ({ ...f, address: v }))}
+                className={inputCls}
+                placeholder="123 Cabin Road, Gatlinburg, TN 37738"
+              />
             </div>
           </CardContent>
         </Card>

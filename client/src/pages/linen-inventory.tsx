@@ -241,6 +241,30 @@ export default function LinenInventoryPage() {
       {/* ═══ SNAPSHOT VIEW ═══ */}
       {viewMode === 'snapshot' && (
         <>
+          {/* Prominent empty state when no counts have been recorded yet —
+              moved up from the buried table empty cell so the on-hand status
+              isn't hidden behind dashes. */}
+          {!isLoading && !latestCount && (
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-5 flex items-start gap-4">
+              <div className="w-10 h-10 rounded-md bg-background border border-border flex items-center justify-center flex-shrink-0">
+                <Boxes className="w-5 h-5 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground">No on-hand counts yet</p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-xl">
+                  Record your first inventory count to see variance vs the company-wide requirement on this page. Until then,
+                  the “On Hand” and “Variance” columns will show <span className="font-mono">—</span>.
+                </p>
+              </div>
+              <button
+                onClick={() => setViewMode('record')}
+                className="text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex-shrink-0"
+              >
+                Record Count
+              </button>
+            </div>
+          )}
+
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card>

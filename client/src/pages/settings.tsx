@@ -19,7 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import {
   UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, CalendarDays,
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
-  Lock,
+  Lock, Plug, MapPin, Database, Receipt, KeyRound, Bell as BellIcon,
 } from 'lucide-react'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
@@ -1720,6 +1720,124 @@ function WorkflowTemplatesSection() {
   )
 }
 
+function IntegrationsSection() {
+  // Integrations are read from import.meta.env at build time. We never read or
+  // display the actual key value — only whether a public env var is configured.
+  const env = import.meta.env as Record<string, string | undefined>
+  const googleMapsKey = env.VITE_GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_PLACES_API_KEY
+  const supabaseUrl = env.VITE_SUPABASE_URL
+  const anthropicKeyPresent = !!env.VITE_ANTHROPIC_API_KEY // optional client SDK key, normally server-side only
+
+  type Status = 'connected' | 'configured' | 'not_configured' | 'unknown'
+  function statusBadge(s: Status) {
+    const map: Record<Status, { label: string; cls: string }> = {
+      connected: { label: 'Connected', cls: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' },
+      configured: { label: 'Configured', cls: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800' },
+      not_configured: { label: 'Not configured', cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
+      unknown: { label: 'Unknown', cls: 'bg-muted text-muted-foreground border-border' },
+    }
+    const m = map[s]
+    return <span className={`text-[10px] px-1.5 py-0.5 rounded border ${m.cls}`}>{m.label}</span>
+  }
+
+  const integrations = [
+    {
+      icon: Database,
+      name: 'Supabase',
+      description: 'Primary database & authentication.',
+      status: (supabaseUrl ? 'connected' : 'not_configured') as Status,
+      detail: supabaseUrl ? `Project URL configured` : 'VITE_SUPABASE_URL is missing — sign-in will fail.',
+    },
+    {
+      icon: MapPin,
+      name: 'Google Places API',
+      description: 'Address autocomplete on property forms.',
+      status: (googleMapsKey ? 'configured' : 'not_configured') as Status,
+      detail: googleMapsKey
+        ? 'Public Maps JS key detected — autocomplete is active on supported forms.'
+        : 'Set VITE_GOOGLE_MAPS_API_KEY (Maps JS API + Places library) to enable autocomplete. Address fields fall back to plain text.',
+    },
+    {
+      icon: Receipt,
+      name: 'QuickBooks Online',
+      description: 'Pulls actual P&L into the Live Pro Forma.',
+      status: 'configured' as Status,
+      detail: 'Connection is managed server-side. Use the “Pull from QBO” button on Pro Forma → Live to fetch the current month.',
+    },
+    {
+      icon: KeyRound,
+      name: 'Anthropic (AI Assistant)',
+      description: 'Powers the in-app AI chat.',
+      status: (anthropicKeyPresent ? 'configured' : 'unknown') as Status,
+      detail: anthropicKeyPresent
+        ? 'Public client key present — usually keys are kept server-side. Verify this is intended.'
+        : 'No public client key is exposed — the assistant calls the server-side handler.',
+    },
+  ]
+
+  return (
+    <div className="space-y-3">
+      <h2 className="text-base font-medium flex items-center gap-2">
+        <Plug className="w-4 h-4" />
+        Integrations & API
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Status of external services this Tendwell Ops install talks to. Keys are configured via Vercel/CI environment variables
+        (read-only here — never displayed).
+      </p>
+      <div className="rounded-lg border border-border divide-y divide-border">
+        {integrations.map((it) => {
+          const Icon = it.icon
+          return (
+            <div key={it.name} className="flex items-start gap-3 p-3">
+              <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+                <Icon className="w-4 h-4 text-muted-foreground" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{it.name}</span>
+                  {statusBadge(it.status)}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{it.description}</p>
+                <p className="text-[11px] text-muted-foreground/80 mt-1">{it.detail}</p>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const ROLE_DESCRIPTIONS: Record<string, string> = {
+  admin: 'Full access to every page, can edit users, roles, and global app settings. Use sparingly.',
+  operations: 'Day-to-day operations team — sees properties, linens, AC filters, inspections, tasks, and cleaners.',
+  cleaning: 'Linen-focused role for cleaning vendors. Read-only access to linen requirements and inventory.',
+  viewer: 'Read-only access to most operational pages. Cannot edit data.',
+}
+
+function RoleDescriptions() {
+  return (
+    <div className="space-y-3">
+      <h2 className="text-base font-medium flex items-center gap-2">
+        <Shield className="w-4 h-4" />
+        Role Reference
+      </h2>
+      <p className="text-xs text-muted-foreground">
+        Quick descriptions of the built-in roles. Custom roles you create above inherit no defaults — set their views in the matrix.
+      </p>
+      <div className="rounded-lg border border-border divide-y divide-border">
+        {Object.entries(ROLE_DESCRIPTIONS).map(([role, desc]) => (
+          <div key={role} className="grid grid-cols-[110px_1fr] gap-3 p-3">
+            <div className="text-sm font-medium capitalize">{role}</div>
+            <div className="text-xs text-muted-foreground">{desc}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -1731,11 +1849,13 @@ export default function SettingsPage() {
           <Shield className="w-5 h-5" />
           Settings
         </h1>
-        <p className="text-sm text-muted-foreground">Manage users, permissions, and application settings</p>
+        <p className="text-sm text-muted-foreground">Manage users, permissions, integrations, and application settings</p>
       </div>
 
       <UsersSection />
       <PermissionsSection />
+      <RoleDescriptions />
+      <IntegrationsSection />
       <NotificationsSection />
       <WorkflowTemplatesSection />
       <AppSettingsSection />
