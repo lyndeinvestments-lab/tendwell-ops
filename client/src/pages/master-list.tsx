@@ -337,20 +337,6 @@ export default function MasterListPage() {
     onError: (e: any) => toast({ title: 'Archive failed: ' + (e.message || 'Unknown error'), variant: 'destructive' }),
   })
 
-  // Detail panel save
-  const { mutate: saveDetail, isPending: savingDetail } = useGuardedMutation('master-list', {
-    mutationFn: async (updates: Record<string, any>) => {
-      const { error } = await supabase.from('properties').update(updates).eq('id', detailProperty.id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      invalidateAllPropertyQueries(qc)
-      toast({ title: 'Property updated' })
-      setDetailProperty(null)
-    },
-    onError: (e: any) => toast({ title: 'Save failed', description: e?.message || 'Unknown error', variant: 'destructive' }),
-  })
-
   // Persist sort/filter to localStorage (#9)
   useEffect(() => {
     try { localStorage.setItem('ml-sort-key', sortKey) } catch {}
@@ -1075,14 +1061,34 @@ export default function MasterListPage() {
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      {/* Property Detail Slide-out Panel */}
+      {/* Property Detail Slide-out Panel — every field auto-saves via the
+          existing quickUpdate mutation; stage changes go through the proper
+          executeStageTransition pipeline so audit-log + onboarding-task hooks
+          still fire. */}
       <PropertyDetailPanel
         property={detailProperty}
         stages={stages || []}
         open={!!detailProperty}
         onClose={() => setDetailProperty(null)}
-        onSave={saveDetail}
-        saving={savingDetail}
+        onUpdate={(field, value) => detailProperty && quickUpdate({ id: detailProperty.id, field, value })}
+        onStageChange={async (toStageId, toStageName) => {
+          if (!detailProperty) return
+          const fromStage = stages?.find((s: any) => Number(s.id) === Number(detailProperty.stage_id))
+          const { executeStageTransition } = await import('@/lib/stage-transition')
+          const result = await executeStageTransition({
+            propertyId: Number(detailProperty.id),
+            propertyName: detailProperty.name || '',
+            fromStageId: Number(fromStage?.id),
+            fromStageName: fromStage?.name || '',
+            toStageId,
+            toStageName,
+            changedBy: effectiveUser?.label || 'unknown',
+          })
+          if (!result.ok) throw new Error(result.error)
+          invalidateAllPropertyQueries(qc)
+          qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+          toast({ title: `Moved to ${toStageName}` })
+        }}
       />
 
       {/* Per-row archive confirm dialog (admin only). Single-row soft-delete;
@@ -1391,6 +1397,22 @@ function ExpandedPropertyDrawer({
     )
   }
 
+  function TextCell({ label, field, wide }: { label: string; field: string; wide?: boolean }) {
+    return (
+      <div className={`flex flex-col gap-0.5 ${wide ? 'col-span-2 sm:col-span-3' : ''}`}>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <div className="text-xs">
+          <InlineEdit
+            value={property[field]}
+            type="text"
+            onSave={v => onUpdate(field, v.trim() === '' ? null : v.trim())}
+            placeholder="—"
+          />
+        </div>
+      </div>
+    )
+  }
+
   function MoneyCell({ label, field }: { label: string; field: 'ce_charged' | 'cleaner_pay' }) {
     return (
       <div className="flex flex-col gap-0.5">
@@ -1426,6 +1448,15 @@ function ExpandedPropertyDrawer({
 
   return (
     <div className="px-6 py-4 space-y-4">
+      <div>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Identity</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
+          <TextCell label="Name" field="name" wide />
+          <TextCell label="Address" field="address" wide />
+          <TextCell label="Pet Friendly" field="pet_friendly" />
+        </div>
+      </div>
+
       <div>
         <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Property Details</h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
@@ -1501,13 +1532,20 @@ function ExpandedPropertyDrawer({
   )
 }
 
-function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }: {
+function PropertyDetailPanel({ property, stages, open, onClose, onUpdate, onStageChange }: {
   property: any; stages: any[]; open: boolean; onClose: () => void
-  onSave: (updates: Record<string, any>) => void; saving: boolean
+  // Per-field auto-save: commits a single field to the DB. Wired to the
+  // master-list `quickUpdate` mutation so saves persist immediately and
+  // the row + drawer + counters all refresh through React Query invalidation.
+  onUpdate: (field: string, value: any) => void
+  // Stage change goes through the proper transition flow (audit log,
+  // onboarding tasks, etc.) so it can't share the generic onUpdate path.
+  onStageChange: (toStageId: number, toStageName: string) => Promise<void>
 }) {
   const [form, setForm] = useState<Record<string, any>>({})
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
   const [contactSearch, setContactSearch] = useState('')
+  const [savingStage, setSavingStage] = useState(false)
   const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
@@ -1596,20 +1634,42 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
     'ce_charged', 'cleaner_pay',
   ])
 
-  function handleSave() {
-    const updates: Record<string, any> = {}
-    for (const [key, val] of Object.entries(form)) {
-      if (key === 'hot_tub') {
-        updates[key] = val
-      } else if (key === 'stage_id') {
-        updates[key] = val ? parseInt(val) : null
-      } else if (NUMBER_FIELDS.has(key)) {
-        updates[key] = val === '' ? null : parseFloat(val)
-      } else {
-        updates[key] = val || null
-      }
+  // Per-field auto-save: invoked on blur (text/number/textarea) or on change
+  // (select/toggle/contact). Skips no-op writes and coerces draft strings into
+  // the right shape for the column. The override arg lets a click handler
+  // bypass the form state when committing the value the user just clicked.
+  function commit(key: string, override?: any) {
+    const draft = override !== undefined ? override : form[key]
+    let toSave: any
+    if (key === 'hot_tub') {
+      toSave = !!draft
+      if (Boolean(property?.[key]) === toSave) return
+    } else if (NUMBER_FIELDS.has(key)) {
+      const parsed = draft === '' || draft == null ? null : parseFloat(String(draft))
+      if (parsed != null && Number.isNaN(parsed)) return
+      toSave = parsed
+      if ((property?.[key] ?? null) === (toSave ?? null)) return
+    } else {
+      const trimmed = draft != null ? String(draft).trim() : ''
+      toSave = trimmed === '' ? null : trimmed
+      if (String(property?.[key] ?? '') === String(toSave ?? '')) return
     }
-    onSave(updates)
+    onUpdate(key, toSave)
+  }
+
+  async function handleStageChange(newStageIdStr: string) {
+    const stageId = parseInt(newStageIdStr)
+    const target = stages?.find((s: any) => Number(s.id) === stageId)
+    if (!target || stageId === Number(property?.stage_id)) return
+    setSavingStage(true)
+    try {
+      await onStageChange(stageId, target.name)
+      updateForm('stage_id', stageId)
+    } catch (err: any) {
+      toast({ title: 'Stage change failed', description: err?.message || 'Unknown error', variant: 'destructive' })
+    } finally {
+      setSavingStage(false)
+    }
   }
 
   if (!property) return null
@@ -1760,6 +1820,13 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                         bathmats: c.bathmats,
                         pool_towels: c.pool_towels,
                       }))
+                      // Persist each computed linen value immediately. commit()
+                      // skips no-op writes so unchanged fields don't fire.
+                      commit('bath_towels', c.bath_towels)
+                      commit('hand_towels', c.hand_towels)
+                      commit('washcloths', c.washcloths)
+                      commit('bathmats', c.bathmats)
+                      commit('pool_towels', c.pool_towels)
                       toast({ title: `Auto-filled linens (sleep count ${sleepCount({ king_beds: form.king_beds, queen_beds: form.queen_beds, full_beds: form.full_beds, twin_beds: form.twin_beds })})` })
                     }}
                     className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
@@ -1777,17 +1844,17 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                       <div className="flex gap-2">
                         <button
                           type="button"
-                          onClick={() => updateForm(field.key, false)}
+                          onClick={() => { updateForm(field.key, false); commit(field.key, false) }}
                           className={`flex-1 h-7 rounded-md border text-xs transition-colors ${!form[field.key] ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'}`}
                         >No</button>
                         <button
                           type="button"
-                          onClick={() => updateForm(field.key, true)}
+                          onClick={() => { updateForm(field.key, true); commit(field.key, true) }}
                           className={`flex-1 h-7 rounded-md border text-xs transition-colors ${form[field.key] ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground'}`}
                         >Yes</button>
                       </div>
                     ) : field.type === 'select' ? (
-                      <Select value={form[field.key] || ''} onValueChange={v => updateForm(field.key, v)}>
+                      <Select value={form[field.key] || ''} onValueChange={v => { updateForm(field.key, v); commit(field.key, v) }}>
                         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {field.options?.map((o: string) => <SelectItem key={o} value={o} className="text-xs">{o}</SelectItem>)}
@@ -1808,8 +1875,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                                 <span
                                   role="button"
                                   tabIndex={0}
-                                  onClick={e => { e.stopPropagation(); updateForm(field.key, '') }}
-                                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); updateForm(field.key, '') } }}
+                                  onClick={e => { e.stopPropagation(); updateForm(field.key, ''); commit(field.key, '') }}
+                                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); updateForm(field.key, ''); commit(field.key, '') } }}
                                   className="hover:text-destructive inline-flex"
                                   aria-label="Clear client"
                                 >
@@ -1838,6 +1905,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                                   type="button"
                                   onClick={() => {
                                     updateForm(field.key, c.full_name)
+                                    commit(field.key, c.full_name)
                                     setContactSearch('')
                                     setContactPopoverOpen(false)
                                   }}
@@ -1853,7 +1921,9 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                               <button
                                 type="button"
                                 onClick={() => {
-                                  updateForm(field.key, contactSearch.trim())
+                                  const v = contactSearch.trim()
+                                  updateForm(field.key, v)
+                                  commit(field.key, v)
                                   setContactSearch('')
                                   setContactPopoverOpen(false)
                                 }}
@@ -1869,6 +1939,7 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                       <textarea
                         value={form[field.key] ?? ''}
                         onChange={e => updateForm(field.key, e.target.value)}
+                        onBlur={() => commit(field.key)}
                         className="w-full h-16 rounded-md border border-input bg-background px-2 py-1.5 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                       />
                     ) : (
@@ -1876,6 +1947,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
                         type={field.type}
                         value={form[field.key] ?? ''}
                         onChange={e => updateForm(field.key, e.target.value)}
+                        onBlur={() => commit(field.key)}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                         className="h-7 text-xs"
                         step={field.step || (field.type === 'number' ? '1' : undefined)}
                         min={field.type === 'number' ? '0' : undefined}
@@ -1888,11 +1961,18 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
             </div>
           ))}
 
-          {/* Stage selector */}
+          {/* Stage selector — routes through executeStageTransition for audit-log
+              and onboarding-task side effects (handled by parent via onStageChange). */}
           <div className="grid grid-cols-[120px_1fr] items-center gap-2">
             <Label className="text-xs text-muted-foreground">Stage</Label>
-            <Select value={String(form.stage_id)} onValueChange={v => updateForm('stage_id', v)}>
-              <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <Select
+              value={String(property.stage_id ?? '')}
+              onValueChange={handleStageChange}
+              disabled={savingStage}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                {savingStage ? <Loader2 className="w-3 h-3 animate-spin" /> : <SelectValue />}
+              </SelectTrigger>
               <SelectContent>
                 {stages?.map((s: any) => <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>)}
               </SelectContent>
@@ -1901,10 +1981,8 @@ function PropertyDetailPanel({ property, stages, open, onClose, onSave, saving }
         </div>
 
         <div className="flex justify-end gap-2 mt-6 pb-4">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button size="sm" onClick={handleSave} disabled={saving} data-testid="button-save-detail">
-            {saving ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Changes'}
-          </Button>
+          <p className="text-[10px] text-muted-foreground self-center mr-auto">Changes save automatically.</p>
+          <Button variant="outline" size="sm" onClick={onClose} data-testid="button-close-detail">Done</Button>
         </div>
       </SheetContent>
     </Sheet>
