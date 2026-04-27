@@ -17,6 +17,7 @@ import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { TablePagination } from '@/components/TablePagination'
+import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 
 const FREQ_OPTIONS = [
   { value: 'weekly', label: 'Weekly', cleans: 4.33 },
@@ -205,9 +206,10 @@ function WhatIfPopover({
 }
 
 export default function ProFormaPage() {
+  const inWrapper = useInProFormaWrapper()
   const { toast } = useToast()
   const qc = useQueryClient()
-  usePageTitle('Pro Forma')
+  usePageTitle(inWrapper ? 'Pro Forma — Per-Property' : 'Pro Forma')
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkFreq, setBulkFreq] = useState('')
@@ -515,10 +517,16 @@ export default function ProFormaPage() {
   return (
     <div className="p-5 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Pro Forma</h1>
-          <p className="text-sm text-muted-foreground">Financial projections for active properties</p>
-        </div>
+        {inWrapper ? (
+          <div className="text-xs text-muted-foreground">
+            {filtered?.length ?? 0} {filtered?.length === 1 ? 'property' : 'properties'}
+          </div>
+        ) : (
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Pro Forma</h1>
+            <p className="text-sm text-muted-foreground">Financial projections for active properties</p>
+          </div>
+        )}
         <div className="flex items-center gap-3">
           {asNeededCount > 0 && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">

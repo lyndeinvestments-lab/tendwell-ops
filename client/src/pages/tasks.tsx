@@ -371,6 +371,9 @@ export default function TasksPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'Urgent' | 'High' | 'Medium' | 'Low'>('all')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all') // 'all' | 'unassigned' | <label>
+  const [groupBy, setGroupBy] = useState<'none' | 'status' | 'priority' | 'assignee' | 'property'>('none')
   const [sortKey, setSortKey] = useState<SortKey>('due_date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [addOpen, setAddOpen] = useState(false)
@@ -543,15 +546,19 @@ export default function TasksPage() {
   })
 
   // ─── Stats ────────────────────────────────────────────────────────────────
+  // KPIs reflect top-level tasks only (matching the visible list). Counting
+  // subtasks made the "In Progress" tile inflate vs the rendered table —
+  // production QA flagged the mismatch.
   const stats = useMemo(() => {
     if (!tasks) return { total: 0, todo: 0, inProgress: 0, done: 0, overdue: 0 }
     const today = new Date().toISOString().split('T')[0]
+    const topLevel = tasks.filter((t: any) => !t.parent_task_id)
     return {
-      total: tasks.length,
-      todo: tasks.filter((t: any) => t.status === 'To Do').length,
-      inProgress: tasks.filter((t: any) => t.status === 'In Progress').length,
-      done: tasks.filter((t: any) => t.status === 'Done').length,
-      overdue: tasks.filter((t: any) => t.due_date && t.due_date < today && t.status !== 'Done').length,
+      total: topLevel.length,
+      todo: topLevel.filter((t: any) => t.status === 'To Do').length,
+      inProgress: topLevel.filter((t: any) => t.status === 'In Progress').length,
+      done: topLevel.filter((t: any) => t.status === 'Done').length,
+      overdue: topLevel.filter((t: any) => t.due_date && t.due_date < today && t.status !== 'Done').length,
     }
   }, [tasks])
 
@@ -589,7 +596,12 @@ export default function TasksPage() {
       const subs = subtasksByParent.get(t.id) || []
       const subMatchSearch = !search.trim() || subs.some((s: any) => [s.title, s.assignee_name].some(v => v?.toLowerCase().includes(search.toLowerCase())))
       const matchStatus = statusFilter === 'all' ? true : statusFilter === 'open' ? t.status !== 'Done' : t.status === statusFilter
-      return (matchSearch || subMatchSearch) && matchStatus
+      const matchPriority = priorityFilter === 'all' ? true : t.priority === priorityFilter
+      const matchAssignee =
+        assigneeFilter === 'all' ? true
+        : assigneeFilter === 'unassigned' ? !t.assignee_name
+        : t.assignee_name === assigneeFilter
+      return (matchSearch || subMatchSearch) && matchStatus && matchPriority && matchAssignee
     })
     result = [...result].sort((a: any, b: any) => {
       const dir = sortDir === 'asc' ? 1 : -1
@@ -607,7 +619,50 @@ export default function TasksPage() {
       return av.localeCompare(bv) * dir
     })
     return result
-  }, [tasks, search, statusFilter, sortKey, sortDir, subtasksByParent])
+  }, [tasks, search, statusFilter, priorityFilter, assigneeFilter, sortKey, sortDir, subtasksByParent])
+
+  // Distinct assignee names from current task set (top-level only) for filter dropdown.
+  const assigneeOptions = useMemo(() => {
+    if (!tasks) return [] as string[]
+    const set = new Set<string>()
+    for (const t of tasks) {
+      if (t.parent_task_id) continue
+      if (t.assignee_name) set.add(t.assignee_name)
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [tasks])
+
+  // Group the filtered task list into buckets when groupBy is set. Each bucket
+  // becomes a collapsible header in the list view. Sort order within each
+  // bucket follows the existing sortKey/sortDir.
+  const groupedFiltered = useMemo<Array<{ key: string; label: string; tasks: any[] }>>(() => {
+    if (groupBy === 'none') return [{ key: 'all', label: '', tasks: filtered }]
+    const buckets = new Map<string, { label: string; tasks: any[] }>()
+    function bucketFor(t: any): { key: string; label: string } {
+      if (groupBy === 'status') return { key: t.status || 'No Status', label: t.status || 'No Status' }
+      if (groupBy === 'priority') return { key: t.priority || 'No Priority', label: t.priority || 'No Priority' }
+      if (groupBy === 'assignee') return t.assignee_name ? { key: t.assignee_name, label: t.assignee_name } : { key: '__unassigned__', label: 'Unassigned' }
+      if (groupBy === 'property') return t.property_name ? { key: t.property_name, label: t.property_name } : { key: '__no_property__', label: 'No Property' }
+      return { key: 'all', label: '' }
+    }
+    for (const t of filtered) {
+      const b = bucketFor(t)
+      if (!buckets.has(b.key)) buckets.set(b.key, { label: b.label, tasks: [] })
+      buckets.get(b.key)!.tasks.push(t)
+    }
+    // Stable, deterministic group ordering for status/priority — others sort alpha.
+    const STATUS_ORDER = ['To Do', 'In Progress', 'Blocked', 'Done', 'No Status']
+    const PRIORITY_ORDER = ['Urgent', 'High', 'Medium', 'Low', 'No Priority']
+    const entries = Array.from(buckets.entries()).map(([key, v]) => ({ key, label: v.label, tasks: v.tasks }))
+    if (groupBy === 'status') {
+      entries.sort((a, b) => STATUS_ORDER.indexOf(a.key) - STATUS_ORDER.indexOf(b.key))
+    } else if (groupBy === 'priority') {
+      entries.sort((a, b) => PRIORITY_ORDER.indexOf(a.key) - PRIORITY_ORDER.indexOf(b.key))
+    } else {
+      entries.sort((a, b) => a.label.localeCompare(b.label))
+    }
+    return entries
+  }, [filtered, groupBy])
 
   function toggleExpand(taskId: string) {
     setExpandedTasks(prev => {
@@ -1047,6 +1102,51 @@ export default function TasksPage() {
             {s === 'open' ? `Open (${stats.total - stats.done})` : s === 'all' ? `All (${stats.total})` : s}
           </button>
         ))}
+        <div className="h-5 w-px bg-border mx-1" />
+        <select
+          value={priorityFilter}
+          onChange={e => setPriorityFilter(e.target.value as any)}
+          className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
+          aria-label="Filter by priority"
+        >
+          <option value="all">Priority: All</option>
+          <option value="Urgent">Urgent</option>
+          <option value="High">High</option>
+          <option value="Medium">Medium</option>
+          <option value="Low">Low</option>
+        </select>
+        <select
+          value={assigneeFilter}
+          onChange={e => setAssigneeFilter(e.target.value)}
+          className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground max-w-[160px] truncate"
+          aria-label="Filter by assignee"
+        >
+          <option value="all">Assignee: All</option>
+          <option value="unassigned">Unassigned</option>
+          {assigneeOptions.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        <select
+          value={groupBy}
+          onChange={e => setGroupBy(e.target.value as any)}
+          className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
+          aria-label="Group by"
+        >
+          <option value="none">Group: None</option>
+          <option value="status">Status</option>
+          <option value="priority">Priority</option>
+          <option value="assignee">Assignee</option>
+          <option value="property">Property</option>
+        </select>
+        {(priorityFilter !== 'all' || assigneeFilter !== 'all' || groupBy !== 'none') && (
+          <button
+            onClick={() => { setPriorityFilter('all'); setAssigneeFilter('all'); setGroupBy('none') }}
+            className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+          >
+            Reset
+          </button>
+        )}
         <div className="relative ml-auto">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input type="search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm" />
@@ -1100,7 +1200,36 @@ export default function TasksPage() {
                   setNewForm(f => ({ ...f, list_id: defaultListId }))
                   setAddOpen(true)
                 } } : undefined} /></td></tr>
-              ) : filtered.map((task: any) => {
+              ) : (() => {
+                // When a Group By is active we render a small header row
+                // before each bucket. Tracks the previously emitted group key
+                // across the iteration so headers only appear at transitions.
+                let lastGroupKey: string | null = null
+                function groupKeyOf(t: any): string | null {
+                  if (groupBy === 'none') return null
+                  if (groupBy === 'status') return t.status || 'No Status'
+                  if (groupBy === 'priority') return t.priority || 'No Priority'
+                  if (groupBy === 'assignee') return t.assignee_name || '__unassigned__'
+                  if (groupBy === 'property') return t.property_name || '__no_property__'
+                  return null
+                }
+                function groupLabelOf(key: string): string {
+                  if (key === '__unassigned__') return 'Unassigned'
+                  if (key === '__no_property__') return 'No Property'
+                  return key
+                }
+                const colCount = canEdit ? 8 : 6
+                return filtered.map((task: any) => {
+                  const groupKey = groupKeyOf(task)
+                  const showGroupHeader = groupKey !== null && groupKey !== lastGroupKey
+                  if (showGroupHeader) lastGroupKey = groupKey
+                  const groupHeader = showGroupHeader ? (
+                    <tr key={`group-${groupKey}`} className="bg-muted/40 border-y border-border">
+                      <td colSpan={colCount} className="py-1.5 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {groupLabelOf(groupKey!)}
+                      </td>
+                    </tr>
+                  ) : null
                 const overdue = task.due_date && isPast(new Date(task.due_date + 'T00:00:00')) && !isToday(new Date(task.due_date + 'T00:00:00')) && task.status !== 'Done'
                 const subs = subtasksByParent.get(task.id) || []
                 const hasSubs = subs.length > 0
@@ -1110,6 +1239,7 @@ export default function TasksPage() {
                 const isSelected = selectedIds.has(task.id)
                 return (
                   <React.Fragment key={task.id}>
+                    {groupHeader}
                     <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
                       {canEdit && (
                         <td className="py-2 pl-3 pr-1 sticky left-0 z-10 bg-background w-8" onClick={e => e.stopPropagation()}>
@@ -1189,7 +1319,8 @@ export default function TasksPage() {
                     })}
                   </React.Fragment>
                 )
-              })}
+                })
+              })()}
             </tbody>
           </table>
         </div>

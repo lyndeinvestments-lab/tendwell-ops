@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment, useCallback, useEffect } from 'react'
+import React, { useState, useMemo, Fragment, useCallback, useEffect } from 'react'
 import { useAlerts } from '@/pages/alerts'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
@@ -60,6 +60,15 @@ function StageBadge({ stage }: { stage: string | null }) {
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium break-words">{value}</span>
+    </div>
+  )
 }
 
 function AssignCleanerInline({ propertyId }: { propertyId: string }) {
@@ -133,7 +142,7 @@ export default function CostTrackingPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
-  usePageTitle('Cost Tracking')
+  usePageTitle('Master List')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('name')
@@ -145,6 +154,30 @@ export default function CostTrackingPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [localProperties, setLocalProperties] = useState<any[] | null>(null)
   const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set())
+  // Master-list consolidation: when true, query the full `properties` table to
+  // include non-operational stages (Lead, Quote, Offboarded). Default off so
+  // existing Cost Tracking users see the same set of rows they're used to.
+  const [showAllStages, setShowAllStages] = useState(false)
+
+  // Read ?stage= deep link from /master-list → /cost-tracking redirects so old
+  // links from the dashboard cards keep working post-consolidation.
+  useEffect(() => {
+    const hash = window.location.hash || ''
+    const qIdx = hash.indexOf('?')
+    if (qIdx === -1) return
+    const params = new URLSearchParams(hash.slice(qIdx))
+    const urlStage = params.get('stage')
+    if (urlStage) {
+      const normalized = urlStage.charAt(0).toUpperCase() + urlStage.slice(1)
+      if (STATUS_OPTIONS.includes(normalized)) {
+        setStatusFilter(normalized)
+        setPage(1)
+      } else if (urlStage === 'all') {
+        setShowAllStages(true)
+      }
+      window.history.replaceState(null, '', window.location.pathname + hash.slice(0, qIdx))
+    }
+  }, [])
 
   const { getNumber } = useAppSettings()
   const inspectionCost = getNumber('cost_inspection', 15)
@@ -165,11 +198,29 @@ export default function CostTrackingPage() {
   }, [activeAlerts])
 
   const { data: properties, isLoading } = useQuery({
-    queryKey: ['/supabase/operational_properties'],
+    queryKey: ['/supabase/operational_properties', showAllStages ? 'all-stages' : 'operational'],
     queryFn: async () => {
+      // Pull every operational_properties view column so the merged Master List
+      // expanded row can show all property details — address, bed mix, codes,
+      // linen counts, dates — without a second round-trip.
+      if (showAllStages) {
+        const { data, error } = await supabase
+          .from('properties')
+          .select('*, pipeline_stages!properties_stage_id_fkey(name, slug, color)')
+          .is('archived_at', null)
+        if (error) throw error
+        // Flatten stage_name/slug/color into top-level fields so the row
+        // renderer matches the operational_properties view shape.
+        return (data || []).map((p: any) => ({
+          ...p,
+          stage_name: p.pipeline_stages?.name || null,
+          stage_slug: p.pipeline_stages?.slug || null,
+          stage_color: p.pipeline_stages?.color || null,
+        }))
+      }
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost, total_estimated_cost, estimated_profit, profit_percentage, notes, estimated_deep_clean_cost, deep_clean_3x_ce, profit_deep_clean, number_of_beds, linen_program, linen_program_cost')
+        .select('*')
       if (error) throw error
       return data || []
     },
@@ -285,7 +336,12 @@ export default function CostTrackingPage() {
     if (!displayProperties.length && isLoading) return []
     let arr = displayProperties.filter((p: any) => {
       const q = search.toLowerCase()
-      const matchSearch = !q || (p.name?.toLowerCase().includes(q) || p.stage_name?.toLowerCase().includes(q))
+      const matchSearch = !q || (
+        p.name?.toLowerCase().includes(q)
+        || p.stage_name?.toLowerCase().includes(q)
+        || p.address?.toLowerCase().includes(q)
+        || p.client?.toLowerCase().includes(q)
+      )
       const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
       return matchSearch && matchStatus
     })
@@ -300,6 +356,17 @@ export default function CostTrackingPage() {
   }, [displayProperties, search, statusFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  // Stage tally across the loaded set (pre-filter) so the badge bar always
+  // reflects portfolio composition, not the active filter view.
+  const stageTally = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const p of displayProperties) {
+      const k = p.stage_name || 'Unknown'
+      counts[k] = (counts[k] || 0) + 1
+    }
+    return counts
+  }, [displayProperties])
 
   const totals = useMemo(() => {
     if (!filtered?.length) return null
@@ -367,10 +434,45 @@ export default function CostTrackingPage() {
     <div className="p-5 h-full flex flex-col space-y-4">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Cost Tracking</h1>
-          <p className="text-sm text-muted-foreground">Operational properties — click cells to edit</p>
+          <h1 className="text-xl font-semibold text-foreground">Master List <span className="text-muted-foreground text-sm font-normal">· Cost Tracking</span></h1>
+          <p className="text-sm text-muted-foreground">Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates).</p>
+          {!isLoading && Object.keys(stageTally).length > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap" data-testid="stage-tally">
+              <span className="text-xs text-muted-foreground">Showing:</span>
+              {(['Active', 'Onboarding', 'Offboarding', 'Lead', 'Quote', 'Offboarded'] as const).map(stage => {
+                const n = stageTally[stage] || 0
+                if (n === 0) return null
+                return (
+                  <button
+                    key={stage}
+                    type="button"
+                    onClick={() => { setStatusFilter(statusFilter === stage ? 'all' : stage); setPage(1) }}
+                    className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+                    title={`Filter to ${stage}`}
+                    data-testid={`tally-${stage}`}
+                  >
+                    <span className="inline-flex items-center gap-1 align-middle">
+                      <StageBadge stage={stage} />
+                      <span className={`text-xs font-semibold ${statusFilter === stage ? 'text-primary' : 'text-foreground'}`}>{n}</span>
+                    </span>
+                  </button>
+                )
+              })}
+              <span className="text-xs text-muted-foreground">· Total {displayProperties.length}</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title="Include Lead, Quote, and Offboarded properties">
+            <input
+              type="checkbox"
+              checked={showAllStages}
+              onChange={e => { setShowAllStages(e.target.checked); setPage(1) }}
+              className="h-3.5 w-3.5"
+              data-testid="checkbox-all-stages"
+            />
+            All stages
+          </label>
           <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
             <SelectTrigger className="h-8 w-44 text-sm" data-testid="select-status-filter">
               <SelectValue placeholder="All Statuses" />
@@ -422,6 +524,8 @@ export default function CostTrackingPage() {
             <tr>
               <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Address</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Bd / Ba</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>Client Charged <SortIcon col="ce_charged" /></th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
               <th className={thCls} onClick={() => toggleSort('est_laundry')} title="Formula: beds × 11.5 lbs × $0.69/lb (≈ $7.94 per bed). Editable per row.">Laundry <SortIcon col="est_laundry" /></th>
@@ -441,14 +545,14 @@ export default function CostTrackingPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(15)].map((_, j) => (
+                  {[...Array(17)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={15}>
+                <td colSpan={17}>
                   <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
                 </td>
               </tr>
@@ -484,6 +588,18 @@ export default function CostTrackingPage() {
                     </div>
                   </td>
                   <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>{p.address || '—'}</td>
+                  <td className="py-2 px-3 text-xs whitespace-nowrap">
+                    {(p.bedrooms != null || p.full_baths != null) ? (
+                      <span>
+                        <span className="font-medium">{p.bedrooms ?? '—'}</span>
+                        <span className="text-muted-foreground"> / </span>
+                        <span className="font-medium">{p.full_baths ?? '—'}</span>
+                        {p.half_baths ? <span className="text-muted-foreground">+{p.half_baths}½</span> : null}
+                        {p.square_footage ? <span className="text-muted-foreground"> · {Number(p.square_footage).toLocaleString()} sf</span> : null}
+                      </span>
+                    ) : <span className="text-muted-foreground">—</span>}
+                  </td>
                   <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-ce_charged`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
                     <InlineEdit
                       value={p.ce_charged}
@@ -556,41 +672,125 @@ export default function CostTrackingPage() {
                   </ContextMenuContent>
                 </ContextMenu>
                 {expandedRow === p.id && (
-                  <tr className="bg-muted/20 border-b border-border/50">
-                    <td colSpan={12} className="py-3 px-6">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4 text-xs mb-3">
-                        <div>
-                          <span className="text-muted-foreground block">Est Laundry</span>
-                          <span className="font-medium">{fmt(p.est_laundry)}</span>
+                  <tr className="bg-muted/30 border-b border-border/50">
+                    <td colSpan={17} className="py-4 px-6 space-y-4">
+                      {/* Banner — makes the expanded panel obviously a "Master List record" */}
+                      <div className="flex items-center justify-between gap-4 pb-2 border-b border-border/60">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-sm font-semibold text-foreground">{p.name}</span>
+                          <StageBadge stage={p.stage_name} />
+                          {p.client && <span className="text-xs text-muted-foreground">· {p.client}</span>}
+                          {p.address && <span className="text-xs text-muted-foreground">· {p.address}</span>}
                         </div>
-                        <div>
-                          <span className="text-muted-foreground block">Est Consumables</span>
-                          <span className="font-medium">{fmt(p.est_consumables)}</span>
+                        <button
+                          onClick={() => openPropertyModal(p.id)}
+                          className="text-xs text-primary hover:underline"
+                          data-testid={`button-open-modal-${p.id}`}
+                        >
+                          Open full property →
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* Cost breakdown */}
+                        <div className="rounded-md border border-border/60 bg-card p-3">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Cost Breakdown</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                            <Field label="Est Laundry" value={fmt(p.est_laundry)} />
+                            <Field label="Est Consumables" value={fmt(p.est_consumables)} />
+                            <Field label="Inspection" value={fmt(inspectionCost)} />
+                            <Field label="Trash" value={fmt(trashCost)} />
+                            <Field label="Cleaner Pay" value={fmt(p.cleaner_pay)} />
+                            <Field label="Linen Program" value={p.linen_program ? fmt(p.linen_program_cost) : 'No'} />
+                            <Field label="Total Cost" value={fmt(p.total_estimated_cost)} />
+                            <Field label="CE Charged" value={fmt(p.ce_charged)} />
+                            <Field label="Profit" value={fmt(p.estimated_profit)} />
+                            <Field label="Profit %" value={p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '—'} />
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground block">Inspection</span>
-                          <span className="font-medium">{fmt(inspectionCost)}</span>
+
+                        {/* Master List details — every field preserved */}
+                        <div className="rounded-md border border-border/60 bg-card p-3">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Property Details</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                            <Field label="Address" value={p.address || '—'} />
+                            <Field label="Client" value={p.client || '—'} />
+                            <Field label="Bedrooms" value={p.bedrooms ?? '—'} />
+                            <Field label="Full Baths" value={p.full_baths ?? '—'} />
+                            <Field label="Half Baths" value={p.half_baths ?? '—'} />
+                            <Field label="Kitchens" value={p.kitchens ?? '—'} />
+                            <Field label="Sq Footage" value={p.square_footage ? Number(p.square_footage).toLocaleString() : '—'} />
+                            <Field label="Beds (count)" value={p.number_of_beds ?? '—'} />
+                            <Field label="Guest Count" value={p.guest_count ?? '—'} />
+                            <Field label="Hot Tub" value={p.hot_tub ? 'Yes' : 'No'} />
+                            <Field label="Pet Friendly" value={p.pet_friendly ? 'Yes' : 'No'} />
+                            <Field label="$/Sq Ft" value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
+                            <Field label="CE/Sq Ft" value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
+                            <Field label="Suggested Pay" value={fmt(p.suggested_pay)} />
+                            <Field label="Frequency" value={p.cleaning_frequency || '—'} />
+                            <Field label="Cleans / Mo" value={p.avg_cleans_per_month ?? '—'} />
+                            <Field label="First Clean" value={p.first_clean_date || '—'} />
+                            <Field label="Onboarding" value={p.onboarding_date || '—'} />
+                            <Field label="Offboarding" value={p.offboarding_date || '—'} />
+                            <Field label="Filter Size" value={p.filter_size || '—'} />
+                            <Field label="Last Filter" value={p.last_filter_changed || '—'} />
+                            <Field label="Next Filter Due" value={p.next_filter_due || '—'} />
+                            <Field label="Breezeway" value={p.breezeway_name || p.breezeway_id || '—'} />
+                          </div>
                         </div>
-                        <div>
-                          <span className="text-muted-foreground block">Trash</span>
-                          <span className="font-medium">{fmt(trashCost)}</span>
+
+                        {/* Linen counts */}
+                        <div className="rounded-md border border-border/60 bg-card p-3">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Linens &amp; Beds</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                            <Field label="King Beds" value={p.king_beds ?? '—'} />
+                            <Field label="Queen Beds" value={p.queen_beds ?? '—'} />
+                            <Field label="Full Beds" value={p.full_beds ?? '—'} />
+                            <Field label="Twin Beds" value={p.twin_beds ?? '—'} />
+                            <Field label="Bath Towels" value={p.bath_towels ?? '—'} />
+                            <Field label="Hand Towels" value={p.hand_towels ?? '—'} />
+                            <Field label="Washcloths" value={p.washcloths ?? '—'} />
+                            <Field label="Bath Mats" value={p.bathmats ?? '—'} />
+                            <Field label="Pool Towels" value={p.pool_towels ?? '—'} />
+                            {/* Bed Sizes free-text was redundant with the
+                                King/Queen/Full/Twin counts above — only show
+                                it as a fallback if no individual counts exist
+                                AND the legacy text is non-empty. */}
+                            {p.bed_sizes_text && (p.king_beds == null && p.queen_beds == null && p.full_beds == null && p.twin_beds == null) && (
+                              <Field label="Bed Sizes (legacy)" value={p.bed_sizes_text} />
+                            )}
+                          </div>
+                          {p.linen_notes && (
+                            <div className="text-xs text-muted-foreground mt-2"><span className="font-medium">Linen notes:</span> {p.linen_notes}</div>
+                          )}
                         </div>
-                        <div>
-                          <span className="text-muted-foreground block">Cleaner Pay</span>
-                          <span className="font-medium">{fmt(p.cleaner_pay)}</span>
+
+                        {/* Codes & access — always rendered so the "info architecture" stays consistent */}
+                        <div className="rounded-md border border-border/60 bg-card p-3">
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access &amp; Codes</div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                            <Field label="Auto Code" value={p.auto_code || '—'} />
+                            <Field label="Door Code" value={p.door_code || '—'} />
+                            <Field label="Other Codes" value={p.other_codes || '—'} />
+                            <Field label="WiFi" value={p.wifi_info || '—'} />
+                          </div>
                         </div>
                       </div>
-                      <div className="text-xs">
-                        <span className="text-muted-foreground block mb-1">Notes</span>
-                        <InlineEdit
-                          value={p.notes}
-                          type="text"
-                          placeholder="Add notes…"
-                          onSave={v => updateProperty({ id: p.id, field: 'notes', value: v || null })}
-                          testId={`inline-notes-${p.id}`}
-                        />
+
+                      <div className="rounded-md border border-border/60 bg-card p-3 space-y-3">
+                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes &amp; Cleaner</div>
+                        <div className="text-xs">
+                          <span className="text-muted-foreground block mb-1">Notes</span>
+                          <InlineEdit
+                            value={p.notes}
+                            type="text"
+                            placeholder="Add notes…"
+                            onSave={v => updateProperty({ id: p.id, field: 'notes', value: v || null })}
+                            testId={`inline-notes-${p.id}`}
+                          />
+                        </div>
+                        <AssignCleanerInline propertyId={p.id} />
                       </div>
-                      <AssignCleanerInline propertyId={p.id} />
                     </td>
                   </tr>
                 )}
@@ -599,7 +799,7 @@ export default function CostTrackingPage() {
             )}
             {totals && !isLoading && (
               <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
-                <td colSpan={2} className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
+                <td colSpan={4} className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>

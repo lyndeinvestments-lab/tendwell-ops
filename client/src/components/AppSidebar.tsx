@@ -18,7 +18,10 @@ import { canAccessView } from '@/lib/auth'
 interface NavItem {
   title: string
   href: string
-  view: string
+  // string OR array of view ids — when an array is given the user needs access
+  // to at least one of them. Lets the merged Master List entry show up for
+  // legacy custom-role users that only have `master-list` permission.
+  view: string | string[]
   icon: React.ComponentType<{ className?: string }>
 }
 
@@ -62,11 +65,12 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Admin',
     items: [
-      { title: 'Cost Tracking', href: '/cost-tracking', view: 'cost-tracking', icon: DollarSign },
-      { title: 'Master List', href: '/master-list', view: 'master-list', icon: ListFilter },
+      { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
       { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
-      { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
+      // Pro Forma now hosts the Live Pro Forma (forecaster) + Per-Property tabs
+      // in a single page. Either historical permission shows the entry.
+      { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
@@ -77,6 +81,14 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
 ]
 
 const COLLAPSED_STORAGE_KEY = 'tendwell-sidebar-collapsed'
+
+function getInitials(text: string): string {
+  const cleaned = text.split('@')[0].replace(/[._-]+/g, ' ').trim()
+  const parts = cleaned.split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return 'U'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
 
 function loadCollapsedState(): Record<string, boolean> {
   try {
@@ -107,7 +119,9 @@ export function AppSidebar() {
 
   return (
     <Sidebar role="navigation" aria-label="Main navigation">
-      {/* Brand header */}
+      {/* Brand header — single brand mark + product name. The user identity
+          lives in the footer (avoids the user-label appearing alongside the
+          identical footer block which previously read as a duplicated tile). */}
       <SidebarHeader className="px-4 py-3 border-b border-sidebar-border">
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
@@ -116,16 +130,19 @@ export function AppSidebar() {
               <path d="M9 22V12h6v10" stroke="currentColor" strokeLinecap="round"/>
             </svg>
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="text-sm font-semibold text-sidebar-foreground leading-none">Tendwell Ops</div>
-            <div className="text-xs text-muted-foreground mt-0.5">{user.label}</div>
+            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">Property operations</div>
           </div>
         </div>
       </SidebarHeader>
 
       <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
-          const visibleItems = section.items.filter(item => canAccessView(item.view, effectiveUser))
+          const visibleItems = section.items.filter(item => {
+            const ids = Array.isArray(item.view) ? item.view : [item.view]
+            return ids.some(v => canAccessView(v, effectiveUser))
+          })
           if (visibleItems.length === 0) return null
           const isCollapsed = !!collapsed[section.label]
           return (
@@ -145,13 +162,14 @@ export function AppSidebar() {
                   <SidebarMenu>
                     {visibleItems.map((item) => {
                       const isActive = location === item.href || (item.href !== '/' && location.startsWith(item.href))
+                      const viewKey = Array.isArray(item.view) ? item.view[0] : item.view
                       return (
-                        <SidebarMenuItem key={item.view}>
+                        <SidebarMenuItem key={viewKey}>
                           <SidebarMenuButton
                             asChild
                             isActive={isActive}
                             tooltip={item.title}
-                            data-testid={`nav-${item.view}`}
+                            data-testid={`nav-${viewKey}`}
                           >
                             <Link
                               href={item.href}
@@ -175,6 +193,25 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="px-3 py-3 border-t border-sidebar-border space-y-1">
+        {/* User identity row — distinct from the Tendwell brand mark in the
+            header (avoids the "two of the same image" look the previous
+            footer had when both sections rendered the same SVG). */}
+        <div className="flex items-center gap-2 px-1 pb-1">
+          <div
+            aria-hidden="true"
+            className="w-7 h-7 rounded-full bg-muted text-foreground/80 text-[11px] font-semibold flex items-center justify-center flex-shrink-0 border border-border"
+          >
+            {getInitials(user.label || 'U')}
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-sidebar-foreground truncate" title={user.label}>
+              {user.label || 'Signed in'}
+            </div>
+            {effectiveUser?.role && (
+              <div className="text-[10px] text-muted-foreground capitalize truncate">{effectiveUser.role}</div>
+            )}
+          </div>
+        </div>
         <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground/60 mb-1">
           <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">⌘K</kbd>
           <span>Search</span>
