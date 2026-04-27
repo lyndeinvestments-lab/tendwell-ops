@@ -1314,11 +1314,7 @@ export function PropertyDetailModal() {
               {canViewFinancials && (
                 <div className="rounded-md border border-border bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <span className="text-xs text-muted-foreground block">Client Charged</span>
-                      <span className="text-sm font-medium tabular-nums">{property.ce_charged != null ? `$${Number(property.ce_charged).toFixed(2)}` : '—'}</span>
-                    </div>
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
                       <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>

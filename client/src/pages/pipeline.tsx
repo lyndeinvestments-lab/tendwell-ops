@@ -270,10 +270,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           {property.notes.split('\n')[0].slice(0, 60)}{property.notes.split('\n')[0].length > 60 ? '…' : ''}
         </p>
       )}
-      <div className="flex items-center justify-between mt-2 gap-1">
-        {property.ce_charged != null ? (
-          <span className="text-xs text-foreground/80">${property.ce_charged}</span>
-        ) : <span className="text-xs text-muted-foreground">—</span>}
+      <div className="flex items-center justify-end mt-2 gap-1">
         <div className="flex items-center gap-1 flex-shrink-0">
           {isStale && (
             <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
