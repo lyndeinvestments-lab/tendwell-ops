@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, CheckCircle2, Circle, Plus } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 
@@ -39,128 +39,6 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
       <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground" title={copied ? 'Copied!' : 'Copy'}>
         {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
       </button>
-    </div>
-  )
-}
-
-// ── Onboarding Checklist ──────────────────────────────────────────────────────
-function OnboardingChecklist({ propertyId }: { propertyId: string }) {
-  const qc = useQueryClient()
-  const { toast } = useToast()
-  const [newTask, setNewTask] = useState('')
-
-  const { data: tasks, isLoading } = useQuery({
-    queryKey: ['/supabase/onboarding-tasks', propertyId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('onboarding_tasks')
-        .select('*')
-        .eq('property_id', propertyId)
-        .order('sort_order')
-      if (error) throw error
-      if (data && data.length === 0) {
-        // Auto-create from templates
-        const { data: templates } = await supabase
-          .from('onboarding_task_templates')
-          .select('task_name, sort_order')
-          .eq('is_active', true)
-          .order('sort_order')
-        if (templates && templates.length > 0) {
-          const rows = templates.map(t => ({
-            property_id: propertyId,
-            task_name: t.task_name,
-            sort_order: t.sort_order,
-          }))
-          await supabase.from('onboarding_tasks').insert(rows)
-          const { data: created } = await supabase
-            .from('onboarding_tasks')
-            .select('*')
-            .eq('property_id', propertyId)
-            .order('sort_order')
-          return created || []
-        }
-      }
-      return data || []
-    },
-  })
-
-  const { mutate: toggleTask } = useMutation({
-    mutationFn: async ({ id, complete }: { id: string; complete: boolean }) => {
-      const { error } = await supabase
-        .from('onboarding_tasks')
-        .update({ is_complete: complete, completed_at: complete ? new Date().toISOString() : null })
-        .eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks', propertyId] })
-    },
-  })
-
-  const { mutate: addTask } = useMutation({
-    mutationFn: async (taskName: string) => {
-      const maxOrder = (tasks || []).reduce((m: number, t: any) => Math.max(m, t.sort_order || 0), 0)
-      const { error } = await supabase.from('onboarding_tasks').insert({
-        property_id: propertyId,
-        task_name: taskName,
-        sort_order: maxOrder + 1,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-tasks', propertyId] })
-      setNewTask('')
-    },
-  })
-
-  if (isLoading) return <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
-
-  const completed = (tasks || []).filter((t: any) => t.is_complete).length
-  const total = (tasks || []).length
-  const pct = total > 0 ? (completed / total) * 100 : 0
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <div className="flex items-center justify-between text-xs mb-1">
-          <span className="text-muted-foreground">{completed} of {total} complete</span>
-          <span className="font-medium">{pct.toFixed(0)}%</span>
-        </div>
-        <div className="h-2 rounded-full bg-muted overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-300 ${pct === 100 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'}`}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-      </div>
-      <div className="space-y-1">
-        {(tasks || []).map((t: any) => (
-          <label
-            key={t.id}
-            className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer ${t.is_complete ? 'opacity-60' : ''}`}
-          >
-            <button
-              onClick={() => toggleTask({ id: t.id, complete: !t.is_complete })}
-              className="flex-shrink-0"
-            >
-              {t.is_complete ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Circle className="w-4 h-4 text-muted-foreground" />}
-            </button>
-            <span className={`text-sm ${t.is_complete ? 'line-through text-muted-foreground' : ''}`}>{t.task_name}</span>
-          </label>
-        ))}
-      </div>
-      <div className="flex items-center gap-2">
-        <Input
-          value={newTask}
-          onChange={e => setNewTask(e.target.value)}
-          placeholder="Add a task…"
-          className="h-7 text-xs flex-1"
-          onKeyDown={e => e.key === 'Enter' && newTask.trim() && addTask(newTask.trim())}
-        />
-        <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!newTask.trim()} onClick={() => addTask(newTask.trim())}>
-          <Plus className="w-3 h-3" />
-        </Button>
-      </div>
     </div>
   )
 }
@@ -1682,15 +1560,6 @@ export function PropertyDetailModal() {
                     })}
                   </div>
                 </div>
-                {stageName === 'Onboarding' && (
-                  <>
-                    <Separator />
-                    <div>
-                      <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Onboarding Checklist</h4>
-                      <OnboardingChecklist propertyId={property.id} />
-                    </div>
-                  </>
-                )}
               </TabsContent>
             )}
 
