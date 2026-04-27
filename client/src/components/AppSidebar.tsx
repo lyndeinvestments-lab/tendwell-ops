@@ -67,6 +67,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
+      { title: 'Forecaster', href: '/forecaster', view: 'forecaster', icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
