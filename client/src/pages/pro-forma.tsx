@@ -954,9 +954,9 @@ export default function ProFormaPage() {
               })
             )}
             {totals && !isLoading && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                <td className="py-2 px-3" />
-                <td className="py-2 px-3 text-xs uppercase tracking-wide" colSpan={7}>
+              <tr className="bg-muted/70 border-t-2 border-border font-semibold sticky bottom-0 z-20" data-testid="row-proforma-totals">
+                <td className="py-2 px-3 sticky left-0 bottom-0 z-30 bg-muted/90 backdrop-blur" />
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-[44px] bottom-0 z-30 bg-muted/90 backdrop-blur" colSpan={7}>
                   Monthly Totals ({filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length})
                   {duplicateExcludedIds.size > 0 && (
                     <span className="ml-1 font-normal text-amber-600 dark:text-amber-400">
