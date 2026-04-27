@@ -17,7 +17,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAppSettings } from '@/hooks/use-app-settings'
-import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
@@ -67,6 +67,175 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
     <div>
       <span className="text-muted-foreground block">{label}</span>
       <span className="font-medium break-words">{value}</span>
+    </div>
+  )
+}
+
+// Setup status tiles for the expanded Master List row. Surfaces the four
+// operational onboarding signals (linen, lock access, Wi-Fi, AC filter) with
+// Complete / Partial / Missing badges and a deep link to the relevant page.
+// Linen logic intentionally does NOT treat individual zero bed types as
+// missing — a property can legitimately have no king/queen/full/twin beds.
+// Linen is "complete" when the aggregate bed count is positive AND the core
+// towel set is populated.
+function SetupStatusTiles({ property }: { property: any }) {
+  const bedTotal =
+    (Number(property.king_beds) || 0) +
+    (Number(property.queen_beds) || 0) +
+    (Number(property.full_beds) || 0) +
+    (Number(property.twin_beds) || 0)
+  const coreTowels = ['bath_towels', 'hand_towels', 'washcloths'] as const
+  const hasAnyTowel = coreTowels.some(k => property[k] != null && Number(property[k]) > 0)
+  const hasAllCoreTowels = coreTowels.every(k => property[k] != null && Number(property[k]) > 0)
+  const hasBathmats = property.bathmats != null && Number(property.bathmats) > 0
+  const hasBedConfig = bedTotal > 0
+  const linenMissing: string[] = []
+  if (!hasBedConfig) linenMissing.push('bed counts')
+  if (!hasAllCoreTowels) {
+    for (const t of coreTowels) {
+      if (property[t] == null || Number(property[t]) === 0) linenMissing.push(t.replace('_', ' '))
+    }
+  }
+  if (!hasBathmats && (Number(property.full_baths) || 0) > 0) linenMissing.push('bathmats')
+  const linenStatus: 'complete' | 'partial' | 'missing' =
+    !hasAnyTowel && !hasBedConfig
+      ? 'missing'
+      : hasBedConfig && hasAllCoreTowels
+        ? 'complete'
+        : 'partial'
+
+  const hasAuto = !!(property.auto_code && String(property.auto_code).trim())
+  const hasDoor = !!(property.door_code && String(property.door_code).trim())
+  const hasOther = !!(property.other_codes && String(property.other_codes).trim())
+  const lockStatus: 'complete' | 'missing' = (hasAuto || hasDoor || hasOther) ? 'complete' : 'missing'
+
+  const hasWifi = !!(property.wifi_info && String(property.wifi_info).trim())
+  const wifiStatus: 'complete' | 'missing' = hasWifi ? 'complete' : 'missing'
+
+  const hasFilterSize = !!(property.filter_size && String(property.filter_size).trim())
+  const filterStatus: 'complete' | 'missing' = hasFilterSize ? 'complete' : 'missing'
+
+  const STATUS_STYLES: Record<string, string> = {
+    complete: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200 dark:border-green-800',
+    partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+    missing: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800',
+  }
+  const STATUS_LABELS: Record<string, string> = { complete: 'Complete', partial: 'Partial', missing: 'Missing' }
+
+  function StatusBadge({ status }: { status: 'complete' | 'partial' | 'missing' }) {
+    return (
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${STATUS_STYLES[status]}`}
+        data-testid={`setup-badge-${status}`}
+      >
+        {STATUS_LABELS[status]}
+      </span>
+    )
+  }
+
+  function Tile({
+    icon: Icon,
+    title,
+    status,
+    href,
+    children,
+    testId,
+  }: {
+    icon: React.ComponentType<{ className?: string }>
+    title: string
+    status: 'complete' | 'partial' | 'missing'
+    href: string
+    children: React.ReactNode
+    testId: string
+  }) {
+    return (
+      <div className="rounded-md border border-border bg-card p-3 flex flex-col gap-2" data-testid={testId}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-xs font-semibold">{title}</span>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+        <div className="text-xs text-muted-foreground space-y-1">{children}</div>
+        <a
+          href={href}
+          className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
+        >
+          Open {title} <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+    )
+  }
+
+  return (
+    <div data-testid={`setup-status-tiles-${property.id}`}>
+      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Setup Status</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <Tile icon={BedDouble} title="Linen Setup" status={linenStatus} href="/linen-tracker" testId={`tile-linen-${property.id}`}>
+          <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            <span>Bath towels</span>
+            <span className="text-foreground tabular-nums text-right">{property.bath_towels ?? '—'}</span>
+            <span>Hand towels</span>
+            <span className="text-foreground tabular-nums text-right">{property.hand_towels ?? '—'}</span>
+            <span>Washcloths</span>
+            <span className="text-foreground tabular-nums text-right">{property.washcloths ?? '—'}</span>
+            <span>Bathmats</span>
+            <span className="text-foreground tabular-nums text-right">{property.bathmats ?? '—'}</span>
+            <span>Pool towels</span>
+            <span className="text-foreground tabular-nums text-right">{property.pool_towels ?? '—'}</span>
+          </div>
+          {linenStatus !== 'complete' && linenMissing.length > 0 && (
+            <p className="text-[10px] text-amber-700 dark:text-amber-400">Missing: {linenMissing.join(', ')}</p>
+          )}
+        </Tile>
+
+        <Tile icon={Lock} title="Lock Access Setup" status={lockStatus} href="/access-codes" testId={`tile-lock-${property.id}`}>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+            <span>Auto code</span>
+            <span className="text-foreground truncate text-right">{hasAuto ? property.auto_code : '—'}</span>
+            <span>Door code</span>
+            <span className="text-foreground truncate text-right">{hasDoor ? property.door_code : '—'}</span>
+            <span>Other</span>
+            <span className="text-foreground truncate text-right">{hasOther ? property.other_codes : '—'}</span>
+          </div>
+          {lockStatus === 'missing' && (
+            <p className="text-[10px] text-amber-700 dark:text-amber-400">
+              Add at least one: auto code, door code, or other access info.
+            </p>
+          )}
+        </Tile>
+
+        <Tile icon={Wifi} title="Wi-Fi Setup" status={wifiStatus} href="/access-codes" testId={`tile-wifi-${property.id}`}>
+          {hasWifi ? (
+            <p className="text-foreground whitespace-pre-wrap break-words">{property.wifi_info}</p>
+          ) : (
+            <p className="text-[11px] text-amber-700 dark:text-amber-400">No Wi-Fi info captured.</p>
+          )}
+        </Tile>
+
+        <Tile icon={Wind} title="AC Filter Setup" status={filterStatus} href="/ac-filters" testId={`tile-filter-${property.id}`}>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+            <span>Filter size</span>
+            <span className="text-foreground text-right">{hasFilterSize ? property.filter_size : '—'}</span>
+            {property.last_filter_changed && (
+              <>
+                <span>Last change</span>
+                <span className="text-foreground text-right">{String(property.last_filter_changed).slice(0, 10)}</span>
+              </>
+            )}
+            {property.next_filter_due && (
+              <>
+                <span>Next due</span>
+                <span className="text-foreground text-right">{String(property.next_filter_due).slice(0, 10)}</span>
+              </>
+            )}
+          </div>
+          {filterStatus === 'missing' && (
+            <p className="text-[10px] text-amber-700 dark:text-amber-400">Filter size required for filter scheduling.</p>
+          )}
+        </Tile>
+      </div>
     </div>
   )
 }
@@ -230,6 +399,48 @@ export default function CostTrackingPage() {
   useEffect(() => {
     if (properties) setLocalProperties(properties as any[])
   }, [properties])
+
+  // Contacts lookup so the expanded row Client cell can display the same
+  // linked contact (full_name / company / payment_method) as the full
+  // PropertyDetailModal. The operational_properties view does not expose
+  // contact_id, so we always pull from the underlying `properties` table
+  // and merge by id at render time.
+  const { data: propertyContactIds } = useQuery({
+    queryKey: ['/supabase/properties_contact_ids'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, contact_id')
+        .is('archived_at', null)
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const { data: allContactsLite } = useQuery({
+    queryKey: ['/supabase/contacts-lite-cost-tracking'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, company, payment_method')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  const contactById = useMemo(() => {
+    const m: Record<string, { full_name?: string; company?: string; payment_method?: string }> = {}
+    for (const c of allContactsLite || []) m[String(c.id)] = c
+    return m
+  }, [allContactsLite])
+
+  const contactIdByPropertyId = useMemo(() => {
+    const m: Record<string, string | null> = {}
+    for (const r of propertyContactIds || []) m[String(r.id)] = r.contact_id ? String(r.contact_id) : null
+    return m
+  }, [propertyContactIds])
 
   const displayProperties: any[] = localProperties ?? (properties as any[]) ?? []
 
@@ -675,11 +886,26 @@ export default function CostTrackingPage() {
                   <tr className="bg-muted/30 border-b border-border/50">
                     <td colSpan={17} className="py-4 px-6 space-y-4">
                       {/* Banner — makes the expanded panel obviously a "Master List record" */}
+                      {(() => {
+                        const linkedContact = contactById[contactIdByPropertyId[String(p.id)] || '']
+                        const clientLabel = linkedContact?.full_name
+                          ? linkedContact.company && linkedContact.company !== linkedContact.full_name
+                            ? `${linkedContact.full_name} (${linkedContact.company})`
+                            : linkedContact.full_name
+                          : (p.client || p.client_name || null)
+                        return (
                       <div className="flex items-center justify-between gap-4 pb-2 border-b border-border/60">
                         <div className="flex items-center gap-3 flex-wrap">
                           <span className="text-sm font-semibold text-foreground">{p.name}</span>
                           <StageBadge stage={p.stage_name} />
-                          {p.client && <span className="text-xs text-muted-foreground">· {p.client}</span>}
+                          {clientLabel ? (
+                            <span className="text-xs text-muted-foreground" data-testid={`expanded-client-${p.id}`}>
+                              · {clientLabel}
+                              {linkedContact?.payment_method && (
+                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
+                              )}
+                            </span>
+                          ) : null}
                           {p.address && <span className="text-xs text-muted-foreground">· {p.address}</span>}
                         </div>
                         <button
@@ -690,31 +916,31 @@ export default function CostTrackingPage() {
                           Open full property →
                         </button>
                       </div>
+                        )
+                      })()}
+
+                      {/* Setup Status — operational onboarding readiness. Financials
+                          live in the main row + Pro Forma; intentionally absent here. */}
+                      <SetupStatusTiles property={p} />
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Cost breakdown */}
-                        <div className="rounded-md border border-border/60 bg-card p-3">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Cost Breakdown</div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <Field label="Est Laundry" value={fmt(p.est_laundry)} />
-                            <Field label="Est Consumables" value={fmt(p.est_consumables)} />
-                            <Field label="Inspection" value={fmt(inspectionCost)} />
-                            <Field label="Trash" value={fmt(trashCost)} />
-                            <Field label="Cleaner Pay" value={fmt(p.cleaner_pay)} />
-                            <Field label="Linen Program" value={p.linen_program ? fmt(p.linen_program_cost) : 'No'} />
-                            <Field label="Total Cost" value={fmt(p.total_estimated_cost)} />
-                            <Field label="CE Charged" value={fmt(p.ce_charged)} />
-                            <Field label="Profit" value={fmt(p.estimated_profit)} />
-                            <Field label="Profit %" value={p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '—'} />
-                          </div>
-                        </div>
-
                         {/* Master List details — every field preserved */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Property Details</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                             <Field label="Address" value={p.address || '—'} />
-                            <Field label="Client" value={p.client || '—'} />
+                            <Field
+                              label="Client"
+                              value={(() => {
+                                const lc = contactById[contactIdByPropertyId[String(p.id)] || '']
+                                if (lc?.full_name) {
+                                  return lc.company && lc.company !== lc.full_name
+                                    ? `${lc.full_name} (${lc.company})`
+                                    : lc.full_name
+                                }
+                                return p.client || p.client_name || '—'
+                              })()}
+                            />
                             <Field label="Bedrooms" value={p.bedrooms ?? '—'} />
                             <Field label="Full Baths" value={p.full_baths ?? '—'} />
                             <Field label="Half Baths" value={p.half_baths ?? '—'} />

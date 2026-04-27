@@ -218,28 +218,32 @@ export default function ForecasterPage() {
 
   // Synthesizes a DerivedMonth from the QBO P&L blob for a single month so
   // Live Pro Forma can show actuals when proforma_months has no row yet.
-  // Only fills the totals required by computeVariance; per-category splits
-  // (laundry vs supplies vs trash) are not in the QBO summary, so those
-  // variance rows show "Actual = 0" and are flagged unfavorable until the
-  // nightly import populates the proforma_months row.
+  // Mirrors the parsing the Financial Dashboard uses: total cost is
+  // totalCOGS + totalExpenses, with a netIncome fallback of revenue − cost
+  // when QBO didn't supply it. Per-category splits (laundry vs supplies vs
+  // trash) are not in the QBO summary, so those variance rows fall back to
+  // proforma rows when present and show 0 otherwise.
   const qboFallbackRow = useMemo<DerivedMonth | null>(() => {
     const q = lookupQboMonth(selectedMonth)
     if (!q) return null
     const revenue = Number(q.totalIncome) || 0
-    const totalCosts = Number(q.totalExpenses) || 0
-    const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCosts
-    // We cannot decompose totalExpenses into COGS vs OpEx from this blob,
-    // so we treat everything as COGS for the actuals view — the variance
-    // table compares per-category estimates to actuals individually anyway.
-    const cogs = Number(q.totalCOGS) || totalCosts
+    // Financial Dashboard treats totalCost as COGS + OpEx; match that so the
+    // two pages agree on monthly totals when both render the same QBO blob.
+    const cogs = Number(q.totalCOGS) || 0
+    const opex = Number(q.totalExpenses) || 0
+    const totalCost = cogs + opex
+    const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCost
     const grossProfit = revenue - cogs
-    const opex = Math.max(0, totalCosts - cogs)
     return {
       month: selectedMonth,
       label: `${MONTH_NAMES[Number(selectedMonth.split('-')[1]) - 1].slice(0, 3)} ${selectedMonth.split('-')[0].slice(2)}`,
       cleaningFee: 0, services: 0, onboardingRevenue: 0, otherIncome: 0,
       contractorPay: 0, laundry: 0, leadership: 0, supplies: 0,
-      inspections: 0, trash: 0, otherCOGS: cogs, opex,
+      inspections: 0, trash: 0,
+      // Bucket the unallocated COGS into otherCOGS so grand totals are right
+      // even though we can't split it into laundry/supplies/etc.
+      otherCOGS: cogs,
+      opex,
       tasks: undefined, properties: undefined,
       revenue,
       cogs,
@@ -274,9 +278,29 @@ export default function ForecasterPage() {
     return 'qbo'
   }, [actualsRow, histData, selectedMonth])
 
-  // Variance per category — uses estimates × actuals
+  // Variance per category — uses estimates × actuals.
+  //
+  // QBO fallback caveat: when actualsSource === 'qbo' the source blob only
+  // gives us topline numbers (revenue, total cost, net income) — laundry vs
+  // supplies vs trash vs contractor pay aren't broken out. Rather than
+  // showing all zeros (misleading: "we spent $0 on laundry" is false), we
+  // collapse the per-category rows into a single "Total Costs" row backed
+  // by the QBO total cost (COGS + OpEx) and keep the Revenue row, so the
+  // user sees real numbers and a clear topline variance. The banner above
+  // the variance table tells them per-category breakdowns will fill in
+  // after the next nightly proforma import.
   const variance = useMemo(() => {
     if (!estimates || !actualsRow) return null
+    if (actualsSource === 'qbo') {
+      const totalEstimated =
+        estimates.laundry + estimates.supplies + estimates.inspections +
+        estimates.trash + estimates.contractorPay
+      const totalActual = (actualsRow.cogs || 0) + (actualsRow.opex || 0)
+      return computeVariance([
+        { category: 'Total Costs (QBO topline)', estimated: totalEstimated, actual: totalActual },
+        { category: 'Revenue', estimated: estimates.revenue, actual: actualsRow.revenue || 0 },
+      ])
+    }
     return computeVariance([
       { category: 'Laundry', estimated: estimates.laundry, actual: actualsRow.laundry || 0 },
       { category: 'Supplies', estimated: estimates.supplies, actual: actualsRow.supplies || 0 },
@@ -285,7 +309,7 @@ export default function ForecasterPage() {
       { category: 'Contractor Pay', estimated: estimates.contractorPay, actual: actualsRow.contractorPay || 0 },
       { category: 'Revenue', estimated: estimates.revenue, actual: actualsRow.revenue || 0 },
     ])
-  }, [estimates, actualsRow])
+  }, [estimates, actualsRow, actualsSource])
 
   // ── Forecast horizon ────────────────────────
   const forecast = useMemo(() => {
