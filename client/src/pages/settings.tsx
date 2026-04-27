@@ -21,6 +21,7 @@ import {
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
   Lock, Plug, MapPin, Database, Receipt, KeyRound, Bell as BellIcon,
 } from 'lucide-react'
+import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/components/AddressAutocomplete'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -1720,6 +1721,18 @@ function WorkflowTemplatesSection() {
   )
 }
 
+function describeMapsStatus(s: GoogleMapsRuntimeStatus): string {
+  switch (s) {
+    case 'no_key': return 'no key on this build'
+    case 'loading': return 'not loaded yet (open a form with an address field)'
+    case 'ready': return 'loaded and active'
+    case 'script_error': return 'script failed to load — check Maps JavaScript API enablement, HTTP referrer allowlist, billing, and CSP'
+    case 'places_missing': return 'loaded without the Places library — script URL is missing libraries=places'
+    case 'timeout': return 'timed out — likely network blocked or CSP rejected maps.googleapis.com'
+    case 'gm_authFailure': return 'Google rejected the key at runtime — fix HTTP referrer allowlist / billing / Maps JS API enablement'
+  }
+}
+
 function IntegrationsSection() {
   // Integrations are read from import.meta.env at build time. We never read or
   // display the actual key value — only whether a public env var is configured.
@@ -1727,6 +1740,14 @@ function IntegrationsSection() {
   const googleMapsKey = env.VITE_GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_PLACES_API_KEY
   const supabaseUrl = env.VITE_SUPABASE_URL
   const anthropicKeyPresent = !!env.VITE_ANTHROPIC_API_KEY // optional client SDK key, normally server-side only
+
+  // Runtime status from AddressAutocomplete — only meaningful after the user
+  // visits a page that mounts the component, but useful when troubleshooting.
+  const [mapsStatus, setMapsStatus] = useState<GoogleMapsRuntimeStatus>(getGoogleMapsRuntimeStatus())
+  useEffect(() => {
+    const id = window.setInterval(() => setMapsStatus(getGoogleMapsRuntimeStatus()), 1500)
+    return () => window.clearInterval(id)
+  }, [])
 
   type Status = 'connected' | 'configured' | 'not_configured' | 'unknown'
   function statusBadge(s: Status) {
@@ -1754,7 +1775,7 @@ function IntegrationsSection() {
       description: 'Address autocomplete on property forms.',
       status: (googleMapsKey ? 'configured' : 'not_configured') as Status,
       detail: googleMapsKey
-        ? 'Public Maps JS key detected — autocomplete is active on supported forms.'
+        ? `Public Maps JS key is configured. Autocomplete activates on supported forms (with libraries=places); runtime load can still fail due to Maps JavaScript API enablement, HTTP referrer restrictions, billing, or CSP. Address fields fall back to plain text on any failure. Runtime status: ${describeMapsStatus(mapsStatus)}.`
         : 'Set VITE_GOOGLE_MAPS_API_KEY (Maps JS API + Places library) to enable autocomplete. Address fields fall back to plain text.',
     },
     {
@@ -1762,7 +1783,7 @@ function IntegrationsSection() {
       name: 'QuickBooks Online',
       description: 'Pulls actual P&L into the Live Pro Forma.',
       status: 'configured' as Status,
-      detail: 'Connection is managed server-side. Use the “Pull from QBO” button on Pro Forma → Live to fetch the current month.',
+      detail: 'Connection is managed server-side. Actuals refresh nightly via a scheduled QBO import — no manual pull needed.',
     },
     {
       icon: KeyRound,
@@ -1811,6 +1832,7 @@ function IntegrationsSection() {
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   admin: 'Full access to every page, can edit users, roles, and global app settings. Use sparingly.',
+  supervisor: 'Field/team supervisor — manages linen, access codes, inspections, tasks, cleaners, and operational alerts. No access to financial, admin, or QBO settings unless explicitly granted in the matrix.',
   operations: 'Day-to-day operations team — sees properties, linens, AC filters, inspections, tasks, and cleaners.',
   cleaning: 'Linen-focused role for cleaning vendors. Read-only access to linen requirements and inventory.',
   viewer: 'Read-only access to most operational pages. Cannot edit data.',
