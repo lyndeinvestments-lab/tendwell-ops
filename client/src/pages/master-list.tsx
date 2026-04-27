@@ -17,7 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
-import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check, X, ChevronsUpDown } from 'lucide-react'
+import { Search, Download, Upload, Trash2, ArrowUpDown, ArrowUp, ArrowDown, AlertCircle, Loader2, Check, X, ChevronsUpDown, ChevronRight, ChevronDown } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Papa from 'papaparse'
@@ -75,6 +75,18 @@ export default function MasterListPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const isAdmin = effectiveUser?.role === 'admin'
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
+  // Per-row inline detail drawer (master-list table). Keyed by property id.
+  // Distinct from the CSV import preview's `expandedRows` (which keys by rowIdx).
+  const [rowDrawers, setRowDrawers] = useState<Set<string>>(new Set())
+
+  function toggleRowDrawer(id: string) {
+    setRowDrawers(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id); else next.add(id)
+      return next
+    })
+  }
 
   const [stageFilter, setStageFilter] = useState(() => {
     // Check URL params first, then localStorage
@@ -220,6 +232,8 @@ export default function MasterListPage() {
   })
 
   const [confirmHardDeleteId, setConfirmHardDeleteId] = useState<string | null>(null)
+  // Per-row soft-delete confirm. Reuses the bulkDelete mutation with a single id.
+  const [confirmSoftDeleteId, setConfirmSoftDeleteId] = useState<string | null>(null)
   const { mutate: hardDeleteProperty, isPending: hardDeletePending } = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.rpc('admin_hard_delete_property', { p_id: Number(id) })
@@ -280,6 +294,28 @@ export default function MasterListPage() {
     onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
   })
 
+  // Single-row soft-delete invoked from the per-row trash button. Separate
+  // from bulkDelete so the toast count is correct (bulkDelete reads selected.size).
+  const { mutate: softDeleteOne, isPending: softDeleteOnePending } = useGuardedMutation('master-list', {
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_, id) => {
+      const prop = properties?.find((p: any) => p.id === id)
+      invalidateAllPropertyQueries(qc)
+      setConfirmSoftDeleteId(null)
+      toast({
+        title: `Archived ${prop?.name ?? 'property'}`,
+        description: 'Recoverable for 30 days from the Archive panel.',
+      })
+    },
+    onError: (e: any) => toast({ title: 'Archive failed: ' + (e.message || 'Unknown error'), variant: 'destructive' }),
+  })
+
   const [confirmDelete, setConfirmDelete] = useState(false)
   const { mutate: bulkDelete, isPending: deletePending } = useGuardedMutation('master-list', {
     mutationFn: async (ids: string[]) => {
@@ -322,14 +358,31 @@ export default function MasterListPage() {
   }, [sortKey, sortDir])
 
   // Quick inline update for CE/Pay with undo
+  const FIELD_LABELS: Record<string, string> = {
+    ce_charged: 'CE',
+    cleaner_pay: 'Pay',
+    bedrooms: 'Beds',
+    full_baths: 'Baths',
+    half_baths: 'Half baths',
+    hot_tub: 'Hot Tub',
+    square_footage: 'Sq Ft',
+    number_of_beds: 'Total beds',
+    guest_count: 'Max guests',
+    kitchens: 'Kitchens',
+    king_beds: 'King beds',
+    queen_beds: 'Queen beds',
+    full_beds: 'Full beds',
+    twin_beds: 'Twin beds',
+  }
+
   const { mutate: quickUpdate } = useGuardedMutation('master-list', {
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | null }) => {
+    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | boolean | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
     },
     onSuccess: (_, { id, field, value }) => {
       const prop = properties?.find((p: any) => p.id === id)
-      logPropertyEdit(id, field, prop?.[field] ?? null, value, prop?.name)
+      logPropertyEdit(id, field, prop?.[field] ?? null, value as any, prop?.name)
       // Drop the live-preview override so the refetched row becomes the source of truth
       setLiveEdits(prev => { const { [id]: _removed, ...rest } = prev; return rest })
       invalidateAllPropertyQueries(qc)
@@ -337,11 +390,11 @@ export default function MasterListPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({
         title: 'Updated',
-        description: `${field === 'ce_charged' ? 'CE' : 'Pay'} updated`,
+        description: `${FIELD_LABELS[field] ?? field} updated`,
         action: (
           <button
             className="text-xs underline"
-            onClick={() => quickUpdate({ id, field, value: prop?.[field] ?? null })}
+            onClick={() => quickUpdate({ id, field, value: (prop?.[field] ?? null) as any })}
           >
             Undo
           </button>
@@ -645,7 +698,7 @@ export default function MasterListPage() {
                 }}>
                 <Download className="w-3 h-3" /> Export Selected
               </Button>
-              {!confirmDelete ? (
+              {isAdmin && (!confirmDelete ? (
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => setConfirmDelete(true)} title="Move selected properties to the 30-day archive">
                   <Trash2 className="w-3 h-3" /> Archive
                 </Button>
@@ -659,7 +712,7 @@ export default function MasterListPage() {
                     Cancel
                   </Button>
                 </div>
-              )}
+              ))}
             </div>
           )}
           <div className="relative">
@@ -835,6 +888,7 @@ export default function MasterListPage() {
               <SortHeader label="Beds" sortKey="bedrooms" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Baths" sortKey="full_baths" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Sq Ft" sortKey="square_footage" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Hot Tub</th>
               <SortHeader label="CE" sortKey="ce_charged" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Pay" sortKey="cleaner_pay" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label="Profit %" sortKey="profit_percentage" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
@@ -843,20 +897,28 @@ export default function MasterListPage() {
                 <AlertCircle className="w-3 h-3" aria-hidden="true" />
                 <span className="sr-only">Data completeness</span>
               </th>
+              {isAdmin && (
+                <th className="py-2 px-3 w-10" aria-label="Actions">
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               [...Array(10)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(12)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-3 w-full" /></td>)}
+                  {[...Array(isAdmin ? 14 : 13)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-3 w-full" /></td>)}
                 </tr>
               ))
             ) : paged.map((p: any) => {
               const color = p.pipeline_stages?.color || '#6b7280'
               const comp = completeness(p)
+              const isExpanded = rowDrawers.has(p.id)
+              const m = mergedRow(p)
               return (
-                <tr key={p.id} data-testid={`row-master-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                <Fragment key={p.id}>
+                <tr data-testid={`row-master-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                   <td className="py-1.5 px-3 sticky left-0 z-10 bg-card">
                     <Checkbox
                       checked={selected.has(p.id)}
@@ -865,23 +927,69 @@ export default function MasterListPage() {
                     />
                   </td>
                   <td className="py-1.5 px-3 sticky left-[44px] z-10 bg-card">
-                    <button
-                      onClick={() => setDetailProperty(p)}
-                      className="font-medium text-primary hover:underline cursor-pointer text-left max-w-[200px] truncate"
-                      title={p.name}
-                      data-testid={`link-property-${p.id}`}
-                    >
-                      {p.name}
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => toggleRowDrawer(p.id)}
+                        className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
+                        title={isExpanded ? 'Collapse details' : 'Expand details'}
+                        aria-label={isExpanded ? 'Collapse details' : 'Expand details'}
+                        data-testid={`expand-${p.id}`}
+                      >
+                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => setDetailProperty(p)}
+                        className="font-medium text-primary hover:underline cursor-pointer text-left max-w-[200px] truncate"
+                        title={p.name}
+                        data-testid={`link-property-${p.id}`}
+                      >
+                        {p.name}
+                      </button>
+                    </div>
                   </td>
                   <td className="py-1.5 px-3 text-muted-foreground">{p.client || '—'}</td>
                   <td className="py-1.5 px-3 text-muted-foreground text-xs max-w-[140px] truncate" title={p.address || undefined}>{p.address || '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{p.bedrooms ?? '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums" title={p.full_baths != null ? `${p.full_baths} full${p.half_baths ? `, ${p.half_baths} half` : ''}` : undefined}>{p.full_baths != null ? (p.half_baths ? `${p.full_baths + p.half_baths * 0.5}` : `${p.full_baths}`) : '—'}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{p.square_footage?.toLocaleString() ?? '—'}</td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit
-                      value={mergedRow(p).ce_charged}
+                      value={m.bedrooms}
+                      type="number"
+                      onSave={v => quickUpdate({ id: p.id, field: 'bedrooms', value: v ? parseFloat(v) : null })}
+                      testId={`inline-beds-${p.id}`}
+                      placeholder="—"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()} title={p.full_baths != null ? `${p.full_baths} full${p.half_baths ? `, ${p.half_baths} half` : ''} — expand row to edit half baths` : 'expand row to edit half baths'}>
+                    <InlineEdit
+                      value={m.full_baths}
+                      type="number"
+                      onSave={v => quickUpdate({ id: p.id, field: 'full_baths', value: v ? parseFloat(v) : null })}
+                      testId={`inline-baths-${p.id}`}
+                      placeholder="—"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
+                    <InlineEdit
+                      value={m.square_footage}
+                      type="number"
+                      onSave={v => quickUpdate({ id: p.id, field: 'square_footage', value: v ? parseFloat(v) : null })}
+                      testId={`inline-sqft-${p.id}`}
+                      placeholder="—"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3" onClick={e => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => quickUpdate({ id: p.id, field: 'hot_tub', value: !m.hot_tub })}
+                      className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${m.hot_tub ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+                      title="Click to toggle hot tub"
+                      data-testid={`inline-hottub-${p.id}`}
+                    >
+                      {m.hot_tub ? 'Yes' : 'No'}
+                    </button>
+                  </td>
+                  <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
+                    <InlineEdit
+                      value={m.ce_charged}
                       type="number"
                       onDraftChange={v => previewCostEdit(p.id, 'ce_charged', v)}
                       onSave={v => quickUpdate({ id: p.id, field: 'ce_charged', value: v ? parseFloat(v) : null })}
@@ -891,7 +999,7 @@ export default function MasterListPage() {
                   </td>
                   <td className="py-1.5 px-3 tabular-nums" onClick={e => e.stopPropagation()}>
                     <InlineEdit
-                      value={mergedRow(p).cleaner_pay}
+                      value={m.cleaner_pay}
                       type="number"
                       onDraftChange={v => previewCostEdit(p.id, 'cleaner_pay', v)}
                       onSave={v => quickUpdate({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
@@ -900,14 +1008,11 @@ export default function MasterListPage() {
                     />
                   </td>
                   <td className="py-1.5 px-3 tabular-nums">
-                    {(() => {
-                      const m = mergedRow(p)
-                      return m.profit_percentage != null ? (
-                        <span className={`font-medium ${profitColorClass(m.profit_percentage)}`}>
-                          {Number(m.profit_percentage).toFixed(1)}%
-                        </span>
-                      ) : '—'
-                    })()}
+                    {m.profit_percentage != null ? (
+                      <span className={`font-medium ${profitColorClass(m.profit_percentage)}`}>
+                        {Number(m.profit_percentage).toFixed(1)}%
+                      </span>
+                    ) : '—'}
                   </td>
                   <td className="py-1.5 px-3">
                     <span className="px-1.5 py-0.5 rounded font-medium text-xs"
@@ -932,7 +1037,34 @@ export default function MasterListPage() {
                       </div>
                     )}
                   </td>
+                  {isAdmin && (
+                    <td className="py-1.5 px-2" onClick={e => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmSoftDeleteId(p.id)}
+                        className="text-muted-foreground/60 hover:text-destructive transition-colors p-1 rounded hover:bg-destructive/10"
+                        title="Archive this property (recoverable for 30 days)"
+                        aria-label={`Archive ${p.name}`}
+                        data-testid={`row-delete-${p.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
+                {isExpanded && (
+                  <tr data-testid={`expanded-row-${p.id}`} className="border-b border-border/50 bg-muted/10">
+                    <td colSpan={isAdmin ? 14 : 13} className="p-0">
+                      <ExpandedPropertyDrawer
+                        property={m}
+                        canViewFinancials={canViewFinancials}
+                        onUpdate={(field, value) => quickUpdate({ id: p.id, field, value })}
+                        onDraftCost={(field, draft) => previewCostEdit(p.id, field, draft)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>
@@ -952,6 +1084,41 @@ export default function MasterListPage() {
         onSave={saveDetail}
         saving={savingDetail}
       />
+
+      {/* Per-row archive confirm dialog (admin only). Single-row soft-delete;
+          restore + permanent delete live in the archive panel. */}
+      <Dialog open={!!confirmSoftDeleteId} onOpenChange={v => !v && !softDeleteOnePending && setConfirmSoftDeleteId(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Archive property?</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const target = properties?.find((p: any) => p.id === confirmSoftDeleteId)
+            return (
+              <div className="space-y-3 text-sm">
+                <p>
+                  <span className="font-medium">{target?.name ?? 'This property'}</span>{' '}
+                  will be moved to the archive. It stays recoverable for 30 days, then is purged automatically.
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmSoftDeleteId(null)} disabled={softDeleteOnePending}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={softDeleteOnePending}
+                    onClick={() => confirmSoftDeleteId && softDeleteOne(confirmSoftDeleteId)}
+                    data-testid="confirm-row-delete"
+                  >
+                    {softDeleteOnePending ? 'Archiving…' : 'Archive'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Import CSV Preview Dialog */}
       <Dialog open={!!importPreview} onOpenChange={v => !v && !importRunning && setImportPreview(null)}>
@@ -1190,6 +1357,146 @@ export default function MasterListPage() {
           })()}
         </DialogContent>
       </Dialog>
+    </div>
+  )
+}
+
+// Inline tray that expands beneath a property row in the master-list table.
+// Lets admins edit every property detail field and (if permitted) view the
+// full financial breakdown without opening the side-panel sheet.
+function ExpandedPropertyDrawer({
+  property,
+  canViewFinancials,
+  onUpdate,
+  onDraftCost,
+}: {
+  property: any
+  canViewFinancials: boolean
+  onUpdate: (field: string, value: number | string | boolean | null) => void
+  onDraftCost: (field: 'ce_charged' | 'cleaner_pay', draft: string) => void
+}) {
+  function NumberCell({ label, field }: { label: string; field: string }) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <div className="text-xs tabular-nums">
+          <InlineEdit
+            value={property[field]}
+            type="number"
+            onSave={v => onUpdate(field, v ? parseFloat(v) : null)}
+            placeholder="—"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  function MoneyCell({ label, field }: { label: string; field: 'ce_charged' | 'cleaner_pay' }) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <div className="text-xs tabular-nums">
+          <InlineEdit
+            value={property[field]}
+            type="number"
+            onDraftChange={v => onDraftCost(field, v)}
+            onSave={v => onUpdate(field, v ? parseFloat(v) : null)}
+            placeholder="—"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  function ToggleCell({ label, field }: { label: string; field: string }) {
+    const v = !!property[field]
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <button
+          type="button"
+          onClick={() => onUpdate(field, !v)}
+          className={`px-2 py-0.5 self-start rounded-md border text-[11px] font-medium transition-colors ${v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+        >
+          {v ? 'Yes' : 'No'}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-6 py-4 space-y-4">
+      <div>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Property Details</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
+          <NumberCell label="Bedrooms" field="bedrooms" />
+          <NumberCell label="Full Baths" field="full_baths" />
+          <NumberCell label="Half Baths" field="half_baths" />
+          <NumberCell label="Sq Footage" field="square_footage" />
+          <NumberCell label="Total Beds" field="number_of_beds" />
+          <NumberCell label="Max Guests" field="guest_count" />
+          <NumberCell label="Kitchens" field="kitchens" />
+          <ToggleCell label="Hot Tub" field="hot_tub" />
+        </div>
+      </div>
+
+      <div>
+        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Bed Sizes</h4>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5">
+          <NumberCell label="King" field="king_beds" />
+          <NumberCell label="Queen" field="queen_beds" />
+          <NumberCell label="Full" field="full_beds" />
+          <NumberCell label="Twin" field="twin_beds" />
+        </div>
+      </div>
+
+      {canViewFinancials && (
+        <div>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials (live)</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
+            <MoneyCell label="Client Charged" field="ce_charged" />
+            <MoneyCell label="Cleaner Pay" field="cleaner_pay" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Cost</span>
+              <span className="text-xs tabular-nums">${(Number(property.total_estimated_cost) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Laundry</span>
+              <span className="text-xs tabular-nums">${(Number(property.est_laundry) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Consumables</span>
+              <span className="text-xs tabular-nums">${(Number(property.est_consumables) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit / Clean</span>
+              <span className={`text-xs tabular-nums font-medium ${(Number(property.estimated_profit) || 0) < 0 ? 'text-destructive' : ''}`}>
+                ${(Number(property.estimated_profit) || 0).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit %</span>
+              <span className={`text-xs tabular-nums font-medium ${profitColorClass(property.profit_percentage)}`}>
+                {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Cost</span>
+              <span className="text-xs tabular-nums">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Income (3x)</span>
+              <span className="text-xs tabular-nums">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Profit</span>
+              <span className={`text-xs tabular-nums font-medium ${(Number(property.profit_deep_clean) || 0) < 0 ? 'text-destructive' : ''}`}>
+                {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
