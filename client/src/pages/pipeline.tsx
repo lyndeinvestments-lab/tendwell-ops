@@ -212,7 +212,6 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
                 Stale
               </span>
             )}
-            <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
           </div>
         </div>
         {showFollowUp && (
@@ -277,7 +276,6 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
               Stale
             </span>
           )}
-          <ProfitBadge pct={property.profit_percentage} stageName={stageName} />
         </div>
       </div>
       {showFollowUp && (

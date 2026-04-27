@@ -1314,17 +1314,9 @@ export function PropertyDetailModal() {
               {canViewFinancials && (
                 <div className="rounded-md border border-border bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
-                      <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground block">Profit %</span>
-                      <span className={`text-sm font-medium tabular-nums ${property.profit_percentage == null ? 'text-muted-foreground' : profitColorClass(property.profit_percentage)}`}>
-                        {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
-                      </span>
-                    </div>
+                  <div>
+                    <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
+                    <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
                   </div>
                 </div>
               )}
@@ -1430,12 +1422,6 @@ export function PropertyDetailModal() {
                     <span className="text-xs text-muted-foreground block">Profit $</span>
                     <span className={`text-sm font-medium ${(property.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>
                       {property.estimated_profit != null ? `$${Number(property.estimated_profit).toFixed(2)}` : '—'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">Profit %</span>
-                    <span className={`text-sm font-medium ${profitColorClass(property.profit_percentage)}`}>
-                      {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
                     </span>
                   </div>
                 </div>
