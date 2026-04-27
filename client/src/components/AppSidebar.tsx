@@ -68,8 +68,9 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
       { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
-      { title: 'Pro Forma', href: '/pro-forma', view: 'pro-forma', icon: TrendingUp },
-      { title: 'Live Pro Forma', href: '/forecaster', view: 'forecaster', icon: TrendingUp },
+      // Pro Forma now hosts the Live Pro Forma (forecaster) + Per-Property tabs
+      // in a single page. Either historical permission shows the entry.
+      { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },

@@ -23,8 +23,10 @@ const PAGE_ROUTES = [
   { name: 'Linen Inventory', path: '/linen-inventory', viewId: 'linen-inventory', keywords: ['linen', 'inventory', 'count', 'par', 'sets', 'stock'], icon: Boxes },
   { name: 'Access Codes', path: '/access-codes', viewId: 'access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
   { name: 'AC Filters', path: '/ac-filters', viewId: 'ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
-  { name: 'Pro Forma', path: '/pro-forma', viewId: 'pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly'], icon: TrendingUp },
-  { name: 'Live Pro Forma', path: '/forecaster', viewId: 'forecaster', keywords: ['forecaster', 'live', 'pro forma', 'proforma', 'variance', 'forecast'], icon: TrendingUp },
+  { name: 'Pro Forma', path: '/pro-forma', viewId: 'pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly', 'forecaster', 'live', 'variance', 'forecast', 'per-property'], icon: TrendingUp },
+  // Deep link straight into the Live tab. Either permission works since the
+  // route now hosts a unified Pro Forma wrapper.
+  { name: 'Live Pro Forma', path: '/forecaster', viewId: 'pro-forma', keywords: ['forecaster', 'live', 'pro forma', 'proforma', 'variance', 'forecast'], icon: TrendingUp },
   { name: 'Previous Properties', path: '/previous-properties', viewId: 'previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
   { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
   { name: 'Revenue Report', path: '/revenue-report', viewId: 'revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
