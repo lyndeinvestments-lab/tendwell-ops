@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState } from '@/components/EmptyState'
 import {
-  TrendingUp, Upload, RefreshCcw, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus,
+  TrendingUp, Upload, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus,
 } from 'lucide-react'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -221,44 +221,8 @@ export default function ForecasterPage() {
     onError: (err: any) => toast({ title: 'Upload failed', description: err?.message, variant: 'destructive' }),
   })
 
-  // ── Pull from QBO ────────────────────────
-  const [qboBusy, setQboBusy] = useState(false)
-  async function pullFromQbo() {
-    setQboBusy(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error('Not signed in')
-      const res = await fetch('/api/qbo/financials', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'QBO fetch failed')
-      const pl = data.profitLoss
-      if (!pl) throw new Error('No P&L data returned')
-      // QBO endpoint returns the current month — we map it onto selectedMonth
-      // only if the user is viewing the current month, otherwise show a hint.
-      if (selectedMonth !== todayMonth()) {
-        toast({ title: 'QBO returns current-month P&L only', description: 'Switch to the current month, or enter the period manually.' })
-        return
-      }
-      const { error } = await supabase.from('proforma_months').upsert({
-        month: selectedMonth,
-        cleaning_fee: pl.totalIncome,
-        other_cogs: pl.totalExpenses,
-        source: 'qbo',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'month' })
-      if (error) throw error
-      qc.invalidateQueries({ queryKey: ['/supabase/proforma_months'] })
-      toast({ title: 'QBO actuals pulled' })
-    } catch (err: any) {
-      toast({ title: 'QBO sync failed', description: err?.message, variant: 'destructive' })
-    } finally {
-      setQboBusy(false)
-    }
-  }
-
   // ── Render ──────────────────────────────
+  // QBO actuals refresh nightly via a scheduled import on the backend; no user-facing pull button.
   const monthOptions = useMemo(() => {
     const seen = new Set(histData.map(m => m.month))
     // Always include the current and selected months even if not in DB.
@@ -298,9 +262,9 @@ export default function ForecasterPage() {
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setUploadOpen(o => !o)} data-testid="button-upload-tasks">
             <Upload className="w-3.5 h-3.5" /> Upload Tasks
           </Button>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={qboBusy} onClick={pullFromQbo} data-testid="button-pull-qbo">
-            <RefreshCcw className={`w-3.5 h-3.5 ${qboBusy ? 'animate-spin' : ''}`} /> Pull from QBO
-          </Button>
+          <span className="text-[11px] text-muted-foreground" data-testid="text-qbo-refresh-note">
+            Actuals refresh nightly from the scheduled QBO import.
+          </span>
         </div>
       </div>
 

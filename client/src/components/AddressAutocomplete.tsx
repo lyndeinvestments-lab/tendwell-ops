@@ -1,10 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { Input } from '@/components/ui/input'
 
+export type GoogleMapsRuntimeStatus =
+  | 'no_key'
+  | 'loading'
+  | 'ready'
+  | 'script_error'
+  | 'places_missing'
+  | 'timeout'
+  | 'gm_authFailure'
+
 declare global {
   interface Window {
     google?: any
     __tendwellGoogleMapsLoading?: Promise<void>
+    __tendwellGoogleMapsStatus?: GoogleMapsRuntimeStatus
+    gm_authFailure?: () => void
   }
 }
 
@@ -15,15 +26,57 @@ const PLACES_API_KEY: string | undefined =
   (import.meta.env as any).VITE_GOOGLE_MAPS_API_KEY ||
   (import.meta.env as any).VITE_GOOGLE_PLACES_API_KEY
 
+const SCRIPT_LOAD_TIMEOUT_MS = 10_000
+
+function setStatus(s: GoogleMapsRuntimeStatus) {
+  if (typeof window !== 'undefined') window.__tendwellGoogleMapsStatus = s
+}
+
+/** Read the current Google Maps load status from the shared global. */
+export function getGoogleMapsRuntimeStatus(): GoogleMapsRuntimeStatus {
+  if (typeof window === 'undefined') return 'no_key'
+  if (!PLACES_API_KEY) return 'no_key'
+  return window.__tendwellGoogleMapsStatus || 'loading'
+}
+
 function loadGoogleMapsScript(apiKey: string): Promise<void> {
   if (typeof window === 'undefined') return Promise.resolve()
-  if (window.google?.maps?.places) return Promise.resolve()
+  if (window.google?.maps?.places) {
+    setStatus('ready')
+    return Promise.resolve()
+  }
   if (window.__tendwellGoogleMapsLoading) return window.__tendwellGoogleMapsLoading
+  setStatus('loading')
+  // Google calls this if the API key is rejected (referrer/billing/Maps JS API
+  // disabled). Surface a distinct status so we can show better diagnostics.
+  window.gm_authFailure = () => setStatus('gm_authFailure')
   window.__tendwellGoogleMapsLoading = new Promise<void>((resolve, reject) => {
+    let settled = false
+    const settle = (fn: () => void, status: GoogleMapsRuntimeStatus) => {
+      if (settled) return
+      settled = true
+      setStatus(status)
+      fn()
+    }
+    const timeoutId = window.setTimeout(() => {
+      settle(() => reject(new Error('Google Maps script load timed out — check Maps JavaScript API enablement, HTTP referrer restrictions, or billing.')), 'timeout')
+    }, SCRIPT_LOAD_TIMEOUT_MS)
+    const onLoad = () => {
+      window.clearTimeout(timeoutId)
+      if (!window.google?.maps?.places) {
+        settle(() => reject(new Error('Google Maps loaded but Places library is missing — verify the script URL includes libraries=places.')), 'places_missing')
+        return
+      }
+      settle(() => resolve(), 'ready')
+    }
+    const onError = () => {
+      window.clearTimeout(timeoutId)
+      settle(() => reject(new Error('Google Maps script failed to load — verify Maps JavaScript API is enabled, HTTP referrer allowlist includes this domain, billing is active, and CSP allows maps.googleapis.com.')), 'script_error')
+    }
     const existing = document.querySelector<HTMLScriptElement>('script[data-tendwell-google-maps]')
     if (existing) {
-      existing.addEventListener('load', () => resolve())
-      existing.addEventListener('error', () => reject(new Error('Google Maps script failed to load')))
+      existing.addEventListener('load', onLoad)
+      existing.addEventListener('error', onError)
       return
     }
     const script = document.createElement('script')
@@ -31,8 +84,8 @@ function loadGoogleMapsScript(apiKey: string): Promise<void> {
     script.async = true
     script.defer = true
     script.dataset.tendwellGoogleMaps = '1'
-    script.addEventListener('load', () => resolve())
-    script.addEventListener('error', () => reject(new Error('Google Maps script failed to load')))
+    script.addEventListener('load', onLoad)
+    script.addEventListener('error', onError)
     document.head.appendChild(script)
   })
   return window.__tendwellGoogleMapsLoading
@@ -92,6 +145,7 @@ export function AddressAutocomplete({
       return
     }
     let cancelled = false
+    let authPoll: number | undefined
     loadGoogleMapsScript(PLACES_API_KEY)
       .then(() => {
         if (cancelled || !inputRef.current || !window.google?.maps?.places) return
@@ -117,6 +171,15 @@ export function AddressAutocomplete({
           }
         })
         setEnabled(true)
+        // gm_authFailure may fire after load if the key is rejected at runtime
+        // (e.g. referrer mismatch). Watch the shared status and reflect it.
+        authPoll = window.setInterval(() => {
+          if (window.__tendwellGoogleMapsStatus === 'gm_authFailure') {
+            setError('Google rejected the Maps API key at runtime — check HTTP referrer allowlist, Maps JavaScript API enablement, and billing in the GCP console.')
+            setEnabled(false)
+            if (authPoll) window.clearInterval(authPoll)
+          }
+        }, 1000)
       })
       .catch((e) => {
         setError(e?.message || 'Failed to load Google Places')
@@ -124,6 +187,7 @@ export function AddressAutocomplete({
       })
     return () => {
       cancelled = true
+      if (authPoll) window.clearInterval(authPoll)
       // No public unbind on the Autocomplete widget — leaving the listener
       // attached is fine; the input is cleaned up when the component unmounts.
     }
