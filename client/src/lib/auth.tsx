@@ -19,6 +19,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
   { id: 'property-verifications', label: 'Property Verifications', group: 'Operations' },
   { id: 'inspections',            label: 'Inspections',            group: 'Operations' },
+  { id: 'lost-items',             label: 'Lost Items',              group: 'Operations' },
   // Management
   { id: 'tasks',               label: 'Tasks',               group: 'Management' },
   { id: 'issues',              label: 'Issues',              group: 'Management' },
@@ -78,15 +79,15 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
     'master-list', 'pro-forma', 'forecaster', 'previous-properties', 'settings',
     'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
-    'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star',
+    'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
   ],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items'],
   cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'forecaster',
     'previous-properties', 'revenue-report', 'property-verifications', 'inspections', 'alerts',
-    'activity', 'financial-dashboard',
+    'activity', 'financial-dashboard', 'lost-items',
   ],
 }
 

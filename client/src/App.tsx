@@ -51,6 +51,7 @@ const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
 const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
 const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
+const LostItemsPage = lazyRetry(() => import("@/pages/lost-items"));
 const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"));
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
@@ -216,6 +217,7 @@ function AppRoutes() {
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
+        <Route path="/lost-items">{() => <GuardedRoute viewId="lost-items" component={LostItemsPage} />}</Route>
         {/* Pro Forma now hosts the Live Pro Forma (forecaster) and Per-Property
             tabs in a single wrapper. The /forecaster path stays valid as a deep
             link into the Live tab; either historical permission grants access
