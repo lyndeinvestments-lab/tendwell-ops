@@ -9,6 +9,9 @@
     },
     "api/trellis/*.ts": {
       "includeFiles": "api/trellis/_lib.ts"
+    },
+    "api/issues/*.ts": {
+      "includeFiles": "api/issues/_lib.ts"
     }
   },
   "rewrites": [
