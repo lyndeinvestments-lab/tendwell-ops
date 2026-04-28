@@ -232,6 +232,14 @@ export default function ForecasterPage() {
     const cogs = Number(q.totalCOGS) || 0
     const opex = Number(q.totalExpenses) || 0
     const totalCost = cogs + opex
+    // Treat an all-zero QBO entry as "no data" — the import wrote a stub
+    // (or QuickBooks hasn't booked the period yet) and showing $0 actuals
+    // misleads the user into thinking the business ran zero. Returning
+    // null collapses the UI back to the "no QBO data" path.
+    const hasAnyQboSignal =
+      revenue !== 0 || cogs !== 0 || opex !== 0 ||
+      (q.netIncome != null && Number(q.netIncome) !== 0)
+    if (!hasAnyQboSignal) return null
     const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCost
     const grossProfit = revenue - cogs
     return {
@@ -254,6 +262,11 @@ export default function ForecasterPage() {
       netMargin: revenue > 0 ? (netIncome / revenue) * 100 : 0,
     }
   }, [qboPL, selectedMonth])
+
+  // Did the QBO blob even mention this month, regardless of whether it had
+  // values? Used by the banner to distinguish "QBO doesn't track this period"
+  // from "QBO has the period but all values are zero".
+  const qboMonthExists = useMemo(() => lookupQboMonth(selectedMonth) != null, [qboPL, selectedMonth])
 
   // Actuals for the selected month: prefer a real proforma_months row when
   // it exists AND has any non-zero financial signal. Otherwise fall back to
@@ -425,6 +438,17 @@ export default function ForecasterPage() {
       {actualsSource === 'qbo' && (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="actuals-source-banner">
           Showing QuickBooks actuals for {selectedMonth} — the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
+        </div>
+      )}
+      {actualsSource === null && (
+        <div
+          className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+          data-testid="actuals-source-banner-empty"
+        >
+          QuickBooks data is not yet available for {selectedMonth}
+          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''}, and no
+          <code className="font-mono mx-1">proforma_months</code> row has been written.
+          Variance and KPI cards below show $0 actuals until the next nightly QBO import populates the period.
         </div>
       )}
 

@@ -373,10 +373,14 @@ export default function CostTrackingPage() {
       // expanded row can show all property details — address, bed mix, codes,
       // linen counts, dates — without a second round-trip.
       if (showAllStages) {
+        // Note: properties RLS already filters out soft-deleted rows
+        // (deleted_at IS NULL), so no client-side archived/deleted filter
+        // is needed. (Earlier code referenced a non-existent `archived_at`
+        // column, which caused PostgREST to error and silently return no
+        // rows — that's why expanded-row Client showed "—".)
         const { data, error } = await supabase
           .from('properties')
           .select('*, pipeline_stages!properties_stage_id_fkey(name, slug, color)')
-          .is('archived_at', null)
         if (error) throw error
         // Flatten stage_name/slug/color into top-level fields so the row
         // renderer matches the operational_properties view shape.
@@ -403,44 +407,64 @@ export default function CostTrackingPage() {
   // Contacts lookup so the expanded row Client cell can display the same
   // linked contact (full_name / company / payment_method) as the full
   // PropertyDetailModal. The operational_properties view does not expose
-  // contact_id, so we always pull from the underlying `properties` table
-  // and merge by id at render time.
-  const { data: propertyContactIds } = useQuery({
-    queryKey: ['/supabase/properties_contact_ids'],
+  // contact_id, so we pull contact_id from the underlying `properties`
+  // table joined to `contacts` in one round-trip. Mirrors the embedded
+  // join used in client/src/pages/master-list.tsx so behavior matches.
+  const { data: propertyContacts } = useQuery({
+    queryKey: ['/supabase/properties_contact_join_cost_tracking'],
     staleTime: 60_000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, contact_id')
-        .is('archived_at', null)
+        .select('id, contact_id, client, contact:contacts(id, full_name, company, payment_method)')
       if (error) throw error
       return data || []
     },
   })
 
-  const { data: allContactsLite } = useQuery({
-    queryKey: ['/supabase/contacts-lite-cost-tracking'],
-    staleTime: 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('id, full_name, company, payment_method')
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  const contactById = useMemo(() => {
-    const m: Record<string, { full_name?: string; company?: string; payment_method?: string }> = {}
-    for (const c of allContactsLite || []) m[String(c.id)] = c
+  // Index by property id. Each entry carries the joined contact (when set)
+  // plus the legacy free-text `client` column as a final fallback.
+  const contactByPropertyId = useMemo(() => {
+    const m: Record<string, {
+      contact: { full_name?: string; company?: string; payment_method?: string } | null
+      legacyClient: string | null
+    }> = {}
+    for (const r of (propertyContacts as any[]) || []) {
+      const c = Array.isArray(r.contact) ? r.contact[0] : r.contact
+      m[String(r.id)] = {
+        contact: c && c.full_name ? c : null,
+        legacyClient: r.client || null,
+      }
+    }
     return m
-  }, [allContactsLite])
+  }, [propertyContacts])
 
-  const contactIdByPropertyId = useMemo(() => {
-    const m: Record<string, string | null> = {}
-    for (const r of propertyContactIds || []) m[String(r.id)] = r.contact_id ? String(r.contact_id) : null
-    return m
-  }, [propertyContactIds])
+  // Resolve a single, consistent client display string for a property row.
+  // Preference order:
+  //   1) Joined contact (full_name + optional company)
+  //   2) Embedded contact already on the row (showAllStages joins it)
+  //   3) Legacy free-text `client` / `client_name` / `company` fields
+  function resolveClient(p: any): {
+    label: string | null
+    paymentMethod: string | null
+  } {
+    const joined = contactByPropertyId[String(p.id)]
+    const embedded = p?.contact && (Array.isArray(p.contact) ? p.contact[0] : p.contact)
+    const c = joined?.contact
+      || (embedded && embedded.full_name ? embedded : null)
+    if (c?.full_name) {
+      const label = c.company && c.company !== c.full_name
+        ? `${c.full_name} (${c.company})`
+        : c.full_name
+      return { label, paymentMethod: c.payment_method || null }
+    }
+    const fallback = joined?.legacyClient
+      || p.client
+      || p.client_name
+      || p.company
+      || null
+    return { label: fallback, paymentMethod: null }
+  }
 
   const displayProperties: any[] = localProperties ?? (properties as any[]) ?? []
 
@@ -887,12 +911,7 @@ export default function CostTrackingPage() {
                     <td colSpan={17} className="py-4 px-6 space-y-4">
                       {/* Banner — makes the expanded panel obviously a "Master List record" */}
                       {(() => {
-                        const linkedContact = contactById[contactIdByPropertyId[String(p.id)] || '']
-                        const clientLabel = linkedContact?.full_name
-                          ? linkedContact.company && linkedContact.company !== linkedContact.full_name
-                            ? `${linkedContact.full_name} (${linkedContact.company})`
-                            : linkedContact.full_name
-                          : (p.client || p.client_name || null)
+                        const { label: clientLabel, paymentMethod } = resolveClient(p)
                         return (
                       <div className="flex items-center justify-between gap-4 pb-2 border-b border-border/60">
                         <div className="flex items-center gap-3 flex-wrap">
@@ -901,8 +920,8 @@ export default function CostTrackingPage() {
                           {clientLabel ? (
                             <span className="text-xs text-muted-foreground" data-testid={`expanded-client-${p.id}`}>
                               · {clientLabel}
-                              {linkedContact?.payment_method && (
-                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
+                              {paymentMethod && (
+                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{paymentMethod}</span>
                               )}
                             </span>
                           ) : null}
@@ -931,15 +950,7 @@ export default function CostTrackingPage() {
                             <Field label="Address" value={p.address || '—'} />
                             <Field
                               label="Client"
-                              value={(() => {
-                                const lc = contactById[contactIdByPropertyId[String(p.id)] || '']
-                                if (lc?.full_name) {
-                                  return lc.company && lc.company !== lc.full_name
-                                    ? `${lc.full_name} (${lc.company})`
-                                    : lc.full_name
-                                }
-                                return p.client || p.client_name || '—'
-                              })()}
+                              value={resolveClient(p).label || '—'}
                             />
                             <Field label="Bedrooms" value={p.bedrooms ?? '—'} />
                             <Field label="Full Baths" value={p.full_baths ?? '—'} />
