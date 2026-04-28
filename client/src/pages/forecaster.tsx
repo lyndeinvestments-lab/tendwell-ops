@@ -232,14 +232,17 @@ export default function ForecasterPage() {
     const cogs = Number(q.totalCOGS) || 0
     const opex = Number(q.totalExpenses) || 0
     const totalCost = cogs + opex
-    // Treat an all-zero QBO entry as "no data" — the import wrote a stub
-    // (or QuickBooks hasn't booked the period yet) and showing $0 actuals
-    // misleads the user into thinking the business ran zero. Returning
-    // null collapses the UI back to the "no QBO data" path.
-    const hasAnyQboSignal =
-      revenue !== 0 || cogs !== 0 || opex !== 0 ||
-      (q.netIncome != null && Number(q.netIncome) !== 0)
-    if (!hasAnyQboSignal) return null
+    // Treat an all-zero (or sub-dollar) QBO entry as "no data" — the import
+    // wrote a stub, QuickBooks hasn't booked the period yet, or only a stray
+    // residual landed in the period. Showing $0 actuals from such a stub
+    // misleads the user into thinking the business ran zero, so we collapse
+    // the UI back to the "no QBO data" path. We require non-trivial *topline*
+    // signal (revenue + cogs + opex); netIncome alone does not qualify, since
+    // a leftover adjusting entry can leave a small netIncome on a period that
+    // otherwise has no real activity.
+    const EPSILON = 1 // dollars
+    const toplineMagnitude = Math.abs(revenue) + Math.abs(cogs) + Math.abs(opex)
+    if (toplineMagnitude < EPSILON) return null
     const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCost
     const grossProfit = revenue - cogs
     return {
@@ -273,23 +276,32 @@ export default function ForecasterPage() {
   // the QBO P&L blob. We treat an all-zeros proforma row as "no data" so a
   // placeholder upsert (e.g. tasks-only count) doesn't suppress the QBO
   // fallback the user actually wants to see.
-  const actualsRow = useMemo<DerivedMonth | null>(() => {
-    const proforma = histData.find(m => m.month === selectedMonth) || null
-    const hasFinancialSignal = proforma && (
-      (proforma.revenue ?? 0) > 0 ||
-      (proforma.cogs ?? 0) > 0 ||
-      (proforma.netIncome ?? 0) !== 0
-    )
-    if (hasFinancialSignal) return proforma
-    return qboFallbackRow ?? proforma ?? null
-  }, [histData, selectedMonth, qboFallbackRow])
+  const proformaRow = useMemo<DerivedMonth | null>(
+    () => histData.find(m => m.month === selectedMonth) || null,
+    [histData, selectedMonth],
+  )
+  const proformaHasSignal = useMemo(() => !!proformaRow && (
+    (proformaRow.revenue ?? 0) > 0 ||
+    (proformaRow.cogs ?? 0) > 0 ||
+    (proformaRow.netIncome ?? 0) !== 0
+  ), [proformaRow])
 
+  // Source decision is independent of the rendered row: a zero-signal proforma
+  // row is "no source", not a 'proforma' source, so the empty-state banner
+  // fires instead of silently showing $0 KPIs with no explanation.
   const actualsSource: 'proforma' | 'qbo' | null = useMemo(() => {
-    if (!actualsRow) return null
-    const proforma = histData.find(m => m.month === selectedMonth)
-    if (proforma && actualsRow === proforma) return 'proforma'
-    return 'qbo'
-  }, [actualsRow, histData, selectedMonth])
+    if (proformaHasSignal) return 'proforma'
+    if (qboFallbackRow) return 'qbo'
+    return null
+  }, [proformaHasSignal, qboFallbackRow])
+
+  const actualsRow = useMemo<DerivedMonth | null>(() => {
+    if (actualsSource === 'proforma') return proformaRow
+    if (actualsSource === 'qbo') return qboFallbackRow
+    // Keep the proforma row visible (so tasks/properties counts still render)
+    // when it exists but lacks financial signal — the banner explains the $0.
+    return proformaRow
+  }, [actualsSource, proformaRow, qboFallbackRow])
 
   // Variance per category — uses estimates × actuals.
   //
@@ -446,9 +458,11 @@ export default function ForecasterPage() {
           data-testid="actuals-source-banner-empty"
         >
           QuickBooks data is not yet available for {selectedMonth}
-          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''}, and no
-          <code className="font-mono mx-1">proforma_months</code> row has been written.
-          Variance and KPI cards below show $0 actuals until the next nightly QBO import populates the period.
+          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''},
+          {proformaRow
+            ? <> and the <code className="font-mono mx-1">proforma_months</code> row that exists for the period has no financial signal yet.</>
+            : <> and no <code className="font-mono mx-1">proforma_months</code> row has been written.</>}
+          {' '}Variance and KPI cards below show $0 actuals until the next nightly QBO import populates the period.
         </div>
       )}
 
