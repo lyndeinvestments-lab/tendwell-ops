@@ -947,14 +947,43 @@ export default function MasterListPage() {
                       >
                         {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                       </button>
-                      <button
-                        onClick={() => setDetailProperty(p)}
-                        className="font-medium text-primary hover:underline cursor-pointer text-left max-w-[200px] truncate"
-                        title={p.name}
-                        data-testid={`link-property-${p.id}`}
-                      >
-                        {p.name}
-                      </button>
+                      {isAdmin ? (
+                        <>
+                          {/* Click value to rename inline. Names are common rename
+                              targets ("820 Pine Top Lane" → "WTN - Pine Top"); inline
+                              edit avoids the side-panel detour for that one field. */}
+                          <div
+                            className="font-medium text-primary max-w-[200px] flex-1"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <InlineEdit
+                              value={p.name}
+                              type="text"
+                              onSave={v => quickUpdate({ id: p.id, field: 'name', value: v.trim() === '' ? null : v.trim() })}
+                              testId={`inline-name-${p.id}`}
+                              placeholder="—"
+                            />
+                          </div>
+                          <button
+                            onClick={() => setDetailProperty(p)}
+                            className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 p-0.5 rounded hover:bg-muted"
+                            title="Open full property editor"
+                            aria-label="Open full property editor"
+                            data-testid={`open-panel-${p.id}`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => setDetailProperty(p)}
+                          className="font-medium text-primary hover:underline cursor-pointer text-left max-w-[200px] truncate"
+                          title={p.name}
+                          data-testid={`link-property-${p.id}`}
+                        >
+                          {p.name}
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td className="py-1.5 px-3 text-muted-foreground" title={p.contact?.company || p.client || ''}>
@@ -1029,11 +1058,31 @@ export default function MasterListPage() {
                       </span>
                     ) : '—'}
                   </td>
-                  <td className="py-1.5 px-3">
-                    <span className="px-1.5 py-0.5 rounded font-medium text-xs"
-                      style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
-                      {p.pipeline_stages?.name || '—'}
-                    </span>
+                  <td className="py-1.5 px-3" onClick={e => e.stopPropagation()}>
+                    {isAdmin ? (
+                      <Select
+                        value={String(p.stage_id)}
+                        onValueChange={v => v !== String(p.stage_id) && bulkChangeStage({ ids: [p.id], stageId: v })}
+                      >
+                        <SelectTrigger
+                          className="h-6 px-1.5 py-0.5 text-xs font-medium gap-1 w-auto border"
+                          style={{ backgroundColor: color + '20', color, borderColor: color + '40' }}
+                          data-testid={`row-stage-${p.id}`}
+                        >
+                          <SelectValue>{p.pipeline_stages?.name || '—'}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {stages?.map((s: any) => (
+                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded font-medium text-xs"
+                        style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
+                        {p.pipeline_stages?.name || '—'}
+                      </span>
+                    )}
                   </td>
                   <td className="py-1.5 px-3">
                     {p.pipeline_stages?.name === 'Offboarded' ? (
