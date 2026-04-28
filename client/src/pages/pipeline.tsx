@@ -591,10 +591,15 @@ export default function PipelinePage() {
     })
   }
 
+  // Terminal stages (Offboarding / Offboarded) always render even when empty —
+  // otherwise a clean board with hideEmpty on has no drop target for moves out
+  // of Active. Other stages still respect the toggle.
+  const ALWAYS_VISIBLE_STAGES = new Set(['Offboarding', 'Offboarded'])
   const visibleStages = useMemo(() => {
     if (!stages || !displayProperties) return []
     return stages.filter((s: any) => {
       if (!hideEmpty) return true
+      if (ALWAYS_VISIBLE_STAGES.has(s.name)) return true
       return displayProperties.filter((p: any) => String(p.stage_id) === String(s.id)).length > 0
     })
   }, [stages, displayProperties, hideEmpty])
