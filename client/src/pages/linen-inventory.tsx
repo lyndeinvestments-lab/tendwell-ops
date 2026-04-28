@@ -75,21 +75,28 @@ export default function LinenInventoryPage() {
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
-  // Company totals from Linen Requirements (sum across all active/onboarding properties)
+  // Company totals — must match the Linen Requirements page exactly. Both
+  // pages now read from the `operational_properties` view (which excludes
+  // soft-deleted rows via the 20260428 migration) and filter to
+  // stage_name IN ('Active', 'Onboarding').
+  //
+  // Previously this page queried `properties` directly with a NOT-IN filter
+  // that included Offboarding stage AND missed the deleted_at filter, so the
+  // "Required" totals here disagreed with /linen-tracker (e.g. 271 vs 268
+  // king beds, 1720 vs 1703 bath towels) by Offboarding inventory plus any
+  // soft-deleted property's bed/towel counts.
   const { data: requirements, isLoading: reqLoading } = useQuery({
     queryKey: ['/supabase/linen-inventory-requirements'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('properties')
-        .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, pipeline_stages!properties_stage_id_fkey(name)')
-        .order('name')
+        .from('operational_properties')
+        .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, stage_name')
+        .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
       const totals: Record<string, number> = {}
       const keys = ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels']
       for (const k of keys) totals[k] = 0
       for (const p of (data || [])) {
-        const stage = (p as any).pipeline_stages?.name
-        if (stage === 'Offboarded' || stage === 'Lead' || stage === 'Quote') continue
         for (const k of keys) totals[k] += (p as any)[k] ?? 0
       }
       return totals
