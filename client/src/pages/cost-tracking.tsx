@@ -630,8 +630,7 @@ export default function CostTrackingPage() {
   // linked contact (full_name / company / payment_method) as the full
   // PropertyDetailModal. The operational_properties view does not expose
   // contact_id, so we pull contact_id from the underlying `properties`
-  // table joined to `contacts` in one round-trip. Mirrors the embedded
-  // join used in client/src/pages/master-list.tsx so behavior matches.
+  // table joined to `contacts` in one round-trip.
   const { data: propertyContacts } = useQuery({
     queryKey: ['/supabase/properties_contact_join_cost_tracking'],
     staleTime: 60_000,
