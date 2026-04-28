@@ -64,14 +64,141 @@ function fmt(n: number | null | undefined) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+// Editable variants used inside the expanded master-list row. The user
+// requested every field be editable in place; these wrappers keep the
+// label/value layout consistent with `Field` so the grid alignment is preserved.
+type SaveFn = (raw: string) => void
+
+function EditText({
+  label, value, onSave, canEdit, placeholder = '—', testId,
+}: { label: string; value: string | null | undefined; onSave: SaveFn; canEdit: boolean; placeholder?: string; testId?: string }) {
   return (
     <div>
       <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium break-words">
+        {canEdit ? (
+          <InlineEdit value={value} type="text" placeholder={placeholder} onSave={onSave} testId={testId} />
+        ) : (value || placeholder)}
+      </span>
+    </div>
+  )
+}
+
+function EditNumber({
+  label, value, onSave, canEdit, placeholder = '—', testId,
+}: { label: string; value: number | string | null | undefined; onSave: SaveFn; canEdit: boolean; placeholder?: string; testId?: string }) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium break-words">
+        {canEdit ? (
+          <InlineEdit value={value} type="number" placeholder={placeholder} onSave={onSave} testId={testId} />
+        ) : (value ?? placeholder)}
+      </span>
+    </div>
+  )
+}
+
+function EditDate({
+  label, value, onSave, canEdit, testId,
+}: { label: string; value: string | null | undefined; onSave: SaveFn; canEdit: boolean; testId?: string }) {
+  // Strip any time component so the date input shows YYYY-MM-DD; the property
+  // table stores these as `date`, never `timestamptz`.
+  const v = value ? String(value).slice(0, 10) : ''
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      <span className="font-medium break-words">
+        {canEdit ? (
+          <InlineEdit value={v} type="date" placeholder="—" onSave={onSave} testId={testId} />
+        ) : (v || '—')}
+      </span>
+    </div>
+  )
+}
+
+function EditToggle({
+  label, value, onChange, canEdit, testId,
+}: { label: string; value: boolean | null | undefined; onChange: (next: boolean) => void; canEdit: boolean; testId?: string }) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => onChange(!value)}
+          className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+          data-testid={testId}
+        >
+          {value ? 'Yes' : 'No'}
+        </button>
+      ) : (
+        <span className="font-medium">{value ? 'Yes' : 'No'}</span>
+      )}
+    </div>
+  )
+}
+
+function EditSelect({
+  label, value, options, onSave, canEdit, placeholder = '—', testId,
+}: {
+  label: string
+  value: string | null | undefined
+  options: { value: string; label: string }[]
+  onSave: (val: string | null) => void
+  canEdit: boolean
+  placeholder?: string
+  testId?: string
+}) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">{label}</span>
+      {canEdit ? (
+        <Select
+          value={value ?? '__null__'}
+          onValueChange={v => onSave(v === '__null__' ? null : v)}
+        >
+          <SelectTrigger className="h-6 px-1.5 py-0.5 text-xs w-full" data-testid={testId}>
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__null__" className="text-xs italic text-muted-foreground">— None —</SelectItem>
+            {options.map(o => (
+              <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <span className="font-medium">{value || placeholder}</span>
+      )}
+    </div>
+  )
+}
+
+// Read-only "auto" fields are computed from inputs (price/sqft, profit %,
+// next filter due, etc.). We still surface them so users have visibility,
+// but mark them clearly so it's obvious they update via their inputs.
+function AutoField({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div>
+      <span className="text-muted-foreground block">
+        {label} <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">· auto</span>
+      </span>
       <span className="font-medium break-words">{value}</span>
     </div>
   )
 }
+
+// Cleaning frequency is stored as free-text in the schema today, but in
+// practice users only pick from this small set. Listing them here keeps
+// inline editing constrained without a migration.
+const FREQUENCY_OPTIONS = [
+  { value: 'Weekly', label: 'Weekly' },
+  { value: 'Bi-weekly', label: 'Bi-weekly' },
+  { value: 'Monthly', label: 'Monthly' },
+  { value: 'Turnover', label: 'Turnover' },
+  { value: 'On-demand', label: 'On-demand' },
+]
 
 // Setup status tiles for the expanded Master List row. Surfaces the four
 // operational onboarding signals (linen, lock access, Wi-Fi, AC filter) with
@@ -517,6 +644,81 @@ export default function CostTrackingPage() {
     },
   })
 
+  // Pipeline stages list — needed by the inline Stage Select on each row and
+  // in the expanded view so admins can reassign stage without leaving the
+  // table. Routed through executeStageTransition below to keep the audit log
+  // and onboarding/offboarding workflow tasks aligned with drag-and-drop.
+  const { data: stages } = useQuery({
+    queryKey: ['/supabase/pipeline_stages_master_list'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('pipeline_stages')
+        .select('id, name, color, slug, display_order')
+        .order('display_order')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Full contacts list for the inline Client picker in the expanded view.
+  const { data: allContacts } = useQuery({
+    queryKey: ['/supabase/contacts_for_client_picker'],
+    staleTime: 60_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, company, payment_method')
+        .order('full_name')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Stage-change mutation routes through executeStageTransition so the audit
+  // log + onboarding/offboarding workflow tasks fire identically to a
+  // drag-and-drop on the pipeline. Mirrors the master-list.tsx implementation.
+  const { mutate: changeStage } = useGuardedMutation('master-list', {
+    mutationFn: async ({ id, stageId }: { id: string; stageId: string }) => {
+      const toStage = stages?.find((s: any) => String(s.id) === String(stageId))
+      const prop = (localProperties ?? properties)?.find((p: any) => String(p.id) === String(id))
+      const fromStage = stages?.find((s: any) => String(s.id) === String(prop?.stage_id))
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(id),
+        propertyName: prop?.name || '',
+        fromStageId: Number(fromStage?.id),
+        fromStageName: fromStage?.name || '',
+        toStageId: Number(stageId),
+        toStageName: toStage?.name || '',
+        changedBy: effectiveUser?.label || 'unknown',
+      })
+      if (!result.ok) throw new Error(result.error)
+    },
+    onMutate: ({ id, stageId }) => {
+      const snapshot = localProperties ? [...localProperties] : null
+      const toStage = stages?.find((s: any) => String(s.id) === String(stageId))
+      setLocalProperties(prev => prev ? prev.map(p => p.id === id ? {
+        ...p,
+        stage_id: Number(stageId),
+        stage_name: toStage?.name ?? p.stage_name,
+        stage_slug: toStage?.slug ?? p.stage_slug,
+        stage_color: toStage?.color ?? p.stage_color,
+      } : p) : prev)
+      return { snapshot }
+    },
+    onSuccess: () => {
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      toast({ title: 'Stage updated' })
+    },
+    onError: (e: any, _, ctx: any) => {
+      if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
+      toast({ title: 'Stage change failed: ' + (e?.message || 'Unknown error'), variant: 'destructive' })
+    },
+  })
+
   // Index by property id. Each entry carries the joined contact (when set)
   // plus the legacy free-text `client` column as a final fallback.
   const contactByPropertyId = useMemo(() => {
@@ -943,18 +1145,77 @@ export default function CostTrackingPage() {
                           title={alertByPropertyId[String(p.id)].title}
                         />
                       )}
-                      <button
-                        onClick={() => openPropertyModal(p.id)}
-                        className="hover:underline text-left max-w-[200px] truncate"
-                        title={p.name}
-                        data-testid={`link-property-${p.id}`}
-                      >
-                        {p.name}
-                      </button>
+                      {isAdmin ? (
+                        <>
+                          <span
+                            className="max-w-[200px] flex-1 min-w-0"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <InlineEdit
+                              value={p.name}
+                              type="text"
+                              placeholder="—"
+                              onSave={v => updateProperty({ id: p.id, field: 'name', value: v.trim() === '' ? null : v.trim() })}
+                              testId={`inline-name-${p.id}`}
+                            />
+                          </span>
+                          <button
+                            onClick={() => openPropertyModal(p.id)}
+                            className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 p-0.5 rounded hover:bg-muted"
+                            title="Open full property editor"
+                            aria-label="Open full property editor"
+                            data-testid={`open-panel-${p.id}`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => openPropertyModal(p.id)}
+                          className="hover:underline text-left max-w-[200px] truncate"
+                          title={p.name}
+                          data-testid={`link-property-${p.id}`}
+                        >
+                          {p.name}
+                        </button>
+                      )}
                     </div>
                   </td>
-                  <td className="py-2 px-3"><StageBadge stage={p.stage_name} /></td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>{p.address || '—'}</td>
+                  <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
+                    {isAdmin ? (
+                      <Select
+                        value={p.stage_id != null ? String(p.stage_id) : ''}
+                        onValueChange={v => v && v !== String(p.stage_id) && changeStage({ id: p.id, stageId: v })}
+                      >
+                        <SelectTrigger
+                          className="h-6 px-1.5 py-0.5 text-xs font-medium gap-1 w-auto border bg-transparent"
+                          data-testid={`row-stage-${p.id}`}
+                        >
+                          <SelectValue><StageBadge stage={p.stage_name} /></SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(stages || []).map((s: any) => (
+                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <StageBadge stage={p.stage_name} />
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>
+                    {isAdmin ? (
+                      <span onClick={e => e.stopPropagation()} className="block max-w-full">
+                        <InlineEdit
+                          value={p.address}
+                          type="text"
+                          placeholder="—"
+                          onSave={v => updateProperty({ id: p.id, field: 'address', value: v.trim() === '' ? null : v.trim() })}
+                          testId={`row-address-${p.id}`}
+                        />
+                      </span>
+                    ) : (p.address || '—')}
+                  </td>
                   <td className="py-2 px-3 text-xs whitespace-nowrap">
                     {(p.bedrooms != null || p.full_baths != null) ? (
                       <span>
@@ -1049,25 +1310,106 @@ export default function CostTrackingPage() {
                 {expandedRow === p.id && (
                   <tr className="bg-muted/30 border-b border-border/50">
                     <td colSpan={17} className="py-4 px-6 space-y-4">
-                      {/* Banner — makes the expanded panel obviously a "Master List record" */}
+                      {/* Banner — every value here (name, stage, client, address)
+                          is inline-editable for users with master-list edit
+                          permission. Stage routes through changeStage so audit
+                          log + workflow tasks fire identically to drag-and-drop. */}
                       {(() => {
                         const { label: clientLabel, paymentMethod } = resolveClient(p)
                         return (
-                      <div className="flex items-center justify-between gap-4 pb-2 border-b border-border/60">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="text-sm font-semibold text-foreground">{p.name}</span>
-                          <StageBadge stage={p.stage_name} />
-                          {clientLabel ? (
-                            <span className="text-xs text-muted-foreground" data-testid={`expanded-client-${p.id}`}>
-                              · {clientLabel}
+                      <div className="flex items-start justify-between gap-4 pb-2 border-b border-border/60">
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            {/* Name — inline editable for editors */}
+                            {canEditSetup ? (
+                              <span className="text-sm font-semibold text-foreground min-w-[12rem] block">
+                                <InlineEdit
+                                  value={p.name}
+                                  type="text"
+                                  placeholder="Name"
+                                  onSave={v => updateProperty({ id: p.id, field: 'name', value: v.trim() === '' ? null : v.trim() })}
+                                  testId={`expanded-name-${p.id}`}
+                                />
+                              </span>
+                            ) : (
+                              <span className="text-sm font-semibold text-foreground">{p.name}</span>
+                            )}
+                            {/* Stage — Select for admins, badge otherwise */}
+                            {isAdmin ? (
+                              <Select
+                                value={p.stage_id != null ? String(p.stage_id) : ''}
+                                onValueChange={v => v && v !== String(p.stage_id) && changeStage({ id: p.id, stageId: v })}
+                              >
+                                <SelectTrigger
+                                  className="h-6 px-1.5 py-0.5 text-xs font-medium gap-1 w-auto border bg-transparent"
+                                  data-testid={`expanded-stage-${p.id}`}
+                                >
+                                  <SelectValue><StageBadge stage={p.stage_name} /></SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(stages || []).map((s: any) => (
+                                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <StageBadge stage={p.stage_name} />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
+                            {/* Client — Select picker over the contacts table.
+                                "Unlinked" clears contact_id so the legacy `client`
+                                free-text field shows through. */}
+                            <span className="inline-flex items-center gap-1" data-testid={`expanded-client-${p.id}`}>
+                              <span>Client:</span>
+                              {canEditSetup ? (
+                                <Select
+                                  value={p.contact_id != null ? String(p.contact_id) : '__unlinked__'}
+                                  onValueChange={v => updateProperty({
+                                    id: p.id,
+                                    field: 'contact_id',
+                                    value: v === '__unlinked__' ? null : v,
+                                  })}
+                                >
+                                  <SelectTrigger className="h-6 px-1.5 py-0.5 text-xs w-auto min-w-[12rem] border bg-background" data-testid={`expanded-client-select-${p.id}`}>
+                                    <SelectValue placeholder="—">{clientLabel || '—'}</SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__unlinked__" className="text-xs italic text-muted-foreground">— Unlinked —</SelectItem>
+                                    {(allContacts || []).map((c: any) => (
+                                      <SelectItem key={c.id} value={String(c.id)} className="text-xs">
+                                        {c.full_name}{c.company && c.company !== c.full_name ? ` (${c.company})` : ''}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="font-medium text-foreground">{clientLabel || '—'}</span>
+                              )}
                               {paymentMethod && (
                                 <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{paymentMethod}</span>
                               )}
                             </span>
-                          ) : null}
-                          {p.address && <span className="text-xs text-muted-foreground">· {p.address}</span>}
+                            {/* Address — inline editable */}
+                            <span className="inline-flex items-center gap-1 flex-1 min-w-[12rem]">
+                              <span>Address:</span>
+                              {canEditSetup ? (
+                                <span className="flex-1 min-w-0">
+                                  <InlineEdit
+                                    value={p.address}
+                                    type="text"
+                                    placeholder="—"
+                                    onSave={v => updateProperty({ id: p.id, field: 'address', value: v.trim() === '' ? null : v.trim() })}
+                                    testId={`expanded-address-${p.id}`}
+                                  />
+                                </span>
+                              ) : (
+                                <span className="font-medium text-foreground">{p.address || '—'}</span>
+                              )}
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           {isAdmin && (
                             <button
                               onClick={() => setConfirmArchiveId(p.id)}
@@ -1101,123 +1443,111 @@ export default function CostTrackingPage() {
                         onUpdate={(field, value) => updateProperty({ id: p.id, field, value })}
                       />
 
+                      {(() => {
+                        // Local save helpers, capturing this row's id. Defined
+                        // inside the IIFE so the component re-renders share a
+                        // stable closure per-row without prop-drilling.
+                        const saveText = (field: string) => (raw: string) =>
+                          updateProperty({ id: p.id, field, value: raw.trim() === '' ? null : raw.trim() })
+                        const saveInt = (field: string) => (raw: string) => {
+                          const t = raw.trim()
+                          if (t === '') return updateProperty({ id: p.id, field, value: null })
+                          const n = parseInt(t, 10)
+                          updateProperty({ id: p.id, field, value: Number.isFinite(n) ? n : null })
+                        }
+                        const saveDate = (field: string) => (raw: string) =>
+                          updateProperty({ id: p.id, field, value: raw.trim() === '' ? null : raw.trim() })
+                        const saveBool = (field: string) => (next: boolean) =>
+                          updateProperty({ id: p.id, field, value: next })
+
+                        return (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* Master List details — every field preserved */}
+                        {/* Master List details — every field is inline-editable
+                            for users with master-list edit. Auto-derived columns
+                            (e.g. price/sq ft, suggested pay, next filter due) are
+                            marked with the "auto" hint so it's clear which cells
+                            update on their own. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Property Details</div>
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                            Property Details
+                            {canEditSetup && (
+                              <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 normal-case tracking-normal">
+                                · Click any value to edit
+                              </span>
+                            )}
+                          </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <Field label="Address" value={p.address || '—'} />
-                            <Field
-                              label="Client"
-                              value={resolveClient(p).label || '—'}
-                            />
-                            <Field label="Bedrooms" value={p.bedrooms ?? '—'} />
-                            <Field label="Full Baths" value={p.full_baths ?? '—'} />
-                            <Field
-                              label="Half Baths"
-                              value={
-                                canEditSetup ? (
-                                  <InlineEdit
-                                    value={p.half_baths}
-                                    type="number"
-                                    placeholder="—"
-                                    onSave={raw => {
-                                      const t = raw.trim()
-                                      if (t === '') return updateProperty({ id: p.id, field: 'half_baths', value: null })
-                                      const n = parseInt(t, 10)
-                                      updateProperty({ id: p.id, field: 'half_baths', value: Number.isFinite(n) ? n : null })
-                                    }}
-                                    testId={`setup-edit-half_baths-${p.id}`}
-                                  />
-                                ) : (p.half_baths ?? '—')
-                              }
-                            />
-                            <Field label="Kitchens" value={p.kitchens ?? '—'} />
-                            <Field label="Sq Footage" value={p.square_footage ? Number(p.square_footage).toLocaleString() : '—'} />
-                            <Field label="Beds (count)" value={p.number_of_beds ?? '—'} />
-                            <Field label="Guest Count" value={p.guest_count ?? '—'} />
-                            <Field
-                              label="Hot Tub"
-                              value={
-                                canEditSetup ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => updateProperty({ id: p.id, field: 'hot_tub', value: !p.hot_tub })}
-                                    className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${p.hot_tub ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
-                                    data-testid={`setup-edit-hot_tub-${p.id}`}
-                                  >
-                                    {p.hot_tub ? 'Yes' : 'No'}
-                                  </button>
-                                ) : (p.hot_tub ? 'Yes' : 'No')
-                              }
-                            />
-                            <Field
-                              label="Pet Friendly"
-                              value={
-                                canEditSetup ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => updateProperty({ id: p.id, field: 'pet_friendly', value: !p.pet_friendly })}
-                                    className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${p.pet_friendly ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
-                                    data-testid={`setup-edit-pet_friendly-${p.id}`}
-                                  >
-                                    {p.pet_friendly ? 'Yes' : 'No'}
-                                  </button>
-                                ) : (p.pet_friendly ? 'Yes' : 'No')
-                              }
-                            />
-                            <Field label="$/Sq Ft" value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
-                            <Field label="CE/Sq Ft" value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
-                            <Field label="Suggested Pay" value={fmt(p.suggested_pay)} />
-                            <Field label="Frequency" value={p.cleaning_frequency || '—'} />
-                            <Field label="Cleans / Mo" value={p.avg_cleans_per_month ?? '—'} />
-                            <Field label="First Clean" value={p.first_clean_date || '—'} />
-                            <Field label="Onboarding" value={p.onboarding_date || '—'} />
-                            <Field label="Offboarding" value={p.offboarding_date || '—'} />
-                            <Field label="Filter Size" value={p.filter_size || '—'} />
-                            <Field label="Last Filter" value={p.last_filter_changed || '—'} />
-                            <Field label="Next Filter Due" value={p.next_filter_due || '—'} />
-                            <Field label="Breezeway" value={p.breezeway_name || p.breezeway_id || '—'} />
+                            <EditText  label="Address"     value={p.address}        canEdit={canEditSetup} onSave={saveText('address')}            testId={`row-detail-address-${p.id}`} />
+                            <EditNumber label="Bedrooms"    value={p.bedrooms}       canEdit={canEditSetup} onSave={saveInt('bedrooms')}            testId={`row-detail-bedrooms-${p.id}`} />
+                            <EditNumber label="Full Baths"  value={p.full_baths}     canEdit={canEditSetup} onSave={saveInt('full_baths')}          testId={`row-detail-full_baths-${p.id}`} />
+                            <EditNumber label="Half Baths"  value={p.half_baths}     canEdit={canEditSetup} onSave={saveInt('half_baths')}          testId={`row-detail-half_baths-${p.id}`} />
+                            <EditNumber label="Kitchens"    value={p.kitchens}       canEdit={canEditSetup} onSave={saveInt('kitchens')}            testId={`row-detail-kitchens-${p.id}`} />
+                            <EditNumber label="Sq Footage"  value={p.square_footage} canEdit={canEditSetup} onSave={saveInt('square_footage')}      testId={`row-detail-square_footage-${p.id}`} />
+                            <EditNumber label="Beds (count)" value={p.number_of_beds} canEdit={canEditSetup} onSave={saveInt('number_of_beds')}     testId={`row-detail-number_of_beds-${p.id}`} />
+                            <EditNumber label="Guest Count" value={p.guest_count}    canEdit={canEditSetup} onSave={saveInt('guest_count')}         testId={`row-detail-guest_count-${p.id}`} />
+                            <EditToggle label="Hot Tub"     value={p.hot_tub}        canEdit={canEditSetup} onChange={saveBool('hot_tub')}          testId={`row-detail-hot_tub-${p.id}`} />
+                            <EditToggle label="Pet Friendly" value={p.pet_friendly}  canEdit={canEditSetup} onChange={saveBool('pet_friendly')}     testId={`row-detail-pet_friendly-${p.id}`} />
+                            <AutoField  label="$/Sq Ft"     value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
+                            <AutoField  label="CE/Sq Ft"    value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
+                            <AutoField  label="Suggested Pay" value={fmt(p.suggested_pay)} />
+                            <EditSelect label="Frequency"   value={p.cleaning_frequency} options={FREQUENCY_OPTIONS} canEdit={canEditSetup} onSave={v => updateProperty({ id: p.id, field: 'cleaning_frequency', value: v })} testId={`row-detail-cleaning_frequency-${p.id}`} />
+                            <AutoField  label="Cleans / Mo" value={p.avg_cleans_per_month ?? '—'} />
+                            <EditDate   label="First Clean" value={p.first_clean_date}    canEdit={canEditSetup} onSave={saveDate('first_clean_date')} testId={`row-detail-first_clean_date-${p.id}`} />
+                            <EditDate   label="Onboarding"  value={p.onboarding_date}     canEdit={canEditSetup} onSave={saveDate('onboarding_date')}  testId={`row-detail-onboarding_date-${p.id}`} />
+                            <EditDate   label="Offboarding" value={p.offboarding_date}    canEdit={canEditSetup} onSave={saveDate('offboarding_date')} testId={`row-detail-offboarding_date-${p.id}`} />
+                            <EditText   label="Filter Size" value={p.filter_size}         canEdit={canEditSetup} onSave={saveText('filter_size')}      testId={`row-detail-filter_size-${p.id}`} placeholder="e.g. 16x25x1" />
+                            <EditDate   label="Last Filter" value={p.last_filter_changed} canEdit={canEditSetup} onSave={saveDate('last_filter_changed')} testId={`row-detail-last_filter_changed-${p.id}`} />
+                            <AutoField  label="Next Filter Due" value={p.next_filter_due ? String(p.next_filter_due).slice(0, 10) : '—'} />
+                            <EditText   label="Breezeway"   value={p.breezeway_name || p.breezeway_id} canEdit={canEditSetup} onSave={saveText('breezeway_id')} testId={`row-detail-breezeway_id-${p.id}`} />
                           </div>
                         </div>
 
-                        {/* Linen counts */}
+                        {/* Linen counts — every count is inline-editable. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Linens &amp; Beds</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <Field label="King Beds" value={p.king_beds ?? '—'} />
-                            <Field label="Queen Beds" value={p.queen_beds ?? '—'} />
-                            <Field label="Full Beds" value={p.full_beds ?? '—'} />
-                            <Field label="Twin Beds" value={p.twin_beds ?? '—'} />
-                            <Field label="Bath Towels" value={p.bath_towels ?? '—'} />
-                            <Field label="Hand Towels" value={p.hand_towels ?? '—'} />
-                            <Field label="Washcloths" value={p.washcloths ?? '—'} />
-                            <Field label="Bath Mats" value={p.bathmats ?? '—'} />
-                            <Field label="Pool Towels" value={p.pool_towels ?? '—'} />
-                            {/* Bed Sizes free-text was redundant with the
-                                King/Queen/Full/Twin counts above — only show
-                                it as a fallback if no individual counts exist
-                                AND the legacy text is non-empty. */}
+                            <EditNumber label="King Beds"    value={p.king_beds}    canEdit={canEditSetup} onSave={saveInt('king_beds')}    testId={`row-detail-king_beds-${p.id}`} />
+                            <EditNumber label="Queen Beds"   value={p.queen_beds}   canEdit={canEditSetup} onSave={saveInt('queen_beds')}   testId={`row-detail-queen_beds-${p.id}`} />
+                            <EditNumber label="Full Beds"    value={p.full_beds}    canEdit={canEditSetup} onSave={saveInt('full_beds')}    testId={`row-detail-full_beds-${p.id}`} />
+                            <EditNumber label="Twin Beds"    value={p.twin_beds}    canEdit={canEditSetup} onSave={saveInt('twin_beds')}    testId={`row-detail-twin_beds-${p.id}`} />
+                            <EditNumber label="Bath Towels"  value={p.bath_towels}  canEdit={canEditSetup} onSave={saveInt('bath_towels')}  testId={`row-detail-bath_towels-${p.id}`} />
+                            <EditNumber label="Hand Towels"  value={p.hand_towels}  canEdit={canEditSetup} onSave={saveInt('hand_towels')}  testId={`row-detail-hand_towels-${p.id}`} />
+                            <EditNumber label="Washcloths"   value={p.washcloths}   canEdit={canEditSetup} onSave={saveInt('washcloths')}   testId={`row-detail-washcloths-${p.id}`} />
+                            <EditNumber label="Bath Mats"    value={p.bathmats}     canEdit={canEditSetup} onSave={saveInt('bathmats')}     testId={`row-detail-bathmats-${p.id}`} />
+                            <EditNumber label="Pool Towels"  value={p.pool_towels}  canEdit={canEditSetup} onSave={saveInt('pool_towels')}  testId={`row-detail-pool_towels-${p.id}`} />
                             {p.bed_sizes_text && (p.king_beds == null && p.queen_beds == null && p.full_beds == null && p.twin_beds == null) && (
-                              <Field label="Bed Sizes (legacy)" value={p.bed_sizes_text} />
+                              <EditText label="Bed Sizes (legacy)" value={p.bed_sizes_text} canEdit={canEditSetup} onSave={saveText('bed_sizes_text')} testId={`row-detail-bed_sizes_text-${p.id}`} />
                             )}
                           </div>
-                          {p.linen_notes && (
-                            <div className="text-xs text-muted-foreground mt-2"><span className="font-medium">Linen notes:</span> {p.linen_notes}</div>
-                          )}
+                          <div className="text-xs text-muted-foreground mt-3">
+                            <span className="block mb-1">Linen notes</span>
+                            {canEditSetup ? (
+                              <InlineEdit
+                                value={p.linen_notes}
+                                type="text"
+                                placeholder="Add linen notes…"
+                                onSave={saveText('linen_notes')}
+                                testId={`row-detail-linen_notes-${p.id}`}
+                              />
+                            ) : (
+                              <span className="font-medium">{p.linen_notes || '—'}</span>
+                            )}
+                          </div>
                         </div>
 
-                        {/* Codes & access — always rendered so the "info architecture" stays consistent */}
+                        {/* Codes & access — every code is inline-editable. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access &amp; Codes</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <Field label="Auto Code" value={p.auto_code || '—'} />
-                            <Field label="Door Code" value={p.door_code || '—'} />
-                            <Field label="Other Codes" value={p.other_codes || '—'} />
-                            <Field label="WiFi" value={p.wifi_info || '—'} />
+                            <EditText label="Auto Code"   value={p.auto_code}   canEdit={canEditSetup} onSave={saveText('auto_code')}   testId={`row-detail-auto_code-${p.id}`} />
+                            <EditText label="Door Code"   value={p.door_code}   canEdit={canEditSetup} onSave={saveText('door_code')}   testId={`row-detail-door_code-${p.id}`} />
+                            <EditText label="Other Codes" value={p.other_codes} canEdit={canEditSetup} onSave={saveText('other_codes')} testId={`row-detail-other_codes-${p.id}`} />
+                            <EditText label="WiFi"        value={p.wifi_info}   canEdit={canEditSetup} onSave={saveText('wifi_info')}   testId={`row-detail-wifi_info-${p.id}`} placeholder="SSID / password / notes" />
                           </div>
                         </div>
                       </div>
+                        )
+                      })()}
 
                       <div className="rounded-md border border-border/60 bg-card p-3 space-y-3">
                         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes &amp; Cleaner</div>
