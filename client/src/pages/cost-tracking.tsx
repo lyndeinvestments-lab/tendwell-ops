@@ -17,9 +17,11 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAppSettings } from '@/hooks/use-app-settings'
-import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { useAuth } from '@/lib/auth'
 import Papa from 'papaparse'
 import { profitTier } from '@/lib/profit-colors'
 
@@ -78,7 +80,15 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 // missing — a property can legitimately have no king/queen/full/twin beds.
 // Linen is "complete" when the aggregate bed count is positive AND the core
 // towel set is populated.
-function SetupStatusTiles({ property }: { property: any }) {
+function SetupStatusTiles({
+  property,
+  canEdit,
+  onUpdate,
+}: {
+  property: any
+  canEdit: boolean
+  onUpdate: (field: string, value: number | string | boolean | null) => void
+}) {
   const bedTotal =
     (Number(property.king_beds) || 0) +
     (Number(property.queen_beds) || 0) +
@@ -168,22 +178,99 @@ function SetupStatusTiles({ property }: { property: any }) {
     )
   }
 
+  // Inline editable cell — reuses the table-cell InlineEdit component when the
+  // user has edit permission, otherwise renders a plain value. Numeric fields
+  // store null when cleared so empty cells stay distinguishable from zero.
+  function NumCell({ field, parse = 'int' }: { field: string; parse?: 'int' | 'float' }) {
+    const v = property[field]
+    if (!canEdit) {
+      return <span className="text-foreground tabular-nums text-right">{v ?? '—'}</span>
+    }
+    return (
+      <span className="text-right">
+        <InlineEdit
+          value={v}
+          type="number"
+          placeholder="—"
+          onSave={raw => {
+            const trimmed = raw.trim()
+            if (trimmed === '') return onUpdate(field, null)
+            const n = parse === 'int' ? parseInt(trimmed, 10) : parseFloat(trimmed)
+            onUpdate(field, Number.isFinite(n) ? n : null)
+          }}
+          testId={`setup-edit-${field}-${property.id}`}
+        />
+      </span>
+    )
+  }
+
+  function TextCell({ field, placeholder = '—' }: { field: string; placeholder?: string }) {
+    const v = property[field]
+    if (!canEdit) {
+      return <span className="text-foreground truncate text-right">{v && String(v).trim() ? v : placeholder}</span>
+    }
+    return (
+      <span className="text-right block min-w-0">
+        <InlineEdit
+          value={v}
+          type="text"
+          placeholder={placeholder}
+          onSave={raw => onUpdate(field, raw.trim() === '' ? null : raw.trim())}
+          testId={`setup-edit-${field}-${property.id}`}
+        />
+      </span>
+    )
+  }
+
+  function DateCell({ field }: { field: string }) {
+    const v = property[field]
+    if (!canEdit) {
+      return <span className="text-foreground text-right">{v ? String(v).slice(0, 10) : '—'}</span>
+    }
+    return (
+      <span className="text-right block">
+        <InlineEdit
+          value={v ? String(v).slice(0, 10) : ''}
+          type="date"
+          placeholder="—"
+          onSave={raw => onUpdate(field, raw.trim() === '' ? null : raw.trim())}
+          testId={`setup-edit-${field}-${property.id}`}
+        />
+      </span>
+    )
+  }
+
   return (
     <div data-testid={`setup-status-tiles-${property.id}`}>
-      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Setup Status</h4>
+      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+        Setup Status
+        {canEdit && (
+          <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 normal-case tracking-normal">
+            · Click any value to edit
+          </span>
+        )}
+      </h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile icon={BedDouble} title="Linen Setup" status={linenStatus} href="/linen-tracker" testId={`tile-linen-${property.id}`}>
           <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+            <span>King beds</span>
+            <NumCell field="king_beds" />
+            <span>Queen beds</span>
+            <NumCell field="queen_beds" />
+            <span>Full beds</span>
+            <NumCell field="full_beds" />
+            <span>Twin beds</span>
+            <NumCell field="twin_beds" />
             <span>Bath towels</span>
-            <span className="text-foreground tabular-nums text-right">{property.bath_towels ?? '—'}</span>
+            <NumCell field="bath_towels" />
             <span>Hand towels</span>
-            <span className="text-foreground tabular-nums text-right">{property.hand_towels ?? '—'}</span>
+            <NumCell field="hand_towels" />
             <span>Washcloths</span>
-            <span className="text-foreground tabular-nums text-right">{property.washcloths ?? '—'}</span>
-            <span>Bathmats</span>
-            <span className="text-foreground tabular-nums text-right">{property.bathmats ?? '—'}</span>
+            <NumCell field="washcloths" />
+            <span>Bath mats</span>
+            <NumCell field="bathmats" />
             <span>Pool towels</span>
-            <span className="text-foreground tabular-nums text-right">{property.pool_towels ?? '—'}</span>
+            <NumCell field="pool_towels" />
           </div>
           {linenStatus !== 'complete' && linenMissing.length > 0 && (
             <p className="text-[10px] text-amber-700 dark:text-amber-400">Missing: {linenMissing.join(', ')}</p>
@@ -193,11 +280,11 @@ function SetupStatusTiles({ property }: { property: any }) {
         <Tile icon={Lock} title="Lock Access Setup" status={lockStatus} href="/access-codes" testId={`tile-lock-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <span>Auto code</span>
-            <span className="text-foreground truncate text-right">{hasAuto ? property.auto_code : '—'}</span>
+            <TextCell field="auto_code" />
             <span>Door code</span>
-            <span className="text-foreground truncate text-right">{hasDoor ? property.door_code : '—'}</span>
+            <TextCell field="door_code" />
             <span>Other</span>
-            <span className="text-foreground truncate text-right">{hasOther ? property.other_codes : '—'}</span>
+            <TextCell field="other_codes" />
           </div>
           {lockStatus === 'missing' && (
             <p className="text-[10px] text-amber-700 dark:text-amber-400">
@@ -207,23 +294,21 @@ function SetupStatusTiles({ property }: { property: any }) {
         </Tile>
 
         <Tile icon={Wifi} title="Wi-Fi Setup" status={wifiStatus} href="/access-codes" testId={`tile-wifi-${property.id}`}>
-          {hasWifi ? (
-            <p className="text-foreground whitespace-pre-wrap break-words">{property.wifi_info}</p>
-          ) : (
-            <p className="text-[11px] text-amber-700 dark:text-amber-400">No Wi-Fi info captured.</p>
+          <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+            <span>Wi-Fi info</span>
+            <TextCell field="wifi_info" placeholder="SSID / password / notes" />
+          </div>
+          {!hasWifi && (
+            <p className="text-[10px] text-amber-700 dark:text-amber-400">Add SSID and password (or unit instructions).</p>
           )}
         </Tile>
 
         <Tile icon={Wind} title="AC Filter Setup" status={filterStatus} href="/ac-filters" testId={`tile-filter-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <span>Filter size</span>
-            <span className="text-foreground text-right">{hasFilterSize ? property.filter_size : '—'}</span>
-            {property.last_filter_changed && (
-              <>
-                <span>Last change</span>
-                <span className="text-foreground text-right">{String(property.last_filter_changed).slice(0, 10)}</span>
-              </>
-            )}
+            <TextCell field="filter_size" placeholder='e.g. 16x25x1' />
+            <span>Last change</span>
+            <DateCell field="last_filter_changed" />
             {property.next_filter_due && (
               <>
                 <span>Next due</span>
@@ -311,6 +396,16 @@ export default function CostTrackingPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
+  const { effectiveUser, isEmulating } = useAuth()
+  // Mirror the master-list permission model: editing requires the
+  // master-list edit grant, archive requires admin role. Emulated sessions
+  // (admin viewing as another user) are read-only on both.
+  const canEditSetup = !isEmulating && (
+    !!effectiveUser?.resolvedPermissions['master-list']?.edit
+    || !!effectiveUser?.resolvedPermissions['cost-tracking']?.edit
+    || !!effectiveUser?.resolvedPermissions['property-list']?.edit
+  )
+  const isAdmin = !isEmulating && effectiveUser?.role === 'admin'
   usePageTitle('Master List')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -504,7 +599,7 @@ export default function CostTrackingPage() {
   }
 
   const { mutate: updateProperty } = useGuardedMutation('cost-tracking', {
-    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | null }) => {
+    mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | boolean | null }) => {
       const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
       if (error) throw error
     },
@@ -540,7 +635,11 @@ export default function CostTrackingPage() {
       return { snapshot, oldValue, propName }
     },
     onSuccess: (_, { id, field, value }, ctx: any) => {
-      logPropertyEdit(id, field, ctx?.oldValue, value, ctx?.propName)
+      // Audit log is typed for primitives; coerce booleans (hot_tub /
+      // pet_friendly toggles) into 1/0 so the entry stays comparable.
+      const logValue: string | number | null =
+        typeof value === 'boolean' ? (value ? 1 : 0) : value
+      logPropertyEdit(id, field, ctx?.oldValue, logValue, ctx?.propName)
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
@@ -550,6 +649,38 @@ export default function CostTrackingPage() {
     onError: (_, __, ctx: any) => {
       if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
       toast({ title: 'Update failed', variant: 'destructive' })
+    },
+  })
+
+  // Admin-only soft-delete. Mirrors master-list behavior: writes deleted_at
+  // so the property disappears from any view that uses the standard RLS
+  // (deleted_at IS NULL) policy. Recoverable for 30 days from the Master List
+  // archive panel.
+  const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null)
+  const { mutate: archiveProperty, isPending: archivePending } = useGuardedMutation('master-list', {
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_, id) => {
+      const prop = (localProperties ?? properties)?.find((p: any) => p.id === id)
+      // Drop the row locally so the table updates before the refetch lands.
+      setLocalProperties(prev => prev ? prev.filter(p => p.id !== id) : prev)
+      if (expandedRow === id) setExpandedRow(null)
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      setConfirmArchiveId(null)
+      toast({
+        title: `Archived ${prop?.name ?? 'property'}`,
+        description: 'Recoverable for 30 days from the Master List archive panel.',
+      })
+    },
+    onError: (e: any) => {
+      setConfirmArchiveId(null)
+      toast({ title: 'Archive failed: ' + (e?.message || 'Unknown error'), variant: 'destructive' })
     },
   })
 
@@ -904,6 +1035,15 @@ export default function CostTrackingPage() {
                     <ContextMenuItem onClick={() => resetRow(p.id)} className="gap-2">
                       <RotateCcw className="w-3.5 h-3.5" /> Reset Row
                     </ContextMenuItem>
+                    {isAdmin && (
+                      <ContextMenuItem
+                        onClick={() => setConfirmArchiveId(p.id)}
+                        className="gap-2 text-destructive focus:text-destructive"
+                        data-testid={`menu-archive-${p.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Archive property
+                      </ContextMenuItem>
+                    )}
                   </ContextMenuContent>
                 </ContextMenu>
                 {expandedRow === p.id && (
@@ -927,20 +1067,39 @@ export default function CostTrackingPage() {
                           ) : null}
                           {p.address && <span className="text-xs text-muted-foreground">· {p.address}</span>}
                         </div>
-                        <button
-                          onClick={() => openPropertyModal(p.id)}
-                          className="text-xs text-primary hover:underline"
-                          data-testid={`button-open-modal-${p.id}`}
-                        >
-                          Open full property →
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {isAdmin && (
+                            <button
+                              onClick={() => setConfirmArchiveId(p.id)}
+                              className="text-xs text-destructive hover:underline inline-flex items-center gap-1"
+                              data-testid={`button-archive-${p.id}`}
+                              title="Archive (recoverable for 30 days)"
+                            >
+                              <Trash2 className="w-3 h-3" /> Archive property
+                            </button>
+                          )}
+                          <button
+                            onClick={() => openPropertyModal(p.id)}
+                            className="text-xs text-primary hover:underline"
+                            data-testid={`button-open-modal-${p.id}`}
+                          >
+                            Open full property →
+                          </button>
+                        </div>
                       </div>
                         )
                       })()}
 
                       {/* Setup Status — operational onboarding readiness. Financials
-                          live in the main row + Pro Forma; intentionally absent here. */}
-                      <SetupStatusTiles property={p} />
+                          live in the main row + Pro Forma; intentionally absent here.
+                          When the user has master-list edit permission, all setup
+                          fields are inline-editable; view-only users see the same
+                          summary read-only. */}
+                      <SetupStatusTiles
+                        property={p}
+                        canEdit={canEditSetup}
+                        onUpdate={(field, value) => updateProperty({ id: p.id, field, value })}
+                      />
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {/* Master List details — every field preserved */}
@@ -954,13 +1113,59 @@ export default function CostTrackingPage() {
                             />
                             <Field label="Bedrooms" value={p.bedrooms ?? '—'} />
                             <Field label="Full Baths" value={p.full_baths ?? '—'} />
-                            <Field label="Half Baths" value={p.half_baths ?? '—'} />
+                            <Field
+                              label="Half Baths"
+                              value={
+                                canEditSetup ? (
+                                  <InlineEdit
+                                    value={p.half_baths}
+                                    type="number"
+                                    placeholder="—"
+                                    onSave={raw => {
+                                      const t = raw.trim()
+                                      if (t === '') return updateProperty({ id: p.id, field: 'half_baths', value: null })
+                                      const n = parseInt(t, 10)
+                                      updateProperty({ id: p.id, field: 'half_baths', value: Number.isFinite(n) ? n : null })
+                                    }}
+                                    testId={`setup-edit-half_baths-${p.id}`}
+                                  />
+                                ) : (p.half_baths ?? '—')
+                              }
+                            />
                             <Field label="Kitchens" value={p.kitchens ?? '—'} />
                             <Field label="Sq Footage" value={p.square_footage ? Number(p.square_footage).toLocaleString() : '—'} />
                             <Field label="Beds (count)" value={p.number_of_beds ?? '—'} />
                             <Field label="Guest Count" value={p.guest_count ?? '—'} />
-                            <Field label="Hot Tub" value={p.hot_tub ? 'Yes' : 'No'} />
-                            <Field label="Pet Friendly" value={p.pet_friendly ? 'Yes' : 'No'} />
+                            <Field
+                              label="Hot Tub"
+                              value={
+                                canEditSetup ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => updateProperty({ id: p.id, field: 'hot_tub', value: !p.hot_tub })}
+                                    className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${p.hot_tub ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+                                    data-testid={`setup-edit-hot_tub-${p.id}`}
+                                  >
+                                    {p.hot_tub ? 'Yes' : 'No'}
+                                  </button>
+                                ) : (p.hot_tub ? 'Yes' : 'No')
+                              }
+                            />
+                            <Field
+                              label="Pet Friendly"
+                              value={
+                                canEditSetup ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => updateProperty({ id: p.id, field: 'pet_friendly', value: !p.pet_friendly })}
+                                    className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${p.pet_friendly ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+                                    data-testid={`setup-edit-pet_friendly-${p.id}`}
+                                  >
+                                    {p.pet_friendly ? 'Yes' : 'No'}
+                                  </button>
+                                ) : (p.pet_friendly ? 'Yes' : 'No')
+                              }
+                            />
                             <Field label="$/Sq Ft" value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
                             <Field label="CE/Sq Ft" value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
                             <Field label="Suggested Pay" value={fmt(p.suggested_pay)} />
@@ -1068,6 +1273,55 @@ export default function CostTrackingPage() {
           </div>
         </div>
       )}
+
+      {/* Admin archive confirmation. Soft-delete sets deleted_at; the row stays
+          recoverable for 30 days from the Master List archive panel and is then
+          purged by the scheduled cleanup. Hard delete is intentionally not
+          exposed here — admins must use the archive panel. */}
+      <Dialog
+        open={!!confirmArchiveId}
+        onOpenChange={v => { if (!v && !archivePending) setConfirmArchiveId(null) }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Archive property?</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const target = displayProperties.find((p: any) => p.id === confirmArchiveId)
+            return (
+              <div className="space-y-3 text-sm">
+                <p>
+                  <span className="font-medium">{target?.name ?? 'This property'}</span>{' '}
+                  will be removed from active lists. It stays recoverable for 30 days from the Master List archive panel, then is purged automatically.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  This is a soft delete — historical financial records remain intact.
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setConfirmArchiveId(null)}
+                    disabled={archivePending}
+                    data-testid="button-archive-cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={archivePending}
+                    onClick={() => confirmArchiveId && archiveProperty(confirmArchiveId)}
+                    data-testid="button-archive-confirm"
+                  >
+                    {archivePending ? 'Archiving…' : 'Archive'}
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
