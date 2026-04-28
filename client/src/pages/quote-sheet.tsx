@@ -40,6 +40,10 @@ type NewProp = {
   cleaner_pay: string
   bedrooms: string
   number_of_beds: string
+  king_beds: string
+  queen_beds: string
+  full_beds: string
+  twin_beds: string
   full_baths: string
   half_baths: string
   number_of_kitchens: string
@@ -56,6 +60,10 @@ const EMPTY_PROP: NewProp = {
   cleaner_pay: '',
   bedrooms: '',
   number_of_beds: '',
+  king_beds: '',
+  queen_beds: '',
+  full_beds: '',
+  twin_beds: '',
   full_baths: '',
   half_baths: '',
   number_of_kitchens: '',
@@ -223,6 +231,10 @@ export default function QuoteSheetPage() {
         cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
         bedrooms: newProp.bedrooms ? parseInt(newProp.bedrooms) : null,
         number_of_beds: beds || null,
+        king_beds: newProp.king_beds ? parseInt(newProp.king_beds) : null,
+        queen_beds: newProp.queen_beds ? parseInt(newProp.queen_beds) : null,
+        full_beds: newProp.full_beds ? parseInt(newProp.full_beds) : null,
+        twin_beds: newProp.twin_beds ? parseInt(newProp.twin_beds) : null,
         full_baths: fullBaths || null,
         half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : null,
         kitchens,
@@ -279,6 +291,10 @@ export default function QuoteSheetPage() {
       cleaner_pay: prop.cleaner_pay != null ? String(prop.cleaner_pay) : '',
       bedrooms: prop.bedrooms != null ? String(prop.bedrooms) : '',
       number_of_beds: prop.number_of_beds != null ? String(prop.number_of_beds) : '',
+      king_beds: prop.king_beds != null ? String(prop.king_beds) : '',
+      queen_beds: prop.queen_beds != null ? String(prop.queen_beds) : '',
+      full_beds: prop.full_beds != null ? String(prop.full_beds) : '',
+      twin_beds: prop.twin_beds != null ? String(prop.twin_beds) : '',
       full_baths: prop.full_baths != null ? String(prop.full_baths) : '',
       half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
       number_of_kitchens: prop.number_of_kitchens != null ? String(prop.number_of_kitchens) : '',
@@ -717,7 +733,24 @@ export default function QuoteSheetPage() {
                 <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Number of Beds</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">Number of Beds</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total =
+                        (parseInt(newProp.king_beds) || 0) +
+                        (parseInt(newProp.queen_beds) || 0) +
+                        (parseInt(newProp.full_beds) || 0) +
+                        (parseInt(newProp.twin_beds) || 0)
+                      setNewProp(prev => ({ ...prev, number_of_beds: total > 0 ? String(total) : '' }))
+                    }}
+                    title="Sum king + queen + full + twin"
+                    className="text-[9px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60"
+                  >
+                    Auto
+                  </button>
+                </div>
                 <Input type="number" value={newProp.number_of_beds} onChange={e => setNewProp(prev => ({ ...prev, number_of_beds: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_beds" />
               </div>
               <div className="space-y-1">
@@ -755,6 +788,18 @@ export default function QuoteSheetPage() {
                   className="h-8 text-sm"
                   data-testid="input-new-sq_ft"
                 />
+              </div>
+            </div>
+
+            {/* Bed sizes — optional. When filled in, the "Auto" button on
+                Number of Beds derives the total from these. */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Bed Sizes (optional)</Label>
+              <div className="grid grid-cols-4 gap-2">
+                <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder="King" data-testid="input-new-king_beds" />
+                <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder="Queen" data-testid="input-new-queen_beds" />
+                <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder="Full" data-testid="input-new-full_beds" />
+                <Input type="number" value={newProp.twin_beds} onChange={e => setNewProp(prev => ({ ...prev, twin_beds: e.target.value }))} className="h-8 text-sm" placeholder="Twin" data-testid="input-new-twin_beds" />
               </div>
             </div>
 
