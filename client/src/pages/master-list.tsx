@@ -75,6 +75,7 @@ export default function MasterListPage() {
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const isAdmin = effectiveUser?.role === 'admin'
+  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   // Per-row inline detail drawer (master-list table). Keyed by property id.
   // Distinct from the CSV import preview's `expandedRows` (which keys by rowIdx).
   const [rowDrawers, setRowDrawers] = useState<Set<string>>(new Set())
@@ -1071,7 +1072,9 @@ export default function MasterListPage() {
                     <td colSpan={isAdmin ? 14 : 13} className="p-0">
                       <ExpandedPropertyDrawer
                         property={m}
+                        canViewFinancials={canViewFinancials}
                         onUpdate={(field, value) => quickUpdate({ id: p.id, field, value })}
+                        onDraftCost={(field, draft) => previewCostEdit(p.id, field, draft)}
                         onOpenFullModal={() => setDetailProperty(p)}
                       />
                     </td>
@@ -1426,17 +1429,60 @@ export default function MasterListPage() {
 // breakdown lives in the main row + Pro Forma — intentionally absent here.
 function ExpandedPropertyDrawer({
   property,
+  canViewFinancials,
   onUpdate,
+  onDraftCost,
   onOpenFullModal,
 }: {
   property: any
+  canViewFinancials: boolean
   onUpdate: (field: string, value: number | string | boolean | null) => void
+  // Live-updates derived columns (estimated_profit, profit_percentage) on the
+  // merged row while the user is typing in the CE/Pay cells.
+  onDraftCost: (field: 'ce_charged' | 'cleaner_pay', draft: string) => void
   onOpenFullModal: () => void
 }) {
   function NumberCell({ label, field }: { label: string; field: string }) {
     return (
       <div className="flex flex-col gap-0.5">
         <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <div className="text-xs tabular-nums">
+          <InlineEdit
+            value={property[field]}
+            type="number"
+            onSave={v => onUpdate(field, v ? parseFloat(v) : null)}
+            placeholder="—"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // Same as NumberCell but with a tiny "auto" button that derives the value
+  // from other property fields (e.g. bed sizes) and saves it immediately.
+  function NumberCellWithAuto({
+    label, field, compute, tooltip,
+  }: {
+    label: string; field: string
+    compute: () => number
+    tooltip?: string
+  }) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const v = compute()
+              onUpdate(field, v > 0 ? v : null)
+            }}
+            title={tooltip ?? 'Auto-fill from bed sizes'}
+            className="text-[9px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60"
+          >
+            Auto
+          </button>
+        </div>
         <div className="text-xs tabular-nums">
           <InlineEdit
             value={property[field]}
@@ -1476,6 +1522,44 @@ function ExpandedPropertyDrawer({
           className={`px-2 py-0.5 self-start rounded-md border text-[11px] font-medium transition-colors ${v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
         >
           {v ? 'Yes' : 'No'}
+        </button>
+      </div>
+    )
+  }
+
+  function MoneyCell({ label, field }: { label: string; field: 'ce_charged' | 'cleaner_pay' }) {
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <div className="text-xs tabular-nums">
+          <InlineEdit
+            value={property[field]}
+            type="number"
+            onDraftChange={v => onDraftCost(field, v)}
+            onSave={v => onUpdate(field, v ? parseFloat(v) : null)}
+            placeholder="—"
+          />
+        </div>
+      </div>
+    )
+  }
+
+  // pet_friendly column is TEXT (used as free-text in the onboarding form).
+  // In the master list we just want yes/no — write 'yes' or null. Existing
+  // non-empty values count as Yes for backward compatibility.
+  function YesNoTextCell({ label, field }: { label: string; field: string }) {
+    const raw = property[field]
+    const str = raw == null ? '' : String(raw).trim().toLowerCase()
+    const isYes = str !== '' && str !== 'no' && str !== 'false' && str !== '0'
+    return (
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <button
+          type="button"
+          onClick={() => onUpdate(field, isYes ? null : 'yes')}
+          className={`px-2 py-0.5 self-start rounded-md border text-[11px] font-medium transition-colors ${isYes ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+        >
+          {isYes ? 'Yes' : 'No'}
         </button>
       </div>
     )
@@ -1625,7 +1709,11 @@ function ExpandedPropertyDrawer({
         </div>
       </div>
 
-      {/* Property details + bed configuration drive linen totals */}
+      {/* Property details + bed configuration drive linen totals.
+          number_of_beds is independently editable (it's the source of truth for
+          laundry/linen-program cost) but rarely diverges from king+queen+full+twin,
+          so an Auto-fill button derives it from the bed-size breakdown. Max
+          Guests gets the same treatment using a 2/2/2/1 occupancy formula. */}
       <div>
         <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Property Details</h4>
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
@@ -1633,7 +1721,29 @@ function ExpandedPropertyDrawer({
           <NumberCell label="Full Baths" field="full_baths" />
           <NumberCell label="Half Baths" field="half_baths" />
           <NumberCell label="Sq Footage" field="square_footage" />
-          <NumberCell label="Max Guests" field="guest_count" />
+          <NumberCellWithAuto
+            label="Total Beds"
+            field="number_of_beds"
+            compute={() =>
+              (Number(property.king_beds) || 0) +
+              (Number(property.queen_beds) || 0) +
+              (Number(property.full_beds) || 0) +
+              (Number(property.twin_beds) || 0)
+            }
+            tooltip="Sum of king + queen + full + twin"
+          />
+          <NumberCellWithAuto
+            label="Max Guests"
+            field="guest_count"
+            compute={() =>
+              2 * (Number(property.king_beds) || 0) +
+              2 * (Number(property.queen_beds) || 0) +
+              2 * (Number(property.full_beds) || 0) +
+              1 * (Number(property.twin_beds) || 0)
+            }
+            tooltip="2 per king/queen/full + 1 per twin"
+          />
+          <NumberCell label="Kitchens" field="kitchens" />
           <ToggleCell label="Hot Tub" field="hot_tub" />
         </div>
       </div>
@@ -1647,6 +1757,57 @@ function ExpandedPropertyDrawer({
           <NumberCell label="Twin" field="twin_beds" />
         </div>
       </div>
+
+      {/* Financials — admin-only. Editable Client Charged + Cleaner Pay drive
+          the rest; profit/cost columns are derived server-side and shown read-only.
+          Editing CE/Pay live-recomputes the displayed profit fields via onDraftCost. */}
+      {canViewFinancials && (
+        <div>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials (live)</h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-x-4 gap-y-2.5">
+            <MoneyCell label="Client Charged" field="ce_charged" />
+            <MoneyCell label="Cleaner Pay" field="cleaner_pay" />
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Cost</span>
+              <span className="text-xs tabular-nums">${(Number(property.total_estimated_cost) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Laundry</span>
+              <span className="text-xs tabular-nums">${(Number(property.est_laundry) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Consumables</span>
+              <span className="text-xs tabular-nums">${(Number(property.est_consumables) || 0).toFixed(2)}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit / Clean</span>
+              <span className={`text-xs tabular-nums font-medium ${(Number(property.estimated_profit) || 0) < 0 ? 'text-destructive' : ''}`}>
+                ${(Number(property.estimated_profit) || 0).toFixed(2)}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Profit %</span>
+              <span className={`text-xs tabular-nums font-medium ${profitColorClass(property.profit_percentage)}`}>
+                {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+              </span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Cost</span>
+              <span className="text-xs tabular-nums">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Income (3x)</span>
+              <span className="text-xs tabular-nums">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">DC Profit</span>
+              <span className={`text-xs tabular-nums font-medium ${(Number(property.profit_deep_clean) || 0) < 0 ? 'text-destructive' : ''}`}>
+                {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Setup status tiles */}
       <div>
@@ -1734,7 +1895,7 @@ function ExpandedPropertyDrawer({
           <TextCell label="Wi-Fi Info" field="wifi_info" wide />
           <TextCell label="AC Filter Size" field="filter_size" />
           <TextCell label="Cleaning Frequency" field="cleaning_frequency" />
-          <TextCell label="Pet Friendly" field="pet_friendly" />
+          <YesNoTextCell label="Pet Friendly" field="pet_friendly" />
           <NumberCell label="Bath Towels" field="bath_towels" />
           <NumberCell label="Hand Towels" field="hand_towels" />
           <NumberCell label="Washcloths" field="washcloths" />
