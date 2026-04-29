@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { requireLostItemsAccess, havenFetch, HavenError } from './_lib'
+import { requireLostItemsAccess, havenFetch, HavenError } from './_lib.js'
 
 // GET /api/lost-items/get?id=<uuid-or-case_number>
 // Proxies to Haven's GET /api/lost-items/:id. Haven accepts either the case

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
-import { buildClearCookie, readStateCookie, safeEqualHex } from './_lib'
+import { buildClearCookie, readStateCookie, safeEqualHex } from './_lib.js'
 
 // Step 2 of OAuth2: exchange code for tokens and store them.
 //
