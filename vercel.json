@@ -12,6 +12,9 @@
     },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts"
+    },
+    "api/qbo/*.ts": {
+      "includeFiles": "api/qbo/_lib.ts"
     }
   },
   "rewrites": [
