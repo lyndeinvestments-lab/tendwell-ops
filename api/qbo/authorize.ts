@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { buildStateCookie, generateState, requireAdminBearer } from './_lib'
+import { buildStateCookie, generateState, requireAdminBearer } from './_lib.js'
 
 // Step 1 of OAuth2: build the QuickBooks authorize URL. Now admin-gated and
 // state-bound:

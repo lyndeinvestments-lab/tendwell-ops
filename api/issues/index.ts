@@ -14,7 +14,7 @@ import {
   requireApiKey,
   sanitizeIssueBody,
   sbFetch,
-} from './_lib'
+} from './_lib.js'
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 500

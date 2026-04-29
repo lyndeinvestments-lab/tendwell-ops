@@ -12,7 +12,7 @@ import {
   requireApiKey,
   sanitizeIssueBody,
   sbFetch,
-} from './_lib'
+} from './_lib.js'
 
 // Loose UUID v4-ish check — same length/dash positions as Postgres uuid.
 // Strict-enough to reject obviously bad inputs without coupling to a regex

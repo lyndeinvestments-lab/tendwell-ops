@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { requireLostItemsAccess, havenFetch, HavenError } from './_lib'
+import { requireLostItemsAccess, havenFetch, HavenError } from './_lib.js'
 
 // GET /api/lost-items/list?status=&search=&assigned_to=&overdue=
 // Proxies to Haven's GET /api/lost-items, forwarding allowed filters.
