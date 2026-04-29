@@ -6,10 +6,9 @@ import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { Search, ExternalLink, Loader2, AlertTriangle, RefreshCw, Plus, KanbanSquare, List as ListIcon } from 'lucide-react'
+import { Search, Loader2, AlertTriangle, RefreshCw, Plus, KanbanSquare, List as ListIcon } from 'lucide-react'
 import { format } from 'date-fns'
 import {
   STATUS_COLORS, STATUS_LABELS, LOST_ITEM_PIPELINE,
@@ -18,6 +17,7 @@ import {
 } from '@/components/lost-items/shared'
 import { LostItemsBoardView } from '@/components/lost-items/board-view'
 import { NewLostItemCaseDialog } from '@/components/lost-items/new-case-dialog'
+import { LostItemDetailPanel } from '@/components/lost-items/detail-panel'
 
 type ViewMode = 'board' | 'list'
 type StatusFilter = LostItemStatus | 'all' | 'open'
@@ -220,7 +220,12 @@ export default function LostItemsPage() {
               <Skeleton className="h-32 w-full" />
             </div>
           ) : (
-            <DetailPanel detail={detail} assignment={activeId ? assignmentsByCase.get(activeId) : undefined} />
+            <LostItemDetailPanel
+              caseId={activeId!}
+              detail={detail}
+              assignment={activeId ? assignmentsByCase.get(activeId) : undefined}
+              canEdit={canEdit}
+            />
           )}
         </SheetContent>
       </Sheet>
@@ -339,96 +344,3 @@ function ListView({
   )
 }
 
-function DetailPanel({ detail, assignment }: { detail: LostItemCase; assignment?: LostItemAssignment }) {
-  return (
-    <div className="space-y-4 text-sm">
-      <div>
-        <Badge className={`text-[10px] border ${STATUS_COLORS[detail.status]}`}>
-          {STATUS_LABELS[detail.status]}
-        </Badge>
-        <p className="font-medium mt-2">{detail.item_description}</p>
-        {detail.found_location && (
-          <p className="text-xs text-muted-foreground mt-1">Found at: {detail.found_location}</p>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <Field label="Property" value={detail.property?.name ?? detail.property_name ?? '—'} />
-        <Field label="Reservation" value={detail.reservation_ref ?? '—'} />
-        <Field label="Guest" value={detail.guest_name ?? '—'} />
-        <Field label="Email" value={detail.guest_email ?? '—'} />
-        <Field label="Phone" value={detail.guest_phone ?? '—'} />
-        <Field label="Vendor" value={detail.cleaning_vendor ?? '—'} />
-        <Field label="Pickup" value={detail.pickup_scheduled_at ? format(new Date(detail.pickup_scheduled_at), 'MMM d, h:mm a') : '—'} />
-        <Field label="Return" value={detail.return_method ?? '—'} />
-        <Field label="Carrier" value={detail.shipping_carrier ?? '—'} />
-        <Field label="Tracking" value={detail.shipping_tracking ?? '—'} />
-        <Field label="Tendwell assignee" value={assignment?.assignee?.label ?? 'Unassigned'} />
-        <Field label="Follow-up" value={detail.follow_up_date ?? '—'} />
-      </div>
-
-      {detail.photo_urls && detail.photo_urls.length > 0 && (
-        <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Photos</h4>
-          <div className="grid grid-cols-3 gap-2">
-            {detail.photo_urls.map(url => (
-              <a key={url} href={url} target="_blank" rel="noreferrer">
-                <img src={url} alt="" className="w-full h-20 object-cover rounded-md border border-border" />
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {detail.notes && (
-        <div className="rounded-md border border-border bg-muted/30 p-3 text-xs whitespace-pre-wrap">
-          {detail.notes}
-        </div>
-      )}
-
-      {detail.events && detail.events.length > 0 && (
-        <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Timeline</h4>
-          <div className="space-y-1.5">
-            {detail.events.map(e => (
-              <div key={e.id} className="border-l-2 border-border pl-2 text-xs">
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="capitalize">{e.event_type.replace(/_/g, ' ')}</span>
-                  <span className="text-muted-foreground/60">·</span>
-                  <span>{format(new Date(e.created_at), 'MMM d, h:mm a')}</span>
-                  {e.actor_label && <><span className="text-muted-foreground/60">·</span><span>{e.actor_label}</span></>}
-                </div>
-                {e.from_value && e.to_value && (
-                  <div className="text-foreground/80">{e.from_value} → {e.to_value}</div>
-                )}
-                {e.body && <div className="text-foreground/80 whitespace-pre-wrap">{e.body}</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Source: {detail.source}{detail.external_source ? ` · ${detail.external_source}` : ''}</span>
-        {detail.external_url ? (
-          <a href={detail.external_url} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
-            Open in Haven-OS <ExternalLink className="w-3 h-3" />
-          </a>
-        ) : null}
-      </div>
-
-      <p className="text-[10px] text-muted-foreground italic pt-2">
-        Inline edit, comments, and assignment dropdown land in the next release.
-      </p>
-    </div>
-  )
-}
-
-function Field({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
-      <span className="text-foreground tabular-nums">{value}</span>
-    </div>
-  )
-}
