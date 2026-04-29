@@ -74,8 +74,44 @@ export async function logActivity(entry: ActivityLogEntry): Promise<void> {
   }
 }
 
+// ─── Current-user identity resolution for audit logging ──────────────────────
+// Most callers of logPropertyEdit forget to pass `changedBy`, so historical
+// audit entries had `changed_by = null` (e.g. all 12 filter_size edits on
+// 2026-04-28). Rather than fix every call site, resolve the current user's
+// app_users.label automatically when no name was provided. Cached briefly so
+// rapid bulk edits don't make a round-trip per row.
+
+let cachedIdentity: { label: string; cachedAt: number } | null = null
+const IDENTITY_TTL_MS = 60_000
+
+export function clearCachedIdentity(): void {
+  cachedIdentity = null
+}
+
+async function resolveCurrentUserLabel(): Promise<string | null> {
+  if (cachedIdentity && Date.now() - cachedIdentity.cachedAt < IDENTITY_TTL_MS) {
+    return cachedIdentity.label
+  }
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user?.email) return null
+    const { data } = await supabase
+      .from('app_users')
+      .select('label')
+      .eq('google_email', user.email)
+      .maybeSingle()
+    const label = (data?.label as string | undefined) ?? user.email ?? null
+    if (label) cachedIdentity = { label, cachedAt: Date.now() }
+    return label
+  } catch {
+    return null
+  }
+}
+
 // ─── Property-edit convenience wrapper ───────────────────────────────────────
 // Writes to both activity_log (new) and property_edit_log (legacy compat).
+// When `changedBy` is omitted, falls back to the signed-in user's
+// app_users.label (or auth email) so the audit log is never anonymous.
 
 export async function logPropertyEdit(
   propertyId: string | number,
@@ -105,6 +141,10 @@ export async function logPropertyEdit(
     }
   }
 
+  // Resolve the user when the caller didn't supply one. Best-effort —
+  // returns null if there's no Supabase session or the lookup fails.
+  const resolvedChangedBy = changedBy ?? (await resolveCurrentUserLabel())
+
   // New central log
   await logActivity({
     entity_type: 'property',
@@ -114,7 +154,7 @@ export async function logPropertyEdit(
     field_name: fieldName,
     old_value: oldValue != null ? String(oldValue) : null,
     new_value: newValue != null ? String(newValue) : null,
-    changed_by: changedBy ?? null,
+    changed_by: resolvedChangedBy,
   })
 
   // Legacy table — log errors but never throw
