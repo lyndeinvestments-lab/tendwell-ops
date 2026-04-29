@@ -112,7 +112,13 @@ export default function NorthStarPage() {
   const { data: autoTransitions } = useQuery({
     queryKey: ['/supabase/ns-transitions', month],
     queryFn: async () => {
-      const { data } = await supabase.from('stage_transitions').select('id, from_stage_id, to_stage_id, transitioned_at, pipeline_stages!stage_transitions_to_stage_id_fkey(name)').gte('transitioned_at', monthStart).lte('transitioned_at', monthEnd + 'T23:59:59')
+      // Schema uses `created_at`, not `transitioned_at` — the previous query
+      // silently returned null for the lifetime of the page.
+      const { data } = await supabase
+        .from('stage_transitions')
+        .select('id, from_stage_id, to_stage_id, created_at, pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
+        .gte('created_at', monthStart)
+        .lte('created_at', monthEnd + 'T23:59:59')
       return data || []
     },
   })

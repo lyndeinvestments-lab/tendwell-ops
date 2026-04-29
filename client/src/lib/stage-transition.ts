@@ -33,14 +33,22 @@ export async function executeStageTransition(params: TransitionParams): Promise<
   const { error } = await supabase.from('properties').update(updates).eq('id', propertyId)
   if (error) return { ok: false, error: error.message }
 
-  // 2. Insert stage_transitions record
-  await supabase.from('stage_transitions').insert({
+  // 2. Insert stage_transitions record. Column names previously didn't match
+  // the prod schema (was sending `changed_by`/`transitioned_at`; actual
+  // columns are `transitioned_by`/`created_at`), so this insert silently
+  // failed for every drag-and-drop and Select stage change in the app.
+  // Activity log was unaffected (different table) but the dedicated stage
+  // history table was empty for app-driven moves.
+  const { error: stageTxError } = await supabase.from('stage_transitions').insert({
     property_id: propertyId,
     from_stage_id: fromStageId,
     to_stage_id: toStageId,
-    changed_by: changedBy,
-    transitioned_at: new Date().toISOString(),
+    transitioned_by: changedBy,
+    created_at: new Date().toISOString(),
   })
+  if (stageTxError) {
+    console.warn('[executeStageTransition] stage_transitions insert failed:', stageTxError.message)
+  }
 
   // 3. Activity log
   logActivity({
