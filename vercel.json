@@ -15,6 +15,9 @@
     },
     "api/qbo/*.ts": {
       "includeFiles": "api/qbo/_lib.ts"
+    },
+    "api/lost-items/*.ts": {
+      "includeFiles": "api/lost-items/_lib.ts"
     }
   },
   "rewrites": [
