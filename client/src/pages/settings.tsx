@@ -1740,6 +1740,43 @@ function IntegrationsSection() {
   const googleMapsKey = env.VITE_GOOGLE_MAPS_API_KEY || env.VITE_GOOGLE_PLACES_API_KEY
   const supabaseUrl = env.VITE_SUPABASE_URL
   const anthropicKeyPresent = !!env.VITE_ANTHROPIC_API_KEY // optional client SDK key, normally server-side only
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const { toast } = useToast()
+  const [qboConnecting, setQboConnecting] = useState(false)
+
+  // Click handler for the admin "Reconnect QuickBooks" button. The /api/qbo/
+  // authorize endpoint is admin-gated (Bearer header) and sets a one-shot
+  // HttpOnly state cookie before returning the Intuit URL. This XHR-then-
+  // navigate pattern is required because top-level browser navigation can't
+  // carry the Supabase session header.
+  async function startQboReconnect() {
+    setQboConnecting(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      if (!token) {
+        toast({ title: 'Not signed in', variant: 'destructive' })
+        return
+      }
+      const r = await fetch('/api/qbo/authorize', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include', // ensure the HttpOnly cookie response is honored
+      })
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '')
+        toast({ title: `QBO authorize failed (${r.status})`, description: txt.slice(0, 200), variant: 'destructive' })
+        return
+      }
+      const { url } = await r.json() as { url: string }
+      window.location.href = url
+    } catch (e) {
+      toast({ title: 'QBO reconnect error', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setQboConnecting(false)
+    }
+  }
 
   // Runtime status from AddressAutocomplete — only meaningful after the user
   // visits a page that mounts the component, but useful when troubleshooting.
@@ -1784,6 +1821,18 @@ function IntegrationsSection() {
       description: 'Pulls actual P&L into the Live Pro Forma.',
       status: 'configured' as Status,
       detail: 'Connection is managed server-side. Actuals refresh nightly via a scheduled QBO import — no manual pull needed.',
+      action: isAdmin ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          disabled={qboConnecting}
+          onClick={startQboReconnect}
+          data-testid="button-qbo-reconnect"
+        >
+          {qboConnecting ? 'Opening Intuit…' : 'Reconnect QuickBooks'}
+        </Button>
+      ) : null,
     },
     {
       icon: KeyRound,
@@ -1809,6 +1858,7 @@ function IntegrationsSection() {
       <div className="rounded-lg border border-border divide-y divide-border">
         {integrations.map((it) => {
           const Icon = it.icon
+          const action = (it as { action?: React.ReactNode }).action
           return (
             <div key={it.name} className="flex items-start gap-3 p-3">
               <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
@@ -1822,6 +1872,7 @@ function IntegrationsSection() {
                 <p className="text-xs text-muted-foreground mt-0.5">{it.description}</p>
                 <p className="text-[11px] text-muted-foreground/80 mt-1">{it.detail}</p>
               </div>
+              {action ? <div className="flex-shrink-0">{action}</div> : null}
             </div>
           )
         })}
