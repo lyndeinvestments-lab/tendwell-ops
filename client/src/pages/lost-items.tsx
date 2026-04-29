@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
+import { useLocation } from 'wouter'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Search, Loader2, AlertTriangle, RefreshCw, Plus, KanbanSquare, List as ListIcon } from 'lucide-react'
@@ -17,7 +17,6 @@ import {
 } from '@/components/lost-items/shared'
 import { LostItemsBoardView } from '@/components/lost-items/board-view'
 import { NewLostItemCaseDialog } from '@/components/lost-items/new-case-dialog'
-import { LostItemDetailPanel } from '@/components/lost-items/detail-panel'
 
 type ViewMode = 'board' | 'list'
 type StatusFilter = LostItemStatus | 'all' | 'open'
@@ -31,11 +30,13 @@ export default function LostItemsPage() {
   const [view, setView] = useState<ViewMode>('board')
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('open')
-  const [activeId, setActiveId] = useState<string | null>(null)
   const [newCaseOpen, setNewCaseOpen] = useState(false)
+  const [, navigate] = useLocation()
 
   const { toast } = useToast()
   const qc = useQueryClient()
+
+  const openCase = (id: string) => navigate(`/lost-items/${id}`)
 
   const { data: cases, isLoading, isError, error, refetch, isRefetching } = useQuery<LostItemCase[]>({
     queryKey: ['/api/lost-items/list', statusFilter, search],
@@ -74,14 +75,6 @@ export default function LostItemsPage() {
     for (const a of assignmentsData?.assignments ?? []) m.set(a.haven_case_id, a)
     return m
   }, [assignmentsData])
-
-  const { data: detail, isLoading: detailLoading } = useQuery<LostItemCase>({
-    queryKey: ['/api/lost-items/get', activeId],
-    queryFn: () => authFetch(`/api/lost-items/get?id=${encodeURIComponent(activeId!)}`),
-    enabled: !!activeId,
-    refetchOnWindowFocus: false,
-    staleTime: 15_000,
-  })
 
   const setStatus = useMutation({
     mutationFn: async ({ caseId, status }: { caseId: string; status: LostItemStatus }) => {
@@ -198,7 +191,7 @@ export default function LostItemsPage() {
           <LostItemsBoardView
             cases={cases ?? []}
             assignmentsByCase={assignmentsByCase}
-            onCaseClick={setActiveId}
+            onCaseClick={openCase}
             onStatusChange={(caseId, newStatus) => setStatus.mutate({ caseId, status: newStatus })}
             canEdit={canEdit}
           />
@@ -206,34 +199,12 @@ export default function LostItemsPage() {
           <ListView
             cases={cases ?? []}
             assignmentsByCase={assignmentsByCase}
-            onCaseClick={setActiveId}
+            onCaseClick={openCase}
           />
         )}
       </div>
 
-      <NewLostItemCaseDialog open={newCaseOpen} onOpenChange={setNewCaseOpen} onCreated={(id) => setActiveId(id)} />
-
-      <Sheet open={!!activeId} onOpenChange={v => !v && setActiveId(null)}>
-        <SheetContent className="w-full sm:w-[520px] overflow-y-auto">
-          <SheetHeader className="pb-3">
-            <SheetTitle className="text-base font-mono">{detail?.case_number ?? '…'}</SheetTitle>
-          </SheetHeader>
-          {detailLoading || !detail ? (
-            <div className="space-y-3">
-              <Skeleton className="h-5 w-3/4" />
-              <Skeleton className="h-5 w-1/2" />
-              <Skeleton className="h-32 w-full" />
-            </div>
-          ) : (
-            <LostItemDetailPanel
-              caseId={activeId!}
-              detail={detail}
-              assignment={activeId ? assignmentsByCase.get(activeId) : undefined}
-              canEdit={canEdit}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
+      <NewLostItemCaseDialog open={newCaseOpen} onOpenChange={setNewCaseOpen} onCreated={(id) => openCase(id)} />
 
       {isLoading && (
         <div className="text-xs text-muted-foreground flex items-center gap-1.5">
