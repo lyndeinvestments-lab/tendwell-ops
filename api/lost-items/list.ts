@@ -20,8 +20,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const path = `/api/lost-items${qs ? `?${qs}` : ''}`
 
   try {
-    const data = await havenFetch<unknown>(ctx.haven, path, { method: 'GET' })
-    res.status(200).json(data)
+    // Haven returns { cases: LostItemCase[] }. Unwrap so the client gets a
+    // bare array — that matches the frontend's React Query type and avoids
+    // 'filter is not a function' errors in the page.
+    const data = await havenFetch<{ cases?: unknown[] } | unknown[]>(ctx.haven, path, { method: 'GET' })
+    const cases = Array.isArray(data) ? data : ((data && (data as any).cases) ?? [])
+    res.status(200).json(cases)
   } catch (e) {
     if (e instanceof HavenError) {
       res.status(e.status >= 400 && e.status < 600 ? e.status : 502).json({

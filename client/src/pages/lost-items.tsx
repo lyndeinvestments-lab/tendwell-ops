@@ -51,7 +51,8 @@ export default function LostItemsPage() {
     },
     enabled: canAccess,
     refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
   })
 
   const caseIds = useMemo(() => (cases ?? []).map(c => c.id), [cases])
@@ -64,6 +65,8 @@ export default function LostItemsPage() {
     },
     enabled: canAccess && caseIds.length > 0,
     refetchInterval: 30_000,
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
   })
 
   const assignmentsByCase = useMemo(() => {
@@ -76,6 +79,8 @@ export default function LostItemsPage() {
     queryKey: ['/api/lost-items/get', activeId],
     queryFn: () => authFetch(`/api/lost-items/get?id=${encodeURIComponent(activeId!)}`),
     enabled: !!activeId,
+    refetchOnWindowFocus: false,
+    staleTime: 15_000,
   })
 
   const setStatus = useMutation({
