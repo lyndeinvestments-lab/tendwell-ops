@@ -269,7 +269,21 @@ async function executeTool(toolName: string, input: Record<string, unknown>, use
         if (new_stage === 'Offboarded') updates.offboarded_at = new Date().toISOString()
         const { error } = await supabase.from('properties').update(updates).eq('id', property_id)
         if (error) return JSON.stringify({ error: error.message })
-        try { await supabase.from('stage_transitions').insert({ property_id: Number(property_id), from_stage_id: fromStageId, to_stage_id: stageRow.id, changed_by: user.label, transitioned_at: new Date().toISOString() }) } catch {}
+        // Schema uses `transitioned_by` and `created_at`, not `changed_by`
+        // and `transitioned_at`. The previous insert silently failed for
+        // every chatbot stage change, leaving zero rows in stage_transitions
+        // even though the property + activity_log were updated. Surface
+        // future drift with a console.warn instead of swallowing it.
+        try {
+          const { error: stError } = await supabase.from('stage_transitions').insert({
+            property_id: Number(property_id),
+            from_stage_id: fromStageId,
+            to_stage_id: stageRow.id,
+            transitioned_by: user.label,
+            created_at: new Date().toISOString(),
+          })
+          if (stError) console.warn('[chat:change_property_stage] stage_transitions insert failed:', stError.message)
+        } catch {}
         try { await supabase.from('activity_log').insert({ entity_type: 'pipeline', entity_id: String(property_id), entity_name: property_name ?? null, action: 'update', field_name: 'stage', old_value: fromStageName, new_value: new_stage, changed_by: user.label, metadata: { via: 'chatbot' } }) } catch {}
         return JSON.stringify({ success: true, message: `Moved "${property_name ?? property_id}" to ${new_stage}` })
       }
