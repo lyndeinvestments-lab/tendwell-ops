@@ -15,6 +15,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { profitColorClass } from '@/lib/profit-colors'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
@@ -710,7 +711,16 @@ export default function QuoteSheetPage() {
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Address</Label>
-              <Input value={newProp.address} onChange={e => setNewProp(prev => ({ ...prev, address: e.target.value }))} className="h-8 text-sm" data-testid="input-new-address" />
+              {/* Google Places-backed autocomplete; falls back to a plain
+                  text input when VITE_GOOGLE_MAPS_API_KEY isn't configured,
+                  so manual entry never breaks. */}
+              <AddressAutocomplete
+                value={newProp.address}
+                onChange={next => setNewProp(prev => ({ ...prev, address: next }))}
+                placeholder="Start typing an address…"
+                className="h-8 text-sm"
+                testId="input-new-address"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Client</Label>
