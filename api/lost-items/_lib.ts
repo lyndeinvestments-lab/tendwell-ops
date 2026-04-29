@@ -42,6 +42,12 @@ function getSupabaseAdmin(): SupabaseClient | null {
   return _supabaseAdmin
 }
 
+// Public alias — assignment endpoints (assign / assignments) need direct
+// Supabase access since they read/write Tendwell-local rows, not Haven.
+export function getSupabaseAdminForLostItems(): SupabaseClient | null {
+  return getSupabaseAdmin()
+}
+
 const LOST_ITEMS_VIEW = 'lost-items'
 
 interface ResolvedUser {
