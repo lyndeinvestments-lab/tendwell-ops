@@ -17,8 +17,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const path = `/api/lost-items/${encodeURIComponent(id)}`
   try {
-    const data = await havenFetch<unknown>(ctx.haven, path, { method: 'GET' })
-    res.status(200).json(data)
+    // Haven returns { case: LostItemCase }. Unwrap so the client gets the
+    // case object directly (matches the page's React Query expectation).
+    const data = await havenFetch<{ case?: unknown } | unknown>(ctx.haven, path, { method: 'GET' })
+    const out = (data && typeof data === 'object' && 'case' in (data as any)) ? (data as any).case : data
+    res.status(200).json(out)
   } catch (e) {
     if (e instanceof HavenError) {
       res.status(e.status >= 400 && e.status < 600 ? e.status : 502).json({
