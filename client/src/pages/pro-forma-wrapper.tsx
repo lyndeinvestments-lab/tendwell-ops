@@ -20,8 +20,10 @@ export function useInProFormaWrapper() {
 }
 
 function defaultTabFromLocation(loc: string): TabValue {
-  // /forecaster lands on Live; /pro-forma lands on Per-Property by default.
-  if (loc.startsWith('/forecaster')) return 'live'
+  // /pro-forma and /forecaster land on Live (current-period actuals +
+  // variance is the primary use case). /master-list keeps its Per-Property
+  // landing because the consolidated Master List view lives on that tab.
+  if (loc.startsWith('/pro-forma') || loc.startsWith('/forecaster')) return 'live'
   return 'per-property'
 }
 
