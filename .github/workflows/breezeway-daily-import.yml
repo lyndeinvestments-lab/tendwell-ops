@@ -1,0 +1,46 @@
+name: Breezeway Daily Import
+
+on:
+  schedule:
+    # 7:30 AM Eastern (EDT = UTC-4 → 11:30 UTC).
+    # Shifts to 8:30 AM Eastern during EST (UTC-5, Nov–Mar) — acceptable drift.
+    - cron: '30 11 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print matched emails without posting (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  import:
+    name: Import Breezeway CSVs from Gmail
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Breezeway Gmail import
+        env:
+          GMAIL_CLIENT_ID: ${{ secrets.GMAIL_CLIENT_ID }}
+          GMAIL_CLIENT_SECRET: ${{ secrets.GMAIL_CLIENT_SECRET }}
+          GMAIL_REFRESH_TOKEN: ${{ secrets.GMAIL_REFRESH_TOKEN }}
+          BREEZEWAY_IMPORT_KEY: ${{ secrets.BREEZEWAY_IMPORT_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: node scripts/breezeway-gmail-import.mjs
+
+      - name: Notify Slack on failure
+        if: failure()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":rotating_light: *Breezeway daily import failed*\nRepo: `${{ github.repository }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run logs>"
+            }
