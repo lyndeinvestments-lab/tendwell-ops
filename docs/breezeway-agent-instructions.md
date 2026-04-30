@@ -2,7 +2,7 @@
 
 This is the prompt/runbook to feed to your cloud agent (Replit Scheduler,
 n8n, GitHub Actions cron, Cloudflare Worker, etc.) so it can pull the two
-daily Breezeway exports out of Gmail and POST them to Tendwell.
+daily Breezeway exports from Google Drive and POST them to Tendwell.
 
 ---
 
@@ -56,23 +56,46 @@ side.
 
 ---
 
-## Agent prompt (copy/paste into your agent)
+## How the pipeline works
 
-> You run once per day at 7:30 AM Eastern. Your job:
+A Google Apps Script runs at **7:30 AM Eastern** every day. It watches for
+emails from `notifications@breezeway.io` with subject `Breezeway export is
+ready.` received that same day, downloads each CSV attachment, and saves it
+to the Google Drive folder:
+
+**Drive folder ID:** `1XkEs242mTVZjulZiPW4zse9oa6y-sR0W`
+
+Files are named: `YYYY-MM-DD_HH-mm-ss_<msgIdShort>_breezeway-task-custom-export.csv`
+
+Per-message deduplication via Google Apps Script `PropertiesService` ensures
+both emails (when two arrive the same day) are always saved as separate files
+even though they have the same name and sender.
+
+The Claude Code `/loop` agent runs at **8 AM Eastern** (after the Drive files
+are guaranteed to exist) and does the actual import.
+
+---
+
+## Agent prompt (copy/paste into your agent / `/loop` command)
+
+> You run once per day at 8:00 AM Eastern. Your job:
 >
-> 1. Search Gmail for any unread email **received today** from Breezeway
->    that matches one of these subject lines:
->    - `Daily Task Export for Ops Site Current Month`
->    - `Daily Task Export for Ops Site Next Month`
+> 1. Search the Google Drive folder `1XkEs242mTVZjulZiPW4zse9oa6y-sR0W`
+>    for CSV files whose filename starts with today's date (`YYYY-MM-DD`).
+>    There should be exactly two. If there are zero or one, log a warning
+>    and stop — the Google Apps Script may not have run yet.
 >
->    Each email has a single CSV file attachment.
+> 2. For each file, determine the source label by peeking at the first data
+>    row's `Due date` column:
+>    - Due date falls in the current calendar month → `current_month`
+>    - Due date falls in the next calendar month → `next_month`
+>    (When Breezeway sends two exports the same day, the larger file
+>    (more rows) is typically current month and the smaller is next month,
+>    but always verify from content.)
 >
-> 2. For each of those two emails:
->    1. Download the CSV attachment.
->    2. Determine the source label from the subject:
->       - "Current Month" → `current_month`
->       - "Next Month" → `next_month`
->    3. POST the raw CSV bytes to:
+> 3. For each file:
+>    1. Download the raw CSV bytes from Drive.
+>    2. POST to:
 >       ```
 >       https://www.tendwellcleaning.com/api/tasks/breezeway-import?source=<LABEL>
 >       ```
@@ -81,16 +104,13 @@ side.
 >       Content-Type: text/csv
 >       x-tendwell-import-key: <secret from your secret store>
 >       ```
->    4. Verify the response is HTTP 200 with `"ok": true`.
->    5. Mark the email as **read** so it's not re-processed tomorrow.
+>    3. Verify the response is HTTP 200 with `"ok": true`.
 >
-> 3. If either email is missing, OR the POST returns non-200, OR `ok` is
->    not `true`, leave the email unread and send me a Slack/email alert
->    with the failure reason. Do not retry more than 3 times in the same
->    run.
+> 4. If either file is missing, OR the POST returns non-200, OR `ok` is
+>    not `true`, log the failure reason. Do not retry more than 3 times.
 >
-> 4. Log a one-line summary per import run, e.g.:
->    `[2026-04-30 07:31] current_month: 311 upserted, 184 cleans; next_month: 220 upserted, 142 cleans`
+> 5. Log a one-line summary per import run, e.g.:
+>    `[2026-04-30 08:01] current_month: 311 upserted, 184 cleans; next_month: 220 upserted, 142 cleans`
 
 ---
 
