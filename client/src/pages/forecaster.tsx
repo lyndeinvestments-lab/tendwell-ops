@@ -114,6 +114,12 @@ export default function ForecasterPage() {
         .single()
       if (error || !data?.value) return null
       const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value
+      // Monthly entries arrive from the nightly QBO import in either shape:
+      //   long form: { totalIncome, totalCOGS, totalExpenses, netIncome }
+      //   short form: { income, cogs, expenses, netIncome }
+      // The Financial Dashboard only reads netIncome from each entry, so the
+      // short form has been live in production. Forecaster needs the topline
+      // numbers — we accept both shapes and normalize at lookup time.
       return parsed as {
         company?: string
         totalIncome?: number
@@ -121,7 +127,12 @@ export default function ForecasterPage() {
         totalExpenses?: number
         netIncome?: number
         period?: string
-        monthly?: Record<string, { totalIncome?: number; totalExpenses?: number; netIncome?: number; totalCOGS?: number }>
+        monthly?: Record<string, {
+          totalIncome?: number; income?: number
+          totalExpenses?: number; expenses?: number
+          totalCOGS?: number; cogs?: number
+          netIncome?: number
+        }>
         cogsBreakdown?: Record<string, number>
         incomeBreakdown?: Record<string, number>
         expenseBreakdown?: Record<string, number>
@@ -205,7 +216,12 @@ export default function ForecasterPage() {
   // Pulls the QBO monthly entry that matches a YYYY-MM key. The QBO blob
   // can key months by either "YYYY-MM" or by a label like "Jan 2026" / "January 2026"
   // depending on how the import normalizes them — try both.
-  function lookupQboMonth(yyyymm: string): { totalIncome?: number; totalExpenses?: number; totalCOGS?: number; netIncome?: number } | null {
+  function lookupQboMonth(yyyymm: string): {
+    totalIncome?: number; income?: number
+    totalExpenses?: number; expenses?: number
+    totalCOGS?: number; cogs?: number
+    netIncome?: number
+  } | null {
     const monthly = qboPL?.monthly
     if (!monthly) return null
     if (monthly[yyyymm]) return monthly[yyyymm]
@@ -226,11 +242,15 @@ export default function ForecasterPage() {
   const qboFallbackRow = useMemo<DerivedMonth | null>(() => {
     const q = lookupQboMonth(selectedMonth)
     if (!q) return null
-    const revenue = Number(q.totalIncome) || 0
+    // Accept either field-name shape — the nightly import currently writes
+    // the short form (income/cogs/expenses) which the Financial Dashboard
+    // tolerates because it only reads netIncome. ?? prefers the long form
+    // when both are present so manual edits keep working.
+    const revenue = Number(q.totalIncome ?? q.income) || 0
     // Financial Dashboard treats totalCost as COGS + OpEx; match that so the
     // two pages agree on monthly totals when both render the same QBO blob.
-    const cogs = Number(q.totalCOGS) || 0
-    const opex = Number(q.totalExpenses) || 0
+    const cogs = Number(q.totalCOGS ?? q.cogs) || 0
+    const opex = Number(q.totalExpenses ?? q.expenses) || 0
     const totalCost = cogs + opex
     // Treat an all-zero (or sub-dollar) QBO entry as "no data" — the import
     // wrote a stub, QuickBooks hasn't booked the period yet, or only a stray
