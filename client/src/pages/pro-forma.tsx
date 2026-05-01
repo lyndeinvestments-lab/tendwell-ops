@@ -293,7 +293,7 @@ export default function ProFormaPage() {
     },
   })
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: rawProperties, isLoading } = useQuery({
     queryKey: ['/supabase/pro-forma'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -306,6 +306,52 @@ export default function ProFormaPage() {
       return data || []
     },
   })
+
+  // Live cleans-per-month from the breezeway daily import. When a property
+  // has any breezeway data, we override the manually-imported
+  // avg_cleans_per_month so the Per-Property sheet auto-updates as cleans
+  // happen — operator no longer needs to re-import a CSV to refresh.
+  const { data: breezewayStats } = useQuery({
+    queryKey: ['/supabase/property-breezeway-stats'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_breezeway_stats')
+        .select('property_id, total_cleans, months_with_data, avg_cleans_per_month, avg_deep_cleans_per_month, latest_task')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // Merge: when breezeway has tasks for a property, recompute Cleans/Mo
+  // and per-property monthly revenue / cost / profit from the live signal.
+  // total_estimated_cost is the per-clean cost (already computed by the
+  // operational_properties view); revenue per clean is ce_charged.
+  const properties = useMemo(() => {
+    if (!rawProperties) return rawProperties
+    if (!breezewayStats || breezewayStats.length === 0) return rawProperties
+    const statsByPropId = new Map<string, any>()
+    for (const s of breezewayStats as any[]) statsByPropId.set(String(s.property_id), s)
+    return (rawProperties as any[]).map(p => {
+      const s = statsByPropId.get(String(p.id))
+      if (!s || !s.months_with_data || Number(s.months_with_data) === 0) return p
+      const cpm = Number(s.avg_cleans_per_month) || 0
+      const ce = Number(p.ce_charged) || 0
+      const costPerClean = Number(p.total_estimated_cost) || 0
+      const revenue = cpm * ce
+      const cost    = cpm * costPerClean
+      return {
+        ...p,
+        avg_cleans_per_month: cpm,
+        monthly_revenue_estimate: revenue,
+        monthly_cost_estimate: cost,
+        monthly_profit_estimate: revenue - cost,
+        // Future Phase-3 variance work will read these.
+        _cleans_source: 'breezeway',
+        _months_with_data: Number(s.months_with_data) || 0,
+        _latest_breezeway_task: s.latest_task,
+      }
+    })
+  }, [rawProperties, breezewayStats])
 
   const { mutate: updateDate } = useGuardedMutation('pro-forma', {
     mutationFn: async ({ id, value }: { id: string; value: string }) => {

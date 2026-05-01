@@ -80,7 +80,11 @@ export default function ForecasterPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
 
-  const [selectedMonth, setSelectedMonth] = useState<string>(priorMonth(todayMonth(), 1))
+  // Default to the CURRENT calendar month. We used to default to last month
+  // (when QBO had necessarily landed) but now we synthesize a live estimate
+  // from breezeway_tasks when QBO is empty, so current-month is the correct
+  // default — operators want to see today's expected pro forma.
+  const [selectedMonth, setSelectedMonth] = useState<string>(todayMonth())
   const [seasonal, setSeasonal] = useState(true)
   const [sliders, setSliders] = useState<ForecastSliders>(FORECAST_PRESETS.current)
 
@@ -212,6 +216,24 @@ export default function ForecasterPage() {
     },
   })
 
+  // ── Breezeway-derived cleans for the selected month ─────────────────────
+  // Used to build the LIVE ESTIMATE when QBO has no actuals for the period.
+  // Filters to is_clean / is_deep_clean rows scheduled within the month,
+  // grouped by property so we can multiply by per-property rates.
+  const { data: breezewayMonthRows } = useQuery({
+    queryKey: ['/supabase/breezeway_for_month', selectedMonth],
+    queryFn: async () => {
+      const { start, end } = monthBounds(selectedMonth)
+      const { data, error } = await supabase
+        .from('breezeway_tasks')
+        .select('property_id, is_clean, is_deep_clean')
+        .gte('due_date', start)
+        .lt('due_date', end)
+      if (error) throw error
+      return data || []
+    },
+  })
+
   // Tasks per property for the period
   const tasksByProperty = useMemo(() => {
     const m: Record<string, number> = {}
@@ -310,6 +332,73 @@ export default function ForecasterPage() {
   // from "QBO has the period but all values are zero".
   const qboMonthExists = useMemo(() => lookupQboMonth(selectedMonth) != null, [qboPL, selectedMonth])
 
+  // ── LIVE ESTIMATE from breezeway_tasks × per-property rates ─────────────
+  // When QBO has no posted actuals for the selected month (current/future
+  // months, typically), synthesize a DerivedMonth from scheduled cleans
+  // multiplied by per-property revenue and cost rates pulled from
+  // operational_properties. This is the "estimated pro forma that's live
+  // at all times" path the operator asked for — no longer shows $0 KPIs
+  // when QBO is empty.
+  const breezewayEstimateRow = useMemo<DerivedMonth | null>(() => {
+    if (!breezewayMonthRows || !properties || breezewayMonthRows.length === 0) return null
+    // Index per-property rates by property_id.
+    const rates = new Map<number, any>()
+    for (const p of properties as any[]) rates.set(Number(p.id), p)
+    let revenue = 0
+    let cleanerPay = 0
+    let laundry = 0
+    let supplies = 0
+    let inspections = 0
+    let trash = 0
+    let cleansCount = 0
+    let deepCleansCount = 0
+    for (const r of breezewayMonthRows as any[]) {
+      const rate = r.property_id != null ? rates.get(Number(r.property_id)) : null
+      if (!rate) continue
+      if (r.is_clean) {
+        cleansCount += 1
+        revenue       += Number(rate.ce_charged)        || 0
+        cleanerPay    += Number(rate.cleaner_pay)       || 0
+        laundry       += Number(rate.est_laundry)       || 0
+        supplies      += Number(rate.est_consumables)   || 0
+        inspections   += Number(rate.inspection_cost)   || 0
+        trash         += Number(rate.trash_cost)        || 0
+      } else if (r.is_deep_clean) {
+        // Deep cleans currently use the same per-clean cost model as a
+        // baseline; the operator can layer a deep-clean premium on top
+        // once we have a configured rate. Keeping the structure here so
+        // the variance ledger can be updated cleanly later.
+        deepCleansCount += 1
+        revenue       += Number(rate.ce_charged)        || 0
+        cleanerPay    += Number(rate.cleaner_pay)       || 0
+        laundry       += Number(rate.est_laundry)       || 0
+        supplies      += Number(rate.est_consumables)   || 0
+        inspections   += Number(rate.inspection_cost)   || 0
+        trash         += Number(rate.trash_cost)        || 0
+      }
+    }
+    const cogs = cleanerPay + laundry + supplies + inspections + trash
+    if (revenue === 0 && cogs === 0) return null
+    const grossProfit = revenue - cogs
+    const yyyy = selectedMonth.split('-')[0]
+    const mm = Number(selectedMonth.split('-')[1]) - 1
+    return {
+      month: selectedMonth,
+      label: `${MONTH_NAMES[mm].slice(0, 3)} ${yyyy.slice(2)}`,
+      cleaningFee: revenue, services: 0, onboardingRevenue: 0, otherIncome: 0,
+      contractorPay: cleanerPay, laundry, leadership: 0, supplies, inspections, trash,
+      otherCOGS: 0, opex: 0,
+      tasks: cleansCount + deepCleansCount, properties: undefined,
+      revenue,
+      cogs,
+      totalCOGS: cogs,
+      grossProfit,
+      grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+      netIncome: grossProfit,
+      netMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
+    }
+  }, [breezewayMonthRows, properties, selectedMonth])
+
   // Actuals for the selected month: prefer a real proforma_months row when
   // it exists AND has any non-zero financial signal. Otherwise fall back to
   // the QBO P&L blob. We treat an all-zeros proforma row as "no data" so a
@@ -325,22 +414,24 @@ export default function ForecasterPage() {
     (proformaRow.netIncome ?? 0) !== 0
   ), [proformaRow])
 
-  // Source decision is independent of the rendered row: a zero-signal proforma
-  // row is "no source", not a 'proforma' source, so the empty-state banner
-  // fires instead of silently showing $0 KPIs with no explanation.
-  const actualsSource: 'proforma' | 'qbo' | null = useMemo(() => {
+  // Source decision is independent of the rendered row. Priority:
+  //   proforma (manually-curated truth) > qbo (posted actuals) > estimate
+  //   (live from breezeway × rates). 'null' fires the empty-state banner.
+  const actualsSource: 'proforma' | 'qbo' | 'estimate' | null = useMemo(() => {
     if (proformaHasSignal) return 'proforma'
     if (qboFallbackRow) return 'qbo'
+    if (breezewayEstimateRow) return 'estimate'
     return null
-  }, [proformaHasSignal, qboFallbackRow])
+  }, [proformaHasSignal, qboFallbackRow, breezewayEstimateRow])
 
   const actualsRow = useMemo<DerivedMonth | null>(() => {
     if (actualsSource === 'proforma') return proformaRow
     if (actualsSource === 'qbo') return qboFallbackRow
+    if (actualsSource === 'estimate') return breezewayEstimateRow
     // Keep the proforma row visible (so tasks/properties counts still render)
     // when it exists but lacks financial signal — the banner explains the $0.
     return proformaRow
-  }, [actualsSource, proformaRow, qboFallbackRow])
+  }, [actualsSource, proformaRow, qboFallbackRow, breezewayEstimateRow])
 
   // Variance per category — uses estimates × actuals.
   //
@@ -518,17 +609,26 @@ export default function ForecasterPage() {
           Showing QuickBooks actuals for {selectedMonth} — the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
         </div>
       )}
+      {actualsSource === 'estimate' && (
+        <div
+          className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-200"
+          data-testid="actuals-source-banner-estimate"
+        >
+          Showing <strong>live estimate</strong> for {selectedMonth} — derived from scheduled Breezeway tasks × per-property rates.
+          QuickBooks actuals haven't posted yet; KPIs below will switch to QBO automatically once the next nightly import lands.
+        </div>
+      )}
       {actualsSource === null && (
         <div
           className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
           data-testid="actuals-source-banner-empty"
         >
-          QuickBooks data is not yet available for {selectedMonth}
-          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''},
+          No data available for {selectedMonth}
+          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''}.
           {proformaRow
-            ? <> and the <code className="font-mono mx-1">proforma_months</code> row that exists for the period has no financial signal yet.</>
-            : <> and no <code className="font-mono mx-1">proforma_months</code> row has been written.</>}
-          {' '}Variance and KPI cards below show $0 actuals until the next nightly QBO import populates the period.
+            ? <> The <code className="font-mono mx-1">proforma_months</code> row that exists for the period has no financial signal, and</>
+            : <> No <code className="font-mono mx-1">proforma_months</code> row has been written, and</>}
+          {' '}no Breezeway tasks are scheduled for this period.
         </div>
       )}
 
