@@ -14,8 +14,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState } from '@/components/EmptyState'
 import {
-  TrendingUp, Upload, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus,
+  TrendingUp, Upload, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus, Sparkles,
 } from 'lucide-react'
+import { formatDistanceToNow } from 'date-fns'
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts'
@@ -103,6 +104,24 @@ export default function ForecasterPage() {
   // `app_settings.qbo_pl_data`. Same source label is shown so users know
   // the variance row is comparing against QBO totals, not a manually-entered
   // proforma row. Refreshes from the scheduled overnight QBO import.
+  // Latest Breezeway import — surfaced as a small status pill at the top
+  // of the page so operators can see at a glance whether last night's
+  // automated import landed.
+  const { data: lastBreezeway } = useQuery({
+    queryKey: ['/supabase/breezeway-last-import'],
+    staleTime: 300_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('breezeway_import_log')
+        .select('imported_at, source_label, rows_inserted, cleans_in_batch, notes')
+        .order('imported_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) return null
+      return data
+    },
+  })
+
   const { data: qboPL } = useQuery({
     queryKey: ['/supabase/qbo-pl-data-forecaster'],
     staleTime: 300_000,
@@ -438,6 +457,29 @@ export default function ForecasterPage() {
           </span>
         </div>
       </div>
+
+      {lastBreezeway ? (
+        <div
+          className="rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs flex flex-wrap items-center gap-x-3 gap-y-1"
+          data-testid="status-breezeway-last-import"
+        >
+          <span className="inline-flex items-center gap-1.5 font-medium">
+            <Sparkles className="w-3 h-3 text-primary" /> Breezeway
+          </span>
+          <span className="text-muted-foreground">
+            last import {formatDistanceToNow(new Date(lastBreezeway.imported_at), { addSuffix: true })}
+          </span>
+          <span className="text-foreground">
+            {lastBreezeway.source_label ?? '—'} · {lastBreezeway.rows_inserted} tasks
+            <span className="text-muted-foreground"> ({lastBreezeway.cleans_in_batch} cleans)</span>
+          </span>
+          {lastBreezeway.notes ? (
+            <span className="text-amber-700 dark:text-amber-400 truncate max-w-[40ch]" title={lastBreezeway.notes}>
+              · {lastBreezeway.notes}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
 
       {uploadOpen && (
         <Card className="border-card-border">
