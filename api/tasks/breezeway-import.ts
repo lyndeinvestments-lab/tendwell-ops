@@ -114,19 +114,72 @@ async function readRawBody(req: VercelRequest): Promise<string> {
   return Buffer.concat(chunks).toString('utf8')
 }
 
+// USPS-style street-suffix abbreviations → expanded form. Both sides of the
+// match (Breezeway and Tendwell) use mixed forms ("811 Bethlehem Way" vs
+// "811 Bethlehem Wy, Sevierville, TN 37876, USA"), so we normalize to the
+// full-word form before comparing.
+const SUFFIX_EXPANSIONS: Record<string, string> = {
+  wy: 'way',
+  dr: 'drive',
+  rd: 'road',
+  ct: 'court',
+  ln: 'lane',
+  ave: 'avenue',
+  av: 'avenue',
+  blvd: 'boulevard',
+  pl: 'place',
+  st: 'street',
+  hwy: 'highway',
+  cir: 'circle',
+  pkwy: 'parkway',
+  ter: 'terrace',
+  trl: 'trail',
+  tr: 'trail',
+  cv: 'cove',
+  pt: 'point',
+  sq: 'square',
+}
+
+// Strip the trailing ", City, State Zip[, Country]" that Tendwell's
+// properties.address carries but Breezeway's CSV doesn't. Conservative —
+// only removes from the FIRST comma onward.
+function stripCityStateZip(addr: string): string {
+  const idx = addr.indexOf(',')
+  return idx >= 0 ? addr.slice(0, idx) : addr
+}
+
+function normalizeAddress(input: string | null): string {
+  if (!input) return ''
+  const stripped = stripCityStateZip(input)
+  const lower = stripped.toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim()
+  // Expand each token if it's a known abbreviation. Keep order — only the
+  // last 2-3 tokens of a typical address are suffixes, but tokens earlier
+  // (like "St James Road") wouldn't normally collide because the comparison
+  // is whole-string after normalization.
+  const tokens = lower.split(' ').map(t => SUFFIX_EXPANSIONS[t] ?? t)
+  return tokens.join(' ')
+}
+
 async function buildAddressMatcher(supabase: SupabaseClient): Promise<(addr: string | null) => number | null> {
   const { data, error } = await supabase.from('properties').select('id, address')
   if (error || !data) return () => null
-  const byAddr = new Map<string, number>()
+  // Index every property under its NORMALIZED address so we can look up
+  // either an exact match or a substring fallback in O(1)/O(n) respectively.
+  const byNormalized = new Map<string, number>()
   for (const p of data as Array<{ id: number; address: string | null }>) {
     if (!p.address) continue
-    byAddr.set(p.address.trim().toLowerCase(), p.id)
+    const norm = normalizeAddress(p.address)
+    if (!norm) continue
+    if (!byNormalized.has(norm)) byNormalized.set(norm, p.id)
   }
   return (addr: string | null) => {
-    if (!addr) return null
-    const needle = addr.trim().toLowerCase()
-    if (byAddr.has(needle)) return byAddr.get(needle)!
-    for (const [stored, id] of byAddr.entries()) {
+    const needle = normalizeAddress(addr)
+    if (!needle) return null
+    if (byNormalized.has(needle)) return byNormalized.get(needle)!
+    // Substring fallback — handles cases like "513 McCarter Road 3S" vs
+    // a stored "513 McCarter Road" (or vice-versa) where one side has a
+    // unit fragment the other lacks.
+    for (const [stored, id] of byNormalized.entries()) {
       if (stored.includes(needle) || needle.includes(stored)) return id
     }
     return null
