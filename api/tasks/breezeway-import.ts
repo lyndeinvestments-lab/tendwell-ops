@@ -104,6 +104,16 @@ function getServiceClient(): SupabaseClient | null {
   return createClient(url, key)
 }
 
+// Drain the request stream into a UTF-8 string. Used when the runtime did
+// not auto-parse the body (e.g. Content-Type: text/csv on @vercel/node).
+async function readRawBody(req: VercelRequest): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of req as unknown as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
 async function buildAddressMatcher(supabase: SupabaseClient): Promise<(addr: string | null) => number | null> {
   const { data, error } = await supabase.from('properties').select('id, address')
   if (error || !data) return () => null
@@ -149,15 +159,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const sourceParam = typeof req.query.source === 'string' ? req.query.source.trim().toLowerCase() : ''
   const sourceLabel = sourceParam === 'current_month' || sourceParam === 'next_month' ? sourceParam : null
 
+  // Body shape options the agent may send:
+  //   Content-Type: text/csv         → @vercel/node leaves req.body undefined,
+  //                                     so we drain the raw request stream
+  //   Content-Type: application/json → req.body is parsed; we expect { csv }
+  //   Content-Type: text/plain       → req.body may be a string
+  //   Buffer body (rare)             → toString('utf8')
   let csvText: string
   if (typeof req.body === 'string') {
     csvText = req.body
   } else if (req.body && typeof req.body === 'object' && typeof (req.body as any).csv === 'string') {
     csvText = (req.body as any).csv
+  } else if (Buffer.isBuffer(req.body)) {
+    csvText = (req.body as Buffer).toString('utf8')
   } else {
-    res.status(400).json({ error: 'Body must be CSV text or JSON { csv: "..." }' })
-    return
+    // No parsed body — drain the request stream ourselves. This is the
+    // path the agent runbook expects for Content-Type: text/csv.
+    try {
+      csvText = await readRawBody(req)
+    } catch (e) {
+      res.status(400).json({ error: 'Failed to read request body', detail: e instanceof Error ? e.message : String(e) })
+      return
+    }
   }
+  // Strip optional UTF-8 BOM that Breezeway emits on CSV exports.
+  if (csvText.charCodeAt(0) === 0xfeff) csvText = csvText.slice(1)
   if (!csvText || csvText.trim().length === 0) {
     res.status(400).json({ error: 'Empty CSV body' })
     return
