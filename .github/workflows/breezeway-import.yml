@@ -1,0 +1,35 @@
+name: Breezeway Daily Import
+
+on:
+  schedule:
+    # 7:30 AM Eastern (UTC-5 standard). Adjust to UTC-4 in summer if needed.
+    - cron: '30 12 * * *'
+  workflow_dispatch:
+    inputs:
+      import_date:
+        description: 'Override date (YYYY-MM-DD). Defaults to today.'
+        required: false
+        default: ''
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install google-api-python-client google-auth requests
+
+      - name: Run Breezeway import
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          BREEZEWAY_IMPORT_KEY: ${{ secrets.BREEZEWAY_IMPORT_KEY }}
+          DRIVE_FOLDER_ID: 1XkEs242mTVZjulZiPW4zse9oa6y-sR0W
+          IMPORT_DATE: ${{ github.event.inputs.import_date }}
+        run: python scripts/breezeway_import.py
