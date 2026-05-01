@@ -136,14 +136,28 @@ Note the UTF-8 BOM (`﻿`) — strip it with `utf-8-sig` encoding.
 
 ## What "actual cleans" means
 
-Only rows whose `Task title` contains `Departure Clean` or `Turn Clean`
-(case-insensitive) are flagged with `is_clean = true` in the database.
-Everything else (Air Filter Change, Pre-Owner Stay Walkthrough,
-Maintenance, etc.) is still imported for completeness, but downstream
-revenue/cleans rollups filter to `is_clean = true` only.
+Rows are flagged with `is_clean = true` when the `Task title` matches any
+of these patterns (case-insensitive):
 
-If Breezeway adds new clean variants in the future (e.g. `Initial Clean`),
-update the regex in `api/tasks/breezeway-import.ts:CLEAN_TITLE_PATTERNS`.
+- `Departure Clean` (incl. variants like `Departure Clean - HT`)
+- `Turn Clean`
+- `Same Day Turn`
+- `Arrival Clean`
+- `Last Clean` (e.g. `Last Clean & Linen Pull`)
+
+**Explicitly NOT counted as cleans** (operator decision):
+
+- `Vacancy Clean` — unbooked tidy, not a revenue event
+- `Pre-Owner Stay Walkthrough`, `Cleaner Self-Inspection`, `Air Filter Change`,
+  `Monthly Air Filter Change`, and other inspection / maintenance titles
+
+Non-clean rows are still imported for completeness; downstream revenue /
+per-property cleans-per-month rollups filter to `is_clean = true`.
+
+If Breezeway adds new clean variants in the future, append a regex to
+`api/tasks/breezeway-import.ts:CLEAN_TITLE_PATTERNS` and re-deploy.
+Re-POSTing today's CSVs is safe — the upsert overwrites `is_clean` from
+the new pattern set without duplicating rows.
 
 ---
 
