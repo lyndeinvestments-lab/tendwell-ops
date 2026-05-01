@@ -57,7 +57,27 @@ interface UpsertRow {
   raw: Record<string, unknown>
 }
 
-const CLEAN_TITLE_PATTERNS = [/departure\s*clean/i, /turn\s*clean/i]
+// Titles that count as a "clean" for revenue / cleans-per-month rollups.
+// The list is intentionally explicit (no catch-all on "clean") because
+// Breezeway uses non-revenue clean titles too — most importantly
+// `Vacancy Clean`, which is intentionally EXCLUDED per the operator
+// (it's an unbooked tidy, not a revenue event).
+//
+// Inclusions (positive matches):
+//   Departure Clean    e.g. "Departure Clean", "Departure Clean - HT"
+//   Turn Clean         e.g. "Turn Clean"
+//   Same Day Turn      e.g. "Same Day Turn"
+//   Arrival Clean      e.g. "Arrival Clean"
+//   Last Clean         e.g. "Last Clean & Linen Pull"
+//
+// If Breezeway introduces new revenue clean variants, append here.
+const CLEAN_TITLE_PATTERNS = [
+  /departure\s*clean/i,
+  /turn\s*clean/i,
+  /same\s*day\s*turn/i,
+  /arrival\s*clean/i,
+  /last\s*clean/i,
+]
 
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex')
