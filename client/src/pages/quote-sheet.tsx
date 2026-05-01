@@ -95,6 +95,12 @@ export default function QuoteSheetPage() {
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
   const [search, setSearch] = useState('')
+  // Quote-sheet negative path: hide quotes that didn't pan out, with a
+  // required note. Default view is active-only; operators can flip to
+  // 'archived' to see + restore them, or 'all' to audit both at once.
+  const [viewMode, setViewMode] = useState<'active' | 'archived' | 'all'>('active')
+  const [archivingTarget, setArchivingTarget] = useState<any>(null)
+  const [archiveReason, setArchiveReason] = useState('')
   const [sortKey, setSortKey] = useState<string | null>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
@@ -161,11 +167,19 @@ export default function QuoteSheetPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
+    const allRows = (properties || []) as any[]
+    // Apply the active/archived/all toggle BEFORE search so the search
+    // operates over the chosen subset only.
+    const scoped = viewMode === 'active'
+      ? allRows.filter(p => !p.archived_at)
+      : viewMode === 'archived'
+        ? allRows.filter(p => p.archived_at)
+        : allRows
     const base = q
-      ? (properties || []).filter((p: any) =>
-          [p.name, p.client, p.address].some((v: any) => v && v.toLowerCase().includes(q))
+      ? scoped.filter((p: any) =>
+          [p.name, p.client, p.address, p.archived_reason].some((v: any) => v && String(v).toLowerCase().includes(q))
         )
-      : (properties || [])
+      : scoped
 
     if (!sortKey) return base
 
@@ -370,6 +384,45 @@ export default function QuoteSheetPage() {
     onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
   })
 
+  // Archive a quote with a required reason. Stores who/when/why on the
+  // properties row directly so the archive history is auditable on the
+  // record itself (not in a separate audit table).
+  const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_reason: reason,
+          archived_by: effectiveUser?.label ?? null,
+        })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote archived' })
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      setArchivingTarget(null)
+      setArchiveReason('')
+    },
+    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: restoreQuote } = useGuardedMutation('quote-sheet', {
+    mutationFn: async (id: number) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ archived_at: null, archived_reason: null, archived_by: null })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote restored' })
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+    },
+    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
+  })
+
   function EditableNumberCell({
     p, field, step = '1', prefix = '', className = '',
   }: { p: any; field: string; step?: string; prefix?: string; className?: string }) {
@@ -530,6 +583,22 @@ export default function QuoteSheetPage() {
               </button>
             )}
           </div>
+          {/* Active / Archived / All filter — defaults to Active so the
+              negative path doesn't clutter the daily view. */}
+          <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden h-8 no-print" data-testid="quote-view-mode">
+            {(['active', 'archived', 'all'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setViewMode(m); setPage(1) }}
+                className={`px-2.5 h-full text-xs capitalize ${viewMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'} ${m !== 'active' ? 'border-l border-border' : ''}`}
+                data-testid={`view-mode-${m}`}
+              >
+                {m}
+                {m === 'archived' ? <span className="ml-1 text-[10px] opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
+              </button>
+            ))}
+          </div>
           <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
             <Plus className="w-3.5 h-3.5" />
             New Quote
@@ -646,16 +715,47 @@ export default function QuoteSheetPage() {
                         >
                           <Copy className="w-3 h-3" />
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-xs gap-1 hover:text-primary px-2"
-                          onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
-                          data-testid={`button-convert-${p.id}`}
-                        >
-                          <ArrowRight className="w-3 h-3" /> Onboard
-                        </Button>
+                        {p.archived_at ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1 hover:text-primary px-2"
+                            onClick={(e) => { e.stopPropagation(); restoreQuote(p.id) }}
+                            data-testid={`button-restore-${p.id}`}
+                            title={`Archived ${p.archived_by ? 'by ' + p.archived_by : ''}: ${p.archived_reason ?? ''}`}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs gap-1 hover:text-primary px-2"
+                              onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
+                              data-testid={`button-convert-${p.id}`}
+                            >
+                              <ArrowRight className="w-3 h-3" /> Onboard
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
+                              onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
+                              data-testid={`button-archive-${p.id}`}
+                              title="Archive — quote didn't pan out"
+                            >
+                              Archive
+                            </Button>
+                          </>
+                        )}
                       </div>
+                      {p.archived_at && viewMode !== 'active' ? (
+                        <div className="mt-1 text-[10px] text-muted-foreground italic">
+                          Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
+                          {p.archived_reason ? <> — {p.archived_reason}</> : null}
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 )
@@ -974,6 +1074,52 @@ export default function QuoteSheetPage() {
           isPending={convertPending}
         />
       )}
+
+      <Dialog open={!!archivingTarget} onOpenChange={v => !v && !archivePending && setArchivingTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">Archive quote</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              Archive <span className="font-medium">{archivingTarget?.name ?? '—'}</span>?
+              The property stays in the database; the quote sheet hides it by default
+              and you can restore it any time.
+            </p>
+            <div>
+              <Label htmlFor="archive-reason" className="text-xs">
+                Reason <span className="text-destructive">*</span>
+              </Label>
+              <textarea
+                id="archive-reason"
+                value={archiveReason}
+                onChange={e => setArchiveReason(e.target.value)}
+                placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up…"
+                rows={3}
+                className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                data-testid="input-archive-reason"
+                autoFocus
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Required. Visible in the archived view so you can audit why a quote didn't onboard.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setArchivingTarget(null)} disabled={archivePending}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => archivingTarget && archiveReason.trim() && archiveQuote({ id: archivingTarget.id, reason: archiveReason.trim() })}
+              disabled={archivePending || !archiveReason.trim()}
+              data-testid="button-confirm-archive"
+            >
+              {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Archiving…</> : 'Archive quote'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
