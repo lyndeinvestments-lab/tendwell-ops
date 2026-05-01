@@ -112,6 +112,24 @@ function extractAddress(propertyRaw: string | null): string | null {
   return parts.slice(1).join(' - ').trim() || null
 }
 
+// The portion BEFORE " - " in Breezeway's Property column matches Tendwell's
+// `properties.name` exactly when you strip the trailing " (REGION)" tag and
+// any decorative emojis. e.g.
+//   "Bobby Nicely 1132 (SCounty) - 1132 Sanctuary Shrs Wy…"  →  "Bobby Nicely 1132"
+//   "Patrick Glasco 2728 ❌ 🔑 (SCounty) - 2728 Grn Mountain Wy…"  →  "Patrick Glasco 2728"
+// Name match is more reliable than address match because Breezeway and
+// Tendwell use wildly inconsistent abbreviations / formatting on addresses.
+function extractPropertyNickname(propertyRaw: string | null): string | null {
+  if (!propertyRaw) return null
+  const beforeAddress = propertyRaw.split(' - ')[0]
+  if (!beforeAddress) return null
+  // Strip trailing region tag " (SCounty)" / " (GAT)" / " (PCenter)" / etc.
+  const noRegion = beforeAddress.replace(/\s*\([^)]+\)\s*$/, '')
+  // Strip emoji + ZWJ + variation selectors (covers ❌ 🔑 🙋 etc.).
+  const noEmoji = noRegion.replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}‍️]/gu, '')
+  return noEmoji.replace(/\s+/g, ' ').trim() || null
+}
+
 function isCleanTask(title: string | null): boolean {
   if (!title) return false
   return CLEAN_TITLE_PATTERNS.some(re => re.test(title))
@@ -180,29 +198,41 @@ function normalizeAddress(input: string | null): string {
   return tokens.join(' ')
 }
 
-async function buildAddressMatcher(supabase: SupabaseClient): Promise<(addr: string | null) => number | null> {
-  const { data, error } = await supabase.from('properties').select('id, address')
-  if (error || !data) return () => null
-  // Index every property under its NORMALIZED address so we can look up
-  // either an exact match or a substring fallback in O(1)/O(n) respectively.
-  const byNormalized = new Map<string, number>()
-  for (const p of data as Array<{ id: number; address: string | null }>) {
-    if (!p.address) continue
-    const norm = normalizeAddress(p.address)
-    if (!norm) continue
-    if (!byNormalized.has(norm)) byNormalized.set(norm, p.id)
-  }
-  return (addr: string | null) => {
-    const needle = normalizeAddress(addr)
-    if (!needle) return null
-    if (byNormalized.has(needle)) return byNormalized.get(needle)!
-    // Substring fallback — handles cases like "513 McCarter Road 3S" vs
-    // a stored "513 McCarter Road" (or vice-versa) where one side has a
-    // unit fragment the other lacks.
-    for (const [stored, id] of byNormalized.entries()) {
-      if (stored.includes(needle) || needle.includes(stored)) return id
+interface PropertyMatcher {
+  byName: (nickname: string | null) => number | null
+  byAddress: (addr: string | null) => number | null
+}
+
+async function buildPropertyMatcher(supabase: SupabaseClient): Promise<PropertyMatcher> {
+  const { data, error } = await supabase.from('properties').select('id, name, address')
+  if (error || !data) return { byName: () => null, byAddress: () => null }
+  const byNameIdx = new Map<string, number>()
+  const byAddrIdx = new Map<string, number>()
+  for (const p of data as Array<{ id: number; name: string | null; address: string | null }>) {
+    if (p.name) {
+      const k = p.name.trim().toLowerCase()
+      if (k && !byNameIdx.has(k)) byNameIdx.set(k, p.id)
     }
-    return null
+    if (p.address) {
+      const norm = normalizeAddress(p.address)
+      if (norm && !byAddrIdx.has(norm)) byAddrIdx.set(norm, p.id)
+    }
+  }
+  return {
+    byName: (nickname) => {
+      if (!nickname) return null
+      const k = nickname.trim().toLowerCase()
+      return byNameIdx.get(k) ?? null
+    },
+    byAddress: (addr) => {
+      const needle = normalizeAddress(addr)
+      if (!needle) return null
+      if (byAddrIdx.has(needle)) return byAddrIdx.get(needle)!
+      for (const [stored, id] of byAddrIdx.entries()) {
+        if (stored.includes(needle) || needle.includes(stored)) return id
+      }
+      return null
+    },
   }
 }
 
@@ -275,7 +305,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const matcher = await buildAddressMatcher(supabase)
+  const matcher = await buildPropertyMatcher(supabase)
 
   const batch = randomUUID()
   const rows: UpsertRow[] = []
@@ -295,7 +325,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (seenIds.has(externalId)) continue
     seenIds.add(externalId)
 
-    const propertyId = matcher(propertyAddress)
+    // Try the (more reliable) name-based match first; fall back to the
+    // normalized-address match. Address-format inconsistency between
+    // Breezeway and Tendwell is severe enough that name is the primary
+    // signal — see extractPropertyNickname comment.
+    const nickname = extractPropertyNickname(propertyRaw)
+    const propertyId = matcher.byName(nickname) ?? matcher.byAddress(propertyAddress)
     if (propertyId == null && propertyAddress) unmatchedAddrs.add(propertyAddress)
 
     rows.push({
