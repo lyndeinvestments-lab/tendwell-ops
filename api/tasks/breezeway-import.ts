@@ -52,16 +52,20 @@ interface UpsertRow {
   created_date: string | null
   last_updated_date: string | null
   is_clean: boolean
+  is_deep_clean: boolean
   source_label: string | null
   import_batch: string
   raw: Record<string, unknown>
 }
 
-// Titles that count as a "clean" for revenue / cleans-per-month rollups.
+// Titles that count as a regular "clean" for revenue / cleans-per-month
+// rollups. Deep Clean is handled SEPARATELY (DEEP_CLEAN_TITLE_PATTERNS
+// below) because it has its own cost + income profile.
+//
 // The list is intentionally explicit (no catch-all on "clean") because
 // Breezeway uses non-revenue clean titles too — most importantly
 // `Vacancy Clean`, which is intentionally EXCLUDED per the operator
-// (it's an unbooked tidy, not a revenue event).
+// (unbooked tidy, not a revenue event).
 //
 // Inclusions (positive matches):
 //   Departure Clean    e.g. "Departure Clean", "Departure Clean - HT"
@@ -69,15 +73,21 @@ interface UpsertRow {
 //   Same Day Turn      e.g. "Same Day Turn"
 //   Arrival Clean      e.g. "Arrival Clean"
 //   Last Clean         e.g. "Last Clean & Linen Pull"
-//
-// If Breezeway introduces new revenue clean variants, append here.
+//   Onboarding Clean   first clean for a new property
 const CLEAN_TITLE_PATTERNS = [
   /departure\s*clean/i,
   /turn\s*clean/i,
   /same\s*day\s*turn/i,
   /arrival\s*clean/i,
   /last\s*clean/i,
+  /onboarding\s*clean/i,
 ]
+
+// Deep cleans are priced differently from regular cleans (separate cost +
+// separate income line item), so they get their own flag. Mutually
+// exclusive with is_clean — deep wins if both regexes match (Deep Clean
+// shouldn't ever be a Departure Clean, but defensive ordering matters).
+const DEEP_CLEAN_TITLE_PATTERNS = [/deep\s*clean/i]
 
 function sha256Hex(input: string): string {
   return createHash('sha256').update(input).digest('hex')
@@ -130,8 +140,15 @@ function extractPropertyNickname(propertyRaw: string | null): string | null {
   return noEmoji.replace(/\s+/g, ' ').trim() || null
 }
 
+function isDeepCleanTask(title: string | null): boolean {
+  if (!title) return false
+  return DEEP_CLEAN_TITLE_PATTERNS.some(re => re.test(title))
+}
+
 function isCleanTask(title: string | null): boolean {
   if (!title) return false
+  // Deep cleans are categorized separately — don't double-count.
+  if (isDeepCleanTask(title)) return false
   return CLEAN_TITLE_PATTERNS.some(re => re.test(title))
 }
 
@@ -349,6 +366,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       created_date: createdDate,
       last_updated_date: normalizeDate(r['Last updated date']),
       is_clean: isCleanTask(taskTitle),
+      is_deep_clean: isDeepCleanTask(taskTitle),
       source_label: sourceLabel,
       import_batch: batch,
       raw: r as unknown as Record<string, unknown>,
@@ -383,6 +401,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       rows_updated: 0,
       rows_failed: rows.length,
       cleans_in_batch: rows.filter(r => r.is_clean).length,
+      deep_cleans_in_batch: rows.filter(r => r.is_deep_clean).length,
       notes: `Upsert failed: ${firstError.slice(0, 500)}`,
     })
     res.status(500).json({ error: 'Failed to upsert breezeway_tasks', detail: firstError })
@@ -390,12 +409,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const cleansInBatch = rows.filter(r => r.is_clean).length
+  const deepCleansInBatch = rows.filter(r => r.is_deep_clean).length
   await supabase.from('breezeway_import_log').insert({
     source_label: sourceLabel,
     rows_inserted: totalUpserted,
     rows_updated: 0,
     rows_failed: parsed.data.length - rows.length,
     cleans_in_batch: cleansInBatch,
+    deep_cleans_in_batch: deepCleansInBatch,
     notes: unmatchedAddrs.size > 0
       ? `${unmatchedAddrs.size} unmatched address(es); first: ${[...unmatchedAddrs].slice(0, 3).join(' | ')}`
       : null,
@@ -409,6 +430,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     rows_upserted: totalUpserted,
     rows_skipped: parsed.data.length - rows.length,
     cleans_in_batch: cleansInBatch,
+    deep_cleans_in_batch: deepCleansInBatch,
     unmatched_addresses_count: unmatchedAddrs.size,
     sample_unmatched_addresses: [...unmatchedAddrs].slice(0, 5),
   })

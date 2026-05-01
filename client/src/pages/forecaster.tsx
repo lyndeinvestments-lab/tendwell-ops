@@ -113,7 +113,7 @@ export default function ForecasterPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('breezeway_import_log')
-        .select('imported_at, source_label, rows_inserted, cleans_in_batch, notes')
+        .select('imported_at, source_label, rows_inserted, cleans_in_batch, deep_cleans_in_batch, notes')
         .order('imported_at', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -471,7 +471,11 @@ export default function ForecasterPage() {
           </span>
           <span className="text-foreground">
             {lastBreezeway.source_label ?? '—'} · {lastBreezeway.rows_inserted} tasks
-            <span className="text-muted-foreground"> ({lastBreezeway.cleans_in_batch} cleans)</span>
+            <span className="text-muted-foreground">
+              {' ('}{lastBreezeway.cleans_in_batch} cleans
+              {lastBreezeway.deep_cleans_in_batch ? <> · {lastBreezeway.deep_cleans_in_batch} deep</> : null}
+              {')'}
+            </span>
           </span>
           {lastBreezeway.notes ? (
             <span className="text-amber-700 dark:text-amber-400 truncate max-w-[40ch]" title={lastBreezeway.notes}>
