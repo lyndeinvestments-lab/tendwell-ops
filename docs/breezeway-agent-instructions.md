@@ -136,27 +136,47 @@ Note the UTF-8 BOM (`﻿`) — strip it with `utf-8-sig` encoding.
 
 ## What "actual cleans" means
 
-Rows are flagged with `is_clean = true` when the `Task title` matches any
-of these patterns (case-insensitive):
+Each imported task is bucketed into one of three categories via two
+boolean flags on `breezeway_tasks`:
+
+| Bucket | `is_clean` | `is_deep_clean` |
+|---|---|---|
+| Regular cleans (revenue) | `true` | `false` |
+| Deep cleans (separate pricing) | `false` | `true` |
+| Inspections / maintenance / non-revenue | `false` | `false` |
+
+The two flags are **mutually exclusive** so totals don't double-count.
+
+### Counted as regular cleans (`is_clean = true`)
 
 - `Departure Clean` (incl. variants like `Departure Clean - HT`)
 - `Turn Clean`
 - `Same Day Turn`
 - `Arrival Clean`
 - `Last Clean` (e.g. `Last Clean & Linen Pull`)
+- `Onboarding Clean`
 
-**Explicitly NOT counted as cleans** (operator decision):
+### Counted as deep cleans (`is_deep_clean = true`)
+
+- `Deep Clean`
+
+Deep cleans have their own cost AND income line item, so revenue rollups
+should filter `WHERE is_deep_clean = true` separately from regular
+`WHERE is_clean = true` rollups.
+
+### Explicitly NOT counted (operator decision)
 
 - `Vacancy Clean` — unbooked tidy, not a revenue event
 - `Pre-Owner Stay Walkthrough`, `Cleaner Self-Inspection`, `Air Filter Change`,
   `Monthly Air Filter Change`, and other inspection / maintenance titles
 
-Non-clean rows are still imported for completeness; downstream revenue /
-per-property cleans-per-month rollups filter to `is_clean = true`.
+Non-counted rows are still imported for completeness so the audit trail
+stays full; downstream revenue rollups just filter them out.
 
 If Breezeway adds new clean variants in the future, append a regex to
-`api/tasks/breezeway-import.ts:CLEAN_TITLE_PATTERNS` and re-deploy.
-Re-POSTing today's CSVs is safe — the upsert overwrites `is_clean` from
+`api/tasks/breezeway-import.ts:CLEAN_TITLE_PATTERNS` (regular) or
+`DEEP_CLEAN_TITLE_PATTERNS` (deep) and re-deploy. Re-POSTing today's
+CSVs is safe — the upsert overwrites `is_clean` / `is_deep_clean` from
 the new pattern set without duplicating rows.
 
 ---
