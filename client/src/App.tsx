@@ -71,6 +71,7 @@ const CleanerMetricsPage = lazyRetry(() => import("@/pages/cleaner-metrics"));
 const NorthStarPage = lazyRetry(() => import("@/pages/north-star"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
 const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
+const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -242,6 +243,7 @@ function AppRoutes() {
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
+        <Route path="/weigh-in" component={LaundryWeighInPage} />
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
@@ -286,6 +288,14 @@ function AppLayout() {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <OnboardingFormPage />
+        </Suspense>
+      );
+    }
+    // Allow public laundry weigh-in form without authentication
+    if (window.location.hash.startsWith('#/weigh-in')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <LaundryWeighInPage />
         </Suspense>
       );
     }
