@@ -20,6 +20,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'property-verifications', label: 'Property Verifications', group: 'Operations' },
   { id: 'inspections',            label: 'Inspections',            group: 'Operations' },
   { id: 'lost-items',             label: 'Lost Items',              group: 'Operations' },
+  { id: 'laundry-weigh-ins',      label: 'Laundry Weigh-Ins',       group: 'Operations' },
   // Management
   { id: 'tasks',               label: 'Tasks',               group: 'Management' },
   { id: 'issues',              label: 'Issues',              group: 'Management' },
@@ -80,8 +81,9 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'master-list', 'pro-forma', 'forecaster', 'previous-properties', 'settings',
     'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
+    'laundry-weigh-ins',
   ],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'laundry-weigh-ins'],
   cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
