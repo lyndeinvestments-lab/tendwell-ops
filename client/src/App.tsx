@@ -72,6 +72,7 @@ const NorthStarPage = lazyRetry(() => import("@/pages/north-star"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
 const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
 const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
+const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -234,6 +235,7 @@ function AppRoutes() {
         <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
+        <Route path="/laundry-weigh-ins">{() => <GuardedRoute viewId="laundry-weigh-ins" component={LaundryWeighInsPage} />}</Route>
         <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
         <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
