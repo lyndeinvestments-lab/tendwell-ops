@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/EmptyState'
-import { Search, Scale, Download, Trash2, Sparkles, Shirt, Camera } from 'lucide-react'
+import { Search, Scale, Download, Trash2, Sparkles, Shirt, Camera, ExternalLink, Copy, Check } from 'lucide-react'
 import { format, parseISO, subDays } from 'date-fns'
 import Papa from 'papaparse'
 
@@ -48,6 +48,20 @@ export default function LaundryWeighInsPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('30d')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const FORM_URL = 'https://www.tendwellcleaning.com/#/weigh-in'
+
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(FORM_URL)
+      setCopied(true)
+      toast({ title: 'Link copied', description: FORM_URL })
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast({ title: 'Copy failed', description: 'Select and copy manually.', variant: 'destructive' })
+    }
+  }
 
   const { data: rows, isLoading, isError } = useQuery({
     queryKey: ['laundry-weigh-ins', rangeFilter],
@@ -133,10 +147,22 @@ export default function LaundryWeighInsPage() {
             <p className="text-xs text-muted-foreground">Daily cleaner submissions from the public form</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
-          <Download className="w-4 h-4 mr-2" />
-          Export CSV
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <a href={FORM_URL} target="_blank" rel="noreferrer">
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Open form
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleCopyLink}>
+            {copied ? <Check className="w-4 h-4 mr-2 text-emerald-600" /> : <Copy className="w-4 h-4 mr-2" />}
+            {copied ? 'Copied' : 'Copy link'}
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
+            <Download className="w-4 h-4 mr-2" />
+            Export CSV
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
