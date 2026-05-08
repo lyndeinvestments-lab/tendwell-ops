@@ -228,7 +228,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-xl p-0 flex flex-col h-[100dvh] sm:h-screen"
+        className="w-full sm:max-w-xl p-0 flex flex-col h-[100dvh] sm:h-screen overflow-x-hidden"
       >
         <SheetHeader className="px-4 py-3 border-b shrink-0">
           <SheetTitle className="text-base flex items-center gap-2">
@@ -237,7 +237,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
           </SheetTitle>
         </SheetHeader>
 
-        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-4 space-y-5">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-5">
           <div className="grid grid-cols-2 gap-2">
             <ModeButton active={mode === 'log'} onClick={() => setMode('log')} icon={<ClipboardCheck className="w-4 h-4" />} label="Log Now" />
             <ModeButton active={mode === 'schedule'} onClick={() => setMode('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
@@ -454,9 +454,9 @@ function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick
 
 function StarRow({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 py-1">
       <span className="text-sm">{label}</span>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between sm:justify-start gap-1 w-full sm:w-auto">
         {[1, 2, 3, 4, 5].map(n => {
           const filled = value != null && n <= value
           return (
@@ -464,7 +464,7 @@ function StarRow({ label, value, onChange }: { label: string; value: number | nu
               key={n}
               type="button"
               onClick={() => onChange(value === n ? null : n)}
-              className="w-11 h-11 flex items-center justify-center rounded-md hover:bg-muted active:bg-muted/70"
+              className="flex-1 sm:flex-none w-auto sm:w-11 h-11 flex items-center justify-center rounded-md hover:bg-muted active:bg-muted/70"
               aria-label={`${label} ${n} stars`}
             >
               <Star
