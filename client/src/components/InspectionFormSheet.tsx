@@ -6,7 +6,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2 } from 'lucide-react'
+import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
@@ -56,9 +56,10 @@ interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
   existing?: ExistingInspection | null
+  onDelete?: (inspection: ExistingInspection) => void
 }
 
-export function InspectionFormSheet({ open, onOpenChange, existing }: Props) {
+export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: Props) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -617,6 +618,18 @@ export function InspectionFormSheet({ open, onOpenChange, existing }: Props) {
                 ? 'Saving…'
                 : isEditing ? 'Save Changes'
                 : mode === 'schedule' ? 'Schedule Inspection' : 'Log Inspection'}
+            </Button>
+          )}
+          {isEditing && existing && onDelete && (
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full h-10 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => onDelete(existing)}
+              disabled={submitting}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Inspection
             </Button>
           )}
         </div>
