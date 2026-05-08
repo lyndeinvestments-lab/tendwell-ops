@@ -91,7 +91,7 @@ export default function InspectionsPage() {
   const canEdit = canEditView('inspections', effectiveUser)
 
   const [search, setSearch] = useState('')
-  const [cleanerFilter, setCleanerFilter] = useState<string>('all')
+  const [inspectorFilter, setInspectorFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<'all' | InspectionStatus>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
@@ -195,9 +195,9 @@ export default function InspectionsPage() {
         const notes = (i.notes ?? '').toLowerCase()
         if (!propName.includes(q) && !cleanerName.includes(q) && !notes.includes(q)) return false
       }
-      if (cleanerFilter !== 'all') {
-        if (cleanerFilter === 'unassigned' && i.cleaner_id) return false
-        if (cleanerFilter !== 'unassigned' && i.cleaner_id !== cleanerFilter) return false
+      if (inspectorFilter !== 'all') {
+        if (inspectorFilter === 'unassigned' && i.inspector_id) return false
+        if (inspectorFilter !== 'unassigned' && i.inspector_id !== inspectorFilter) return false
       }
       if (statusFilter !== 'all' && i.status !== statusFilter) return false
       if (dateFrom && i.inspected_at < dateFrom) return false
@@ -205,7 +205,7 @@ export default function InspectionsPage() {
       if (min != null && (i.overall_score ?? 0) < min) return false
       return true
     })
-  }, [inspections, search, cleanerFilter, statusFilter, dateFrom, dateTo, minScore])
+  }, [inspections, search, inspectorFilter, statusFilter, dateFrom, dateTo, minScore])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -297,11 +297,11 @@ export default function InspectionsPage() {
             <SelectItem value="skipped" className="text-xs">Skipped</SelectItem>
           </SelectContent>
         </Select>
-        <label className="text-muted-foreground ml-2">Cleaner</label>
-        <Select value={cleanerFilter} onValueChange={v => { setCleanerFilter(v); setPage(1) }}>
+        <label className="text-muted-foreground ml-2">Inspector</label>
+        <Select value={inspectorFilter} onValueChange={v => { setInspectorFilter(v); setPage(1) }}>
           <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-xs">All cleaners</SelectItem>
+            <SelectItem value="all" className="text-xs">All inspectors</SelectItem>
             <SelectItem value="unassigned" className="text-xs">Unassigned</SelectItem>
             {(cleaners || []).map(c => (
               <SelectItem key={c.id} value={c.id} className="text-xs">{c.full_name}</SelectItem>
