@@ -177,7 +177,7 @@ export default function InspectionsPage() {
   }
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
+    <div className="p-3 sm:p-5 space-y-4 h-full flex flex-col overflow-x-hidden">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
@@ -259,7 +259,83 @@ export default function InspectionsPage() {
         <span className="text-muted-foreground ml-auto">{filtered.length} record{filtered.length === 1 ? '' : 's'}</span>
       </div>
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {/* Mobile: cards (no horizontal scroll) */}
+      <div className="md:hidden flex-1 overflow-y-auto -mx-1 px-1 space-y-2">
+        {isLoading ? (
+          [...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-lg" />)
+        ) : filtered.length === 0 ? (
+          <EmptyState
+            icon={ClipboardCheck}
+            title="No inspections"
+            description={
+              inspections?.length
+                ? 'No records match the current filters.'
+                : 'Tap + New Inspection to log or schedule one.'
+            }
+          />
+        ) : (
+          paged.map(i => (
+            <button
+              key={i.id}
+              type="button"
+              onClick={() => setActiveDetail(i)}
+              className="w-full text-left rounded-lg border border-border bg-background p-3 active:bg-muted/40"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <StatusPill status={i.status} />
+                    {i.reinspect_urgency !== 'none' && (
+                      <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                        {URGENCY_BADGE[i.reinspect_urgency].label}
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-medium text-sm truncate">
+                    {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">
+                    {(i.cleaners?.full_name ?? i.inspected_by ?? '—')}
+                    {' · '}
+                    {i.status === 'scheduled' && i.scheduled_for
+                      ? `→ ${format(parseISO(i.scheduled_for), 'MMM d')}`
+                      : i.inspected_at
+                        ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
+                        : '—'}
+                  </div>
+                </div>
+                {i.overall_score != null && (
+                  <span className={`shrink-0 inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
+                    <Star className="w-3 h-3 fill-current" /> {i.overall_score}
+                  </span>
+                )}
+              </div>
+              {(i.cleanliness_score != null || i.linens_score != null || i.supplies_score != null || i.exterior_score != null) && (
+                <div className="flex flex-wrap gap-1 mt-2">
+                  <ScorePill label="Clean" score={i.cleanliness_score} />
+                  <ScorePill label="Linen" score={i.linens_score} />
+                  <ScorePill label="Supp" score={i.supplies_score} />
+                  <ScorePill label="Ext" score={i.exterior_score} />
+                </div>
+              )}
+              {((i.photos_url?.length ?? 0) > 0 || i.notes) && (
+                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                  {(i.photos_url?.length ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 shrink-0">
+                      <Camera className="w-3 h-3" />
+                      {i.photos_url!.length}
+                    </span>
+                  )}
+                  {i.notes && <span className="truncate flex-1 min-w-0">{i.notes}</span>}
+                </div>
+              )}
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Desktop: full table */}
+      <div className="hidden md:block overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
