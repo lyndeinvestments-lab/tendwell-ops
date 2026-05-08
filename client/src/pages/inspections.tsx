@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus } from 'lucide-react'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
@@ -101,6 +101,38 @@ export default function InspectionsPage() {
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ExistingInspection | null>(null)
+  const queryClient = useQueryClient()
+
+  const deleteMut = useMutation({
+    mutationFn: async (inspectionId: string) => {
+      // Delete any associated storage objects (best effort).
+      const { data: files } = await supabase.storage.from('inspections').list(inspectionId)
+      if (files && files.length > 0) {
+        await supabase.storage
+          .from('inspections')
+          .remove(files.map(f => `${inspectionId}/${f.name}`))
+      }
+      const { error } = await supabase.from('inspections').delete().eq('id', inspectionId)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Inspection deleted' })
+      queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
+      setActiveDetail(null)
+      setEditing(null)
+      setFormOpen(false)
+    },
+    onError: (e: Error) => {
+      toast({ title: 'Could not delete', description: e.message, variant: 'destructive' })
+    },
+  })
+
+  function confirmDelete(id: string, label: string) {
+    if (!canEdit) return
+    if (confirm(`Delete inspection for ${label}? This also removes any photos. This cannot be undone.`)) {
+      deleteMut.mutate(id)
+    }
+  }
 
   function handleRowClick(i: Inspection) {
     if (i.status === 'scheduled') {
@@ -532,7 +564,7 @@ export default function InspectionsPage() {
                   </div>
                 </div>
               )}
-              <div className="flex gap-2 pt-2">
+              <div className="flex gap-2 pt-2 flex-wrap">
                 <Button
                   variant="outline"
                   size="sm"
@@ -545,6 +577,18 @@ export default function InspectionsPage() {
                   <ExternalLink className="w-3.5 h-3.5" />
                   Open property
                 </Button>
+                {canEdit && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive ml-auto"
+                    onClick={() => confirmDelete(activeDetail.id, activeDetail.properties?.name ?? 'this inspection')}
+                    disabled={deleteMut.isPending}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete
+                  </Button>
+                )}
               </div>
             </div>
           )}
@@ -558,6 +602,10 @@ export default function InspectionsPage() {
           if (!v) setEditing(null)
         }}
         existing={editing}
+        onDelete={canEdit ? (insp) => {
+          const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? 'this inspection'
+          confirmDelete(insp.id, label)
+        } : undefined}
       />
     </div>
   )
