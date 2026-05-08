@@ -6,11 +6,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search } from 'lucide-react'
+import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
 type Mode = 'log' | 'schedule'
+type Status = 'scheduled' | 'completed' | 'skipped'
 type Urgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
 const URGENCY_OPTIONS: { value: Urgency; label: string; ring: string; bg: string }[] = [
@@ -31,22 +32,49 @@ const SCORE_AREAS = [
 
 type ScoreKey = typeof SCORE_AREAS[number]['key']
 
+export interface ExistingInspection {
+  id: string
+  property_id: number | null
+  cleaner_id: string | null
+  inspector_id: string | null
+  status: Status
+  scheduled_for: string | null
+  inspected_at: string | null
+  last_cleaned_on: string | null
+  notes: string | null
+  photos_url: string[] | null
+  reinspect_urgency: Urgency
+  reinspect_by: string | null
+  overall_score: number | null
+  cleanliness_score: number | null
+  linens_score: number | null
+  supplies_score: number | null
+  exterior_score: number | null
+}
+
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  existing?: ExistingInspection | null
 }
 
-export function InspectionFormSheet({ open, onOpenChange }: Props) {
+export function InspectionFormSheet({ open, onOpenChange, existing }: Props) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
 
+  // For new rows: user picks Log vs Schedule. For existing rows: editing a
+  // scheduled inspection — the user can save edits or "Mark Complete" to
+  // promote to log mode.
+  const isEditing = !!existing
   const [mode, setMode] = useState<Mode>('log')
   const [propertyId, setPropertyId] = useState<number | null>(null)
   const [propertySearch, setPropertySearch] = useState('')
   const [showPropertyList, setShowPropertyList] = useState(false)
   const [cleanerId, setCleanerId] = useState<string | null>(null)
+  const [inspectorId, setInspectorId] = useState<string | null>(null)
   const [date, setDate] = useState(today)
+  const [lastCleanedOn, setLastCleanedOn] = useState('')
   const [scores, setScores] = useState<Record<ScoreKey, number | null>>({
     overall_score: null,
     cleanliness_score: null,
@@ -56,29 +84,58 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
   })
   const [notes, setNotes] = useState('')
   const [photos, setPhotos] = useState<{ file: File; preview: string }[]>([])
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([])
   const [urgency, setUrgency] = useState<Urgency>('none')
   const [reinspectBy, setReinspectBy] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Initialize / reset on open or when `existing` changes
   useEffect(() => {
     if (!open) {
+      photos.forEach(p => URL.revokeObjectURL(p.preview))
+      setPhotos([])
+      setExistingPhotoUrls([])
+      setSubmitting(false)
+      return
+    }
+    if (existing) {
+      setMode(existing.status === 'scheduled' ? 'schedule' : 'log')
+      setPropertyId(existing.property_id)
+      setCleanerId(existing.cleaner_id)
+      setInspectorId(existing.inspector_id)
+      setDate(existing.status === 'scheduled' && existing.scheduled_for
+        ? existing.scheduled_for
+        : (existing.inspected_at ?? today))
+      setLastCleanedOn(existing.last_cleaned_on ?? '')
+      setScores({
+        overall_score: existing.overall_score,
+        cleanliness_score: existing.cleanliness_score,
+        linens_score: existing.linens_score,
+        supplies_score: existing.supplies_score,
+        exterior_score: existing.exterior_score,
+      })
+      setNotes(existing.notes ?? '')
+      setExistingPhotoUrls(existing.photos_url ?? [])
+      setUrgency(existing.reinspect_urgency ?? 'none')
+      setReinspectBy(existing.reinspect_by ?? '')
+    } else {
       setMode('log')
       setPropertyId(null)
       setPropertySearch('')
       setShowPropertyList(false)
       setCleanerId(null)
+      setInspectorId(null)
       setDate(today)
+      setLastCleanedOn('')
       setScores({ overall_score: null, cleanliness_score: null, linens_score: null, supplies_score: null, exterior_score: null })
       setNotes('')
-      photos.forEach(p => URL.revokeObjectURL(p.preview))
-      setPhotos([])
+      setExistingPhotoUrls([])
       setUrgency('none')
       setReinspectBy('')
-      setSubmitting(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, existing])
 
   useEffect(() => {
     return () => photos.forEach(p => URL.revokeObjectURL(p.preview))
@@ -90,10 +147,10 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, address')
+        .select('id, name, address, filter_size, last_filter_changed, next_filter_due, auto_code, door_code, other_codes, wifi_info')
         .order('name')
       if (error) throw error
-      return (data ?? []) as { id: number; name: string; address: string | null }[]
+      return (data ?? []) as PropertyRow[]
     },
     enabled: open,
     staleTime: 60_000,
@@ -136,47 +193,75 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  function removePhoto(idx: number) {
+  function removeNewPhoto(idx: number) {
     setPhotos(prev => {
       URL.revokeObjectURL(prev[idx].preview)
       return prev.filter((_, i) => i !== idx)
     })
   }
 
+  function removeExistingPhoto(idx: number) {
+    setExistingPhotoUrls(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  // submitMode: 'save' keeps the row's current status; 'complete' promotes to completed
   const submitMut = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (submitMode: 'save' | 'complete') => {
       if (!propertyId) throw new Error('Pick a property.')
       if (!date) throw new Error('Pick a date.')
 
-      const baseRow: Record<string, unknown> = {
+      const targetStatus: Status =
+        submitMode === 'complete' ? 'completed'
+        : isEditing ? (existing!.status)
+        : (mode === 'schedule' ? 'scheduled' : 'completed')
+
+      const row: Record<string, unknown> = {
         property_id: propertyId,
         cleaner_id: cleanerId,
-        status: mode === 'schedule' ? 'scheduled' : 'completed',
+        inspector_id: inspectorId,
+        status: targetStatus,
+        last_cleaned_on: lastCleanedOn || null,
         notes: notes.trim() || null,
-        reinspect_urgency: urgency,
-        reinspect_by: reinspectBy || null,
       }
 
-      if (mode === 'schedule') {
-        baseRow.scheduled_for = date
-        baseRow.inspected_at = date
+      if (targetStatus === 'scheduled') {
+        row.scheduled_for = date
+        row.inspected_at = date
+        // Don't set scores/urgency on scheduled rows
+        row.overall_score = null
+        row.cleanliness_score = null
+        row.linens_score = null
+        row.supplies_score = null
+        row.exterior_score = null
+        row.reinspect_urgency = 'none'
+        row.reinspect_by = null
       } else {
-        baseRow.inspected_at = date
-        for (const a of SCORE_AREAS) {
-          baseRow[a.key] = scores[a.key]
-        }
+        // completed (either fresh "Log Now" or "Mark Complete" on a scheduled)
+        row.inspected_at = date
+        row.scheduled_for = existing?.scheduled_for ?? null
+        for (const a of SCORE_AREAS) row[a.key] = scores[a.key]
+        row.reinspect_urgency = urgency
+        row.reinspect_by = reinspectBy || null
       }
 
-      const { data: inserted, error: insertErr } = await supabase
-        .from('inspections')
-        .insert(baseRow)
-        .select('id')
-        .single()
-      if (insertErr) throw insertErr
-      const inspectionId = inserted.id as string
+      let inspectionId: string
+      if (isEditing) {
+        const { error } = await supabase.from('inspections').update(row).eq('id', existing!.id)
+        if (error) throw error
+        inspectionId = existing!.id
+      } else {
+        const { data: inserted, error } = await supabase
+          .from('inspections')
+          .insert(row)
+          .select('id')
+          .single()
+        if (error) throw error
+        inspectionId = inserted.id as string
+      }
 
-      if (photos.length > 0) {
-        const urls: string[] = []
+      // Upload any newly-added photos and merge with kept existing photos.
+      if (photos.length > 0 || (isEditing && existingPhotoUrls.length !== (existing!.photos_url ?? []).length)) {
+        const newUrls: string[] = []
         for (let i = 0; i < photos.length; i++) {
           const file = photos[i].file
           const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
@@ -189,19 +274,27 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
             .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
           if (upErr) throw upErr
           const { data: urlData } = supabase.storage.from('inspections').getPublicUrl(path)
-          urls.push(urlData.publicUrl)
+          newUrls.push(urlData.publicUrl)
         }
+        const merged = [...existingPhotoUrls, ...newUrls]
         const { error: updErr } = await supabase
           .from('inspections')
-          .update({ photos_url: urls })
+          .update({ photos_url: merged.length ? merged : null })
           .eq('id', inspectionId)
         if (updErr) throw updErr
       }
 
-      return inspectionId
+      return { inspectionId, targetStatus }
     },
-    onSuccess: () => {
-      toast({ title: mode === 'schedule' ? 'Inspection scheduled' : 'Inspection logged' })
+    onSuccess: ({ targetStatus }) => {
+      const wasScheduled = !!(existing && existing.status === 'scheduled')
+      toast({
+        title:
+          targetStatus === 'completed' && wasScheduled ? 'Inspection completed'
+          : isEditing ? 'Inspection updated'
+          : targetStatus === 'scheduled' ? 'Inspection scheduled'
+          : 'Inspection logged',
+      })
       queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
       onOpenChange(false)
     },
@@ -211,7 +304,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
     },
   })
 
-  function handleSubmit() {
+  function fireSubmit(submitMode: 'save' | 'complete') {
     if (!propertyId) {
       toast({ title: 'Pick a property', variant: 'destructive' })
       return
@@ -221,8 +314,17 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
       return
     }
     setSubmitting(true)
-    submitMut.mutate()
+    submitMut.mutate(submitMode)
   }
+
+  // Drives whether scorecard / urgency sections render. They show only when the
+  // submission will result in a *completed* row.
+  const showCompletionFields = isEditing
+    ? true // always allow editing a row's completion fields (Save keeps status if scheduled)
+    : mode === 'log'
+
+  // Sticky footer button copy
+  const isCompletingScheduled = isEditing && existing?.status === 'scheduled'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -233,16 +335,22 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
         <SheetHeader className="px-4 py-3 border-b shrink-0">
           <SheetTitle className="text-base flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-primary" />
-            New Inspection
+            {isEditing
+              ? (existing!.status === 'scheduled' ? 'Edit / Complete Inspection' : 'Edit Inspection')
+              : 'New Inspection'}
           </SheetTitle>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-5">
-          <div className="grid grid-cols-2 gap-2">
-            <ModeButton active={mode === 'log'} onClick={() => setMode('log')} icon={<ClipboardCheck className="w-4 h-4" />} label="Log Now" />
-            <ModeButton active={mode === 'schedule'} onClick={() => setMode('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
-          </div>
+          {/* Mode toggle — only for fresh creates */}
+          {!isEditing && (
+            <div className="grid grid-cols-2 gap-2">
+              <ModeButton active={mode === 'log'} onClick={() => setMode('log')} icon={<ClipboardCheck className="w-4 h-4" />} label="Log Now" />
+              <ModeButton active={mode === 'schedule'} onClick={() => setMode('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
+            </div>
+          )}
 
+          {/* Property */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Property</Label>
             {selectedProperty ? (
@@ -253,9 +361,11 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
                     <div className="text-xs text-muted-foreground truncate">{selectedProperty.address}</div>
                   )}
                 </div>
-                <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setPropertyId(null); setShowPropertyList(true) }}>
-                  Change
-                </Button>
+                {!isEditing && (
+                  <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setPropertyId(null); setShowPropertyList(true) }}>
+                    Change
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="space-y-2">
@@ -281,7 +391,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
                           onClick={() => { setPropertyId(p.id); setShowPropertyList(false); setPropertySearch('') }}
                           className="w-full text-left p-3 hover:bg-muted/50 active:bg-muted"
                         >
-                          <div className="text-sm font-medium flex items-center gap-2">
+                          <div className="text-sm font-medium flex items-center gap-2 min-w-0">
                             <Building2 className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                             <span className="truncate">{p.name}</span>
                           </div>
@@ -297,33 +407,71 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
             )}
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">
-              {mode === 'schedule' ? 'Scheduled date' : 'Inspection date'}
-            </Label>
-            <Input
-              type="date"
-              value={date}
-              onChange={e => setDate(e.target.value)}
-              className="h-11"
-            />
+          {/* Property info card — appears when a property is selected */}
+          {selectedProperty && <PropertyInfoCard property={selectedProperty} />}
+
+          {/* Dates: scheduled or inspected, plus last cleaned */}
+          <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">
+                {(!isEditing && mode === 'schedule') || (isEditing && existing!.status === 'scheduled')
+                  ? 'Scheduled date'
+                  : 'Inspection date'}
+              </Label>
+              <Input
+                type="date"
+                value={date}
+                onChange={e => setDate(e.target.value)}
+                className="h-11"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Last cleaned on</Label>
+              <Input
+                type="date"
+                value={lastCleanedOn}
+                onChange={e => setLastCleanedOn(e.target.value)}
+                className="h-11"
+                placeholder="When was it last cleaned?"
+              />
+              <p className="text-xs text-muted-foreground">
+                Helps the inspector know if it was cleaned that day.
+              </p>
+            </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Cleaner who previously cleaned</Label>
-            <select
-              value={cleanerId ?? ''}
-              onChange={e => setCleanerId(e.target.value || null)}
-              className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
-            >
-              <option value="">— Not specified —</option>
-              {cleaners.map(c => (
-                <option key={c.id} value={c.id}>{c.full_name}</option>
-              ))}
-            </select>
+          {/* People */}
+          <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Cleaner who previously cleaned</Label>
+              <select
+                value={cleanerId ?? ''}
+                onChange={e => setCleanerId(e.target.value || null)}
+                className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">— Not specified —</option>
+                {cleaners.map(c => (
+                  <option key={c.id} value={c.id}>{c.full_name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Inspector</Label>
+              <select
+                value={inspectorId ?? ''}
+                onChange={e => setInspectorId(e.target.value || null)}
+                className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">— Not specified —</option>
+                {cleaners.map(c => (
+                  <option key={c.id} value={c.id}>{c.full_name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {mode === 'log' && (
+          {/* Scorecard — only when row will be a completed inspection */}
+          {showCompletionFields && (
             <div className="space-y-3">
               <Label className="text-sm font-medium">Scorecard (1-5 stars)</Label>
               <div className="space-y-2">
@@ -339,6 +487,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
             </div>
           )}
 
+          {/* Photos — always available */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Photos</Label>
             <input
@@ -351,12 +500,25 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
               className="hidden"
             />
             <div className="flex flex-wrap gap-2">
+              {existingPhotoUrls.map((url, i) => (
+                <div key={`existing-${i}`} className="relative w-20 h-20 rounded-md overflow-hidden border">
+                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeExistingPhoto(i)}
+                    className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
+                    aria-label="Remove photo"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
               {photos.map((p, i) => (
-                <div key={i} className="relative w-20 h-20 rounded-md overflow-hidden border">
+                <div key={`new-${i}`} className="relative w-20 h-20 rounded-md overflow-hidden border">
                   <img src={p.preview} alt="" className="w-full h-full object-cover" />
                   <button
                     type="button"
-                    onClick={() => removePhoto(i)}
+                    onClick={() => removeNewPhoto(i)}
                     className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
                     aria-label="Remove photo"
                   >
@@ -375,6 +537,7 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
             </div>
           </div>
 
+          {/* Notes */}
           <div className="space-y-1.5">
             <Label className="text-sm font-medium">Notes</Label>
             <textarea
@@ -386,51 +549,146 @@ export function InspectionFormSheet({ open, onOpenChange }: Props) {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Re-inspect urgency</Label>
-            <div className="grid grid-cols-5 gap-1.5">
-              {URGENCY_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setUrgency(opt.value)}
-                  className={cn(
-                    'h-11 rounded-md border-2 text-xs font-medium transition-colors',
-                    urgency === opt.value ? `${opt.bg} ${opt.ring}` : 'bg-background border-border hover:border-primary/30',
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Re-inspect urgency — completion-only */}
+          {showCompletionFields && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-sm font-medium">Re-inspect urgency</Label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {URGENCY_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setUrgency(opt.value)}
+                      className={cn(
+                        'h-11 rounded-md border-2 text-xs font-medium transition-colors min-w-0',
+                        urgency === opt.value ? `${opt.bg} ${opt.ring}` : 'bg-background border-border hover:border-primary/30',
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {urgency !== 'none' && (
-            <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Re-inspect by (optional)</Label>
-              <Input
-                type="date"
-                value={reinspectBy}
-                onChange={e => setReinspectBy(e.target.value)}
-                className="h-11"
-              />
-            </div>
+              {urgency !== 'none' && (
+                <div className="space-y-1.5">
+                  <Label className="text-sm font-medium">Re-inspect by (optional)</Label>
+                  <Input
+                    type="date"
+                    value={reinspectBy}
+                    onChange={e => setReinspectBy(e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
 
-        <div className="border-t bg-background px-4 py-3 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <Button
-            className="w-full h-12 text-base"
-            onClick={handleSubmit}
-            disabled={submitting || !propertyId}
-          >
-            {submitting
-              ? 'Saving…'
-              : mode === 'schedule' ? 'Schedule Inspection' : 'Log Inspection'}
-          </Button>
+        {/* Sticky submit */}
+        <div className="border-t bg-background px-4 py-3 shrink-0 pb-[max(0.75rem,env(safe-area-inset-bottom))] space-y-2">
+          {isCompletingScheduled ? (
+            <>
+              <Button
+                className="w-full h-12 text-base"
+                onClick={() => fireSubmit('complete')}
+                disabled={submitting || !propertyId}
+              >
+                <CheckCircle2 className="w-5 h-5 mr-2" />
+                {submitting ? 'Saving…' : 'Mark Complete'}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full h-11"
+                onClick={() => fireSubmit('save')}
+                disabled={submitting || !propertyId}
+              >
+                Save Changes (keep scheduled)
+              </Button>
+            </>
+          ) : (
+            <Button
+              className="w-full h-12 text-base"
+              onClick={() => fireSubmit('save')}
+              disabled={submitting || !propertyId}
+            >
+              {submitting
+                ? 'Saving…'
+                : isEditing ? 'Save Changes'
+                : mode === 'schedule' ? 'Schedule Inspection' : 'Log Inspection'}
+            </Button>
+          )}
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+type PropertyRow = {
+  id: number
+  name: string
+  address: string | null
+  filter_size: string | null
+  last_filter_changed: string | null
+  next_filter_due: string | null
+  auto_code: string | null
+  door_code: string | null
+  other_codes: string | null
+  wifi_info: string | null
+}
+
+function PropertyInfoCard({ property }: { property: PropertyRow }) {
+  const hasFilter = !!(property.filter_size || property.next_filter_due || property.last_filter_changed)
+  const hasCodes = !!(property.auto_code || property.door_code || property.other_codes)
+  const hasWifi = !!property.wifi_info
+  if (!hasFilter && !hasCodes && !hasWifi) {
+    return (
+      <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+        No filter, access, or Wi-Fi info on file for this property.
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-md border bg-muted/30 divide-y">
+      {hasFilter && (
+        <InfoRow icon={<Wind className="w-3.5 h-3.5" />} label="AC filter">
+          <div className="space-y-0.5">
+            {property.filter_size && <div className="font-medium">{property.filter_size}</div>}
+            <div className="text-xs text-muted-foreground space-x-2">
+              {property.last_filter_changed && <span>Changed {property.last_filter_changed}</span>}
+              {property.next_filter_due && <span>Due {property.next_filter_due}</span>}
+            </div>
+          </div>
+        </InfoRow>
+      )}
+      {hasCodes && (
+        <InfoRow icon={<KeyRound className="w-3.5 h-3.5" />} label="Access codes">
+          <div className="space-y-0.5 text-sm">
+            {property.auto_code && <div><span className="text-muted-foreground text-xs">Auto:</span> <span className="font-mono">{property.auto_code}</span></div>}
+            {property.door_code && <div><span className="text-muted-foreground text-xs">Door:</span> <span className="font-mono">{property.door_code}</span></div>}
+            {property.other_codes && <div className="text-xs whitespace-pre-line">{property.other_codes}</div>}
+          </div>
+        </InfoRow>
+      )}
+      {hasWifi && (
+        <InfoRow icon={<Wifi className="w-3.5 h-3.5" />} label="Wi-Fi">
+          <div className="text-sm whitespace-pre-line break-words">{property.wifi_info}</div>
+        </InfoRow>
+      )}
+    </div>
+  )
+}
+
+function InfoRow({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="px-3 py-2 flex items-start gap-3">
+      <div className="w-20 shrink-0 flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground pt-0.5">
+        {icon}
+        <span>{label}</span>
+      </div>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
   )
 }
 

@@ -15,7 +15,7 @@ import { TablePagination } from '@/components/TablePagination'
 import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
-import { InspectionFormSheet } from '@/components/InspectionFormSheet'
+import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
 
 type InspectionStatus = 'scheduled' | 'completed' | 'skipped'
 type ReinspectUrgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
@@ -24,9 +24,11 @@ type Inspection = {
   id: string
   property_id: number
   cleaner_id: string | null
+  inspector_id: string | null
   inspected_by: string | null
   inspected_at: string
   scheduled_for: string | null
+  last_cleaned_on: string | null
   status: InspectionStatus
   reinspect_urgency: ReinspectUrgency
   reinspect_by: string | null
@@ -39,6 +41,7 @@ type Inspection = {
   photos_url: string[] | null
   properties?: { name: string } | null
   cleaners?: { full_name: string } | null
+  inspectors?: { full_name: string } | null
 }
 
 function scoreColorClass(score: number | null): string {
@@ -97,13 +100,42 @@ export default function InspectionsPage() {
   const [pageSize, setPageSize] = useState(50)
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
   const [formOpen, setFormOpen] = useState(false)
+  const [editing, setEditing] = useState<ExistingInspection | null>(null)
+
+  function handleRowClick(i: Inspection) {
+    if (i.status === 'scheduled') {
+      // Open the form sheet in edit mode so the inspector can fill it out and complete it.
+      setEditing({
+        id: i.id,
+        property_id: i.property_id,
+        cleaner_id: i.cleaner_id,
+        inspector_id: i.inspector_id,
+        status: i.status,
+        scheduled_for: i.scheduled_for,
+        inspected_at: i.inspected_at,
+        last_cleaned_on: i.last_cleaned_on,
+        notes: i.notes,
+        photos_url: i.photos_url,
+        reinspect_urgency: i.reinspect_urgency,
+        reinspect_by: i.reinspect_by,
+        overall_score: i.overall_score,
+        cleanliness_score: i.cleanliness_score,
+        linens_score: i.linens_score,
+        supplies_score: i.supplies_score,
+        exterior_score: i.exterior_score,
+      })
+      setFormOpen(true)
+    } else {
+      setActiveDetail(i)
+    }
+  }
 
   const { data: inspections, isLoading } = useQuery<Inspection[]>({
     queryKey: ['/supabase/inspections-all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('inspections')
-        .select('id, property_id, cleaner_id, inspected_by, inspected_at, scheduled_for, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners(full_name)')
+        .select('id, property_id, cleaner_id, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)')
         .order('inspected_at', { ascending: false })
         .limit(2000)
       if (error) throw error
@@ -195,7 +227,7 @@ export default function InspectionsPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {canEdit && (
-            <Button size="sm" onClick={() => setFormOpen(true)} className="h-8 text-xs gap-1.5">
+            <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
               <Plus className="w-3.5 h-3.5" />
               New Inspection
             </Button>
@@ -278,7 +310,7 @@ export default function InspectionsPage() {
             <button
               key={i.id}
               type="button"
-              onClick={() => setActiveDetail(i)}
+              onClick={() => handleRowClick(i)}
               className="w-full text-left rounded-lg border border-border bg-background p-3 active:bg-muted/40"
             >
               <div className="flex items-start justify-between gap-2">
@@ -374,7 +406,7 @@ export default function InspectionsPage() {
                 <tr
                   key={i.id}
                   className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer"
-                  onClick={() => setActiveDetail(i)}
+                  onClick={() => handleRowClick(i)}
                 >
                   <td className="py-2 px-3 font-medium text-xs">
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -519,7 +551,14 @@ export default function InspectionsPage() {
         </SheetContent>
       </Sheet>
 
-      <InspectionFormSheet open={formOpen} onOpenChange={setFormOpen} />
+      <InspectionFormSheet
+        open={formOpen}
+        onOpenChange={(v) => {
+          setFormOpen(v)
+          if (!v) setEditing(null)
+        }}
+        existing={editing}
+      />
     </div>
   )
 }
