@@ -12,9 +12,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink } from 'lucide-react'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
+import { InspectionFormSheet } from '@/components/InspectionFormSheet'
+
+type InspectionStatus = 'scheduled' | 'completed' | 'skipped'
+type ReinspectUrgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
 type Inspection = {
   id: string
@@ -22,6 +26,10 @@ type Inspection = {
   cleaner_id: string | null
   inspected_by: string | null
   inspected_at: string
+  scheduled_for: string | null
+  status: InspectionStatus
+  reinspect_urgency: ReinspectUrgency
+  reinspect_by: string | null
   overall_score: number | null
   cleanliness_score: number | null
   linens_score: number | null
@@ -35,9 +43,26 @@ type Inspection = {
 
 function scoreColorClass(score: number | null): string {
   if (score == null) return 'bg-muted text-muted-foreground'
-  if (score >= 8) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-  if (score >= 5) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+  if (score >= 4) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+  if (score >= 3) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
   return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+}
+
+const URGENCY_BADGE: Record<ReinspectUrgency, { label: string; cls: string }> = {
+  none:     { label: '',         cls: '' },
+  low:      { label: 'Low',      cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
+  medium:   { label: 'Medium',   cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+  high:     { label: 'High',     cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+  critical: { label: 'Critical', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+}
+
+function StatusPill({ status }: { status: InspectionStatus }) {
+  const map: Record<InspectionStatus, string> = {
+    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    skipped:   'bg-muted text-muted-foreground',
+  }
+  return <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
 }
 
 function ScorePill({ label, score }: { label: string; score: number | null }) {
@@ -64,19 +89,21 @@ export default function InspectionsPage() {
 
   const [search, setSearch] = useState('')
   const [cleanerFilter, setCleanerFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<'all' | InspectionStatus>('all')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [minScore, setMinScore] = useState<string>('any')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
+  const [formOpen, setFormOpen] = useState(false)
 
   const { data: inspections, isLoading } = useQuery<Inspection[]>({
     queryKey: ['/supabase/inspections-all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('inspections')
-        .select('id, property_id, cleaner_id, inspected_by, inspected_at, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners(full_name)')
+        .select('id, property_id, cleaner_id, inspected_by, inspected_at, scheduled_for, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners(full_name)')
         .order('inspected_at', { ascending: false })
         .limit(2000)
       if (error) throw error
@@ -108,12 +135,13 @@ export default function InspectionsPage() {
         if (cleanerFilter === 'unassigned' && i.cleaner_id) return false
         if (cleanerFilter !== 'unassigned' && i.cleaner_id !== cleanerFilter) return false
       }
+      if (statusFilter !== 'all' && i.status !== statusFilter) return false
       if (dateFrom && i.inspected_at < dateFrom) return false
       if (dateTo && i.inspected_at > dateTo + 'T23:59:59') return false
       if (min != null && (i.overall_score ?? 0) < min) return false
       return true
     })
-  }, [inspections, search, cleanerFilter, dateFrom, dateTo, minScore])
+  }, [inspections, search, cleanerFilter, statusFilter, dateFrom, dateTo, minScore])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -154,7 +182,7 @@ export default function InspectionsPage() {
         <div>
           <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
           <p className="text-sm text-muted-foreground">
-            Cleaning-quality scores logged after each clean. Scores 1–10.
+            Cleaning-quality scores logged after each clean. Scores 1–5.
             {avgScore != null && (
               <span className="ml-2">
                 <span className="text-muted-foreground">· Avg overall:</span>{' '}
@@ -166,6 +194,12 @@ export default function InspectionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {canEdit && (
+            <Button size="sm" onClick={() => setFormOpen(true)} className="h-8 text-xs gap-1.5">
+              <Plus className="w-3.5 h-3.5" />
+              New Inspection
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5">
             <Download className="w-3.5 h-3.5" />
             Export CSV
@@ -189,7 +223,17 @@ export default function InspectionsPage() {
       </div>
 
       <div className="flex items-center gap-2 flex-wrap text-xs">
-        <label className="text-muted-foreground">Cleaner</label>
+        <label className="text-muted-foreground">Status</label>
+        <Select value={statusFilter} onValueChange={v => { setStatusFilter(v as 'all' | InspectionStatus); setPage(1) }}>
+          <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">All</SelectItem>
+            <SelectItem value="scheduled" className="text-xs">Scheduled</SelectItem>
+            <SelectItem value="completed" className="text-xs">Completed</SelectItem>
+            <SelectItem value="skipped" className="text-xs">Skipped</SelectItem>
+          </SelectContent>
+        </Select>
+        <label className="text-muted-foreground ml-2">Cleaner</label>
         <Select value={cleanerFilter} onValueChange={v => { setCleanerFilter(v); setPage(1) }}>
           <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
@@ -205,7 +249,7 @@ export default function InspectionsPage() {
           <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="any" className="text-xs">Any</SelectItem>
-            {[5, 6, 7, 8, 9].map(n => <SelectItem key={n} value={String(n)} className="text-xs">{n}+</SelectItem>)}
+            {[1, 2, 3, 4, 5].map(n => <SelectItem key={n} value={String(n)} className="text-xs">{n}+</SelectItem>)}
           </SelectContent>
         </Select>
         <label className="text-muted-foreground ml-2">From</label>
@@ -257,13 +301,25 @@ export default function InspectionsPage() {
                   onClick={() => setActiveDetail(i)}
                 >
                   <td className="py-2 px-3 font-medium text-xs">
-                    {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
+                      <StatusPill status={i.status} />
+                      {i.reinspect_urgency !== 'none' && (
+                        <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                          {URGENCY_BADGE[i.reinspect_urgency].label}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">
                     {i.cleaners?.full_name ?? (i.inspected_by ? <span>{i.inspected_by}</span> : '—')}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
-                    {i.inspected_at ? format(parseISO(i.inspected_at), 'MMM d, yyyy h:mm a') : '—'}
+                    {i.status === 'scheduled' && i.scheduled_for
+                      ? `→ ${format(parseISO(i.scheduled_for), 'MMM d, yyyy')}`
+                      : i.inspected_at
+                        ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
+                        : '—'}
                   </td>
                   <td className="py-2 px-3">
                     {i.overall_score != null ? (
@@ -309,10 +365,28 @@ export default function InspectionsPage() {
           </SheetHeader>
           {activeDetail && (
             <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <StatusPill status={activeDetail.status} />
+                {activeDetail.reinspect_urgency !== 'none' && (
+                  <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
+                    Re-inspect: {URGENCY_BADGE[activeDetail.reinspect_urgency].label}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
                 <span className="flex items-center gap-1"><User className="w-3 h-3" />{activeDetail.cleaners?.full_name ?? activeDetail.inspected_by ?? 'Unknown'}</span>
                 <span>·</span>
-                <span>{activeDetail.inspected_at ? format(parseISO(activeDetail.inspected_at), 'PPP p') : '—'}</span>
+                {activeDetail.status === 'scheduled' && activeDetail.scheduled_for ? (
+                  <span>Scheduled for {format(parseISO(activeDetail.scheduled_for), 'PPP')}</span>
+                ) : (
+                  <span>{activeDetail.inspected_at ? format(parseISO(activeDetail.inspected_at), 'PPP') : '—'}</span>
+                )}
+                {activeDetail.reinspect_by && (
+                  <>
+                    <span>·</span>
+                    <span>Re-inspect by {format(parseISO(activeDetail.reinspect_by), 'PPP')}</span>
+                  </>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {([
@@ -363,16 +437,13 @@ export default function InspectionsPage() {
                   <ExternalLink className="w-3.5 h-3.5" />
                   Open property
                 </Button>
-                {canEdit && (
-                  <span className="text-xs text-muted-foreground self-center">
-                    Log a new inspection from the property modal → Inspections tab.
-                  </span>
-                )}
               </div>
             </div>
           )}
         </SheetContent>
       </Sheet>
+
+      <InspectionFormSheet open={formOpen} onOpenChange={setFormOpen} />
     </div>
   )
 }
