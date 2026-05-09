@@ -639,6 +639,49 @@ const LINEN_FIELD_KEYS = [
 const ACCESS_FIELD_KEYS = ['auto_code', 'door_code', 'other_codes', 'wifi_info'] as const
 const AC_FIELD_KEYS = ['filter_size', 'last_filter_changed'] as const
 
+function buildPropertyCopyText(property: any, includeFinancials: boolean): string {
+  const lines: string[] = []
+  const v = (x: any) => (x == null || x === '' ? '' : String(x))
+
+  lines.push(v(property.address))
+
+  if (includeFinancials) {
+    const pay = Number(property.cleaner_pay ?? 0)
+    lines.push(`Cleaner pay: ${property.cleaner_pay == null || property.cleaner_pay === '' ? '' : `$${pay.toFixed(2)}`}`)
+  }
+
+  const bedParts: string[] = []
+  const beds: Array<[number | null | undefined, string]> = [
+    [property.king_beds, 'king'],
+    [property.queen_beds, 'queen'],
+    [property.full_beds, 'full'],
+    [property.twin_beds, 'twin'],
+  ]
+  for (const [n, label] of beds) {
+    const num = Number(n ?? 0)
+    if (num > 0) bedParts.push(`${num} ${label}`)
+  }
+  lines.push(`Beds: ${bedParts.join(', ')}`)
+
+  lines.push(`Bedrooms: ${v(property.bedrooms)}`)
+
+  const fullBaths = property.full_baths == null || property.full_baths === '' ? null : Number(property.full_baths)
+  const halfBaths = property.half_baths == null || property.half_baths === '' ? null : Number(property.half_baths)
+  const bathParts: string[] = []
+  if (fullBaths != null && fullBaths > 0) bathParts.push(`${fullBaths} full`)
+  if (halfBaths != null && halfBaths > 0) bathParts.push(`${halfBaths} half`)
+  lines.push(`Bathrooms: ${bathParts.join(', ')}`)
+
+  lines.push(`Guest count: ${v(property.guest_count)}`)
+  lines.push(`Auto code: ${v(property.auto_code)}`)
+  lines.push(`Door code: ${v(property.door_code)}`)
+  lines.push(`Other codes: ${v(property.other_codes)}`)
+  lines.push(`WiFi: ${v(property.wifi_info)}`)
+  lines.push(`Square footage: ${v(property.square_footage)}`)
+
+  return lines.join('\n')
+}
+
 function buildFormFromProperty(property: any): Record<string, any> {
   const form: Record<string, any> = {
     address: property.address || '',
@@ -668,6 +711,7 @@ export function PropertyDetailModal() {
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
   const [savingMissing, setSavingMissing] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const propertyId = modalState?.propertyId
   const highlightFields = modalState?.highlightFields ?? []
@@ -927,27 +971,50 @@ export function PropertyDetailModal() {
                 </span>
               )}
             </div>
-            {canEdit && !isLoading && (
-              isEditing ? (
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {!isLoading && property && !isEditing && (
                 <button
-                  onClick={() => { setIsEditing(false); if (property) setForm(buildFormFromProperty(property)) }}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                  title="Cancel editing"
-                  data-testid="modal-cancel-edit"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(
+                        buildPropertyCopyText(property, canViewFinancials),
+                      )
+                      setCopied(true)
+                      toast({ title: 'Property details copied' })
+                      setTimeout(() => setCopied(false), 1500)
+                    } catch {
+                      toast({ title: 'Copy failed', variant: 'destructive' })
+                    }
+                  }}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy property details"
+                  data-testid="modal-copy-details"
                 >
-                  <X className="w-4 h-4" />
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </button>
-              ) : (
-                <button
-                  onClick={() => setIsEditing(true)}
-                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-                  title="Edit property"
-                  data-testid="modal-edit-btn"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-              )
-            )}
+              )}
+              {canEdit && !isLoading && (
+                isEditing ? (
+                  <button
+                    onClick={() => { setIsEditing(false); if (property) setForm(buildFormFromProperty(property)) }}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Cancel editing"
+                    data-testid="modal-cancel-edit"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    title="Edit property"
+                    data-testid="modal-edit-btn"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )
+              )}
+            </div>
           </div>
         </DialogHeader>
 
