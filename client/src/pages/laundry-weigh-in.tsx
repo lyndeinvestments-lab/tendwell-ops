@@ -92,7 +92,28 @@ export default function LaundryWeighInPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [knownNames, setKnownNames] = useState<string[]>([])
+  const [nameFocused, setNameFocused] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const nameWrapperRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    publicSupabase
+      .rpc('get_laundry_weigh_in_names')
+      .then(({ data, error }) => {
+        if (cancelled || error || !Array.isArray(data)) return
+        setKnownNames(data.filter((n): n is string => typeof n === 'string'))
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  const trimmedNameLive = name.trim()
+  const lowerName = trimmedNameLive.toLowerCase()
+  const nameSuggestions = lowerName
+    ? knownNames.filter(n => n.toLowerCase().startsWith(lowerName) && n.toLowerCase() !== lowerName)
+    : knownNames
+  const showNameDropdown = nameFocused && nameSuggestions.length > 0
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -192,6 +213,11 @@ export default function LaundryWeighInPage() {
         setError(t.errGeneric)
         return
       }
+      setKnownNames(prev =>
+        prev.some(n => n.toLowerCase() === trimmedName.toLowerCase())
+          ? prev
+          : [...prev, trimmedName].sort((a, b) => a.localeCompare(b)),
+      )
       setSubmitted(true)
     } catch {
       setSaving(false)
@@ -246,14 +272,40 @@ export default function LaundryWeighInPage() {
             <CardTitle className="text-sm">{t.nameLabel}</CardTitle>
           </CardHeader>
           <CardContent>
-            <Input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              className={inputCls}
-              placeholder={t.namePlaceholder}
-              autoComplete="name"
-              data-testid="input-name"
-            />
+            <div ref={nameWrapperRef} className="relative">
+              <Input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                onFocus={() => setNameFocused(true)}
+                onBlur={() => setTimeout(() => setNameFocused(false), 120)}
+                className={inputCls}
+                placeholder={t.namePlaceholder}
+                autoComplete="off"
+                data-testid="input-name"
+              />
+              {showNameDropdown && (
+                <ul
+                  className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-md"
+                  data-testid="name-suggestions"
+                >
+                  {nameSuggestions.map(n => (
+                    <li key={n}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          setName(n)
+                          setNameFocused(false)
+                        }}
+                      >
+                        {n}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </CardContent>
         </Card>
 
