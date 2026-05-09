@@ -115,8 +115,15 @@ export default function IssuesPage() {
       if (error) throw error
       return data || []
     },
-    enabled: addOpen,
   })
+
+  const cleanerLookup = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of (cleaners || []) as Array<{ full_name: string | null }>) {
+      if (c.full_name) m.set(c.full_name.trim().toLowerCase(), c.full_name)
+    }
+    return m
+  }, [cleaners])
 
   // ─── Summary stats ────────────────────────────────────────────────────────
   // All counters derive from the same `issues` array so the header subtitle
@@ -265,6 +272,7 @@ export default function IssuesPage() {
           toast({ title: 'No data found in CSV', variant: 'destructive' })
           return
         }
+        const unmatchedCleaners = new Set<string>()
         const rows = (result.data as any[]).map(row => {
           // Map common column names flexibly
           const get = (keys: string[]) => {
@@ -274,11 +282,18 @@ export default function IssuesPage() {
             }
             return ''
           }
+          const rawLastTouch = get(['Last Touch', 'LAST TOUCH', 'last_touch'])
+          let last_touch = rawLastTouch
+          if (rawLastTouch) {
+            const canonical = cleanerLookup.get(rawLastTouch.trim().toLowerCase())
+            if (canonical) last_touch = canonical
+            else unmatchedCleaners.add(rawLastTouch)
+          }
           return {
             report_date: get(['Report Date', 'REPORT DATE', 'Date', 'date']) || new Date().toISOString().split('T')[0],
             property_name: get(['Property', 'PROPERTY NAME', 'Property Name', 'property_name']),
             category: get(['Category', 'CATEGORY', 'category']) || 'Other',
-            last_touch: get(['Last Touch', 'LAST TOUCH', 'last_touch']),
+            last_touch,
             details: get(['Details', 'DETAILS', 'details']),
             assessment: get(['Assessment', 'ASSESSMENT', 'assessment']),
             resolution: get(['Resolution', 'RESOLUTION', 'resolution']),
@@ -292,6 +307,13 @@ export default function IssuesPage() {
         if (rows.length === 0) {
           toast({ title: 'No valid issues found in CSV', variant: 'destructive' })
           return
+        }
+        if (unmatchedCleaners.size > 0) {
+          const sample = Array.from(unmatchedCleaners).slice(0, 5).join(', ')
+          toast({
+            title: `${unmatchedCleaners.size} unmatched ${unmatchedCleaners.size === 1 ? 'cleaner' : 'cleaners'} in CSV`,
+            description: `These names were preserved as-is: ${sample}${unmatchedCleaners.size > 5 ? '…' : ''}. Add them to the cleaners list so metrics count them.`,
+          })
         }
         setImportData(rows)
       },
