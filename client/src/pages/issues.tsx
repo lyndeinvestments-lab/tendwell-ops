@@ -105,6 +105,19 @@ export default function IssuesPage() {
     enabled: addOpen,
   })
 
+  const { data: cleaners } = useQuery({
+    queryKey: ['/supabase/issues-cleaners'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cleaners')
+        .select('id, full_name')
+        .order('full_name')
+      if (error) throw error
+      return data || []
+    },
+    enabled: addOpen,
+  })
+
   // ─── Summary stats ────────────────────────────────────────────────────────
   // All counters derive from the same `issues` array so the header subtitle
   // reconciles with the category tiles. Every status is counted so the user
@@ -555,7 +568,16 @@ export default function IssuesPage() {
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Last Touch (person responsible)</label>
-              <Input value={newForm.last_touch} onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))} className="h-8 text-sm" placeholder="Name…" />
+              <select
+                value={newForm.last_touch}
+                onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))}
+                className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
+              >
+                <option value="">Select cleaner…</option>
+                {(cleaners || []).map((c: any) => (
+                  <option key={c.id} value={c.full_name}>{c.full_name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Details</label>
