@@ -19,16 +19,19 @@ export default function CleanerMetricsPage() {
     },
   })
 
-  const { data: assignments } = useQuery({
-    queryKey: ['/supabase/cleaner-metrics-assignments'],
+  const { data: completedInspections, isLoading: inspectionsLoading } = useQuery({
+    queryKey: ['/supabase/cleaner-metrics-inspections'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('clean_assignments').select('id, cleaner_id, property_id, scheduled_date, pay_amount, status')
+      const { data, error } = await supabase
+        .from('inspections')
+        .select('id, cleaner_id, status')
+        .eq('status', 'completed')
       if (error) throw error
       return data || []
     },
   })
 
-  const { data: issues } = useQuery({
+  const { data: issues, isLoading: issuesLoading } = useQuery({
     queryKey: ['/supabase/cleaner-metrics-issues'],
     queryFn: async () => {
       const { data, error } = await supabase.from('cleaning_issues').select('id, last_touch, category, status')
@@ -37,14 +40,21 @@ export default function CleanerMetricsPage() {
     },
   })
 
+  const anyLoading = cleanersLoading || inspectionsLoading || issuesLoading
+
   // ─── Metrics per cleaner ──────────────────────────────────────────────────
+  // Cleans come from completed inspections (each inspection has a cleaner_id).
+  // Pay derives from cleaners.pay_rate × clean count since inspections don't
+  // record per-clean pay. Issue rate and category counts come from
+  // cleaning_issues matched by last_touch name.
   const metrics = useMemo(() => {
-    if (!cleaners || !assignments || !issues) return []
+    if (!cleaners || !completedInspections || !issues) return []
 
     return cleaners.map((cleaner: any) => {
-      const myAssignments = assignments.filter((a: any) => String(a.cleaner_id) === String(cleaner.id))
-      const totalCleans = myAssignments.length
-      const totalPay = myAssignments.reduce((s: number, a: any) => s + (Number(a.pay_amount) || 0), 0)
+      const myInspections = completedInspections.filter((a: any) => String(a.cleaner_id) === String(cleaner.id))
+      const totalCleans = myInspections.length
+      const payRate = Number(cleaner.pay_rate) || 0
+      const totalPay = totalCleans * payRate
 
       // Issues attributed to this cleaner (by last_touch name match)
       const myIssues = issues.filter((i: any) =>
@@ -67,14 +77,14 @@ export default function CleanerMetricsPage() {
         ...cleaner,
         totalCleans,
         totalPay,
-        avgPay: totalCleans > 0 ? totalPay / totalCleans : 0,
+        avgPay: payRate,
         issueCount,
         issueRate,
         resolutionRate,
         topIssueCategory: topIssueCategory ? topIssueCategory[0] : null,
       }
-    }).sort((a: any, b: any) => b.totalCleans - a.totalCleans)
-  }, [cleaners, assignments, issues])
+    }).sort((a: any, b: any) => (b.totalCleans - a.totalCleans) || (b.issueCount - a.issueCount))
+  }, [cleaners, completedInspections, issues])
 
   // ─── Summary stats ────────────────────────────────────────────────────────
   const totalCleans = metrics.reduce((s, m) => s + m.totalCleans, 0)
@@ -123,7 +133,7 @@ export default function CleanerMetricsPage() {
             </tr>
           </thead>
           <tbody>
-            {cleanersLoading ? (
+            {anyLoading ? (
               [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
             ) : metrics.length === 0 ? (
               <tr><td colSpan={8}><EmptyState icon={Users} title="No cleaners" description="Add cleaners and assignments to see performance metrics." /></td></tr>
