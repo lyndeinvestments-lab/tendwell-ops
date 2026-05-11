@@ -180,7 +180,7 @@ export default function CleanersPage() {
       setAddOpen(false)
       setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
     },
-    onError: () => toast({ title: 'Failed to add cleaner', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to add cleaner', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
@@ -215,7 +215,7 @@ export default function CleanersPage() {
       setAssignDate('')
       setAssignPay('')
     },
-    onError: () => toast({ title: 'Failed to add assignment', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to add assignment', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: moveAssignment } = useGuardedMutation('cleaners', {
@@ -236,7 +236,7 @@ export default function CleanersPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
       toast({ title: 'Assignment moved' })
     },
-    onError: () => toast({ title: 'Failed to move assignment', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to move assignment', description: error?.message, variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {

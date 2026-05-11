@@ -225,7 +225,7 @@ export default function IssuesPage() {
       setAddOpen(false)
       setNewForm({ ...newForm, property_name: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
     },
-    onError: () => toast({ title: 'Failed to save', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: updateStatus } = useGuardedMutation('issues', {
@@ -237,7 +237,7 @@ export default function IssuesPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
       toast({ title: 'Status updated' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   function exportCsv() {

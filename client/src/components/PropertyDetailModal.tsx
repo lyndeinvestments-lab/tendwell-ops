@@ -137,7 +137,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       setInspForm({ overall: 5, cleanliness: 5, linens: 5, supplies: 5, exterior: 5, notes: '' })
       setPhotos([])
     },
-    onError: () => toast({ title: 'Failed to log inspection', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to log inspection', description: error?.message, variant: 'destructive' }),
   })
 
   function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
@@ -317,7 +317,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
       qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
       toast({ title: 'Photo deleted' })
     },
-    onError: () => toast({ title: 'Failed to delete photo', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to delete photo', description: error?.message, variant: 'destructive' }),
   })
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -341,8 +341,8 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
       }
       qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
       toast({ title: `${files.length} photo(s) uploaded` })
-    } catch {
-      toast({ title: 'Upload failed', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Upload failed', description: e?.message, variant: 'destructive' })
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -426,7 +426,7 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] }),
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: addItem, isPending: adding } = useMutation({
@@ -444,7 +444,7 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
       toast({ title: 'Item added' })
       setNewItem('')
     },
-    onError: () => toast({ title: 'Failed to add item', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to add item', description: error?.message, variant: 'destructive' }),
   })
 
   async function markAllRestocked() {
@@ -456,8 +456,8 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
       ))
       qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] })
       toast({ title: 'All items marked restocked' })
-    } catch {
-      toast({ title: 'Failed to restock', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Failed to restock', description: e?.message, variant: 'destructive' })
     } finally {
       setSeeding(false)
     }
@@ -769,7 +769,7 @@ export function PropertyDetailModal() {
       toast({ title: 'Client updated' })
       setContactPopoverOpen(false)
     },
-    onError: () => toast({ title: 'Failed to update client', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to update client', description: error?.message, variant: 'destructive' }),
   })
 
   // Reset form when property changes
@@ -833,7 +833,7 @@ export function PropertyDetailModal() {
       toast({ title: 'Saved' })
       setIsEditing(false)
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   // Per-field inline save (click a field to edit it without pencil icon)
@@ -863,7 +863,7 @@ export function PropertyDetailModal() {
       toast({ title: 'Saved' })
       setInlineField(null)
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: toggleLinenProgram } = useMutation({
@@ -888,7 +888,7 @@ export function PropertyDetailModal() {
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       toast({ title: next ? 'Linen program enabled' : 'Linen program disabled' })
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   function startInlineEdit(field: string, currentValue: any, allowed: boolean = canEditProperty) {
@@ -1075,7 +1075,7 @@ export function PropertyDetailModal() {
                   const { error } = await supabase.from('properties').update(updates).eq('id', property.id)
                   setSavingMissing(false)
                   if (error) {
-                    toast({ title: 'Save failed', variant: 'destructive' })
+                    toast({ title: 'Save failed', description: error.message, variant: 'destructive' })
                   } else {
                     toast({ title: 'Missing data filled in' })
                     qc.invalidateQueries({ queryKey: ['/supabase/property-detail'] })

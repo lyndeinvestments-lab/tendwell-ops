@@ -132,7 +132,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
       toast({ title: 'Saved' })
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   // Create contact
@@ -186,7 +186,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       toast({ title: 'Interaction logged' })
       setInteractionSummary('')
     },
-    onError: () => toast({ title: 'Failed to log interaction', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to log interaction', description: error?.message, variant: 'destructive' }),
   })
 
   function handleFieldBlur(field: string) {

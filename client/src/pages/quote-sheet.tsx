@@ -296,7 +296,7 @@ export default function QuoteSheetPage() {
       toast({ title: 'Moved to Onboarding' })
       setConverting(null)
     },
-    onError: () => toast({ title: 'Failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed', description: error?.message, variant: 'destructive' }),
   })
 
   function handleDuplicate(prop: any) {
@@ -381,7 +381,7 @@ export default function QuoteSheetPage() {
         return next
       })
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   // Archive a quote with a required reason. Stores who/when/why on the

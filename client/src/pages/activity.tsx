@@ -301,8 +301,8 @@ export default function ActivityFeedPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: `Reverted ${formatFieldName(fieldName)} to "${oldValue}"` })
-    } catch {
-      toast({ title: 'Revert failed', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Revert failed', description: e?.message, variant: 'destructive' })
     } finally {
       setReverting(null)
     }

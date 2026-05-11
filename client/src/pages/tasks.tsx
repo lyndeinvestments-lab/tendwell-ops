@@ -731,7 +731,7 @@ export default function TasksPage() {
       setAddOpen(false)
       setNewForm({ title: '', description: '', status: 'To Do', priority: 'Medium', due_date: '', assignee_name: '', property_name: '', category: 'General', list_id: '' })
     },
-    onError: () => toast({ title: 'Failed to create task', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to create task', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: updateTask } = useGuardedMutation('tasks', {
@@ -743,7 +743,7 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       toast({ title: 'Task updated' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: addComment, isPending: commenting } = useGuardedMutation('tasks', {
@@ -781,7 +781,7 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/task-comments', detailTask?.id] })
       setCommentText('')
     },
-    onError: () => toast({ title: 'Failed to add comment', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to add comment', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: deleteTask } = useGuardedMutation('tasks', {
@@ -794,7 +794,7 @@ export default function TasksPage() {
       toast({ title: 'Task deleted' })
       setDetailTask(null)
     },
-    onError: () => toast({ title: 'Delete failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Delete failed', description: error?.message, variant: 'destructive' }),
   })
 
   // ─── Reparenting: move tasks under an existing or new parent ──────────────

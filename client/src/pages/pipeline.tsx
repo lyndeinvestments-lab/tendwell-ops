@@ -509,9 +509,9 @@ export default function PipelinePage() {
       }
       setTransition(null)
     },
-    onError: () => {
+    onError: (error: any) => {
       setLocalProperties(properties ?? null)
-      toast({ title: 'Failed to move property', variant: 'destructive' })
+      toast({ title: 'Failed to move property', description: error?.message, variant: 'destructive' })
     },
   })
 
@@ -521,7 +521,7 @@ export default function PipelinePage() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] }),
-    onError: () => toast({ title: 'Failed to save follow-up date', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to save follow-up date', description: error?.message, variant: 'destructive' }),
   })
 
   const leadStage = stages?.find((s: any) => s.name === 'Lead')

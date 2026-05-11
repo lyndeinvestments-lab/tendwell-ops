@@ -51,7 +51,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       toast({ title: 'Frequency saved' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   const labelColor = value === 'as_needed' ? 'text-amber-600 dark:text-amber-400' : ''
@@ -140,7 +140,7 @@ function WhatIfPopover({
       toast({ title: 'Saved' })
       setOpen(false)
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   return (
@@ -359,7 +359,7 @@ export default function ProFormaPage() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] }),
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: bulkSetFreq, isPending: bulkPending } = useGuardedMutation('pro-forma', {
@@ -378,7 +378,7 @@ export default function ProFormaPage() {
       setBulkFreq('')
       toast({ title: `Updated ${count} properties` })
     },
-    onError: () => toast({ title: 'Bulk update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Bulk update failed', description: error?.message, variant: 'destructive' }),
   })
 
   function toggleSort(key: SortKey) {

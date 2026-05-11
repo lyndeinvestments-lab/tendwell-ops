@@ -80,7 +80,7 @@ export default function LinenTrackerPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   // Computes the 5 towel/mat counts from bed config + baths + hot tub, then
@@ -116,7 +116,7 @@ export default function LinenTrackerPage() {
       if (r.changed === 0) toast({ title: 'Nothing to fill — all towel fields already set' })
       else toast({ title: `Auto-filled ${r.changed} field${r.changed === 1 ? '' : 's'} (sleep count ${r.sleep})` })
     },
-    onError: () => toast({ title: 'Auto-fill failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Auto-fill failed', description: error?.message, variant: 'destructive' }),
   })
 
   async function bulkAutoFillEmpty() {
