@@ -40,7 +40,7 @@ export function PropertyEditDialog({ property, stageName, open, onClose }: Prope
       toast({ title: 'Property updated' })
       onClose()
     },
-    onError: () => toast({ title: 'Error saving', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Error saving', description: error?.message, variant: 'destructive' }),
   })
 
   if (!property) return null

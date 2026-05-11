@@ -102,8 +102,8 @@ export default function PreviousPropertiesPage() {
       setConfirmReactivateId(null)
       setReactivateProperty(null)
     },
-    onError: () => {
-      toast({ title: 'Re-activation failed', variant: 'destructive' })
+    onError: (error: any) => {
+      toast({ title: 'Re-activation failed', description: error?.message, variant: 'destructive' })
       setConfirmReactivateId(null)
       setReactivateProperty(null)
     },

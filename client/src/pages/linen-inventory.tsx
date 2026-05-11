@@ -181,7 +181,7 @@ export default function LinenInventoryPage() {
       setCountNotes('')
       setShowExtras(false)
     },
-    onError: () => toast({ title: 'Save failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
   function prefillFromLatest() {

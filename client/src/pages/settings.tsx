@@ -148,8 +148,8 @@ function PermissionsSection() {
       })
       setLocalPerms(null)
       toast({ title: 'Permissions saved' })
-    } catch {
-      toast({ title: 'Failed to save permissions', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Failed to save permissions', description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -190,8 +190,8 @@ function PermissionsSection() {
       setNewRoleName('')
       setNewRoleOpen(false)
       toast({ title: `Role "${newRoleName.trim()}" created`, description: 'Configure its views in the matrix, then save.' })
-    } catch {
-      toast({ title: 'Failed to create role', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Failed to create role', description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -923,7 +923,7 @@ function UsersSection() {
       if (msg.includes('unique') || msg.includes('duplicate')) {
         toast({ title: 'Email already exists', description: 'That Google account already has access.', variant: 'destructive' })
       } else {
-        toast({ title: 'Failed to invite user', variant: 'destructive' })
+        toast({ title: 'Failed to invite user', description: err?.message, variant: 'destructive' })
       }
     },
   })
@@ -952,8 +952,8 @@ function UsersSection() {
         changed_by: user?.label ?? null,
       })
       toast({ title: 'Role updated' })
-    } catch {
-      toast({ title: 'Failed to update role', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Failed to update role', description: e?.message, variant: 'destructive' })
     } finally {
       setPendingRoleUpdate(null)
       setEditingRoleId(null)
@@ -970,8 +970,8 @@ function UsersSection() {
       toast({ title: 'User removed' })
       setConfirmDeleteId(null)
     },
-    onError: () => {
-      toast({ title: 'Failed to remove user', variant: 'destructive' })
+    onError: (error: any) => {
+      toast({ title: 'Failed to remove user', description: error?.message, variant: 'destructive' })
       setConfirmDeleteId(null)
     },
   })

@@ -50,7 +50,7 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
       toast({ title: 'Stage updated' })
       setOpen(false)
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   return (

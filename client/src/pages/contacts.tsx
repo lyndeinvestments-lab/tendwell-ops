@@ -458,8 +458,8 @@ function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: 
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: `${imported} contacts imported, ${linked} properties linked.` })
       onClose()
-    } catch {
-      toast({ title: 'Import failed', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Import failed', description: e?.message, variant: 'destructive' })
     } finally {
       setImporting(false)
     }
@@ -602,8 +602,8 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
       toast({ title: 'Clients merged successfully.' })
-    } catch {
-      toast({ title: 'Merge failed', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Merge failed', description: e?.message, variant: 'destructive' })
     } finally {
       setMerging(false)
     }

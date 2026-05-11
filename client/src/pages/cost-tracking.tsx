@@ -484,7 +484,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
       setDate('')
       setCleanerId('')
     },
-    onError: () => toast({ title: 'Failed to add assignment', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Failed to add assignment', description: error?.message, variant: 'destructive' }),
   })
 
   return (
@@ -847,9 +847,9 @@ export default function CostTrackingPage() {
       flashCell(`${id}-${field}`)
       toast({ title: 'Saved' })
     },
-    onError: (_, __, ctx: any) => {
+    onError: (error: any, __, ctx: any) => {
       if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
-      toast({ title: 'Update failed', variant: 'destructive' })
+      toast({ title: 'Update failed', description: error?.message, variant: 'destructive' })
     },
   })
 
@@ -889,7 +889,7 @@ export default function CostTrackingPage() {
     const { error } = await supabase.from('properties')
       .update({ est_laundry: null, est_consumables: null })
       .eq('id', id)
-    if (error) { toast({ title: 'Reset failed', variant: 'destructive' }); return }
+    if (error) { toast({ title: 'Reset failed', description: error.message, variant: 'destructive' }); return }
     invalidateAllPropertyQueries(qc)
     toast({ title: 'Row reset to defaults' })
   }, [qc, toast])
@@ -986,8 +986,8 @@ export default function CostTrackingPage() {
       toast({ title: `Updated ${Object.keys(bulkChanges).length} properties` })
       setBulkEditMode(false)
       setBulkChanges({})
-    } catch {
-      toast({ title: 'Bulk update failed', variant: 'destructive' })
+    } catch (e: any) {
+      toast({ title: 'Bulk update failed', description: e?.message, variant: 'destructive' })
     }
   }
 

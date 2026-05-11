@@ -97,7 +97,7 @@ export default function AcFiltersPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   function calcNextDue(fromDate: string): string {
@@ -119,7 +119,7 @@ export default function AcFiltersPage() {
       next_filter_due: nextDue,
     }).eq('id', id).then(({ error }) => {
       if (error) {
-        toast({ title: 'Update failed', variant: 'destructive' })
+        toast({ title: 'Update failed', description: error.message, variant: 'destructive' })
       } else {
         logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
         logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
@@ -154,7 +154,7 @@ export default function AcFiltersPage() {
     if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
     const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids)
-    if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
+    if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim(), prop?.name)
@@ -177,7 +177,7 @@ export default function AcFiltersPage() {
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
     const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids)
-    if (error) { toast({ title: 'Bulk update failed', variant: 'destructive' }); return }
+    if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)

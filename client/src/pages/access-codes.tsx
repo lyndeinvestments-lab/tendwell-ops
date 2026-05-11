@@ -162,7 +162,7 @@ export default function AccessCodesPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
     },
-    onError: () => toast({ title: 'Update failed', variant: 'destructive' }),
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {
