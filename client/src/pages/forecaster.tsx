@@ -188,22 +188,6 @@ export default function ForecasterPage() {
   const latestMonth = histData[histData.length - 1]
   const prevMonth = histData[histData.length - 2]
 
-  // ── Tasks completed in selected period (from `tasks` table) ─────────────
-  const { data: completedTasks, isLoading: loadingTasks } = useQuery({
-    queryKey: ['/supabase/proforma_tasks_in_month', selectedMonth],
-    queryFn: async () => {
-      const { start, end } = monthBounds(selectedMonth)
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('id, property_id, status, completed_at, category')
-        .eq('status', 'Done')
-        .gte('completed_at', start)
-        .lt('completed_at', end)
-      if (error) throw error
-      return data || []
-    },
-  })
-
   // ── Operational properties for per-property estimate rollup ─────────────
   const { data: properties } = useQuery({
     queryKey: ['/supabase/operational_properties_forecaster'],
@@ -234,18 +218,23 @@ export default function ForecasterPage() {
     },
   })
 
-  // Tasks per property for the period
+  // Tasks per property for the period.
+  // Sourced from breezeway_tasks (the real cleaning feed). The legacy
+  // `tasks` table is a separate manual todo tracker and is not the right
+  // source for cleaning volume. We count any breezeway row flagged as a
+  // clean or deep clean for the selected month.
   const tasksByProperty = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const t of completedTasks || []) {
-      const id = String(t.property_id ?? '')
+    for (const t of breezewayMonthRows || []) {
+      if (!t.is_clean && !t.is_deep_clean) continue
+      const id = String((t as any).property_id ?? '')
       if (!id) continue
       m[id] = (m[id] || 0) + 1
     }
     return m
-  }, [completedTasks])
+  }, [breezewayMonthRows])
 
-  const totalPeriodTasks = (completedTasks || []).length
+  const totalPeriodTasks = Object.values(tasksByProperty).reduce((s, n) => s + n, 0)
   const activePropsInPeriod = Object.keys(tasksByProperty).length
 
   // Estimated costs (rolled up from per-property cost-tracking estimates)
