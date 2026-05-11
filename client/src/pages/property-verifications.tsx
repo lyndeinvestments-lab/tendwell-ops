@@ -82,6 +82,7 @@ export default function InspectionsPage() {
   const [activeProperty, setActiveProperty] = useState<any>(null)
   const [editValues, setEditValues] = useState<Record<string, any>>({})
   const [saving, setSaving] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkAssignOpen, setBulkAssignOpen] = useState(false)
   const [bulkDueOpen, setBulkDueOpen] = useState(false)
@@ -190,13 +191,13 @@ export default function InspectionsPage() {
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
   function openWalkthrough(p: any) {
-    // Pre-populate edit values with current property data
     const vals: Record<string, any> = {}
     for (const f of ALL_VERIFY_FIELDS) {
       vals[f.key] = p[f.key]
     }
     setEditValues(vals)
     setActiveProperty(p)
+    setIsDirty(false)
   }
 
   async function saveVerification() {
@@ -207,67 +208,72 @@ export default function InspectionsPage() {
     }
     setSaving(true)
 
-    // Find which fields changed
-    const changes: Record<string, { old: any; new: any }> = {}
-    const updates: Record<string, any> = {}
-    for (const f of ALL_VERIFY_FIELDS) {
-      const oldVal = activeProperty[f.key]
-      const newVal = editValues[f.key]
-      // Normalize for comparison
-      const oldNorm = oldVal == null ? null : oldVal
-      const newNorm = newVal == null || newVal === '' ? null : (f.type === 'number' ? Number(newVal) : f.type === 'boolean' ? Boolean(newVal) : newVal)
-      if (String(oldNorm ?? '') !== String(newNorm ?? '')) {
-        changes[f.key] = { old: oldNorm, new: newNorm }
-        updates[f.key] = newNorm
+    try {
+      // Find which fields changed
+      const changes: Record<string, { old: any; new: any }> = {}
+      const updates: Record<string, any> = {}
+      for (const f of ALL_VERIFY_FIELDS) {
+        const oldVal = activeProperty[f.key]
+        const newVal = editValues[f.key]
+        const oldNorm = oldVal == null ? null : oldVal
+        const newNorm = newVal == null || newVal === '' ? null : (f.type === 'number' ? Number(newVal) : f.type === 'boolean' ? Boolean(newVal) : newVal)
+        if (String(oldNorm ?? '') !== String(newNorm ?? '')) {
+          changes[f.key] = { old: oldNorm, new: newNorm }
+          updates[f.key] = newNorm
+        }
       }
-    }
 
-    // Update property fields if any changed
-    if (Object.keys(updates).length > 0) {
-      const { error } = await supabase.from('properties').update(updates).eq('id', activeProperty.id)
-      if (error) {
-        toast({ title: 'Failed to update property', variant: 'destructive' })
+      // Update property fields if any changed
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase.from('properties').update(updates).eq('id', activeProperty.id)
+        if (error) {
+          toast({ title: 'Failed to update property', description: error.message, variant: 'destructive' })
+          setSaving(false)
+          return
+        }
+      }
+
+      // Upsert verification record (clears assignee + due_date on completion)
+      const { error: vError } = await supabase.from('property_verifications').upsert({
+        property_id: activeProperty.id,
+        verified_by: user?.label ?? null,
+        verified_at: new Date().toISOString(),
+        notes: editValues.notes !== activeProperty.notes ? 'Notes updated' : null,
+        fields_updated: Object.keys(changes).length > 0 ? changes : null,
+        assignee_name: null,
+        due_date: null,
+      }, { onConflict: 'property_id' })
+
+      if (vError) {
+        toast({ title: 'Failed to save verification', description: vError.message, variant: 'destructive' })
         setSaving(false)
         return
       }
-    }
 
-    // Upsert verification record (clears assignee + due_date on completion)
-    const { error: vError } = await supabase.from('property_verifications').upsert({
-      property_id: activeProperty.id,
-      verified_by: user?.label ?? null,
-      verified_at: new Date().toISOString(),
-      notes: editValues.notes !== activeProperty.notes ? 'Notes updated' : null,
-      fields_updated: Object.keys(changes).length > 0 ? changes : null,
-      assignee_name: null,
-      due_date: null,
-    }, { onConflict: 'property_id' })
+      // Close any linked task on the Tasks board (non-critical — errors ignored)
+      await closeVerificationTask(activeProperty.id).catch(() => {})
 
-    // Close any linked task on the Tasks board
-    await closeVerificationTask(activeProperty.id)
+      // Log activity
+      logActivity({
+        entity_type: 'property',
+        entity_id: String(activeProperty.id),
+        entity_name: activeProperty.name,
+        action: 'update',
+        field_name: 'verification',
+        new_value: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} fields updated` : 'Verified, no changes',
+        changed_by: user?.label ?? null,
+      })
 
-    if (vError) {
-      toast({ title: 'Failed to save verification', variant: 'destructive' })
+      qc.invalidateQueries({ queryKey: ['/supabase/property-verification-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+      toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
+      setIsDirty(false)
+      setActiveProperty(null)
+    } catch (err: any) {
+      toast({ title: 'Unexpected error saving verification', description: err?.message ?? 'Please try again.', variant: 'destructive' })
+    } finally {
       setSaving(false)
-      return
     }
-
-    // Log activity
-    logActivity({
-      entity_type: 'property',
-      entity_id: String(activeProperty.id),
-      entity_name: activeProperty.name,
-      action: 'update',
-      field_name: 'verification',
-      new_value: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} fields updated` : 'Verified, no changes',
-      changed_by: user?.label ?? null,
-    })
-
-    qc.invalidateQueries({ queryKey: ['/supabase/property-verification-list'] })
-    qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
-    toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
-    setActiveProperty(null)
-    setSaving(false)
   }
 
   // ─── Sync linked Task in tasks table for assigned/scheduled verifications ──
@@ -637,7 +643,13 @@ export default function InspectionsPage() {
       )}
 
       {/* Verification Walkthrough Sheet */}
-      <Sheet open={!!activeProperty} onOpenChange={v => !v && !saving && setActiveProperty(null)}>
+      <Sheet open={!!activeProperty} onOpenChange={v => {
+        if (!v && !saving) {
+          if (isDirty && !confirm('You have unsaved changes. Close without saving?')) return
+          setActiveProperty(null)
+          setIsDirty(false)
+        }
+      }}>
         <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
           {activeProperty && (
             <>
@@ -662,7 +674,7 @@ export default function InspectionsPage() {
                               <div className="flex gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => setEditValues(v => ({ ...v, [f.key]: false }))}
+                                  onClick={() => { setEditValues(v => ({ ...v, [f.key]: false })); setIsDirty(true) }}
                                   className={`flex-1 h-7 rounded-md border text-xs transition-colors ${
                                     !currentVal
                                       ? 'bg-primary text-primary-foreground border-primary'
@@ -673,7 +685,7 @@ export default function InspectionsPage() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setEditValues(v => ({ ...v, [f.key]: true }))}
+                                  onClick={() => { setEditValues(v => ({ ...v, [f.key]: true })); setIsDirty(true) }}
                                   className={`flex-1 h-7 rounded-md border text-xs transition-colors ${
                                     currentVal
                                       ? 'bg-primary text-primary-foreground border-primary'
@@ -686,14 +698,14 @@ export default function InspectionsPage() {
                             ) : f.type === 'textarea' ? (
                               <textarea
                                 value={currentVal ?? ''}
-                                onChange={e => setEditValues(v => ({ ...v, [f.key]: e.target.value }))}
+                                onChange={e => { setEditValues(v => ({ ...v, [f.key]: e.target.value })); setIsDirty(true) }}
                                 className={`w-full h-16 rounded-md border px-2 py-1.5 text-xs resize-none bg-background focus:outline-none focus:ring-2 focus:ring-ring ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : 'border-input'}`}
                               />
                             ) : (
                               <Input
                                 type={f.type === 'number' ? 'number' : 'text'}
                                 value={currentVal ?? ''}
-                                onChange={e => setEditValues(v => ({ ...v, [f.key]: f.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value }))}
+                                onChange={e => { setEditValues(v => ({ ...v, [f.key]: f.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value })); setIsDirty(true) }}
                                 className={`h-7 text-xs ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
                               />
                             )}
@@ -715,7 +727,11 @@ export default function InspectionsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => setActiveProperty(null)}
+                    onClick={() => {
+                      if (isDirty && !confirm('You have unsaved changes. Close without saving?')) return
+                      setActiveProperty(null)
+                      setIsDirty(false)
+                    }}
                     disabled={saving}
                   >
                     Cancel
