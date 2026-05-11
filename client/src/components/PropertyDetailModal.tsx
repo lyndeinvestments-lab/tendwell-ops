@@ -1635,13 +1635,9 @@ export function PropertyDetailModal() {
               <PropertyNotesFeed propertyId={property.id} />
             </TabsContent>
 
-            {/* ── Inspections Tab ── */}
+            {/* ── Verification Tab ── */}
             <TabsContent value="inspections" className="mt-3">
-              {sourceContext === 'property-list' ? (
-                <VerificationHistory propertyId={property.id} />
-              ) : (
-                <InspectionsTab propertyId={property.id} />
-              )}
+              <VerificationHistory propertyId={property.id} />
             </TabsContent>
 
             {/* ── Assignments Tab ── */}
