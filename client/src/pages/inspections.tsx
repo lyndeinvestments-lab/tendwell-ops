@@ -220,6 +220,7 @@ export default function InspectionsPage() {
     const rows = filtered.map(i => ({
       'Property': i.properties?.name ?? '',
       'Cleaner': i.cleaners?.full_name ?? '',
+      'Inspector': i.inspectors?.full_name ?? '',
       'Inspected At': i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
       'Overall': i.overall_score ?? '',
       'Cleanliness': i.cleanliness_score ?? '',
@@ -405,6 +406,7 @@ export default function InspectionsPage() {
             <tr>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[180px]">Property</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspector</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Inspected</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Overall</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sub-scores</th>
@@ -416,12 +418,12 @@ export default function InspectionsPage() {
             {isLoading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={7}>
+                <td colSpan={8}>
                   <EmptyState
                     icon={ClipboardCheck}
                     title="No inspections"
@@ -453,6 +455,9 @@ export default function InspectionsPage() {
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">
                     {i.cleaners?.full_name ?? (i.inspected_by ? <span>{i.inspected_by}</span> : '—')}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">
+                    {i.inspectors?.full_name ?? '—'}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
                     {i.status === 'scheduled' && i.scheduled_for
@@ -514,7 +519,9 @@ export default function InspectionsPage() {
                 )}
               </div>
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><User className="w-3 h-3" />{activeDetail.cleaners?.full_name ?? activeDetail.inspected_by ?? 'Unknown'}</span>
+                <span className="flex items-center gap-1"><User className="w-3 h-3" />Cleaner: {activeDetail.cleaners?.full_name ?? activeDetail.inspected_by ?? '—'}</span>
+                <span>·</span>
+                <span className="flex items-center gap-1"><User className="w-3 h-3" />Inspector: {activeDetail.inspectors?.full_name ?? '—'}</span>
                 <span>·</span>
                 {activeDetail.status === 'scheduled' && activeDetail.scheduled_for ? (
                   <span>Scheduled for {format(parseISO(activeDetail.scheduled_for), 'PPP')}</span>
