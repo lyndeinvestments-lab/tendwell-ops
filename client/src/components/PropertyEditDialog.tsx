@@ -63,7 +63,7 @@ export function PropertyEditDialog({ property, stageName, open, onClose }: Prope
           <div className="grid grid-cols-3 gap-3 text-sm">
             <div>
               <span className="text-xs text-muted-foreground block">Client</span>
-              <span className="font-medium">{property.client_name || '—'}</span>
+              <span className="font-medium">{property.contacts?.full_name || '—'}</span>
             </div>
             <div>
               <span className="text-xs text-muted-foreground block">Address</span>

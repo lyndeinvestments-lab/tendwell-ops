@@ -247,9 +247,6 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       <span className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full block">
         {property.name}
       </span>
-      {property.client_name && !property.contacts?.full_name && (
-        <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>
-      )}
       {property.contacts?.full_name && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -327,7 +324,7 @@ function PropertyCardOverlay({ property }: { property: any }) {
   return (
     <div className="bg-card border border-primary/40 rounded-md p-2.5 shadow-lg w-[220px] cursor-grabbing">
       <p className="text-xs font-semibold text-foreground">{property.name}</p>
-      {property.client_name && !property.contacts?.full_name && <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>}
+      {property.contacts?.full_name && <p className="text-xs text-muted-foreground mt-0.5">{property.contacts.full_name}</p>}
     </div>
   )
 }
@@ -362,7 +359,6 @@ export default function PipelinePage() {
   const [search, setSearch] = useState('')
   const [addLeadOpen, setAddLeadOpen] = useState(false)
   const [newLeadName, setNewLeadName] = useState('')
-  const [newLeadClient, setNewLeadClient] = useState('')
   const [newLeadAddress, setNewLeadAddress] = useState('')
   const [newLeadEmail, setNewLeadEmail] = useState('')
   const [newLeadPhone, setNewLeadPhone] = useState('')
@@ -385,22 +381,22 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
         .is('archived_at', null)
         .is('deleted_at', null)
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
-            .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .select('id, name, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
             .is('archived_at', null)
             .is('deleted_at', null)
           if (fallbackError) throw fallbackError
-          return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
+          return (fallback || []).map((p: any) => ({ ...p, follow_up_date: null, contacts: null }))
         }
         throw error
       }
-      return (data || []).map((p: any) => ({ ...p, client_name: p.client }))
+      return data || []
     },
   })
 
@@ -471,7 +467,7 @@ export default function PipelinePage() {
     const q = search.trim().toLowerCase()
     return base.filter((p: any) =>
       (p.name && p.name.toLowerCase().includes(q)) ||
-      (p.client_name && p.client_name.toLowerCase().includes(q))
+      (p.contacts?.full_name && p.contacts.full_name.toLowerCase().includes(q))
     )
   }, [localProperties, properties, search])
 
@@ -532,7 +528,6 @@ export default function PipelinePage() {
 
   function resetAddLeadForm() {
     setNewLeadName('')
-    setNewLeadClient('')
     setNewLeadAddress('')
     setNewLeadEmail('')
     setNewLeadPhone('')
@@ -554,7 +549,6 @@ export default function PipelinePage() {
 
       const { error } = await supabase.from('properties').insert({
         name: newLeadName.trim(),
-        client: newLeadClient.trim() || null,
         stage_id: leadStage.id,
         address: newLeadAddress.trim() || null,
         bedrooms: newLeadBedrooms ? Number(newLeadBedrooms) : null,
@@ -569,7 +563,7 @@ export default function PipelinePage() {
         action: 'create',
         new_value: 'Lead',
         changed_by: user?.label ?? null,
-        metadata: { client: newLeadClient.trim() || null, address: newLeadAddress.trim() || null },
+        metadata: { address: newLeadAddress.trim() || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: 'Lead added to pipeline' })
@@ -864,8 +858,8 @@ export default function PipelinePage() {
             <DialogTitle>Add New Lead</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Row 1: Property Name + Client Name */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* Row 1: Property Name */}
+            <div>
               <div className="space-y-2">
                 <Label htmlFor="lead-name">Property Name *</Label>
                 <Input
@@ -885,16 +879,6 @@ export default function PipelinePage() {
                     </p>
                   ) : null
                 })()}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="lead-client">Client Name</Label>
-                <Input
-                  id="lead-client"
-                  placeholder="Optional"
-                  value={newLeadClient}
-                  onChange={(e) => setNewLeadClient(e.target.value)}
-                  data-testid="input-lead-client"
-                />
               </div>
             </div>
             {/* Row 2: Property Address (full width) */}

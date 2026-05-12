@@ -75,7 +75,7 @@ export default function RevenueReportPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, client, contact_id, stage_id, created_at, ce_charged, cleaner_pay, estimated_profit, profit_percentage, pipeline_stages(name)')
+        .select('id, name, contact_id, stage_id, created_at, ce_charged, cleaner_pay, estimated_profit, profit_percentage, contacts(full_name, payment_method), pipeline_stages(name)')
         .or('exclude_from_financials.is.null,exclude_from_financials.eq.false')
       if (error) throw error
       return data || []
@@ -252,21 +252,14 @@ export default function RevenueReportPage() {
   const clientGroups = useMemo(() => {
     const contactMap = new Map((contacts || []).map((c: any) => [c.id, c]))
     // Build a name-based lookup for properties without contact_id
-    const contactByName = new Map(
-      (contacts || []).map((c: any) => [(c.full_name || '').toLowerCase(), c])
-    )
     const groups: Record<string, { name: string; paymentMethod: string | null; contactId: string | null; properties: any[] }> = {}
 
     for (const p of sorted) {
-      let contact = p.contact_id ? contactMap.get(p.contact_id) : null
-      // Fallback: try matching by client name to contact name
-      if (!contact && p.client) {
-        contact = contactByName.get((p.client || '').toLowerCase()) || null
-      }
-      const key = contact ? `contact_${contact.id}` : `client_${p.client || 'Unknown'}`
+      const contact = p.contact_id ? contactMap.get(p.contact_id) : null
+      const key = contact ? `contact_${contact.id}` : 'unassigned'
       if (!groups[key]) {
         groups[key] = {
-          name: contact?.full_name || p.client || 'Unknown',
+          name: contact?.full_name || 'Unassigned',
           paymentMethod: contact?.payment_method || null,
           contactId: contact?.id || null,
           properties: [],
@@ -305,7 +298,7 @@ export default function RevenueReportPage() {
   function exportCsv() {
     const rows = sorted.map((p: any) => ({
       'Property': p.name || '',
-      'Client': p.client || '',
+      'Client': p.contacts?.full_name || '',
       'Client Charged': p.ce_charged ?? '',
       'Cleaner Pay': p.cleaner_pay ?? '',
       'Gross Margin': p.estimated_profit ?? '',

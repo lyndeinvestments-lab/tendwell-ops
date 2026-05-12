@@ -124,7 +124,7 @@ export default function PreviousPropertiesPage() {
       if (offboardedStage) {
         const { data, error } = await supabase
           .from('properties')
-          .select('id, name, client, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage, offboarded_at')
+          .select('id, name, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage, offboarded_at, contacts(full_name)')
           .eq('stage_id', offboardedStage.id)
         if (error) throw error
         return (data || []).map((p: any) => ({ ...p, stage_name: 'Offboarded' }))
@@ -173,7 +173,7 @@ export default function PreviousPropertiesPage() {
     const q = search.toLowerCase()
     const base = [...properties].filter((p: any) =>
       p.name?.toLowerCase().includes(q) ||
-      p.client?.toLowerCase().includes(q) ||
+      p.contacts?.full_name?.toLowerCase().includes(q) ||
       p.address?.toLowerCase().includes(q)
     )
 
@@ -190,8 +190,8 @@ export default function PreviousPropertiesPage() {
         return (new Date(dateA).getTime() - new Date(dateB).getTime()) * dir
       }
 
-      const av = a[key]
-      const bv = b[key]
+      const av = key === 'client' ? (a.contacts?.full_name ?? '') : a[key]
+      const bv = key === 'client' ? (b.contacts?.full_name ?? '') : b[key]
 
       if (av == null && bv == null) return 0
       if (av == null) return 1
@@ -209,7 +209,7 @@ export default function PreviousPropertiesPage() {
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
       Property: p.name || '',
-      Client: p.client || '',
+      Client: p.contacts?.full_name || '',
       Address: p.address || '',
       Beds: p.bedrooms ?? '',
       Baths: p.full_baths ?? '',
@@ -326,7 +326,7 @@ export default function PreviousPropertiesPage() {
               paged.map((p: any) => (
                 <tr key={p.id} data-testid={`row-previous-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors opacity-80">
                   <td className="py-2 px-3 font-medium text-xs">{p.name}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{p.client || '—'}</td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{p.contacts?.full_name || '—'}</td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
                   <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
                   <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
