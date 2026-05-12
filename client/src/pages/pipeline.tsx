@@ -247,7 +247,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       <span className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full block">
         {property.name}
       </span>
-      {property.client_name && (
+      {property.client_name && !property.contacts?.full_name && (
         <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>
       )}
       {property.contacts?.full_name && (
@@ -327,7 +327,7 @@ function PropertyCardOverlay({ property }: { property: any }) {
   return (
     <div className="bg-card border border-primary/40 rounded-md p-2.5 shadow-lg w-[220px] cursor-grabbing">
       <p className="text-xs font-semibold text-foreground">{property.name}</p>
-      {property.client_name && <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>}
+      {property.client_name && !property.contacts?.full_name && <p className="text-xs text-muted-foreground mt-0.5">{property.client_name}</p>}
     </div>
   )
 }
