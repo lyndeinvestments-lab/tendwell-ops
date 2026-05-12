@@ -386,11 +386,15 @@ export default function PipelinePage() {
       const { data, error } = await supabase
         .from('properties')
         .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .is('archived_at', null)
+        .is('deleted_at', null)
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
             .select('id, name, client, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .is('archived_at', null)
+            .is('deleted_at', null)
           if (fallbackError) throw fallbackError
           return (fallback || []).map((p: any) => ({ ...p, client_name: p.client, follow_up_date: null, contacts: null }))
         }
