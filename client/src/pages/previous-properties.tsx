@@ -133,7 +133,7 @@ export default function PreviousPropertiesPage() {
       // Fallback: try the view
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, client, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage, stage_name')
+        .select('id, name, address, bedrooms, full_baths, ce_charged, cleaner_pay, profit_percentage, stage_name')
         .or('stage_name.eq.Offboarded,stage_name.eq.offboarded')
       if (error) throw error
       return data || []
