@@ -72,7 +72,6 @@ export default function ContactsPage() {
   const [modalMode, setModalMode] = useState<'view' | 'create'>('view')
   const [modalOpen, setModalOpen] = useState(false)
   const [sourceReportOpen, setSourceReportOpen] = useState(false)
-  const [importOpen, setImportOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
 
   const { data: contacts, isLoading } = useQuery({
@@ -241,9 +240,6 @@ export default function ContactsPage() {
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setImportOpen(true)}>
-            <Import className="w-3.5 h-3.5" /> Import from Properties
-          </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)} disabled={filtered.length === 0}>
             <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
           </Button>
@@ -284,8 +280,7 @@ export default function ContactsPage() {
                     <EmptyState
                       icon={Users}
                       title="No clients yet"
-                      description="Import clients from your existing properties, or add one manually."
-                      action={{ label: 'Import from Properties', onClick: () => setImportOpen(true) }}
+                      description="Add your first client to start tracking properties against contacts."
                     />
                   ) : (
                     <div className="text-center py-12 text-muted-foreground text-sm">No clients match your filters</div>
@@ -390,131 +385,9 @@ export default function ContactsPage() {
           )}
         </DialogContent>
       </Dialog>
-      {/* Import from Properties Modal */}
-      <ImportFromPropertiesModal open={importOpen} onClose={() => setImportOpen(false)} />
-
       {/* Duplicate Detection Modal */}
       <DuplicateDetectionModal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} contacts={contacts || []} />
     </div>
-  )
-}
-
-// ── Import from Properties ──────────────────────────────────────────────
-function ImportFromPropertiesModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [importing, setImporting] = useState(false)
-
-  const { data: unlinkedClients } = useQuery({
-    queryKey: ['/supabase/unlinked-clients'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('client')
-        .is('contact_id', null)
-      if (error) throw error
-      const counts: Record<string, number> = {}
-      for (const p of (data || [])) {
-        const name = p.client?.trim()
-        if (name) counts[name] = (counts[name] || 0) + 1
-      }
-      return Object.entries(counts).map(([name, count]) => ({ name, count })).sort((a, b) => a.name.localeCompare(b.name))
-    },
-    enabled: open,
-  })
-
-  async function handleImport() {
-    if (selected.size === 0) return
-    setImporting(true)
-    try {
-      let imported = 0
-      let linked = 0
-      for (const name of Array.from(selected)) {
-        const { data: inserted, error: insertErr } = await supabase
-          .from('contacts')
-          .insert({ full_name: name, company: name })
-          .select('id')
-          .single()
-        if (insertErr || !inserted) continue
-        imported++
-        logActivity({
-          entity_type: 'contact',
-          entity_id: inserted.id,
-          entity_name: name,
-          action: 'create',
-          new_value: name,
-        })
-        const { data: updated } = await supabase
-          .from('properties')
-          .update({ contact_id: inserted.id })
-          .eq('client', name)
-          .is('contact_id', null)
-          .select('id')
-        linked += updated?.length || 0
-      }
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/unlinked-clients'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      toast({ title: `${imported} contacts imported, ${linked} properties linked.` })
-      onClose()
-    } catch (e: any) {
-      toast({ title: 'Import failed', description: e?.message, variant: 'destructive' })
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  const allSelected = unlinkedClients && unlinkedClients.length > 0 && selected.size === unlinkedClients.length
-
-  return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-md max-h-[70vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Import Clients from Properties</DialogTitle></DialogHeader>
-        {!unlinkedClients ? (
-          <div className="space-y-2 py-4">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}</div>
-        ) : unlinkedClients.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">All properties already have clients linked.</p>
-        ) : (
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={allSelected}
-                onChange={() => {
-                  if (allSelected) setSelected(new Set())
-                  else setSelected(new Set(unlinkedClients.map(c => c.name)))
-                }}
-                className="rounded"
-              />
-              Select All ({unlinkedClients.length})
-            </label>
-            <div className="space-y-1 max-h-60 overflow-y-auto">
-              {unlinkedClients.map(c => (
-                <label key={c.name} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(c.name)}
-                    onChange={() => {
-                      const next = new Set(selected)
-                      if (next.has(c.name)) next.delete(c.name)
-                      else next.add(c.name)
-                      setSelected(next)
-                    }}
-                    className="rounded"
-                  />
-                  <span className="flex-1">{c.name}</span>
-                  <span className="text-muted-foreground">{c.count} properties</span>
-                </label>
-              ))}
-            </div>
-            <Button size="sm" className="w-full text-xs" disabled={selected.size === 0 || importing} onClick={handleImport}>
-              {importing ? 'Importing…' : `Import ${selected.size} Selected`}
-            </Button>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
   )
 }
 

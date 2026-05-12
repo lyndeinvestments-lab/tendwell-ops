@@ -637,7 +637,7 @@ export default function CostTrackingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, contact_id, client, contact:contacts(id, full_name, company, payment_method)')
+        .select('id, contact_id, contact:contacts(id, full_name, company, payment_method)')
       if (error) throw error
       return data || []
     },
@@ -723,23 +723,19 @@ export default function CostTrackingPage() {
   const contactByPropertyId = useMemo(() => {
     const m: Record<string, {
       contact: { full_name?: string; company?: string; payment_method?: string } | null
-      legacyClient: string | null
     }> = {}
     for (const r of (propertyContacts as any[]) || []) {
       const c = Array.isArray(r.contact) ? r.contact[0] : r.contact
       m[String(r.id)] = {
         contact: c && c.full_name ? c : null,
-        legacyClient: r.client || null,
       }
     }
     return m
   }, [propertyContacts])
 
   // Resolve a single, consistent client display string for a property row.
-  // Preference order:
-  //   1) Joined contact (full_name + optional company)
-  //   2) Embedded contact already on the row (showAllStages joins it)
-  //   3) Legacy free-text `client` / `client_name` / `company` fields
+  // Sources only from the joined contact (legacy free-text `client` column
+  // was retired — see DROP COLUMN migration).
   function resolveClient(p: any): {
     label: string | null
     paymentMethod: string | null
@@ -754,12 +750,7 @@ export default function CostTrackingPage() {
         : c.full_name
       return { label, paymentMethod: c.payment_method || null }
     }
-    const fallback = joined?.legacyClient
-      || p.client
-      || p.client_name
-      || p.company
-      || null
-    return { label: fallback, paymentMethod: null }
+    return { label: p.company || null, paymentMethod: null }
   }
 
   const displayProperties: any[] = localProperties ?? (properties as any[]) ?? []
@@ -907,7 +898,7 @@ export default function CostTrackingPage() {
         p.name?.toLowerCase().includes(q)
         || p.stage_name?.toLowerCase().includes(q)
         || p.address?.toLowerCase().includes(q)
-        || p.client?.toLowerCase().includes(q)
+        || contactByPropertyId[String(p.id)]?.contact?.full_name?.toLowerCase().includes(q)
       )
       const matchStatus = statusFilter === 'all' || p.stage_name === statusFilter
       return matchSearch && matchStatus

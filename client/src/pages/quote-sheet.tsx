@@ -175,10 +175,12 @@ export default function QuoteSheetPage() {
       : viewMode === 'archived'
         ? allRows.filter(p => p.archived_at)
         : allRows
+    const contactById = new Map((contacts || []).map((c: any) => [String(c.id), c.full_name]))
     const base = q
-      ? scoped.filter((p: any) =>
-          [p.name, p.client, p.address, p.archived_reason].some((v: any) => v && String(v).toLowerCase().includes(q))
-        )
+      ? scoped.filter((p: any) => {
+          const contactName = p.contact_id ? contactById.get(String(p.contact_id)) : null
+          return [p.name, contactName, p.address, p.archived_reason].some((v: any) => v && String(v).toLowerCase().includes(q))
+        })
       : scoped
 
     if (!sortKey) return base
@@ -217,7 +219,7 @@ export default function QuoteSheetPage() {
       }
       return (av - bv) * dir
     })
-  }, [properties, search, sortKey, sortDir])
+  }, [properties, contacts, search, sortKey, sortDir, viewMode])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -235,12 +237,8 @@ export default function QuoteSheetPage() {
         number_of_beds: beds,
         hot_tub: newProp.hot_tub,
       })
-      const linkedContactName = newProp.contact_id
-        ? (contacts || []).find((c: any) => String(c.id) === String(newProp.contact_id))?.full_name || null
-        : null
       const { error } = await supabase.from('properties').insert({
         name: newProp.name,
-        client: linkedContactName,
         contact_id: newProp.contact_id || null,
         ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
         cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,

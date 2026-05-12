@@ -1,0 +1,23 @@
+-- Retire the legacy properties.client text column.
+--
+-- Background: properties.client was a free-text client/owner name that
+-- predated the contacts FK relationship. After contact_id was introduced,
+-- both columns lived side-by-side and drifted out of sync, producing
+-- duplicate "Haven Vacation Rentals → Self Manager" lines on pipeline
+-- tiles when the legacy text disagreed with the joined contact's name.
+--
+-- Migration sequencing already executed before this DROP:
+--   1. All 21 properties that had only the legacy text were linked to the
+--      matching contact (all matched "Haven Vacation Rentals" exactly).
+--   2. All 159 rows that had non-null client were nulled.
+--   3. A snapshot of original (client, contact_id) values was preserved in
+--      _properties_client_backup_20260512 in case of rollback.
+--
+-- Rollback: see _properties_client_backup_20260512 and restore via
+--   UPDATE properties p SET client = b.original_client,
+--                           contact_id = COALESCE(p.contact_id, b.original_contact_id)
+--   FROM _properties_client_backup_20260512 b
+--   WHERE p.id = b.property_id;
+-- after re-creating the column.
+
+ALTER TABLE public.properties DROP COLUMN IF EXISTS client;
