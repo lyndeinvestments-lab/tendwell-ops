@@ -16,7 +16,7 @@ import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
-import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2 } from 'lucide-react'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 
 type ViewMode = 'list' | 'calendar' | 'reconciliation'
@@ -94,6 +94,9 @@ export default function CleanersPage() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
   const [newForm, setNewForm] = useState({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
+
+  // Assign dialog state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
   // Assign dialog state
   const [assignOpen, setAssignOpen] = useState(false)
@@ -237,6 +240,29 @@ export default function CleanersPage() {
       toast({ title: 'Assignment moved' })
     },
     onError: (error: any) => toast({ title: 'Failed to move assignment', description: error?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: deleteCleaner, isPending: deleting } = useGuardedMutation('cleaners', {
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('cleaners').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_data, id) => {
+      const name = (cleaners || []).find((c: any) => c.id === id)?.full_name ?? null
+      logActivity({
+        entity_type: 'cleaner',
+        entity_id: id,
+        entity_name: name,
+        action: 'delete',
+        changed_by: user?.label ?? null,
+      })
+      qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
+      toast({ title: 'Cleaner deleted' })
+      setDeleteConfirmId(null)
+      if (detailCleaner?.id === id) setDetailCleaner(null)
+    },
+    onError: (error: any) => toast({ title: 'Failed to delete cleaner', description: error?.message, variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {
@@ -390,13 +416,14 @@ export default function CleanersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Assignments</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
+                <th className="py-2 px-3 w-8" />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={7}>
+                <tr><td colSpan={8}>
                   <EmptyState icon={Users2} title="No cleaners" description={`Add your first cleaner to get started.${suggestedCleaners.length > 0 ? ` ${suggestedCleaners.length} active properties have cleaner pay set but no assignments.` : ''}`} />
                 </td></tr>
               ) : (
@@ -404,7 +431,7 @@ export default function CleanersPage() {
                   const stats = cleanerStats[c.id] || { total: 0, totalPay: 0 }
                   const avgPay = stats.total > 0 ? stats.totalPay / stats.total : 0
                   return (
-                    <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailCleaner(c)}>
+                    <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer group" onClick={() => setDetailCleaner(c)}>
                       <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
@@ -415,6 +442,15 @@ export default function CleanersPage() {
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-gray-600 bg-gray-50 border-gray-200'}`}>
                           {c.is_active ? 'Active' : 'Inactive'}
                         </span>
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <button
+                          onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                          title="Delete cleaner"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </td>
                     </tr>
                   )
@@ -699,6 +735,37 @@ export default function CleanersPage() {
               </div>
             </div>
           )}
+          <DialogFooter>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => { setDeleteConfirmId(detailCleaner?.id); setDetailCleaner(null) }}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteConfirmId} onOpenChange={v => !v && setDeleteConfirmId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Delete Cleaner</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Are you sure you want to delete <strong>{(cleaners || []).find((c: any) => c.id === deleteConfirmId)?.full_name}</strong>? This will also remove all their assignments and cannot be undone.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleting}
+              onClick={() => deleteConfirmId && deleteCleaner(deleteConfirmId)}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
