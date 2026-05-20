@@ -167,9 +167,10 @@ export default function LaundryWeighInPage() {
   const showNameDropdown = nameFocused && nameSuggestions.length > 0
 
   const lowerProp = specialLinenProperty.trim().toLowerCase()
-  const propertySuggestions = lowerProp
-    ? propertyNames.filter(n => n.toLowerCase().includes(lowerProp) && n.toLowerCase() !== lowerProp)
+  const propertySuggestions = (lowerProp
+    ? propertyNames.filter(n => n.toLowerCase().includes(lowerProp))
     : propertyNames
+  ).slice(0, 10)
   const showPropertyDropdown = specialLinenPropertyFocused && propertySuggestions.length > 0
 
   useEffect(() => {
@@ -579,19 +580,19 @@ export default function LaundryWeighInPage() {
                       value={specialLinenProperty}
                       onChange={e => setSpecialLinenProperty(e.target.value)}
                       onFocus={() => setSpecialLinenPropertyFocused(true)}
-                      onBlur={() => setTimeout(() => setSpecialLinenPropertyFocused(false), 120)}
+                      onBlur={() => setTimeout(() => setSpecialLinenPropertyFocused(false), 200)}
                       className={inputCls}
                       placeholder={t.specialLinensPropertyPlaceholder}
                       autoComplete="off"
                       data-testid="input-special-property"
                     />
-                    {showPropertyDropdown && (
-                      <ul className="absolute z-10 mt-1 w-full max-h-48 overflow-auto rounded-md border bg-popover shadow-md">
-                        {propertySuggestions.map(n => (
+                    {specialLinenPropertyFocused && (
+                      <ul className="absolute z-50 mt-1 w-full max-h-56 overflow-auto rounded-md border bg-popover shadow-lg">
+                        {propertySuggestions.length > 0 ? propertySuggestions.map(n => (
                           <li key={n}>
                             <button
                               type="button"
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
+                              className="w-full text-left px-3 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground"
                               onMouseDown={e => {
                                 e.preventDefault()
                                 setSpecialLinenProperty(n)
@@ -601,7 +602,9 @@ export default function LaundryWeighInPage() {
                               {n}
                             </button>
                           </li>
-                        ))}
+                        )) : lowerProp ? (
+                          <li className="px-3 py-2.5 text-sm text-muted-foreground">No properties found</li>
+                        ) : null}
                       </ul>
                     )}
                   </div>
