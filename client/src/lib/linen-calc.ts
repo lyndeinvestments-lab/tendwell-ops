@@ -1,17 +1,20 @@
 // Linen par-level calculator. Derives the target towel/mat counts for a
-// property from its bed configuration. Haven's internal rules (2026-04-24):
+// property from its guest count (or bed configuration as fallback).
+// Haven's internal rules (2026-05-21):
 //
-//   sleep_count   = king×2 + queen×2 + full×2 + twin×1  (sofa beds → queen)
+//   sleep_count   = guest_count when set, else king×2 + queen×2 + full×2 + twin×1
 //   hand_towels   = sleep_count
 //   washcloths    = sleep_count
 //   bath_towels   = sleep_count + full_baths
 //   bathmats      = full_baths
 //   pool_towels   = sleep_count when property has a hot tub or pool, else 0
 //
-// Inputs are tolerant of nulls/strings so this can be called from in-progress
-// form state without coercing callers to clean up first.
+// Sleep count and guest count are the same number — if the property stores a
+// guest_count, that always wins. The bed-based formula is only a fallback for
+// properties that haven't filled in the Guests column yet.
 
 export interface LinenInputs {
+  guest_count?: number | string | null
   king_beds?: number | string | null
   queen_beds?: number | string | null
   full_beds?: number | string | null
@@ -36,6 +39,8 @@ function n(v: number | string | null | undefined): number {
 }
 
 export function sleepCount(p: LinenInputs): number {
+  const guest = n(p.guest_count)
+  if (guest > 0) return guest
   const king = n(p.king_beds)
   const queen = n(p.queen_beds) + n(p.sofa_beds)   // sofas count as queen
   const full = n(p.full_beds)

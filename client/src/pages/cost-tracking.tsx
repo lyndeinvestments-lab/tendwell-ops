@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useAuth } from '@/lib/auth'
 import Papa from 'papaparse'
 import { profitTier } from '@/lib/profit-colors'
+import { Link } from 'wouter'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage' | 'break_even_ce'
 
@@ -295,12 +296,12 @@ function SetupStatusTiles({
           <StatusBadge status={status} />
         </div>
         <div className="text-xs text-muted-foreground space-y-1">{children}</div>
-        <a
+        <Link
           href={href}
           className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
         >
           Open {title} <ExternalLink className="w-3 h-3" />
-        </a>
+        </Link>
       </div>
     )
   }
@@ -546,9 +547,11 @@ export default function CostTrackingPage() {
   const [localProperties, setLocalProperties] = useState<any[] | null>(null)
   const [flashedCells, setFlashedCells] = useState<Set<string>>(new Set())
   // Master-list consolidation: when true, query the full `properties` table to
-  // include non-operational stages (Lead, Quote, Offboarded). Default off so
-  // existing Cost Tracking users see the same set of rows they're used to.
-  const [showAllStages, setShowAllStages] = useState(false)
+  // include non-operational stages (Lead, Quote, Offboarded). Defaults ON so
+  // the "All Statuses" dropdown actually shows every stage by default. Users
+  // can toggle the "Show active only" checkbox to scope back to Active/
+  // Onboarding/Offboarding.
+  const [showAllStages, setShowAllStages] = useState(true)
 
   // Read ?stage= deep link from /master-list → /cost-tracking redirects so old
   // links from the dashboard cards keep working post-consolidation.
@@ -1021,15 +1024,15 @@ export default function CostTrackingPage() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title="Include Lead, Quote, and Offboarded properties">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title="Hide Lead, Quote, and Offboarded properties">
             <input
               type="checkbox"
-              checked={showAllStages}
-              onChange={e => { setShowAllStages(e.target.checked); setPage(1) }}
+              checked={!showAllStages}
+              onChange={e => { setShowAllStages(!e.target.checked); setPage(1) }}
               className="h-3.5 w-3.5"
               data-testid="checkbox-all-stages"
             />
-            All stages
+            Show active only
           </label>
           <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
             <SelectTrigger className="h-8 w-44 text-sm" data-testid="select-status-filter">
