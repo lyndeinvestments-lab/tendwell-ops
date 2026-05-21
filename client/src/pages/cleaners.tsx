@@ -620,6 +620,9 @@ export default function CleanersPage() {
                 <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" />
               </div>
             </div>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Entering an email grants this cleaner sign-in access with the Cleaning role.
+            </p>
             <div>
               <label className="text-xs font-medium text-muted-foreground">Pay Rate ($)</label>
               <Input type="number" step="0.01" value={newForm.pay_rate} onChange={e => setNewForm(f => ({ ...f, pay_rate: e.target.value }))} className="mt-1" />
