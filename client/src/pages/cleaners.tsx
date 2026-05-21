@@ -16,7 +16,8 @@ import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
-import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2 } from 'lucide-react'
+import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2 } from 'lucide-react'
+import { sendInviteEmail } from '@/lib/notify'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 
 type ViewMode = 'list' | 'calendar' | 'reconciliation'
@@ -93,7 +94,8 @@ export default function CleanersPage() {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
-  const [newForm, setNewForm] = useState({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
+  const [newForm, setNewForm] = useState({ full_name: '', phone: '', email: '', pay_rate: '', notes: '', app_role: 'cleaning' as 'cleaning' | 'inspector' })
+  const [invitingSendingId, setInvitingSendingId] = useState<string | null>(null)
 
   // Assign dialog state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -167,8 +169,17 @@ export default function CleanersPage() {
         email: newForm.email || null,
         pay_rate: newForm.pay_rate ? parseFloat(newForm.pay_rate) : null,
         notes: newForm.notes || null,
+        app_role: newForm.app_role,
       })
       if (error) throw error
+      // Create app_users entry so they can sign in immediately
+      if (newForm.email.trim()) {
+        await supabase.rpc('add_cleaner_app_user', {
+          p_email: newForm.email.trim(),
+          p_name: newForm.full_name.trim(),
+          p_role: newForm.app_role,
+        })
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
@@ -179,9 +190,9 @@ export default function CleanersPage() {
         new_value: newForm.full_name,
         changed_by: user?.label ?? null,
       })
-      toast({ title: 'Cleaner added' })
+      toast({ title: 'Cleaner added', description: newForm.email ? 'Account created. Send them an invite email.' : undefined })
       setAddOpen(false)
-      setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '' })
+      setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '', app_role: 'cleaning' })
     },
     onError: (error: any) => toast({ title: 'Failed to add cleaner', description: error?.message, variant: 'destructive' }),
   })
@@ -412,18 +423,19 @@ export default function CleanersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Pay Rate</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Assignments</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-                <th className="py-2 px-3 w-8" />
+                <th className="py-2 px-3 w-16" />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={8}>
+                <tr><td colSpan={9}>
                   <EmptyState icon={Users2} title="No cleaners" description={`Add your first cleaner to get started.${suggestedCleaners.length > 0 ? ` ${suggestedCleaners.length} active properties have cleaner pay set but no assignments.` : ''}`} />
                 </td></tr>
               ) : (
@@ -435,6 +447,13 @@ export default function CleanersPage() {
                       <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
+                      <td className="py-2 px-3">
+                        {c.app_role ? (
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.app_role === 'inspector' ? 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-900/20 dark:border-purple-800' : 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-800'}`}>
+                            {c.app_role === 'inspector' ? 'Inspector' : 'Cleaner'}
+                          </span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </td>
                       <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
                       <td className="py-2 px-3 text-xs tabular-nums">{stats.total}</td>
                       <td className="py-2 px-3 text-xs tabular-nums">{avgPay > 0 ? fmt(avgPay) : '—'}</td>
@@ -443,14 +462,40 @@ export default function CleanersPage() {
                           {c.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-right">
-                        <button
-                          onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                          title="Delete cleaner"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      <td className="py-2 px-3 text-right" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {c.email && (
+                            <button
+                              disabled={invitingSendingId === c.id}
+                              onClick={async () => {
+                                setInvitingSendingId(c.id)
+                                const result = await sendInviteEmail(c.email, c.full_name)
+                                setInvitingSendingId(null)
+                                if (result.ok) {
+                                  await supabase.from('cleaners').update({ invite_sent_at: new Date().toISOString() }).eq('id', c.id)
+                                  qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+                                  toast({ title: 'Invite sent', description: `Email sent to ${c.email}` })
+                                } else {
+                                  toast({ title: 'Failed to send invite', description: result.error, variant: 'destructive' })
+                                }
+                              }}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors px-1.5 py-0.5 rounded border border-transparent hover:border-border"
+                              title={c.invite_sent_at ? `Resend invite (last sent ${new Date(c.invite_sent_at).toLocaleDateString()})` : 'Send invite email'}
+                            >
+                              {invitingSendingId === c.id
+                                ? <Loader2 className="w-3 h-3 animate-spin" />
+                                : <Mail className="w-3 h-3" />}
+                              <span className="hidden sm:inline">{c.invite_sent_at ? 'Resend' : 'Invite'}</span>
+                            </button>
+                          )}
+                          <button
+                            onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                            title="Delete cleaner"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
@@ -610,6 +655,25 @@ export default function CleanersPage() {
               <label className="text-xs font-medium text-muted-foreground">Full Name *</label>
               <Input value={newForm.full_name} onChange={e => setNewForm(f => ({ ...f, full_name: e.target.value }))} className="mt-1" />
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Role *</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewForm(f => ({ ...f, app_role: 'cleaning' }))}
+                  className={`h-10 rounded-md border-2 text-sm font-medium transition-colors ${newForm.app_role === 'cleaning' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/40'}`}
+                >
+                  Cleaner
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewForm(f => ({ ...f, app_role: 'inspector' }))}
+                  className={`h-10 rounded-md border-2 text-sm font-medium transition-colors ${newForm.app_role === 'inspector' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/40'}`}
+                >
+                  Inspector
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Phone</label>
@@ -617,7 +681,7 @@ export default function CleanersPage() {
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground">Email</label>
-                <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" />
+                <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" placeholder="For login access" />
               </div>
             </div>
             <p className="text-[11px] text-muted-foreground -mt-1">
@@ -631,6 +695,9 @@ export default function CleanersPage() {
               <label className="text-xs font-medium text-muted-foreground">Notes</label>
               <Input value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" />
             </div>
+            {newForm.email && (
+              <p className="text-xs text-muted-foreground">A site account will be created for this email. Send them an invite email after adding.</p>
+            )}
           </div>
           <DialogFooter>
             <Button size="sm" disabled={!newForm.full_name.trim() || adding} onClick={() => addCleaner()}>
