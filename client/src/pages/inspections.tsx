@@ -24,6 +24,7 @@ type Inspection = {
   id: string
   property_id: number
   cleaner_id: string | null
+  cleaner_name: string | null
   inspector_id: string | null
   inspected_by: string | null
   inspected_at: string
@@ -167,7 +168,7 @@ export default function InspectionsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('inspections')
-        .select('id, property_id, cleaner_id, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)')
+        .select('id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)')
         .order('inspected_at', { ascending: false })
         .limit(2000)
       if (error) throw error
@@ -191,7 +192,7 @@ export default function InspectionsPage() {
     return inspections.filter(i => {
       if (q) {
         const propName = i.properties?.name?.toLowerCase() ?? ''
-        const cleanerName = i.cleaners?.full_name?.toLowerCase() ?? ''
+        const cleanerName = (i.cleaners?.full_name ?? i.cleaner_name ?? '').toLowerCase()
         const notes = (i.notes ?? '').toLowerCase()
         if (!propName.includes(q) && !cleanerName.includes(q) && !notes.includes(q)) return false
       }
@@ -219,7 +220,7 @@ export default function InspectionsPage() {
   function exportCsv() {
     const rows = filtered.map(i => ({
       'Property': i.properties?.name ?? '',
-      'Cleaner': i.cleaners?.full_name ?? '',
+      'Cleaner': i.cleaners?.full_name ?? i.cleaner_name ?? '',
       'Inspector': i.inspectors?.full_name ?? '',
       'Inspected At': i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
       'Overall': i.overall_score ?? '',
@@ -360,7 +361,7 @@ export default function InspectionsPage() {
                     {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
                   </div>
                   <div className="text-xs text-muted-foreground truncate">
-                    {(i.cleaners?.full_name ?? i.inspected_by ?? '—')}
+                    {(i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic text-muted-foreground/70">Cleaner not recorded</span>)}
                     {' · '}
                     {i.status === 'scheduled' && i.scheduled_for
                       ? `→ ${format(parseISO(i.scheduled_for), 'MMM d')}`
@@ -454,7 +455,7 @@ export default function InspectionsPage() {
                     </div>
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">
-                    {i.cleaners?.full_name ?? (i.inspected_by ? <span>{i.inspected_by}</span> : '—')}
+                    {i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">
                     {i.inspectors?.full_name ?? '—'}
@@ -519,7 +520,7 @@ export default function InspectionsPage() {
                 )}
               </div>
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><User className="w-3 h-3" />Cleaner: {activeDetail.cleaners?.full_name ?? activeDetail.inspected_by ?? '—'}</span>
+                <span className="flex items-center gap-1"><User className="w-3 h-3" />Cleaner: {activeDetail.cleaners?.full_name ?? activeDetail.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}</span>
                 <span>·</span>
                 <span className="flex items-center gap-1"><User className="w-3 h-3" />Inspector: {activeDetail.inspectors?.full_name ?? '—'}</span>
                 <span>·</span>
