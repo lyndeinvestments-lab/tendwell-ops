@@ -641,13 +641,14 @@ const AC_FIELD_KEYS = ['filter_size', 'last_filter_changed'] as const
 
 function buildPropertyCopyText(property: any, includeFinancials: boolean): string {
   const lines: string[] = []
-  const v = (x: any) => (x == null || x === '' ? '' : String(x))
+  const MISSING = 'No information there'
+  const v = (x: any) => (x == null || x === '' ? MISSING : String(x))
 
-  lines.push(v(property.address))
+  lines.push(property.address && String(property.address).trim() !== '' ? String(property.address) : MISSING)
 
   if (includeFinancials) {
-    const pay = Number(property.cleaner_pay ?? 0)
-    lines.push(`Cleaner pay: ${property.cleaner_pay == null || property.cleaner_pay === '' ? '' : `$${pay.toFixed(2)}`}`)
+    const pay = property.cleaner_pay
+    lines.push(`Cleaner pay: ${pay == null || pay === '' ? MISSING : `$${Number(pay).toFixed(2)}`}`)
   }
 
   const bedParts: string[] = []
@@ -661,7 +662,7 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean): strin
     const num = Number(n ?? 0)
     if (num > 0) bedParts.push(`${num} ${label}`)
   }
-  lines.push(`Beds: ${bedParts.join(', ')}`)
+  lines.push(`Beds: ${bedParts.length > 0 ? bedParts.join(', ') : MISSING}`)
 
   lines.push(`Bedrooms: ${v(property.bedrooms)}`)
 
@@ -670,9 +671,10 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean): strin
   const bathParts: string[] = []
   if (fullBaths != null && fullBaths > 0) bathParts.push(`${fullBaths} full`)
   if (halfBaths != null && halfBaths > 0) bathParts.push(`${halfBaths} half`)
-  lines.push(`Bathrooms: ${bathParts.join(', ')}`)
+  lines.push(`Bathrooms: ${bathParts.length > 0 ? bathParts.join(', ') : MISSING}`)
 
   lines.push(`Guest count: ${v(property.guest_count)}`)
+  lines.push(`Hot tub: ${property.hot_tub ? 'Yes' : 'No'}`)
   lines.push(`Auto code: ${v(property.auto_code)}`)
   lines.push(`Door code: ${v(property.door_code)}`)
   lines.push(`Other codes: ${v(property.other_codes)}`)
@@ -1427,6 +1429,7 @@ export function PropertyDetailModal() {
                       type="button"
                       onClick={() => {
                         const src = {
+                          guest_count: form.guest_count !== '' ? form.guest_count : property.guest_count,
                           king_beds: form.king_beds ?? property.king_beds,
                           queen_beds: form.queen_beds ?? property.queen_beds,
                           full_beds: form.full_beds ?? property.full_beds,
@@ -1446,7 +1449,7 @@ export function PropertyDetailModal() {
                         toast({ title: `Auto-filled linens (sleep count ${sleepCount(src)})` })
                       }}
                       className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
-                      title="Compute from bed counts + baths + hot tub"
+                      title="Compute from guest count (falls back to bed counts) + baths + hot tub"
                     >
                       Auto-fill from beds
                     </button>

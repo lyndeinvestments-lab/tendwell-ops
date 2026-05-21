@@ -88,6 +88,7 @@ export default function LinenTrackerPage() {
   const { mutate: autoFillLinens, isPending: autoFilling } = useGuardedMutation('linen-tracker', {
     mutationFn: async ({ p, overwrite }: { p: any; overwrite: boolean }) => {
       const c = calculateLinens({
+        guest_count: p.guest_count,
         king_beds: p.king_beds,
         queen_beds: p.queen_beds,
         full_beds: p.full_beds,
@@ -125,18 +126,20 @@ export default function LinenTrackerPage() {
       return
     }
     const candidates = (properties || []).filter((p: any) => {
+      const hasGuests = (p.guest_count || 0) > 0
       const hasBeds = (p.king_beds || 0) + (p.queen_beds || 0) + (p.full_beds || 0) + (p.twin_beds || 0) > 0
       const allTowelsEmpty = ['bath_towels', 'hand_towels', 'washcloths', 'bathmats', 'pool_towels']
         .every(k => p[k] == null || p[k] === 0)
-      return hasBeds && allTowelsEmpty
+      return (hasGuests || hasBeds) && allTowelsEmpty
     })
     if (candidates.length === 0) {
-      toast({ title: 'No rows to fill', description: 'Every row either has no beds yet or already has towel data.' })
+      toast({ title: 'No rows to fill', description: 'Every row either has no guest count / beds yet or already has towel data.' })
       return
     }
     let ok = 0
     for (const p of candidates) {
       const c = calculateLinens({
+        guest_count: p.guest_count,
         king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds,
         full_baths: p.full_baths, hot_tub: !!p.hot_tub,
       })
@@ -472,7 +475,7 @@ export default function LinenTrackerPage() {
                               disabled={autoFilling}
                               className="p-0.5 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
                               aria-label="Auto-fill empty towel fields from beds"
-                              title={`Auto-fill empty towel fields from beds (sleep ${sleepCount(p)}). Manual values are kept.`}
+                              title={`Auto-fill empty towel fields from guest count (${sleepCount(p)}). Falls back to bed math if guest count is blank. Manual values are kept.`}
                             >
                               <Sparkles className="w-3 h-3" />
                             </button>
