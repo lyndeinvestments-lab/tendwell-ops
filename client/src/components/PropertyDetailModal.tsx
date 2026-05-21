@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 
@@ -911,9 +911,46 @@ export function PropertyDetailModal() {
   const canViewAccess = canAccessView('access-codes', effectiveUser)
   const canViewAssignments = canAccessView('cleaners', effectiveUser)
   const canViewVerification = canAccessView('property-verifications', effectiveUser)
+  const canChangeStage = canEditView('property-list', effectiveUser)
 
   const stageColor = property?.pipeline_stages?.color || '#6b7280'
   const stageName = property?.pipeline_stages?.name || '—'
+
+  const { data: allStages } = useQuery({
+    queryKey: ['/supabase/pipeline_stages'],
+    queryFn: async () => {
+      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
+      return data || []
+    },
+    enabled: canChangeStage && !!propertyId,
+    staleTime: 60_000,
+  })
+
+  const [stagePopoverOpen, setStagePopoverOpen] = useState(false)
+  const { mutate: changeStage, isPending: changingStagePending } = useMutation({
+    mutationFn: async (toStage: { id: string; name: string }) => {
+      const fromStage = property?.pipeline_stages
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(propertyId),
+        propertyName: property?.name || '',
+        fromStageId: Number(fromStage?.id),
+        fromStageName: fromStage?.name || '',
+        toStageId: Number(toStage.id),
+        toStageName: toStage.name,
+        changedBy: user?.label || user?.google_email || 'unknown',
+      })
+      if (!result.ok) throw new Error(result.error)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      toast({ title: 'Stage updated' })
+      setStagePopoverOpen(false)
+    },
+    onError: (err: any) => toast({ title: 'Stage change failed', description: err?.message, variant: 'destructive' }),
+  })
 
   // Highlight field ring class
   function fieldCls(field: string) {
@@ -959,16 +996,46 @@ export function PropertyDetailModal() {
                 <DialogTitle className="text-base truncate">{property?.name ?? '—'}</DialogTitle>
               )}
               {!isLoading && property && (
-                <span
-                  className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0"
-                  style={{
-                    backgroundColor: stageColor + '20',
-                    color: stageColor,
-                    border: `1px solid ${stageColor}40`,
-                  }}
-                >
-                  {stageName}
-                </span>
+                canChangeStage ? (
+                  <Popover open={stagePopoverOpen} onOpenChange={setStagePopoverOpen}>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0 flex items-center gap-0.5 hover:ring-2 hover:ring-primary/30 transition-all"
+                        style={{
+                          backgroundColor: stageColor + '20',
+                          color: stageColor,
+                          border: `1px solid ${stageColor}40`,
+                        }}
+                        title="Click to change stage"
+                      >
+                        {changingStagePending ? <Loader2 className="w-3 h-3 animate-spin" /> : stageName}
+                        <ChevronDown className="w-3 h-3 opacity-60" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-44 p-1" align="start">
+                      {(allStages || []).map((s: any) => (
+                        <button
+                          key={s.id}
+                          onClick={() => s.name !== stageName && changeStage({ id: s.id, name: s.name })}
+                          className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors ${s.name === stageName ? 'font-semibold bg-muted/50' : ''}`}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                ) : (
+                  <span
+                    className="text-xs font-medium px-1.5 py-0.5 rounded flex-shrink-0"
+                    style={{
+                      backgroundColor: stageColor + '20',
+                      color: stageColor,
+                      border: `1px solid ${stageColor}40`,
+                    }}
+                  >
+                    {stageName}
+                  </span>
+                )
               )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">

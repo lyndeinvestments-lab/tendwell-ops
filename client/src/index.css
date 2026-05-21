@@ -204,8 +204,10 @@
       padding: 0.75rem;
     }
 
-    /* Ensure wide tables scroll horizontally instead of overflowing */
-    .overflow-x-auto {
+    /* Momentum scrolling for table wrappers and main content on iOS */
+    .overflow-x-auto,
+    .overflow-auto,
+    main {
       -webkit-overflow-scrolling: touch;
     }
 
