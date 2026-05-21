@@ -143,3 +143,20 @@ export async function sendTestEmail(): Promise<{ ok: boolean; error?: string; se
   if (!res.ok) return { ok: false, error: data.error || 'Failed' }
   return { ok: true, sentTo: data.sentTo }
 }
+
+export async function sendInviteEmail(email: string, name: string): Promise<{ ok: boolean; error?: string }> {
+  const token = await getToken()
+  if (!token) return { ok: false, error: 'Not signed in' }
+  try {
+    const res = await fetch('/api/notify/invite', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email, name }),
+    })
+    const data = await res.json()
+    if (!res.ok) return { ok: false, error: data.error || 'Failed' }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Network error' }
+  }
+}
