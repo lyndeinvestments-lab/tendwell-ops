@@ -165,6 +165,11 @@ export default function QuoteSheetPage() {
     enabled: !!quoteStage,
   })
 
+  const contactById = useMemo(
+    () => new Map((contacts || []).map((c: any) => [String(c.id), c.full_name as string])),
+    [contacts],
+  )
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     const allRows = (properties || []) as any[]
@@ -175,7 +180,6 @@ export default function QuoteSheetPage() {
       : viewMode === 'archived'
         ? allRows.filter(p => p.archived_at)
         : allRows
-    const contactById = new Map((contacts || []).map((c: any) => [String(c.id), c.full_name]))
     const base = q
       ? scoped.filter((p: any) => {
           const contactName = p.contact_id ? contactById.get(String(p.contact_id)) : null
@@ -207,6 +211,16 @@ export default function QuoteSheetPage() {
       if (sortKey === 'inspection_cost') return 0
       if (sortKey === 'trash_cost') return 0
 
+      // Client column sorts by the looked-up contact name (not contact_id)
+      if (sortKey === 'client') {
+        const av = a.contact_id ? contactById.get(String(a.contact_id)) ?? '' : ''
+        const bv = b.contact_id ? contactById.get(String(b.contact_id)) ?? '' : ''
+        if (!av && !bv) return 0
+        if (!av) return 1
+        if (!bv) return -1
+        return av.localeCompare(bv) * dir
+      }
+
       const av = a[sortKey]
       const bv = b[sortKey]
 
@@ -219,7 +233,7 @@ export default function QuoteSheetPage() {
       }
       return (av - bv) * dir
     })
-  }, [properties, contacts, search, sortKey, sortDir, viewMode])
+  }, [properties, contacts, contactById, search, sortKey, sortDir, viewMode])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -522,11 +536,12 @@ export default function QuoteSheetPage() {
 
   function exportCsv() {
     if (!filtered || filtered.length === 0) return
-    const headers = ['Name', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
+    const headers = ['Name', 'Client', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
     const rows = filtered.map((p: any) => {
       const { laundry, consumables } = getEstimates(p)
       return [
         p.name || '',
+        p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : '',
         p.ce_charged ?? '',
         p.cleaner_pay ?? '',
         p.bedrooms ?? '',
@@ -610,6 +625,7 @@ export default function QuoteSheetPage() {
             <tr>
               {([
                 { col: 'name', label: 'Name' },
+                { col: 'client', label: 'Client' },
                 { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
                 { col: 'cleaner_pay', label: 'Cleaner Pay' },
                 { col: 'bedrooms', label: 'Bedrooms' },
@@ -643,18 +659,18 @@ export default function QuoteSheetPage() {
             {isLoading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(14)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(15)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !properties || properties.length === 0 ? (
               <tr>
-                <td colSpan={14}>
+                <td colSpan={15}>
                   <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={14}>
+                <td colSpan={15}>
                   <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
                 </td>
               </tr>
@@ -666,6 +682,9 @@ export default function QuoteSheetPage() {
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
+                    </td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground truncate max-w-[14rem]" title={p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : ''}>
+                      {p.contact_id ? contactById.get(String(p.contact_id)) ?? '—' : '—'}
                     </td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
@@ -772,6 +791,7 @@ export default function QuoteSheetPage() {
               return (
                 <tr className="bg-muted/60 border-t-2 border-border font-semibold">
                   <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
+                  <td className="py-2 px-3 text-xs"></td>
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.cleaner_pay))}</td>
                   <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
