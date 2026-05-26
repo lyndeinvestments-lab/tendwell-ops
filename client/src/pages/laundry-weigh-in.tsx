@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Camera, Shirt, Sparkles, X } from 'lucide-react'
+import { resizeImageFile } from '@/lib/resize-image'
 
 // Public page — uses anon key directly (no auth required)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -192,9 +193,10 @@ export default function LaundryWeighInPage() {
     }
   }, [specialLinenPhotoPreview])
 
-  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.files?.[0]
+    if (!raw) return
+    const file = await resizeImageFile(raw)
     if (photoPreview) URL.revokeObjectURL(photoPreview)
     setPhotoFile(file)
     setPhotoPreview(URL.createObjectURL(file))
@@ -207,9 +209,10 @@ export default function LaundryWeighInPage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  function handleSpecialLinenPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
+  async function handleSpecialLinenPhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.files?.[0]
+    if (!raw) return
+    const file = await resizeImageFile(raw)
     if (specialLinenPhotoPreview) URL.revokeObjectURL(specialLinenPhotoPreview)
     setSpecialLinenPhotoFile(file)
     setSpecialLinenPhotoPreview(URL.createObjectURL(file))
