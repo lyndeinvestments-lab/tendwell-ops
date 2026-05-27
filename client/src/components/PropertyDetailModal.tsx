@@ -900,6 +900,20 @@ export function PropertyDetailModal() {
   }
 
   function commitInlineEdit(field: string) {
+    if (field === 'name') {
+      const trimmed = inlineValue.trim()
+      if (!trimmed) {
+        toast({ title: 'Name cannot be blank', variant: 'destructive' })
+        setInlineField(null)
+        return
+      }
+      if (trimmed === (property?.name ?? '')) {
+        setInlineField(null)
+        return
+      }
+      saveInlineField({ field, value: trimmed })
+      return
+    }
     saveInlineField({ field, value: inlineValue })
   }
 
@@ -994,8 +1008,30 @@ export function PropertyDetailModal() {
             <div className="flex items-center gap-2 flex-1 min-w-0">
               {isLoading ? (
                 <Skeleton className="h-5 w-48" />
+              ) : inlineField === 'name' ? (
+                <>
+                  <DialogTitle className="sr-only">{property?.name ?? ''}</DialogTitle>
+                  <Input
+                    autoFocus
+                    value={inlineValue}
+                    onChange={e => setInlineValue(e.target.value)}
+                    onBlur={() => commitInlineEdit('name')}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') commitInlineEdit('name')
+                      if (e.key === 'Escape') setInlineField(null)
+                    }}
+                    className="h-7 text-base font-semibold"
+                    data-testid="modal-input-name"
+                  />
+                </>
               ) : (
-                <DialogTitle className="text-base truncate">{property?.name ?? '—'}</DialogTitle>
+                <DialogTitle
+                  className={`text-base truncate ${canEditProperty && !isEditing ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
+                  onClick={() => startInlineEdit('name', property?.name ?? '', canEditProperty)}
+                  title={canEditProperty ? 'Click to rename' : undefined}
+                >
+                  {property?.name ?? '—'}
+                </DialogTitle>
               )}
               {!isLoading && property && (
                 canChangeStage ? (
