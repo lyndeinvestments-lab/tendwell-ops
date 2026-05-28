@@ -293,7 +293,7 @@ export default function LaundryWeighInsPage() {
         <DialogContent className="max-w-3xl p-2 sm:p-4">
           {lightboxUrl && (
             <div className="relative">
-              <img src={lightboxUrl} alt="Weigh-in photo" className="w-full h-auto max-h-[80vh] object-contain rounded-md" />
+              <img src={lightboxUrl} alt="Weigh-in photo" loading="lazy" decoding="async" className="w-full h-auto max-h-[80vh] object-contain rounded-md" />
               <a
                 href={lightboxUrl}
                 target="_blank"

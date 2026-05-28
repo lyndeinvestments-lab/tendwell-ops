@@ -17,6 +17,10 @@
     <meta name="apple-mobile-web-app-title" content="Tendwell" />
     <meta name="theme-color" content="#09090b" />
     <link rel="canonical" href="https://www.tendwellcleaning.com/" />
+    <!-- Start the Supabase TLS handshake during HTML parse so the first DB call
+         doesn't pay for it. Vite expands %VITE_SUPABASE_URL% at build time. -->
+    <link rel="dns-prefetch" href="%VITE_SUPABASE_URL%">
+    <link rel="preconnect" href="%VITE_SUPABASE_URL%" crossorigin>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400;1,9..40,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">

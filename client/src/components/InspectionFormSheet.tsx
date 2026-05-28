@@ -503,7 +503,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
             <div className="flex flex-wrap gap-2">
               {existingPhotoUrls.map((url, i) => (
                 <div key={`existing-${i}`} className="relative w-20 h-20 rounded-md overflow-hidden border">
-                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => removeExistingPhoto(i)}
@@ -516,7 +516,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
               ))}
               {photos.map((p, i) => (
                 <div key={`new-${i}`} className="relative w-20 h-20 rounded-md overflow-hidden border">
-                  <img src={p.preview} alt="" className="w-full h-full object-cover" />
+                  <img src={p.preview} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   <button
                     type="button"
                     onClick={() => removeNewPhoto(i)}
