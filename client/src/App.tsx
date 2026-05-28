@@ -74,6 +74,7 @@ const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
 const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
 const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"));
 const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
+const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -223,6 +224,7 @@ function AppRoutes() {
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>
         <Route path="/lost-items/:id">{() => <GuardedRoute viewId="lost-items" component={LostItemDetailPage} />}</Route>
         <Route path="/lost-items">{() => <GuardedRoute viewId="lost-items" component={LostItemsPage} />}</Route>
+        <Route path="/incoming-shipments">{() => <GuardedRoute viewId="incoming-shipments" component={IncomingShipmentsPage} />}</Route>
         {/* Pro Forma now hosts the Live Pro Forma (forecaster) and Per-Property
             tabs in a single wrapper. The /forecaster path stays valid as a deep
             link into the Live tab; either historical permission grants access

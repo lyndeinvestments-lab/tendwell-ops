@@ -10,7 +10,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale
+  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -51,6 +51,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Property Verifications', href: '/property-verifications', view: 'property-verifications', icon: ClipboardCheck },
       { title: 'Inspections', href: '/inspections', view: 'inspections', icon: Star },
       { title: 'Lost Items', href: '/lost-items', view: 'lost-items', icon: PackageSearch },
+      { title: 'Incoming Shipments', href: '/incoming-shipments', view: 'incoming-shipments', icon: PackagePlus },
       { title: 'Laundry Weigh-Ins', href: '/laundry-weigh-ins', view: 'laundry-weigh-ins', icon: Scale },
     ],
   },
