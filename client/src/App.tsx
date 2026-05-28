@@ -73,6 +73,7 @@ const NotFound = lazyRetry(() => import("@/pages/not-found"));
 const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
 const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
 const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"));
+const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -246,6 +247,7 @@ function AppRoutes() {
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />
+        <Route path="/shipment-report" component={ShipmentReportPage} />
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
@@ -298,6 +300,14 @@ function AppLayout() {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <LaundryWeighInPage />
+        </Suspense>
+      );
+    }
+    // Allow public shipment report form without authentication
+    if (window.location.hash.startsWith('#/shipment-report')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <ShipmentReportPage />
         </Suspense>
       );
     }
