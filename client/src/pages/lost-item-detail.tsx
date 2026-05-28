@@ -259,7 +259,7 @@ export default function LostItemDetailPage() {
               <div className="grid grid-cols-3 gap-2">
                 {item.photo_urls.map(url => (
                   <a key={url} href={url} target="_blank" rel="noreferrer">
-                    <img src={url} alt="" className="w-full h-16 object-cover rounded-md border border-border" />
+                    <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-16 object-cover rounded-md border border-border" />
                   </a>
                 ))}
               </div>

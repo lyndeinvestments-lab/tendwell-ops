@@ -226,7 +226,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
               <div className="flex gap-1 mt-1">
                 {insp.photos_url.map((url: string, i: number) => (
                   <button key={i} onClick={() => setLightboxUrl(url)} className="w-12 h-12 rounded border border-border overflow-hidden hover:opacity-80">
-                    <img src={url} alt="" className="w-full h-full object-cover" />
+                    <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -239,7 +239,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
         <DialogContent className="max-w-3xl p-2">
           <DialogTitle className="sr-only">Photo preview</DialogTitle>
-          {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" className="w-full rounded" />}
+          {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" loading="lazy" decoding="async" className="w-full rounded" />}
         </DialogContent>
       </Dialog>
     </div>
@@ -362,7 +362,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
         <div className="grid grid-cols-3 gap-2">
           {photos.map((p: any) => (
             <div key={p.id} className="relative group aspect-square">
-              <img src={p.photo_url} alt="" className="w-full h-full object-cover rounded-md border border-border" />
+              <img src={p.photo_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-md border border-border" />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
                 <button
                   onClick={() => window.open(p.photo_url, '_blank')}

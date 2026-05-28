@@ -152,7 +152,7 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
           <div className="grid grid-cols-3 gap-2">
             {detail.photo_urls.map(url => (
               <a key={url} href={url} target="_blank" rel="noreferrer">
-                <img src={url} alt="" className="w-full h-20 object-cover rounded-md border border-border" />
+                <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-20 object-cover rounded-md border border-border" />
               </a>
             ))}
           </div>

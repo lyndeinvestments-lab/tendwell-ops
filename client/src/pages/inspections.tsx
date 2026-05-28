@@ -566,7 +566,7 @@ export default function InspectionsPage() {
                   <div className="grid grid-cols-3 gap-2">
                     {activeDetail.photos_url.map((url, i) => (
                       <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block aspect-square rounded overflow-hidden border border-border hover:border-primary">
-                        <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                        <img src={url} alt={`Photo ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       </a>
                     ))}
                   </div>
