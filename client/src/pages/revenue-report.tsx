@@ -92,25 +92,31 @@ export default function RevenueReportPage() {
     },
   })
 
-  // Fetch property edit log for historical data
+  // Match the date window used by stageTransitions below — keeps payload
+  // bounded as property_edit_log grows. Sparklines only display the last 8
+  // points anyway, so edits older than this window are already discarded.
+  const thirteenMonthsAgo = useMemo(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 13)
+    return d.toISOString()
+  }, [])
+
+  // Fetch property edit log for historical data (date-bounded).
+  // Note: the column is `changed_at`, not `created_at` — using the wrong
+  // name caused this query to silently throw and the sparklines to render
+  // empty.
   const { data: editLog } = useQuery({
     queryKey: ['/supabase/revenue-report-history'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('property_edit_log')
-        .select('property_id, field_name, old_value, new_value, created_at')
+        .select('property_id, field_name, old_value, new_value, changed_at')
         .in('field_name', ['ce_charged', 'cleaner_pay'])
-        .order('created_at', { ascending: true })
+        .gte('changed_at', thirteenMonthsAgo)
+        .order('changed_at', { ascending: true })
       if (error) throw error
       return data || []
     },
   })
-
-  // Fetch stage transitions to know when properties became Active (last 13 months)
-  const thirteenMonthsAgo = useMemo(() => {
-    const d = new Date(); d.setMonth(d.getMonth() - 13)
-    return d.toISOString()
-  }, [])
   const { data: stageTransitions } = useQuery({
     queryKey: ['/supabase/revenue-report-transitions'],
     queryFn: async () => {
@@ -213,7 +219,7 @@ export default function RevenueReportPage() {
       const ce = log.field_name === 'ce_charged' ? parseFloat(log.new_value || '0') : (prop.ce_charged || 0)
       const pay = log.field_name === 'cleaner_pay' ? parseFloat(log.new_value || '0') : (prop.cleaner_pay || 0)
       const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
-      map[pid].push({ ce, pay, date: log.created_at })
+      map[pid].push({ ce, pay, date: log.changed_at })
     }
     const result: Record<string, number[]> = {}
     for (const [pid, entries] of Object.entries(map)) {

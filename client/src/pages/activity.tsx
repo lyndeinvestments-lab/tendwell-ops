@@ -133,7 +133,9 @@ function formatEntityLabel(entry: any): string {
 // Normalise a row from either table into a unified shape
 function normaliseRow(row: any, source: 'activity_log' | 'property_edit_log'): any {
   if (source === 'activity_log') return row
-  // property_edit_log → activity_log shape
+  // property_edit_log → activity_log shape. property_edit_log uses
+  // `changed_at`, not `created_at`; map it so downstream sort/render still
+  // works on `entry.created_at`.
   return {
     id: 'pel_' + row.id,
     entity_type: 'property',
@@ -144,7 +146,7 @@ function normaliseRow(row: any, source: 'activity_log' | 'property_edit_log'): a
     old_value: row.old_value,
     new_value: row.new_value,
     changed_by: row.changed_by ?? null,
-    created_at: row.created_at,
+    created_at: row.changed_at,
     // Carry forward so revert still works
     _property_id: row.property_id,
     _properties: row.properties,
@@ -194,17 +196,20 @@ export default function ActivityFeedPage() {
     queryKey: ['/supabase/activity-edit-log'],
     queryFn: async () => {
       // Try with FK join first, fall back to plain query if FK name doesn't match
+      // Column is `changed_at` on property_edit_log (NOT created_at) — the
+      // old name was returning 400s and silently emptying the Activity feed
+      // of all property edits.
       let result = await supabase
         .from('property_edit_log')
         .select('*, properties!property_edit_log_property_id_fkey(id, name)')
-        .order('created_at', { ascending: false })
+        .order('changed_at', { ascending: false })
         .limit(500)
       if (result.error) {
         console.warn('property_edit_log FK join failed, trying without join:', result.error.message)
         result = await supabase
           .from('property_edit_log')
           .select('*')
-          .order('created_at', { ascending: false })
+          .order('changed_at', { ascending: false })
           .limit(500)
       }
       if (result.error) {
