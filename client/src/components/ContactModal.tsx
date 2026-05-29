@@ -35,6 +35,62 @@ interface ContactModalProps {
   mode: 'view' | 'create'
 }
 
+// Hoisted to file scope so React keeps the same component identity across
+// renders. When these lived inside ContactModal each keystroke re-created a
+// new function reference, React saw a different element type and remounted
+// the input — the user's reported bug: focus dropped on every character on
+// the Clients tab's Add Client form.
+function Field({
+  label, field, type = 'text', placeholder, form, setForm, onBlurField,
+}: {
+  label: string
+  field: string
+  type?: string
+  placeholder?: string
+  form: any
+  setForm: React.Dispatch<React.SetStateAction<any>>
+  onBlurField: (field: string) => void
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Input
+        type={type}
+        value={form[field] ?? ''}
+        onChange={e => setForm((f: any) => ({ ...f, [field]: e.target.value }))}
+        onBlur={() => onBlurField(field)}
+        className="mt-0.5 h-7 text-xs"
+        placeholder={placeholder}
+      />
+    </div>
+  )
+}
+
+function SelectField({
+  label, field, options, form, onSelectField,
+}: {
+  label: string
+  field: string
+  options: string[]
+  form: any
+  onSelectField: (field: string, value: string) => void
+}) {
+  return (
+    <div>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Select value={form[field] || '_none'} onValueChange={v => onSelectField(field, v)}>
+        <SelectTrigger className="mt-0.5 h-7 text-xs">
+          <SelectValue placeholder="Select..." />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="_none">—</SelectItem>
+          {options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    </div>
+  )
+}
+
 export function ContactModal({ contactId, open, onClose, mode }: ContactModalProps) {
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -224,39 +280,6 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
     }
   }
 
-  function Field({ label, field, type = 'text', placeholder }: { label: string; field: string; type?: string; placeholder?: string }) {
-    return (
-      <div>
-        <Label className="text-xs text-muted-foreground">{label}</Label>
-        <Input
-          type={type}
-          value={form[field] ?? ''}
-          onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-          onBlur={() => handleFieldBlur(field)}
-          className="mt-0.5 h-7 text-xs"
-          placeholder={placeholder}
-        />
-      </div>
-    )
-  }
-
-  function SelectField({ label, field, options }: { label: string; field: string; options: string[] }) {
-    return (
-      <div>
-        <Label className="text-xs text-muted-foreground">{label}</Label>
-        <Select value={form[field] || '_none'} onValueChange={v => handleSelectField(field, v)}>
-          <SelectTrigger className="mt-0.5 h-7 text-xs">
-            <SelectValue placeholder="Select..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_none">—</SelectItem>
-            {options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-    )
-  }
-
   return (
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
       <SheetContent side="right" className="w-[480px] overflow-y-auto" data-testid="contact-modal">
@@ -285,8 +308,8 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
             {/* Details Tab */}
             <TabsContent value="details" className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Full Name *" field="full_name" placeholder="Client name" />
-                <Field label="Company" field="company" placeholder="Company name" />
+                <Field label="Full Name *" field="full_name" placeholder="Client name" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label="Company" field="company" placeholder="Company name" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -311,22 +334,22 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                     )}
                   </div>
                 </div>
-                <Field label="Phone" field="phone" type="tel" placeholder="(555) 123-4567" />
+                <Field label="Phone" field="phone" type="tel" placeholder="(555) 123-4567" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Secondary Phone" field="secondary_phone" type="tel" />
-                <Field label="Mailing Address" field="mailing_address" />
+                <Field label="Secondary Phone" field="secondary_phone" type="tel" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label="Mailing Address" field="mailing_address" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <SelectField label="Source" field="source" options={SOURCE_OPTIONS} />
-                <Field label="Source Notes" field="source_notes" placeholder="How they found us..." />
+                <SelectField label="Source" field="source" options={SOURCE_OPTIONS} form={form} onSelectField={handleSelectField} />
+                <Field label="Source Notes" field="source_notes" placeholder="How they found us..." form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <SelectField label="Payment Method" field="payment_method" options={PAYMENT_OPTIONS} />
-                <Field label="Payment Notes" field="payment_notes" />
+                <SelectField label="Payment Method" field="payment_method" options={PAYMENT_OPTIONS} form={form} onSelectField={handleSelectField} />
+                <Field label="Payment Notes" field="payment_notes" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Client Since" field="client_since" type="date" />
+                <Field label="Client Since" field="client_since" type="date" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
                 <div>
                   <Label className="text-xs text-muted-foreground">Tags</Label>
                   <div className="flex flex-wrap gap-1 mt-0.5 min-h-[28px] items-center">
