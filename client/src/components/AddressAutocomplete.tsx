@@ -139,6 +139,19 @@ export function AddressAutocomplete({
   const [enabled, setEnabled] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Callers commonly pass inline arrow functions as onChange/onSelectPlace
+  // (e.g. `onChange={next => setNewProp(prev => ({...prev, address: next}))}`).
+  // Including those in the effect's deps caused the effect to re-run every
+  // parent render — which spawned duplicate Google Autocomplete widgets on
+  // the same input and left the listener firing on a stale closure, so
+  // clicking a suggestion appeared to do nothing on the Quote Sheet's Add
+  // Quote form. We stash the latest callbacks in refs and depend only on
+  // `country`, so the widget is created exactly once per mount.
+  const onChangeRef = useRef(onChange)
+  const onSelectPlaceRef = useRef(onSelectPlace)
+  useEffect(() => { onChangeRef.current = onChange })
+  useEffect(() => { onSelectPlaceRef.current = onSelectPlace })
+
   useEffect(() => {
     if (!PLACES_API_KEY) {
       setEnabled(false)
@@ -159,9 +172,9 @@ export function AddressAutocomplete({
           const place = ac.getPlace()
           if (!place) return
           const formatted: string = place.formatted_address || place.name || ''
-          if (formatted) onChange(formatted)
-          if (onSelectPlace) {
-            onSelectPlace({
+          if (formatted) onChangeRef.current(formatted)
+          if (onSelectPlaceRef.current) {
+            onSelectPlaceRef.current({
               formattedAddress: formatted,
               name: place.name,
               lat: place.geometry?.location?.lat?.(),
@@ -191,7 +204,7 @@ export function AddressAutocomplete({
       // No public unbind on the Autocomplete widget — leaving the listener
       // attached is fine; the input is cleaned up when the component unmounts.
     }
-  }, [country, onChange, onSelectPlace])
+  }, [country])
 
   return (
     <div className="space-y-1">
