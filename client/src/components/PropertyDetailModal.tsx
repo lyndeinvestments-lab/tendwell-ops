@@ -550,10 +550,10 @@ function FinancialsEnhancement({ property }: { property: any }) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('property_edit_log')
-        .select('field_name, old_value, new_value, created_at')
+        .select('field_name, old_value, new_value, changed_at')
         .eq('property_id', property.id)
         .in('field_name', ['ce_charged', 'cleaner_pay'])
-        .order('created_at', { ascending: true })
+        .order('changed_at', { ascending: true })
       if (error) throw error
       return data || []
     },
@@ -568,7 +568,7 @@ function FinancialsEnhancement({ property }: { property: any }) {
       if (log.field_name === 'ce_charged') ce = parseFloat(log.new_value || '0')
       if (log.field_name === 'cleaner_pay') pay = parseFloat(log.new_value || '0')
       const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
-      points.push({ date: new Date(log.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
+      points.push({ date: new Date(log.changed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
     }
     return points
   }, [editHistory, property])
