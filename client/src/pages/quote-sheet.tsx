@@ -94,6 +94,11 @@ export default function QuoteSheetPage() {
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
+  // Inline "create a client from this quote" flow — small dialog over the
+  // Add Quote dialog. On success we invalidate the contacts query and
+  // auto-select the newly created client on the Quote form.
+  const [newClientOpen, setNewClientOpen] = useState(false)
+  const [newClient, setNewClient] = useState({ full_name: '', email: '', phone: '' })
   const [search, setSearch] = useState('')
   // Quote-sheet negative path: hide quotes that didn't pan out, with a
   // required note. Default view is active-only; operators can flip to
@@ -282,6 +287,35 @@ export default function QuoteSheetPage() {
       setNewProp(EMPTY_PROP)
     },
     onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed'), variant: 'destructive' }),
+  })
+
+  // Inline client-create from the Add Quote dialog: insert into contacts,
+  // refresh the dropdown, and auto-link the new client on the current quote.
+  const { mutate: createClient, isPending: createClientPending } = useMutation({
+    mutationFn: async () => {
+      const full_name = newClient.full_name.trim()
+      if (!full_name) throw new Error('Name is required')
+      const { data, error } = await supabase
+        .from('contacts')
+        .insert({
+          full_name,
+          email: newClient.email.trim() || null,
+          phone: newClient.phone.trim() || null,
+        })
+        .select('id, full_name, email')
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: (created: any) => {
+      if (!created?.id) return
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-contacts'] })
+      setNewProp(prev => ({ ...prev, contact_id: String(created.id) }))
+      toast({ title: 'Client created', description: created.full_name })
+      setNewClient({ full_name: '', email: '', phone: '' })
+      setNewClientOpen(false)
+    },
+    onError: (e: any) => toast({ title: 'Could not create client', description: e?.message ?? 'Unknown error', variant: 'destructive' }),
   })
 
   const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
@@ -841,7 +875,17 @@ export default function QuoteSheetPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Client</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Client</Label>
+                <button
+                  type="button"
+                  onClick={() => setNewClientOpen(true)}
+                  className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
+                  data-testid="button-new-client-from-quote"
+                >
+                  <Plus className="w-2.5 h-2.5" /> New
+                </button>
+              </div>
               <select
                 value={newProp.contact_id}
                 onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
@@ -1134,6 +1178,71 @@ export default function QuoteSheetPage() {
               data-testid="button-confirm-archive"
             >
               {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Archiving…</> : 'Archive quote'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New-client mini dialog (opens over the Add Quote dialog). Fields
+          mirror the contacts table minimum: name required, email + phone
+          optional. On success, contacts query refreshes and the new client
+          is auto-selected on the current Quote form. */}
+      <Dialog open={newClientOpen} onOpenChange={v => { if (!v) { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">New Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Full name *</Label>
+              <Input
+                autoFocus
+                value={newClient.full_name}
+                onChange={e => setNewClient(prev => ({ ...prev, full_name: e.target.value }))}
+                placeholder="Jane Doe"
+                className="h-8 text-sm"
+                data-testid="input-new-client-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Email</Label>
+              <Input
+                type="email"
+                value={newClient.email}
+                onChange={e => setNewClient(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="jane@example.com"
+                className="h-8 text-sm"
+                data-testid="input-new-client-email"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Phone</Label>
+              <Input
+                type="tel"
+                value={newClient.phone}
+                onChange={e => setNewClient(prev => ({ ...prev, phone: e.target.value }))}
+                placeholder="(555) 555-1212"
+                className="h-8 text-sm"
+                data-testid="input-new-client-phone"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              You can fill in company, address, payment method, and more later from the Clients page.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) }} disabled={createClientPending}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => createClient()}
+              disabled={createClientPending || !newClient.full_name.trim()}
+              data-testid="button-save-new-client"
+            >
+              {createClientPending
+                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving…</>
+                : 'Create client'}
             </Button>
           </DialogFooter>
         </DialogContent>
