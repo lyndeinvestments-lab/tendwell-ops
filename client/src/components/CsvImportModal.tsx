@@ -464,10 +464,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     }
 
     // ── Log this import run ──
+    // Column names match the csv_import_log schema: rows_inserted /
+    // rows_skipped (NOT records_imported / records_skipped). The old keys
+    // silently 400'd — this insert is intentionally non-fatal (.catch
+    // swallowed it), so no CSV import has ever been logged until now.
     await supabase.from('csv_import_log').insert({
       file_name: fileName,
-      records_imported: totalInserted,
-      records_skipped: totalSkipped,
+      rows_inserted: totalInserted,
+      rows_skipped: totalSkipped,
       properties_updated: successCount,
       imported_by: user?.label || null,
     }).throwOnError().then(() => {}).catch(() => {}) // non-fatal
