@@ -6,6 +6,7 @@ import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } fro
 import { profitTier, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import {
   DndContext, DragEndEvent, DragOverlay, DragStartEvent,
   PointerSensor, KeyboardSensor, useSensor, useSensors, closestCenter,
@@ -367,14 +368,7 @@ export default function PipelinePage() {
   const [newLeadNotes, setNewLeadNotes] = useState('')
   const [mobileStage, setMobileStage] = useState<string | null>(null)
 
-  const { data: stages, isLoading: stagesLoading } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: stages, isLoading: stagesLoading } = usePipelineStages()
 
   const { data: properties, isLoading: propsLoading, error: propsError } = useQuery({
     queryKey: ['/supabase/pipeline'],

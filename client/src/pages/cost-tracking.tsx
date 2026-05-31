@@ -5,6 +5,7 @@ import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -650,18 +651,9 @@ export default function CostTrackingPage() {
   // in the expanded view so admins can reassign stage without leaving the
   // table. Routed through executeStageTransition below to keep the audit log
   // and onboarding/offboarding workflow tasks aligned with drag-and-drop.
-  const { data: stages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages_master_list'],
-    staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pipeline_stages')
-        .select('id, name, color, slug, display_order')
-        .order('display_order')
-      if (error) throw error
-      return data || []
-    },
-  })
+  // Shared with every other consumer via the usePipelineStages hook —
+  // 1h staleTime, single cache entry across the app.
+  const { data: stages } = usePipelineStages()
 
   // Full contacts list for the inline Client picker in the expanded view.
   const { data: allContacts } = useQuery({

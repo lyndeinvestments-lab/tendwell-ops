@@ -13,6 +13,7 @@ import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle
 import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
@@ -111,14 +112,7 @@ export default function DashboardPage() {
     },
   })
 
-  const { data: stages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: stages } = usePipelineStages()
 
   const { data: transitions, isLoading: transLoading } = useQuery({
     queryKey: ['/supabase/stage_transitions_recent', sinceDate, untilDate],

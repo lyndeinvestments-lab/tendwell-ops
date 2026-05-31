@@ -12,6 +12,7 @@ import { useAuth } from '@/lib/auth'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import Papa from 'papaparse'
@@ -125,13 +126,7 @@ export default function PropertyListPage() {
     },
   })
 
-  const { data: stages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      return data || []
-    },
-  })
+  const { data: stages } = usePipelineStages()
 
   const filtered = useMemo(() => {
     if (!properties) return []
