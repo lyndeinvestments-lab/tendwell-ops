@@ -5,6 +5,7 @@ import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -932,15 +933,7 @@ export function PropertyDetailModal() {
   const stageColor = property?.pipeline_stages?.color || '#6b7280'
   const stageName = property?.pipeline_stages?.name || '—'
 
-  const { data: allStages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      return data || []
-    },
-    enabled: canChangeStage && !!propertyId,
-    staleTime: 60_000,
-  })
+  const { data: allStages } = usePipelineStages({ enabled: canChangeStage && !!propertyId })
 
   const [stagePopoverOpen, setStagePopoverOpen] = useState(false)
   const { mutate: changeStage, isPending: changingStagePending } = useMutation({

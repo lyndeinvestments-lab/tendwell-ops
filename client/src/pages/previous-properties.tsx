@@ -13,6 +13,7 @@ import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { TablePagination } from '@/components/TablePagination'
 import { profitTier } from '@/lib/profit-colors'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
@@ -63,13 +64,7 @@ export default function PreviousPropertiesPage() {
       : <ArrowDown className="inline w-3 h-3 ml-1" />
   }
 
-  const { data: stages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      return data || []
-    },
-  })
+  const { data: stages } = usePipelineStages()
 
   const { mutate: reactivate, isPending: reactivating } = useGuardedMutation('previous-properties', {
     mutationFn: async (property: any) => {

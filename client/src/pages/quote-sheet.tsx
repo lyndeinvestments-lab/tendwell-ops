@@ -13,6 +13,7 @@ import { useToast } from '@/hooks/use-toast'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -136,13 +137,7 @@ export default function QuoteSheetPage() {
       : <ArrowDown className="inline w-3 h-3 ml-1" />
   }
 
-  const { data: stages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data } = await supabase.from('pipeline_stages').select('*').order('display_order')
-      return data || []
-    },
-  })
+  const { data: stages } = usePipelineStages()
 
   const { data: contacts } = useQuery({
     queryKey: ['/supabase/quote-contacts'],

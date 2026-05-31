@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -130,14 +131,8 @@ export default function RevenueReportPage() {
     },
   })
 
-  // Fetch pipeline stages for name lookup
-  const { data: pipelineStages } = useQuery({
-    queryKey: ['/supabase/pipeline_stages'],
-    queryFn: async () => {
-      const { data } = await supabase.from('pipeline_stages').select('id, name')
-      return data || []
-    },
-  })
+  // Fetch pipeline stages for name lookup (shared hook, ~1h staleTime)
+  const { data: pipelineStages } = usePipelineStages()
 
   // Active properties only
   const activeProperties = useMemo(() => {
