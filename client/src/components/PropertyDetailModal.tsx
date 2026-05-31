@@ -1345,9 +1345,9 @@ export function PropertyDetailModal() {
                     Beds: <span className="tabular-nums text-foreground font-medium">{property.number_of_beds}</span>
                   </span>
                 )}
-                {property.number_of_kitchens != null && (
+                {property.kitchens != null && (
                   <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                    Kitchens: <span className="tabular-nums text-foreground font-medium">{property.number_of_kitchens}</span>
+                    Kitchens: <span className="tabular-nums text-foreground font-medium">{property.kitchens}</span>
                   </span>
                 )}
                 {property.hot_tub && (
