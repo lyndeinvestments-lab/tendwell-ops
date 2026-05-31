@@ -202,7 +202,7 @@ export default function QuoteSheetPage() {
         const getVal = (p: any) => {
           const beds = p.number_of_beds || 0
           if (sortKey === 'est_laundry') return p.est_laundry ?? calcLaundry(beds)
-          return p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
+          return p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
         }
         const av = getVal(a)
         const bv = getVal(b)
@@ -358,7 +358,7 @@ export default function QuoteSheetPage() {
       twin_beds: prop.twin_beds != null ? String(prop.twin_beds) : '',
       full_baths: prop.full_baths != null ? String(prop.full_baths) : '',
       half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
-      number_of_kitchens: prop.number_of_kitchens != null ? String(prop.number_of_kitchens) : '',
+      number_of_kitchens: prop.kitchens != null ? String(prop.kitchens) : '',
       hot_tub: prop.hot_tub || false,
       linen_program: prop.linen_program || false,
       sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
@@ -382,8 +382,8 @@ export default function QuoteSheetPage() {
     const beds = Number(p.number_of_beds) || 0
     const laundry = hasEdit ? calcLaundry(beds) : (p.est_laundry ?? calcLaundry(beds))
     const consumables = hasEdit
-      ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens })
-      : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.number_of_kitchens }))
+      ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
+      : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens }))
     const linenProgramCost = p.linen_program ? (beds * 300) / 12 / 4 : 0
     const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
     const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
@@ -736,7 +736,7 @@ export default function QuoteSheetPage() {
                       <ConsumablesFormulaTooltip
                         fullBaths={p.full_baths}
                         halfBaths={p.half_baths}
-                        kitchens={p.number_of_kitchens}
+                        kitchens={p.kitchens}
                         numberOfBeds={p.number_of_beds}
                         hotTub={p.hot_tub}
                         costs={amenityCosts}
