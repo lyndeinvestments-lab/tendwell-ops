@@ -3,6 +3,14 @@ import { supabase } from '@/lib/supabase'
 
 type SettingsMap = Record<string, string>
 
+// app_settings is a small KV reference table edited only via the Settings
+// page, which invalidates this query on save. 1-hour staleTime + 4-hour
+// gcTime means every page that needs settings (cost-tracking, quote-sheet,
+// ac-filters, etc.) gets an instant in-memory hit instead of refetching
+// every 60s as the queryClient default was driving.
+const ONE_HOUR_MS = 60 * 60 * 1000
+const FOUR_HOURS_MS = 4 * ONE_HOUR_MS
+
 export function useAppSettings() {
   const { data, isLoading } = useQuery({
     queryKey: ['/supabase/app_settings'],
@@ -13,7 +21,9 @@ export function useAppSettings() {
       for (const row of data ?? []) map[row.key] = row.value
       return map
     },
-    staleTime: 60_000,
+    staleTime: ONE_HOUR_MS,
+    gcTime: FOUR_HOURS_MS,
+    refetchOnWindowFocus: false,
   })
 
   const qc = useQueryClient()
