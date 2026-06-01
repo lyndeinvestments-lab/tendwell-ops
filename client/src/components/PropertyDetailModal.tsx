@@ -1338,6 +1338,13 @@ export function PropertyDetailModal() {
                 {property.hot_tub && (
                   <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">Hot tub</span>
                 )}
+                {(property.check_in_time || property.check_out_time) && (
+                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                    Check-in: <span className="tabular-nums text-foreground font-medium">{property.check_in_time || '—'}</span>
+                    {' · '}
+                    Check-out: <span className="tabular-nums text-foreground font-medium">{property.check_out_time || '—'}</span>
+                  </span>
+                )}
                 {property.follow_up_date && (
                   <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
                     Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
