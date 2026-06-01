@@ -1,13 +1,21 @@
 import { createClient } from '@supabase/supabase-js'
+import type { Database } from '@shared/database.types'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// Strongly-typed client. With <Database> parameterized, every .from('xyz')
+// call and column reference is checked against the schema at compile time —
+// the silent runtime bugs from days 2-5 (wrong column names, nonexistent
+// tables) would have failed `tsc` instead of returning 400 at runtime.
+// Types generated from the live schema via the Supabase MCP; regenerate via
+//   mcp__supabase__generate_typescript_types  →  shared/database.types.ts
+//
 // Use localStorage so the Supabase session persists across page refreshes and
 // new tabs. The previous in-memory adapter caused every reload to lose the
 // session, which meant any RLS policy that checked auth.uid() returned 0 rows
 // — including the activity_log and property_edit_log tables.
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

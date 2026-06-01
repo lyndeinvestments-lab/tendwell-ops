@@ -9,6 +9,7 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "db:push": "drizzle-kit push",
+    "db:types": "echo 'Regenerate shared/database.types.ts via Supabase MCP (mcp__supabase__generate_typescript_types). Or use the Supabase CLI: supabase gen types typescript --project-id eetsudoksvsmwtiqraot > shared/database.types.ts'",
     "test:e2e": "playwright test --project=chromium",
     "test:e2e:auth": "playwright test --project=setup --headed",
     "test:e2e:ui": "playwright test --project=chromium --ui",
