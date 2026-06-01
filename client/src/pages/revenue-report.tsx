@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useContacts } from '@/hooks/use-contacts'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -83,15 +84,8 @@ export default function RevenueReportPage() {
     },
   })
 
-  // Fetch contacts for client view
-  const { data: contacts } = useQuery({
-    queryKey: ['/supabase/revenue-report-contacts'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('contacts').select('id, full_name, payment_method')
-      if (error) throw error
-      return data || []
-    },
-  })
+  // Fetch contacts for client view — shared via useContacts (single cache)
+  const { data: contacts } = useContacts()
 
   // Match the date window used by stageTransitions below — keeps payload
   // bounded as property_edit_log grows. Sparklines only display the last 8

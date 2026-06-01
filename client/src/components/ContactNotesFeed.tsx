@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
 import { useTaggableUsers } from '@/hooks/use-taggable-users'
+import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { MentionTextarea, MentionBody } from '@/components/MentionInput'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -102,7 +103,7 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
       setDraft('')
       qc.invalidateQueries({ queryKey })
       qc.invalidateQueries({ queryKey: ['/supabase/contact', contactId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
     },
     onError: (e: any) => toast({ title: 'Failed to post note', description: e.message || '', variant: 'destructive' }),
   })

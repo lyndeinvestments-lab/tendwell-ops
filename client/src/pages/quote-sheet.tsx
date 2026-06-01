@@ -14,6 +14,7 @@ import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -139,14 +140,7 @@ export default function QuoteSheetPage() {
 
   const { data: stages } = usePipelineStages()
 
-  const { data: contacts } = useQuery({
-    queryKey: ['/supabase/quote-contacts'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('contacts').select('id, full_name, email').order('full_name')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: contacts } = useContacts()
 
   const quoteStage = stages?.find((s: any) => s.name === 'Quote')
   const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
@@ -304,7 +298,7 @@ export default function QuoteSheetPage() {
     },
     onSuccess: (created: any) => {
       if (!created?.id) return
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-contacts'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       setNewProp(prev => ({ ...prev, contact_id: String(created.id) }))
       toast({ title: 'Client created', description: created.full_name })
       setNewClient({ full_name: '', email: '', phone: '' })

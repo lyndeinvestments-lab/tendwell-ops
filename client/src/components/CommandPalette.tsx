@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useContacts } from '@/hooks/use-contacts'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -68,18 +69,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
     staleTime: 30_000,
   })
 
-  const { data: contacts } = useQuery({
-    queryKey: ['/supabase/command-palette-contacts'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('id, full_name, email, phone')
-        .order('full_name')
-      if (error) throw error
-      return data ?? []
-    },
-    staleTime: 30_000,
-  })
+  const { data: contacts } = useContacts()
 
   // Focus input when opened — use requestAnimationFrame instead of setTimeout
   // to avoid stray keystrokes landing in the input before it's focused
