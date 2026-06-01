@@ -87,7 +87,9 @@ export default function AcFiltersPage() {
 
   const { mutate: updateField } = useGuardedMutation('ac-filters', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', id)
+      // properties.id is bigint at the DB; the handler receives a string-typed
+      // id from React keys / Set<string>, so coerce at the query boundary.
+      const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },
@@ -117,7 +119,7 @@ export default function AcFiltersPage() {
     supabase.from('properties').update({
       last_filter_changed: today,
       next_filter_due: nextDue,
-    }).eq('id', id).then(({ error }) => {
+    }).eq('id', Number(id)).then(({ error }) => {
       if (error) {
         toast({ title: 'Update failed', description: error.message, variant: 'destructive' })
       } else {
@@ -153,7 +155,7 @@ export default function AcFiltersPage() {
     }
     if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
-    const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids)
+    const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids.map(Number))
     if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
@@ -176,7 +178,7 @@ export default function AcFiltersPage() {
     const ids = Array.from(bulkSelected)
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
-    const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids)
+    const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids.map(Number))
     if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
@@ -215,7 +217,7 @@ export default function AcFiltersPage() {
       const name = row.Property || row.property || row.Name || row.name
       if (!name) continue
       const match = properties.find((p: any) => p.name?.toLowerCase() === name.toLowerCase())
-      if (!match) continue
+      if (!match || match.id == null) continue
       const updates: Record<string, any> = {}
       const filterSize = row['Filter Size'] || row.filter_size || row.FilterSize
       const lastChanged = row['Last Changed'] || row.last_filter_changed || row.LastChanged

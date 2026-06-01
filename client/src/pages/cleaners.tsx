@@ -193,12 +193,16 @@ export default function CleanersPage() {
 
   const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
+      // NOTE: `pay_amount` is collected from the UI but isn't a column on
+      // clean_assignments — the typed Supabase client surfaced this on day 14.
+      // Until a migration adds the column, the value is dropped here rather
+      // than silently swallowed by PostgREST. The Cleaner Metrics "Total Pay"
+      // tile has always computed to $0 as a result.
       const { error } = await supabase.from('clean_assignments').insert({
         cleaner_id: assignCleanerId,
-        property_id: assignPropertyId,
+        property_id: Number(assignPropertyId),
         scheduled_date: assignDate,
         status: 'scheduled',
-        pay_amount: assignPay ? parseFloat(assignPay) : null,
       })
       if (error) throw error
     },
@@ -284,14 +288,19 @@ export default function CleanersPage() {
     return map
   }, [cleaners])
 
-  // Assignment stats per cleaner
+  // Assignment stats per cleaner.
+  //
+  // totalPay always evaluates to 0 because clean_assignments.pay_amount
+  // doesn't exist in the schema (typed-supabase codegen surfaced this).
+  // Keeping the field on the shape so consumers aren't broken, but the
+  // accumulation is intentionally omitted until the column is added.
   const cleanerStats = useMemo(() => {
     const map: Record<string, { total: number; totalPay: number }> = {}
     for (const a of (assignments || [])) {
+      if (a.cleaner_id == null) continue
       const cid = a.cleaner_id
       if (!map[cid]) map[cid] = { total: 0, totalPay: 0 }
       map[cid].total++
-      map[cid].totalPay += Number(a.pay_amount || 0)
     }
     return map
   }, [assignments])
