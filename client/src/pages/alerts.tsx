@@ -101,7 +101,7 @@ export function useAlerts() {
           title: `Negative Profit: ${p.name}`,
           description: `Profit is ${(p.profit_percentage || 0).toFixed(1)}% — losing money on this property.`,
           actionRoute: '/cost-tracking',
-          propertyId: p.id,
+          propertyId: String(p.id),
           requiredView: 'cost-tracking',
         })
       }
@@ -115,7 +115,7 @@ export function useAlerts() {
           title: `Missing Financial Data: ${p.name}`,
           description: 'Client Charged is $0 — profit calculations are unreliable until this is set.',
           actionRoute: '/cost-tracking',
-          propertyId: p.id,
+          propertyId: String(p.id),
           requiredView: 'cost-tracking',
         })
       }
@@ -131,7 +131,7 @@ export function useAlerts() {
           category: 'Data Quality',
           title: `Missing Data: ${p.name}`,
           description: `Missing: ${missing.join(', ')}`,
-          propertyId: p.id,
+          propertyId: String(p.id),
           actionRoute: '/master-list',
           requiredView: 'master-list',
         })
@@ -146,7 +146,7 @@ export function useAlerts() {
           title: `AC Filter Overdue: ${p.name}`,
           description: `Filter was due ${p.next_filter_due}`,
           actionRoute: '/ac-filters',
-          propertyId: p.id,
+          propertyId: String(p.id),
           requiredView: 'ac-filters',
         })
       }
@@ -157,10 +157,12 @@ export function useAlerts() {
     if (onboardingTasks) {
       const byProperty: Record<string, { total: number; completed: number; oldest: string }> = {}
       for (const t of onboardingTasks) {
-        if (!byProperty[t.property_id]) byProperty[t.property_id] = { total: 0, completed: 0, oldest: t.created_at }
-        byProperty[t.property_id].total++
-        if (t.is_complete) byProperty[t.property_id].completed++
-        if (t.created_at < byProperty[t.property_id].oldest) byProperty[t.property_id].oldest = t.created_at
+        if (t.property_id == null || t.created_at == null) continue
+        const key = String(t.property_id)
+        if (!byProperty[key]) byProperty[key] = { total: 0, completed: 0, oldest: t.created_at }
+        byProperty[key].total++
+        if (t.is_complete) byProperty[key].completed++
+        if (t.created_at < byProperty[key].oldest) byProperty[key].oldest = t.created_at
       }
       for (const [pid, data] of Object.entries(byProperty)) {
         const pct = data.total > 0 ? data.completed / data.total : 1
@@ -185,7 +187,7 @@ export function useAlerts() {
     if (contacts) {
       for (const c of contacts) {
         const props = (c as any).properties || []
-        if (props.length === 0 && c.created_at < sevenDaysAgo) {
+        if (props.length === 0 && c.created_at != null && c.created_at < sevenDaysAgo) {
           result.push({
             id: `unlinked_contact_${c.id}`,
             severity: 'info',
