@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
+import { useCleaners } from '@/hooks/use-cleaners'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -157,19 +158,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
     staleTime: 60_000,
   })
 
-  const { data: cleaners = [] } = useQuery({
-    queryKey: ['/supabase/inspection-form-cleaners'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cleaners')
-        .select('id, full_name')
-        .order('full_name')
-      if (error) throw error
-      return (data ?? []) as { id: string; full_name: string }[]
-    },
-    enabled: open,
-    staleTime: 60_000,
-  })
+  const { data: cleaners = [] } = useCleaners({ enabled: open })
 
   const filteredProperties = useMemo(() => {
     const q = propertySearch.trim().toLowerCase()

@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
+import { useCleaners } from '@/hooks/use-cleaners'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
@@ -10,14 +11,7 @@ import { Users, AlertTriangle, TrendingUp, CheckSquare } from 'lucide-react'
 export default function CleanerMetricsPage() {
   usePageTitle('Cleaner Metrics')
 
-  const { data: cleaners, isLoading: cleanersLoading } = useQuery({
-    queryKey: ['/supabase/cleaner-metrics-cleaners'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cleaners').select('id, full_name, is_active, pay_rate').eq('is_active', true).order('full_name')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: cleaners, isLoading: cleanersLoading } = useCleaners({ activeOnly: true })
 
   const { data: completedInspections, isLoading: inspectionsLoading } = useQuery({
     queryKey: ['/supabase/cleaner-metrics-inspections'],
