@@ -693,6 +693,11 @@ function buildFormFromProperty(property: any): Record<string, any> {
     full_baths: property.full_baths ?? '',
     square_footage: property.square_footage ?? '',
     guest_count: property.guest_count ?? '',
+    number_of_beds: property.number_of_beds ?? '',
+    kitchens: property.kitchens ?? '',
+    hot_tub: !!property.hot_tub,
+    check_in_time: property.check_in_time ?? '',
+    check_out_time: property.check_out_time ?? '',
     ce_charged: property.ce_charged ?? '',
     cleaner_pay: property.cleaner_pay ?? '',
   }
@@ -784,6 +789,11 @@ export function PropertyDetailModal() {
         updates.full_baths = form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null
         updates.square_footage = form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null
         updates.guest_count = form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null
+        updates.number_of_beds = form.number_of_beds !== '' ? parseFloat(String(form.number_of_beds)) : null
+        updates.kitchens = form.kitchens !== '' ? parseFloat(String(form.kitchens)) : null
+        updates.hot_tub = !!form.hot_tub
+        updates.check_in_time = form.check_in_time || null
+        updates.check_out_time = form.check_out_time || null
       }
       if (canEditFinancials) {
         updates.ce_charged = form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null
@@ -808,7 +818,7 @@ export function PropertyDetailModal() {
     onSuccess: () => {
       // Log each changed field to activity_log
       const changedFields: string[] = []
-      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count')
+      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'number_of_beds', 'kitchens', 'hot_tub', 'check_in_time', 'check_out_time')
       if (canEditFinancials) changedFields.push('ce_charged', 'cleaner_pay')
       if (canEditAccess) changedFields.push(...ACCESS_FIELD_KEYS)
       if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS)
@@ -1288,16 +1298,20 @@ export function PropertyDetailModal() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
-                  { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms, editable: true },
-                  { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false },
-                  { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true },
-                  { label: 'Guests', field: 'guest_count', value: property.guest_count, editable: true },
-                ] as { label: string; field: string; value: any; editable: boolean }[]).map(row => (
+                  { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms, editable: true, inputType: 'number' },
+                  { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false, inputType: 'number' },
+                  { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true, inputType: 'number' },
+                  { label: 'Guests', field: 'guest_count', value: property.guest_count, editable: true, inputType: 'number' },
+                  { label: 'Beds', field: 'number_of_beds', value: property.number_of_beds, editable: true, inputType: 'number' },
+                  { label: 'Kitchens', field: 'kitchens', value: property.kitchens, editable: true, inputType: 'number' },
+                  { label: 'Check-in', field: 'check_in_time', value: property.check_in_time, editable: true, inputType: 'text' },
+                  { label: 'Check-out', field: 'check_out_time', value: property.check_out_time, editable: true, inputType: 'text' },
+                ] as { label: string; field: string; value: any; editable: boolean; inputType: 'number' | 'text' }[]).map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>
                     {isEditing && canEditProperty && row.editable !== false && row.field !== 'full_baths' ? (
                       <Input
-                        type="number"
+                        type={row.inputType}
                         value={form[row.field] ?? ''}
                         onChange={e => setForm(f => ({ ...f, [row.field]: e.target.value }))}
                         className={`mt-0.5 ${fieldCls(row.field)}`}
@@ -1307,7 +1321,7 @@ export function PropertyDetailModal() {
                     ) : inlineField === row.field ? (
                       <Input
                         autoFocus
-                        type="number"
+                        type={row.inputType}
                         value={inlineValue}
                         onChange={e => setInlineValue(e.target.value)}
                         onBlur={() => commitInlineEdit(row.field)}
@@ -1323,34 +1337,53 @@ export function PropertyDetailModal() {
                   </div>
                 ))}
               </div>
-              {/* Additional property facts — non-sensitive chips */}
-              <div className="flex flex-wrap gap-2 text-xs">
-                {property.number_of_beds != null && (
-                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                    Beds: <span className="tabular-nums text-foreground font-medium">{property.number_of_beds}</span>
-                  </span>
-                )}
-                {property.kitchens != null && (
-                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                    Kitchens: <span className="tabular-nums text-foreground font-medium">{property.kitchens}</span>
-                  </span>
-                )}
-                {property.hot_tub && (
-                  <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">Hot tub</span>
-                )}
-                {(property.check_in_time || property.check_out_time) && (
-                  <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                    Check-in: <span className="tabular-nums text-foreground font-medium">{property.check_in_time || '—'}</span>
-                    {' · '}
-                    Check-out: <span className="tabular-nums text-foreground font-medium">{property.check_out_time || '—'}</span>
-                  </span>
-                )}
-                {property.follow_up_date && (
-                  <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
-                    Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
-                  </span>
-                )}
-              </div>
+              {/* Hot tub toggle: only visible when editing (display chip lives in
+                  the chip row below when not editing). Boolean, so a checkbox
+                  is clearer than a numeric/text input in the grid above. */}
+              {isEditing && canEditProperty && (
+                <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!form.hot_tub}
+                    onChange={e => setForm(f => ({ ...f, hot_tub: e.target.checked }))}
+                    className="h-4 w-4"
+                    data-testid="modal-input-hot_tub"
+                  />
+                  <span>Hot tub</span>
+                </label>
+              )}
+              {/* Additional property facts — non-sensitive chips.
+                  Hidden while editing because the same fields live as editable
+                  inputs in the grid above (avoids duplication). */}
+              {!isEditing && (
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {property.number_of_beds != null && (
+                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                      Beds: <span className="tabular-nums text-foreground font-medium">{property.number_of_beds}</span>
+                    </span>
+                  )}
+                  {property.kitchens != null && (
+                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                      Kitchens: <span className="tabular-nums text-foreground font-medium">{property.kitchens}</span>
+                    </span>
+                  )}
+                  {property.hot_tub && (
+                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">Hot tub</span>
+                  )}
+                  {(property.check_in_time || property.check_out_time) && (
+                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
+                      Check-in: <span className="tabular-nums text-foreground font-medium">{property.check_in_time || '—'}</span>
+                      {' · '}
+                      Check-out: <span className="tabular-nums text-foreground font-medium">{property.check_out_time || '—'}</span>
+                    </span>
+                  )}
+                  {property.follow_up_date && (
+                    <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+                      Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Financials snapshot — only for users who already see Financials */}
               {canViewFinancials && (
