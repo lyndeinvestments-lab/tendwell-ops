@@ -7,6 +7,7 @@ import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useCleaners } from '@/hooks/use-cleaners'
+import { useContacts } from '@/hooks/use-contacts'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -648,19 +649,8 @@ export default function CostTrackingPage() {
   // 1h staleTime, single cache entry across the app.
   const { data: stages } = usePipelineStages()
 
-  // Full contacts list for the inline Client picker in the expanded view.
-  const { data: allContacts } = useQuery({
-    queryKey: ['/supabase/contacts_for_client_picker'],
-    staleTime: 60_000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('id, full_name, company, payment_method')
-        .order('full_name')
-      if (error) throw error
-      return data || []
-    },
-  })
+  // Full contacts list for the inline Client picker — shared via useContacts.
+  const { data: allContacts } = useContacts()
 
   // Stage-change mutation routes through executeStageTransition so the audit
   // log + onboarding/offboarding workflow tasks fire identically to a

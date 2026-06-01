@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
+import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { profitColorClass } from '@/lib/profit-colors'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
@@ -185,7 +186,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         changed_by: user?.label ?? null,
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contact-detail', contactId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       toast({ title: 'Saved' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
@@ -220,7 +221,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         changed_by: user?.label ?? null,
         metadata: { company: form.company?.trim() || null, source: form.source || null },
       })
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       toast({ title: 'Client created' })
       onClose()
     },

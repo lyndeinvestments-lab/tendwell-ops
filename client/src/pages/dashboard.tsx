@@ -14,6 +14,7 @@ import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useContacts } from '@/hooks/use-contacts'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
@@ -283,15 +284,8 @@ export default function DashboardPage() {
     enabled: !!stages,
   })
 
-  // CRM data
-  const { data: crmContacts } = useQuery({
-    queryKey: ['/supabase/dashboard-crm-contacts'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('contacts').select('id, payment_method, created_at')
-      if (error) throw error
-      return data || []
-    },
-  })
+  // CRM data — shared via useContacts (single cache across the app)
+  const { data: crmContacts } = useContacts()
 
   const { data: unassignedCount } = useQuery({
     queryKey: ['/supabase/dashboard-unassigned'],

@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { EmptyState } from '@/components/EmptyState'
 import { ContactModal } from '@/components/ContactModal'
+import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { TablePagination } from '@/components/TablePagination'
 import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge } from 'lucide-react'
 import Papa from 'papaparse'
@@ -474,6 +475,8 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
         metadata: { merged_from_id: secondary.id },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      // Also refresh the shared useContacts cache used app-wide.
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       toast({ title: 'Clients merged successfully.' })
     } catch (e: any) {
       toast({ title: 'Merge failed', description: e?.message, variant: 'destructive' })

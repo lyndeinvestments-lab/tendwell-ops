@@ -6,6 +6,7 @@ import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -737,16 +738,7 @@ export function PropertyDetailModal() {
   // Contacts for linking
   const [contactSearch, setContactSearch] = useState('')
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
-  const { data: allContacts } = useQuery({
-    queryKey: ['/supabase/contacts-lite'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('contacts').select('id, full_name, company, payment_method')
-      if (error) throw error
-      return data || []
-    },
-    enabled: !!propertyId,
-    staleTime: 30_000,
-  })
+  const { data: allContacts } = useContacts({ enabled: !!propertyId })
 
   const linkedContact = useMemo(() => {
     if (!property?.contact_id || !allContacts) return null
@@ -767,7 +759,7 @@ export function PropertyDetailModal() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: 'Client updated' })
       setContactPopoverOpen(false)
