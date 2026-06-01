@@ -5,6 +5,7 @@ import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
+import { useCleaners } from '@/hooks/use-cleaners'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -176,14 +177,7 @@ export default function InspectionsPage() {
     },
   })
 
-  const { data: cleaners } = useQuery({
-    queryKey: ['/supabase/cleaners-lite'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cleaners').select('id, full_name').order('full_name')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: cleaners } = useCleaners()
 
   const filtered = useMemo(() => {
     if (!inspections) return []

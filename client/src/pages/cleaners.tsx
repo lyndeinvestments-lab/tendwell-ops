@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
+import { useCleaners, CLEANERS_QUERY_KEY } from '@/hooks/use-cleaners'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -112,14 +113,7 @@ export default function CleanersPage() {
     useSensor(KeyboardSensor),
   )
 
-  const { data: cleaners, isLoading } = useQuery({
-    queryKey: ['/supabase/cleaners'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cleaners').select('*').order('full_name')
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: cleaners, isLoading } = useCleaners()
 
   const { data: assignments } = useQuery({
     queryKey: ['/supabase/all-assignments'],
@@ -182,7 +176,7 @@ export default function CleanersPage() {
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+      qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
       logActivity({
         entity_type: 'cleaner',
         entity_name: newForm.full_name,
@@ -267,7 +261,7 @@ export default function CleanersPage() {
         action: 'delete',
         changed_by: user?.label ?? null,
       })
-      qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+      qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
       toast({ title: 'Cleaner deleted' })
       setDeleteConfirmId(null)
@@ -473,7 +467,7 @@ export default function CleanersPage() {
                                 setInvitingSendingId(null)
                                 if (result.ok) {
                                   await supabase.from('cleaners').update({ invite_sent_at: new Date().toISOString() }).eq('id', c.id)
-                                  qc.invalidateQueries({ queryKey: ['/supabase/cleaners'] })
+                                  qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
                                   toast({ title: 'Invite sent', description: `Email sent to ${c.email}` })
                                 } else {
                                   toast({ title: 'Failed to send invite', description: result.error, variant: 'destructive' })

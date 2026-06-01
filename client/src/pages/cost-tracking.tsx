@@ -6,6 +6,7 @@ import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useCleaners } from '@/hooks/use-cleaners'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -460,15 +461,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
   const [date, setDate] = useState('')
   const [cleanerId, setCleanerId] = useState('')
 
-  const { data: cleaners } = useQuery({
-    queryKey: ['/supabase/cleaners-list'],
-    queryFn: async () => {
-      const { data, error } = await supabase.from('cleaners').select('id, full_name').eq('is_active', true).order('full_name')
-      if (error) throw error
-      return data || []
-    },
-    staleTime: 60_000,
-  })
+  const { data: cleaners } = useCleaners({ activeOnly: true })
 
   const { mutate: addAssignment, isPending } = useGuardedMutation('cost-tracking', {
     mutationFn: async () => {
