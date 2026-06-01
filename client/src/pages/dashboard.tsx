@@ -200,6 +200,14 @@ export default function DashboardPage() {
       const activeStageId = stages?.find((s: any) => s.name === 'Active')?.id
       const onboardingStageId = stages?.find((s: any) => s.name === 'Onboarding')?.id
 
+      // The `enabled: !!stages` gate doesn't tell TS that the Active/Onboarding
+      // stages exist within the loaded list. Explicit early return both
+      // satisfies the typed Supabase client and preserves today's behavior
+      // (no metrics shown if a stage is missing).
+      if (activeStageId == null || onboardingStageId == null) {
+        return { avgDays: null, conversions: 0, currentAvgDays: null, currentCount: 0 }
+      }
+
       // 1. Onboarding → Active conversions in the period
       const { data: toActive, error: e1 } = await supabase
         .from('stage_transitions')
@@ -211,7 +219,9 @@ export default function DashboardPage() {
 
       let conversionAvg: number | null = null
       const conversionCount = (toActive || []).length
-      const convertedPropIds = (toActive || []).map((t: any) => t.property_id)
+      const convertedPropIds = (toActive || [])
+        .map(t => t.property_id)
+        .filter((id): id is number => id != null)
       if (convertedPropIds.length > 0) {
         const { data: toOnboardingForConverted, error: e2 } = await supabase
           .from('stage_transitions')
@@ -221,13 +231,16 @@ export default function DashboardPage() {
         if (e2) throw e2
         const onboardMap: Record<string, string> = {}
         for (const t of (toOnboardingForConverted || [])) {
-          if (!onboardMap[t.property_id] || t.created_at > onboardMap[t.property_id]) {
-            onboardMap[t.property_id] = t.created_at
+          if (t.property_id == null || t.created_at == null) continue
+          const key = String(t.property_id)
+          if (!onboardMap[key] || t.created_at > onboardMap[key]) {
+            onboardMap[key] = t.created_at
           }
         }
         let totalDays = 0, count = 0
         for (const t of (toActive || [])) {
-          const start = onboardMap[t.property_id]
+          if (t.property_id == null || t.created_at == null) continue
+          const start = onboardMap[String(t.property_id)]
           if (start) {
             const days = (new Date(t.created_at).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
             if (days >= 0) { totalDays += days; count++ }
@@ -251,7 +264,7 @@ export default function DashboardPage() {
         .eq('stage_id', onboardingStageId)
       const current = currentOnboarding || []
       if (current.length > 0) {
-        const ids = current.map((p: any) => p.id)
+        const ids = current.map(p => p.id).filter((id): id is number => id != null)
         const { data: lastTransitions } = await supabase
           .from('stage_transitions')
           .select('property_id, created_at')
@@ -259,14 +272,17 @@ export default function DashboardPage() {
           .eq('to_stage_id', onboardingStageId)
         const latestByProp: Record<string, string> = {}
         for (const t of (lastTransitions || [])) {
-          if (!latestByProp[t.property_id] || t.created_at > latestByProp[t.property_id]) {
-            latestByProp[t.property_id] = t.created_at
+          if (t.property_id == null || t.created_at == null) continue
+          const key = String(t.property_id)
+          if (!latestByProp[key] || t.created_at > latestByProp[key]) {
+            latestByProp[key] = t.created_at
           }
         }
         const now = Date.now()
         let total = 0, n = 0
         for (const p of current) {
-          const start = latestByProp[p.id] ?? p.created_at
+          if (p.id == null) continue
+          const start = latestByProp[String(p.id)] ?? p.created_at
           if (!start) continue
           const days = (now - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
           if (days >= 0) { total += days; n++ }
@@ -299,7 +315,7 @@ export default function DashboardPage() {
   const crmStats = useMemo(() => {
     if (!crmContacts) return { total: 0, new30: 0, paymentBreakdown: [] as { method: string; count: number }[] }
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const new30 = crmContacts.filter(c => c.created_at >= thirtyDaysAgo).length
+    const new30 = crmContacts.filter(c => c.created_at != null && c.created_at >= thirtyDaysAgo).length
     const payMap: Record<string, number> = {}
     for (const c of crmContacts) {
       const m = c.payment_method || 'Unknown'
