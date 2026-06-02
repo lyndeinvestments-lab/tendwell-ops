@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, writeFile } from "fs/promises";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -35,6 +35,25 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // Stamp the service worker with a per-build hash so CACHE_NAME rotates on
+  // every deploy. The activate handler already purges caches whose name
+  // doesn't match — combined, this means each deploy auto-evicts old caches.
+  // Best-effort: a missing file or absent placeholder is logged but does
+  // not fail the build.
+  try {
+    const swPath = "dist/public/sw.js";
+    const sw = await readFile(swPath, "utf-8");
+    const hash = String(Date.now()).slice(-10);
+    if (sw.includes("__BUILD_HASH__")) {
+      await writeFile(swPath, sw.replaceAll("__BUILD_HASH__", hash));
+      console.log(`stamped sw.js with build hash ${hash}`);
+    } else {
+      console.warn("sw.js did not contain __BUILD_HASH__ placeholder; cache name unchanged");
+    }
+  } catch (e) {
+    console.warn("could not stamp sw.js:", (e as Error).message);
+  }
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
