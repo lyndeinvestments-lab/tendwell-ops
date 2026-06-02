@@ -120,6 +120,10 @@ export default function InspectionsPage() {
     onSuccess: () => {
       toast({ title: 'Inspection deleted' })
       queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
+      // Matches InspectionFormSheet — the dashboard's 90-day aggregate is
+      // a separate cache entry, so it needs its own invalidation when a
+      // row disappears.
+      queryClient.invalidateQueries({ queryKey: ['/supabase/dashboard-inspections'] })
       setActiveDetail(null)
       setEditing(null)
       setFormOpen(false)

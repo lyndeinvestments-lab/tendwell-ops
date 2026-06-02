@@ -132,6 +132,11 @@ export default function DashboardPage() {
 
   const { data: transitions30, isLoading: trans30Loading } = useQuery({
     queryKey: ['/supabase/transitions-period', sinceDate, untilDate],
+    // 500-row aggregate over a date range — used for period-level counts
+    // and trends, not "what changed in the last minute". The 60s global
+    // default forces a refetch on every back-to-dashboard navigation;
+    // 5 min skips that without making the trend perceptibly stale.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('stage_transitions')
@@ -149,6 +154,15 @@ export default function DashboardPage() {
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
   const { data: recentInspections } = useQuery({
     queryKey: ['/supabase/dashboard-inspections'],
+    // 90-day inspection feed consumed as an aggregate (avg score, count).
+    // Inspections are logged a handful per day, so a 2 min window is
+    // imperceptibly stale for the Quality widgets while skipping refetch
+    // on rapid navigation. NOTE: today's Inspections page only invalidates
+    // the `inspections-all` key, not this one — so the dashboard already
+    // shows stale data after a new log until window-focus refetch fires;
+    // bumping from 60s → 2 min extends that window. See PR for the
+    // accompanying invalidation registration that closes the gap.
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('inspections')
@@ -196,6 +210,13 @@ export default function DashboardPage() {
 
   const { data: onboardingVelocity } = useQuery({
     queryKey: ['/supabase/dashboard-velocity', sinceDate, untilDate],
+    // Multi-query rollup over a date range (avg onboarding days, current
+    // active count, conversion count). Pure aggregate — a 5 min cache
+    // window is invisible at the user-facing precision (days→weeks) but
+    // skips the most expensive query block on this page when navigating
+    // back to the dashboard. The shared property-invalidation registry
+    // already covers this key on any property mutation.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const activeStageId = stages?.find((s: any) => s.name === 'Active')?.id
       const onboardingStageId = stages?.find((s: any) => s.name === 'Onboarding')?.id
@@ -305,6 +326,10 @@ export default function DashboardPage() {
 
   const { data: unassignedCount } = useQuery({
     queryKey: ['/supabase/dashboard-unassigned'],
+    // Single COUNT(*) — slow-moving operational figure. 5 min staleness
+    // is invisible at the displayed precision. Already in the property
+    // invalidation registry, so any property mutation refreshes it.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { count, error } = await supabase.from('properties').select('*', { count: 'exact', head: true }).is('contact_id', null)
       if (error) return 0

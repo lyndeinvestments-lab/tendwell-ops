@@ -286,6 +286,10 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
           : 'Inspection logged',
       })
       queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
+      // Dashboard Quality widgets read from a separate 90-day aggregate;
+      // bump it too so a fresh inspection log surfaces on /dashboard
+      // immediately instead of waiting for the cache window to expire.
+      queryClient.invalidateQueries({ queryKey: ['/supabase/dashboard-inspections'] })
       onOpenChange(false)
     },
     onError: (e: Error) => {
