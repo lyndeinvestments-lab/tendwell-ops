@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
@@ -266,6 +267,12 @@ export default function InspectionsPage() {
 
       qc.invalidateQueries({ queryKey: ['/supabase/property-verification-list'] })
       qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+      // Verification can write arbitrary properties.<field> updates above
+      // (line 228); if any changed, every property-derived cache should
+      // refresh. Gated on actual changes — invalidate triggers refetch
+      // of mounted active queries regardless of staleTime, so calling it
+      // on a confirm-with-no-changes would be wasteful.
+      if (Object.keys(changes).length > 0) invalidateAllPropertyQueries(qc)
       toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
       setIsDirty(false)
       setActiveProperty(null)

@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -303,10 +304,14 @@ export default function ActivityFeedPage() {
         .update({ [fieldName]: revertValue })
         .eq('id', propertyId)
       if (error) throw error
+      // Reverting writes an arbitrary properties.<field> column back to
+      // its previous value — could be a financial, a stage, an address.
+      // Same blast radius as any other property edit; registry walk
+      // covers every derived cache (dashboards, master-list, pro-forma,
+      // revenue, previous-properties, linen-tracker, etc.).
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: `Reverted ${formatFieldName(fieldName)} to "${oldValue}"` })
     } catch (e: any) {
       toast({ title: 'Revert failed', description: e?.message, variant: 'destructive' })
