@@ -53,7 +53,7 @@ function VerificationHistory({ propertyId }: { propertyId: string }) {
       const { data, error } = await supabase
         .from('property_verifications')
         .select('*')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('verified_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -96,7 +96,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       const { data, error } = await supabase
         .from('inspections')
         .select('*')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('inspected_at', { ascending: false })
       if (error) throw error
       return data || []
@@ -120,7 +120,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
         setUploading(false)
       }
       const { error } = await supabase.from('inspections').insert({
-        property_id: propertyId,
+        property_id: Number(propertyId),
         overall_score: form.overall,
         cleanliness_score: form.cleanliness,
         linens_score: form.linens,
@@ -256,7 +256,7 @@ function AssignmentsTab({ propertyId }: { propertyId: string }) {
       const { data, error } = await supabase
         .from('clean_assignments')
         .select('*, cleaners(full_name)')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('scheduled_date', { ascending: false })
       if (error) throw error
       return data || []
@@ -303,7 +303,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
       const { data, error } = await supabase
         .from('property_photos')
         .select('*')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('sort_order')
       if (error) throw error
       return data || []
@@ -336,7 +336,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
         const { data: urlData } = supabase.storage.from('property-photos').getPublicUrl(path)
         const currentCount = photos?.length ?? 0
         await supabase.from('property_photos').insert({
-          property_id: propertyId,
+          property_id: Number(propertyId),
           photo_url: urlData.publicUrl,
           sort_order: currentCount,
         })
@@ -408,14 +408,14 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
       const { data, error } = await supabase
         .from('property_supplies')
         .select('*')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('item_name')
       if (error) throw error
       // Auto-seed defaults if empty
       if (data && data.length === 0) {
-        const rows = DEFAULT_SUPPLIES.map(name => ({ property_id: propertyId, item_name: name, par_level: 2, current_qty: 2 }))
+        const rows = DEFAULT_SUPPLIES.map(name => ({ property_id: Number(propertyId), item_name: name, par_level: 2, current_qty: 2 }))
         await supabase.from('property_supplies').insert(rows)
-        const { data: seeded } = await supabase.from('property_supplies').select('*').eq('property_id', propertyId).order('item_name')
+        const { data: seeded } = await supabase.from('property_supplies').select('*').eq('property_id', Number(propertyId)).order('item_name')
         return seeded || []
       }
       return data || []
@@ -434,7 +434,7 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
   const { mutate: addItem, isPending: adding } = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from('property_supplies').insert({
-        property_id: propertyId,
+        property_id: Number(propertyId),
         item_name: newItem.trim(),
         par_level: 1,
         current_qty: 0,
@@ -570,7 +570,9 @@ function FinancialsEnhancement({ property }: { property: any }) {
       if (log.field_name === 'ce_charged') ce = parseFloat(log.new_value || '0')
       if (log.field_name === 'cleaner_pay') pay = parseFloat(log.new_value || '0')
       const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
-      points.push({ date: new Date(log.changed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
+      if (log.changed_at) {
+        points.push({ date: new Date(log.changed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
+      }
     }
     return points
   }, [editHistory, property])
@@ -732,7 +734,7 @@ export function PropertyDetailModal() {
       const { data, error } = await supabase
         .from('properties')
         .select('*, pipeline_stages!properties_stage_id_fkey(id, name, color)')
-        .eq('id', propertyId!)
+        .eq('id', Number(propertyId!))
         .single()
       if (error) throw error
       return data
@@ -759,7 +761,7 @@ export function PropertyDetailModal() {
 
   const { mutate: linkContact } = useMutation({
     mutationFn: async (contactId: string | null) => {
-      const { error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', propertyId!)
+      const { error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', Number(propertyId!))
       if (error) throw error
     },
     onSuccess: () => {
@@ -812,7 +814,7 @@ export function PropertyDetailModal() {
         updates.last_filter_changed = form.last_filter_changed || null
       }
       if (Object.keys(updates).length === 0) return
-      const { error } = await supabase.from('properties').update(updates).eq('id', propertyId!)
+      const { error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!))
       if (error) throw error
     },
     onSuccess: () => {
@@ -824,7 +826,7 @@ export function PropertyDetailModal() {
       if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS)
       if (canEditAC) changedFields.push(...AC_FIELD_KEYS)
       for (const field of changedFields) {
-        const oldVal = property?.[field] ?? null
+        const oldVal = (property as any)?.[field] ?? null
         const newVal = form[field] !== '' ? form[field] : null
         if (String(oldVal ?? '') !== String(newVal ?? '')) {
           logPropertyEdit(propertyId!, field, oldVal, newVal, property?.name ?? null, user?.label ?? null)
@@ -846,7 +848,7 @@ export function PropertyDetailModal() {
     mutationFn: async ({ field, value }: { field: string; value: any }) => {
       const numFields = ['bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', ...LINEN_FIELD_KEYS]
       const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
-      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', propertyId!)
+      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', Number(propertyId!))
       if (error) throw error
       return { field, dbValue }
     },
@@ -855,7 +857,7 @@ export function PropertyDetailModal() {
       logPropertyEdit(
         propertyId!,
         field,
-        property?.[field] ?? null,
+        (property as any)?.[field] ?? null,
         dbValue ?? null,
         property?.name ?? null,
         user?.label ?? null,
@@ -873,7 +875,7 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleLinenProgram } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', propertyId!)
+      const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!))
       if (error) throw error
       return next
     },
@@ -949,7 +951,7 @@ export function PropertyDetailModal() {
         fromStageName: fromStage?.name || '',
         toStageId: Number(toStage.id),
         toStageName: toStage.name,
-        changedBy: user?.label || user?.google_email || 'unknown',
+        changedBy: user?.label || (user as any)?.google_email || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
     },
@@ -1330,7 +1332,7 @@ export function PropertyDetailModal() {
                       />
                     ) : (
                       <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''} ${canEditProperty && row.editable !== false ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                         onClick={() => row.editable !== false && startInlineEdit(row.field, property[row.field], canEditProperty)}>
+                         onClick={() => row.editable !== false && startInlineEdit(row.field, (property as any)[row.field], canEditProperty)}>
                         {row.value ?? '—'}
                       </p>
                     )}
@@ -1608,9 +1610,9 @@ export function PropertyDetailModal() {
                       ) : (
                         <span
                           className={`text-sm font-medium ${canEditLinens ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors inline-block' : ''}`}
-                          onClick={() => startInlineEdit(col.key, property[col.key], canEditLinens)}
+                          onClick={() => startInlineEdit(col.key, (property as any)[col.key], canEditLinens)}
                         >
-                          {property[col.key] ?? '—'}
+                          {(property as any)[col.key] ?? '—'}
                         </span>
                       )}
                     </div>
@@ -1751,7 +1753,7 @@ export function PropertyDetailModal() {
                               {property[k] || '—'}
                             </span>
                           ) : (
-                            <RevealCell value={property[k]} field={k} id={property.id} />
+                            <RevealCell value={(property as any)[k]} field={k} id={String(property.id)} />
                           )}
                         </div>
                       )
@@ -1768,13 +1770,13 @@ export function PropertyDetailModal() {
 
             {/* ── Verification Tab ── */}
             <TabsContent value="inspections" className="mt-3">
-              <VerificationHistory propertyId={property.id} />
+              <VerificationHistory propertyId={String(property.id)} />
             </TabsContent>
 
             {/* ── Assignments Tab ── */}
             {/* ── Photos Tab ── */}
             <TabsContent value="photos" className="mt-3">
-              <PhotosTab propertyId={property.id} />
+              <PhotosTab propertyId={String(property.id)} />
             </TabsContent>
 
             {/* Supplies is now inside Operations tab */}
