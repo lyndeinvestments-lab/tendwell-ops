@@ -70,7 +70,7 @@ export default function LinenTrackerPage() {
 
   const { mutate: updateLinen } = useGuardedMutation('linen-tracker', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: any; oldValue?: any; propName?: string }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
+      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },
@@ -138,6 +138,7 @@ export default function LinenTrackerPage() {
     }
     let ok = 0
     for (const p of candidates) {
+      if (p.id == null) continue
       const c = calculateLinens({
         guest_count: p.guest_count,
         king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds,

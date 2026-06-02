@@ -72,7 +72,9 @@ export async function logActivity(entry: ActivityLogEntry): Promise<void> {
       old_value: entry.old_value != null ? String(entry.old_value) : null,
       new_value: entry.new_value != null ? String(entry.new_value) : null,
       changed_by: entry.changed_by ?? null,
-      metadata: entry.metadata ?? null,
+      // activity_log.metadata is JSONB; Record<string, unknown> isn't assignable
+      // to the codegen-derived Json type. Cast at the boundary.
+      metadata: (entry.metadata ?? null) as any,
     })
     if (error) {
       console.warn('[logActivity] insert failed:', error.message)
@@ -141,7 +143,7 @@ export async function logPropertyEdit(
       const { data } = await supabase
         .from('properties')
         .select('name')
-        .eq('id', propertyId)
+        .eq('id', Number(propertyId))
         .single()
       resolvedName = data?.name ?? null
     } catch {
@@ -169,7 +171,7 @@ export async function logPropertyEdit(
   // Note: property_edit_log may not have changed_by column; keep insert minimal
   try {
     const { error } = await supabase.from('property_edit_log').insert({
-      property_id: propertyId,
+      property_id: Number(propertyId),
       field_name: fieldName,
       old_value: oldValue != null ? String(oldValue) : null,
       new_value: newValue != null ? String(newValue) : null,

@@ -747,8 +747,10 @@ function CustomViewsDialog({
     mutationFn: async ({ customViews, customPerms }: { customViews: string[] | null; customPerms: Record<string, PagePermission> | null }) => {
       const { error } = await supabase
         .from('app_users')
-        .update({ custom_views: customViews, custom_permissions: customPerms })
-        .eq('id', targetUser.id)
+        // custom_views & custom_permissions are jsonb; codegen-derived Json
+        // type doesn't accept the structured shapes directly.
+        .update({ custom_views: customViews as any, custom_permissions: customPerms as any })
+        .eq('id', Number(targetUser.id))
       if (error) throw error
     },
     onSuccess: () => {
@@ -932,7 +934,7 @@ function UsersSection() {
 
   const { mutateAsync: updateRoleAsync } = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: string }) => {
-      const { error } = await supabase.from('app_users').update({ role }).eq('id', id)
+      const { error } = await supabase.from('app_users').update({ role }).eq('id', Number(id))
       if (error) throw error
     },
   })
@@ -962,7 +964,7 @@ function UsersSection() {
 
   const { mutate: deleteUser, isPending: deleting } = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('app_users').delete().eq('id', id)
+      const { error } = await supabase.from('app_users').delete().eq('id', Number(id))
       if (error) throw error
     },
     onSuccess: () => {
@@ -1298,7 +1300,8 @@ function NotificationsSection() {
 
   const prefsByUser = useMemo(() => {
     const m = new Map<string, any>()
-    for (const p of (prefsRows || [])) m.set(p.user_id, p)
+    // notification_preferences.user_id is integer; coerce for stable string keys.
+    for (const p of (prefsRows || [])) m.set(String(p.user_id), p)
     return m
   }, [prefsRows])
 

@@ -45,7 +45,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
       let q = supabase
         .from('property_notes')
         .select('*')
-        .eq('property_id', propertyId)
+        .eq('property_id', Number(propertyId))
         .order('created_at', { ascending: false })
       if (context) q = q.eq('context', context)
       const { data, error } = await q
@@ -62,7 +62,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
       const { data: inserted, error } = await supabase
         .from('property_notes')
         .insert({
-          property_id: propertyId,
+          property_id: Number(propertyId),
           content: trimmed,
           context: context ?? null,
           created_by: user?.label ?? null,
@@ -76,7 +76,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
       // Only general notes map to properties.notes; linen context maps to linen_notes.
       const legacyCol = context === 'linen' ? 'linen_notes' : (context ? null : 'notes')
       if (legacyCol) {
-        await supabase.from('properties').update({ [legacyCol]: trimmed }).eq('id', propertyId)
+        await supabase.from('properties').update({ [legacyCol]: trimmed }).eq('id', Number(propertyId))
       }
 
       // Fire @-mention email notifications (best-effort — don't block the user)
@@ -88,7 +88,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
           const { data: prop } = await supabase
             .from('properties')
             .select('name')
-            .eq('id', propertyId)
+            .eq('id', Number(propertyId))
             .single()
           const propName = prop?.name || `#${propertyId}`
           const ctxLabel = context ? ` (${context})` : ''

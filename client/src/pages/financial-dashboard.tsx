@@ -187,7 +187,7 @@ export default function FinancialDashboardPage() {
         .eq('stage_name', 'Active')
         .limit(5000)
       if (error) throw error
-      return (data || []) as Property[]
+      return (data || []) as unknown as Property[]
     },
   })
 

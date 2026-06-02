@@ -206,11 +206,13 @@ export default function ActivityFeedPage() {
         .limit(500)
       if (result.error) {
         console.warn('property_edit_log FK join failed, trying without join:', result.error.message)
-        result = await supabase
+        // Fallback shape doesn't include the joined `properties` field, but
+        // normaliseRow tolerates that. Cast so the two branches share a type.
+        result = (await supabase
           .from('property_edit_log')
           .select('*')
           .order('changed_at', { ascending: false })
-          .limit(500)
+          .limit(500)) as typeof result
       }
       if (result.error) {
         console.warn('property_edit_log query error:', result.error.message)
