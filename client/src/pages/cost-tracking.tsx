@@ -467,7 +467,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
   const { mutate: addAssignment, isPending } = useGuardedMutation('cost-tracking', {
     mutationFn: async () => {
       const { error } = await supabase.from('clean_assignments').insert({
-        property_id: propertyId,
+        property_id: Number(propertyId),
         cleaner_id: cleanerId,
         scheduled_date: date,
         status: 'scheduled',
@@ -770,7 +770,7 @@ export default function CostTrackingPage() {
 
   const { mutate: updateProperty } = useGuardedMutation('cost-tracking', {
     mutationFn: async ({ id, field, value }: { id: string; field: string; value: number | string | boolean | null }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
+      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', Number(id))
       if (error) throw error
     },
     onMutate: ({ id, field, value }) => {
@@ -832,7 +832,7 @@ export default function CostTrackingPage() {
       const { error } = await supabase
         .from('properties')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', id)
+        .eq('id', Number(id))
       if (error) throw error
     },
     onSuccess: (_, id) => {
@@ -857,7 +857,7 @@ export default function CostTrackingPage() {
   const resetRow = useCallback(async (id: string) => {
     const { error } = await supabase.from('properties')
       .update({ est_laundry: null, est_consumables: null })
-      .eq('id', id)
+      .eq('id', Number(id))
     if (error) { toast({ title: 'Reset failed', description: error.message, variant: 'destructive' }); return }
     invalidateAllPropertyQueries(qc)
     toast({ title: 'Row reset to defaults' })
@@ -948,7 +948,7 @@ export default function CostTrackingPage() {
     try {
       await Promise.all(
         Object.entries(bulkChanges).map(([id, value]) =>
-          supabase.from('properties').update({ cleaner_pay: value }).eq('id', id).then(({ error }) => { if (error) throw error })
+          supabase.from('properties').update({ cleaner_pay: value }).eq('id', Number(id)).then(({ error }) => { if (error) throw error })
         )
       )
       invalidateAllPropertyQueries(qc)

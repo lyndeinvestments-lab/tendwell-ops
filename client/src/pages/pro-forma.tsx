@@ -43,7 +43,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
     mutationFn: async ({ freq, cleans }: { freq: string; cleans?: number | null }) => {
       const update: Record<string, unknown> = { cleaning_frequency: freq }
       if (cleans != null) update.avg_cleans_per_month = cleans
-      const { error } = await supabase.from('properties').update(update).eq('id', id)
+      const { error } = await supabase.from('properties').update(update).eq('id', Number(id))
       if (error) throw error
     },
     onSuccess: () => {
@@ -132,7 +132,7 @@ function WhatIfPopover({
       const { error } = await supabase
         .from('properties')
         .update({ [field]: parsed })
-        .eq('id', id)
+        .eq('id', Number(id))
       if (error) throw error
     },
     onSuccess: () => {
@@ -286,7 +286,7 @@ export default function ProFormaPage() {
       const { data, error } = await supabase
         .from('cleaning_history')
         .select('id, clean_date, cleaner_name, created_at')
-        .eq('property_id', historyProperty!.id)
+        .eq('property_id', Number(historyProperty!.id))
         .order('clean_date', { ascending: false })
       if (error) throw error
       return data || []
@@ -355,7 +355,7 @@ export default function ProFormaPage() {
 
   const { mutate: updateDate } = useGuardedMutation('pro-forma', {
     mutationFn: async ({ id, value }: { id: string; value: string }) => {
-      const { error } = await supabase.from('properties').update({ first_clean_date: value || null }).eq('id', id)
+      const { error } = await supabase.from('properties').update({ first_clean_date: value || null }).eq('id', Number(id))
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] }),
@@ -367,7 +367,7 @@ export default function ProFormaPage() {
       const { error } = await supabase
         .from('properties')
         .update({ cleaning_frequency: freq })
-        .in('id', ids)
+        .in('id', ids.map(Number))
       if (error) throw error
     },
     onSuccess: () => {
