@@ -1857,6 +1857,8 @@ export type Database = {
           breezeway_name: string | null
           ce_charged: number | null
           ce_per_sq: number | null
+          check_in_time: string
+          check_out_time: string
           cleaner_pay: number | null
           cleaning_frequency: string | null
           contact_id: string | null
@@ -1930,6 +1932,8 @@ export type Database = {
           breezeway_name?: string | null
           ce_charged?: number | null
           ce_per_sq?: number | null
+          check_in_time?: string
+          check_out_time?: string
           cleaner_pay?: number | null
           cleaning_frequency?: string | null
           contact_id?: string | null
@@ -2003,6 +2007,8 @@ export type Database = {
           breezeway_name?: string | null
           ce_charged?: number | null
           ce_per_sq?: number | null
+          check_in_time?: string
+          check_out_time?: string
           cleaner_pay?: number | null
           cleaning_frequency?: string | null
           contact_id?: string | null
@@ -3179,6 +3185,8 @@ export type Database = {
           breezeway_name: string | null
           ce_charged: number | null
           ce_per_sq: number | null
+          check_in_time: string
+          check_out_time: string
           cleaner_pay: number | null
           cleaning_frequency: string | null
           contact_id: string | null
