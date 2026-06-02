@@ -55,6 +55,9 @@ function useRolePermissions() {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
     queryKey: ['/supabase/role-permissions'],
+    // Role permissions only change when an admin edits this very page —
+    // skip redundant fetches for 10 min. Mutations call invalidateQueries.
+    staleTime: 10 * 60 * 1000,
     queryFn: async () => {
       const { data: row } = await supabase
         .from('app_settings')
@@ -583,6 +586,9 @@ function OnboardingTemplateSection() {
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ['/supabase/onboarding-templates'],
+    // Templates change only via this same admin UI; 10 min keeps it fresh
+    // without re-fetching on every settings tab switch. Mutations invalidate.
+    staleTime: 10 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('onboarding_task_templates')
@@ -893,6 +899,10 @@ function UsersSection() {
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['/supabase/settings-users'],
+    // app_users full row changes only via the admin invite/edit flows on
+    // this page; 5 min is well inside an admin session and mutations
+    // (invite/remove/role-change) all invalidate this key.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_users')
@@ -1271,6 +1281,9 @@ function NotificationsSection() {
   // All users (admins can edit any; non-admins only see their own row)
   const { data: users } = useQuery({
     queryKey: ['/supabase/notif-users'],
+    // app_users list — admin-only churn; 5 min is safe and matches
+    // settings-users cadence above.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase
         .from('app_users')
@@ -1283,6 +1296,10 @@ function NotificationsSection() {
   // role permissions to compute allowed views per user
   const { data: rolePerms } = useQuery({
     queryKey: ['/supabase/role-permissions'],
+    // Same key as the role-perms query at line 56 — React Query will
+    // dedupe; staleTime must match so they share the same freshness
+    // window (10 min).
+    staleTime: 10 * 60 * 1000,
     queryFn: async () => {
       const { data: row } = await supabase.from('app_settings').select('value').eq('key', 'role_permissions').single()
       if (!row?.value) return buildDefaultRolePermissions()
@@ -1292,6 +1309,10 @@ function NotificationsSection() {
 
   const { data: prefsRows } = useQuery({
     queryKey: ['/supabase/notif-prefs'],
+    // Notification preferences are edited row-at-a-time via the same UI;
+    // 2 min is short enough to feel live in the admin matrix and skips
+    // refetch on tab switches. Mutations invalidate this key.
+    staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase.from('notification_preferences').select('*')
       return data || []
@@ -1457,6 +1478,10 @@ function NotificationsSection() {
 function NotificationLogViewer() {
   const { data: logs, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['/supabase/notif-log'],
+    // High-churn log; viewer has an explicit Refresh button (refetch). Keep
+    // staleTime small (30s) so opening the tab a moment later doesn't
+    // re-fetch unnecessarily, but anything older auto-refreshes.
+    staleTime: 30 * 1000,
     queryFn: async () => {
       const { data } = await supabase
         .from('notification_log')
@@ -1550,6 +1575,9 @@ function WorkflowTemplatesSection() {
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ['/supabase/workflow-templates'],
+    // Workflow templates are edited only via this section; 10 min skips
+    // refetch on tab toggles within an admin session. Mutations invalidate.
+    staleTime: 10 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase.from('stage_workflow_templates').select('*').order('from_stage').order('to_stage').order('sort_order')
       return data || []
@@ -1558,6 +1586,9 @@ function WorkflowTemplatesSection() {
 
   const { data: users } = useQuery({
     queryKey: ['/supabase/workflow-users'],
+    // app_users (id, label) — admin-only churn; 5 min matches notif-users
+    // and settings-users above.
+    staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const { data } = await supabase.from('app_users').select('id, label').order('label')
       return data || []
