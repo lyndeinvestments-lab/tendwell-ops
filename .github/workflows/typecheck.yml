@@ -21,3 +21,7 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run check
+      # Vite build doesn't typecheck (SWC transpilation), so verify it
+      # separately. Catches missing/broken imports, asset path issues,
+      # and any non-type build-time errors.
+      - run: npm run build
