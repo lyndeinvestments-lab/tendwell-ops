@@ -1,0 +1,23 @@
+name: typecheck
+
+# Locks in the day-20 win: the codebase reached 0 TS errors after 6 days of
+# triage following the typed-supabase codegen (PR #269). This workflow fails
+# any push / PR that would regress past zero, so the day-2-5 silent-bug class
+# stays caught at compile time forever.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run check

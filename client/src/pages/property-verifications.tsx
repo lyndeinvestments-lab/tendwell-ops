@@ -450,7 +450,7 @@ export default function InspectionsPage() {
       return [
         p.name || '',
         status === 'verified' ? 'Verified' : status === 'due' ? 'Due' : 'Never',
-        v ? format(new Date(v.verified_at), 'yyyy-MM-dd') : '',
+        v?.verified_at ? format(new Date(v.verified_at), 'yyyy-MM-dd') : '',
         v?.verified_by || '',
         getDaysSince(p) ?? '',
       ]
