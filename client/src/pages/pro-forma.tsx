@@ -16,6 +16,7 @@ import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, 
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { TablePagination } from '@/components/TablePagination'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 
@@ -1070,8 +1071,12 @@ export default function ProFormaPage() {
           properties={properties || []}
           onClose={() => setShowImport(false)}
           onImportComplete={() => {
-            qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
-            qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+            // CSV import inserts new properties AND updates clean-counts on
+            // existing ones — the blast radius is every property-derived
+            // cache. The registry walk covers pro-forma, dashboard,
+            // master-list, pipeline, revenue, etc. csv-import-log lives
+            // outside the registry, so keep it explicit.
+            invalidateAllPropertyQueries(qc)
             qc.invalidateQueries({ queryKey: ['/supabase/csv-import-log'] })
             setShowImport(false)
           }}
