@@ -414,8 +414,10 @@ export default function PipelinePage() {
   const transitionsByProperty = useMemo(() => {
     const map: Record<string, any[]> = {}
     for (const t of (allTransitions ?? [])) {
-      if (!map[t.property_id]) map[t.property_id] = []
-      if (map[t.property_id].length < 3) map[t.property_id].push(t)
+      if (t.property_id == null) continue
+      const key = String(t.property_id)
+      if (!map[key]) map[key] = []
+      if (map[key].length < 3) map[key].push(t)
     }
     return map
   }, [allTransitions])
@@ -511,7 +513,7 @@ export default function PipelinePage() {
 
   const { mutate: updateFollowUpDate } = useGuardedMutation('pipeline', {
     mutationFn: async ({ propId, date }: { propId: string; date: string }) => {
-      const { error } = await supabase.from('properties').update({ follow_up_date: date || null }).eq('id', propId)
+      const { error } = await supabase.from('properties').update({ follow_up_date: date || null }).eq('id', Number(propId))
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] }),

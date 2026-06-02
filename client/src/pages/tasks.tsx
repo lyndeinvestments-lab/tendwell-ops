@@ -415,7 +415,7 @@ export default function TasksPage() {
       const { data, error } = await supabase
         .from('task_list_members')
         .select('*, task_lists(*)')
-        .eq('user_id', effectiveUser!.id)
+        .eq('user_id', Number(effectiveUser!.id))
       if (error) throw error
       return data || []
     },
@@ -459,9 +459,9 @@ export default function TasksPage() {
     const hasPrivate = myMemberships.some(m => m.task_lists?.type === 'private')
     if (!hasPrivate) {
       (async () => {
-        const { data: list } = await supabase.from('task_lists').insert({ name: 'My Tasks', type: 'private', created_by: effectiveUser.id }).select().single()
+        const { data: list } = await supabase.from('task_lists').insert({ name: 'My Tasks', type: 'private', created_by: Number(effectiveUser.id) }).select().single()
         if (list) {
-          await supabase.from('task_list_members').insert({ list_id: list.id, user_id: effectiveUser.id, role: 'owner', color: '#6366f1' })
+          await supabase.from('task_list_members').insert({ list_id: list.id, user_id: Number(effectiveUser.id), role: 'owner', color: '#6366f1' })
           qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
         }
       })()
@@ -875,10 +875,10 @@ export default function TasksPage() {
   async function createList() {
     if (!newListName.trim()) return
     const { data: list } = await supabase.from('task_lists').insert({
-      name: newListName.trim(), type: 'shared', created_by: effectiveUser?.id || null,
+      name: newListName.trim(), type: 'shared', created_by: effectiveUser?.id ? Number(effectiveUser.id) : null,
     }).select().single()
     if (list) {
-      await supabase.from('task_list_members').insert({ list_id: list.id, user_id: effectiveUser!.id, role: 'owner', color: LIST_COLORS[visibleLists.length % LIST_COLORS.length] })
+      await supabase.from('task_list_members').insert({ list_id: list.id, user_id: Number(effectiveUser!.id), role: 'owner', color: LIST_COLORS[visibleLists.length % LIST_COLORS.length] })
       qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
       toast({ title: `List "${newListName.trim()}" created` })
       setNewListName('')
@@ -888,7 +888,7 @@ export default function TasksPage() {
   }
 
   async function addListMember(listId: string, userId: number) {
-    const { error } = await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id || null }, { onConflict: 'list_id,user_id' })
+    const { error } = await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id ? Number(effectiveUser.id) : null }, { onConflict: 'list_id,user_id' })
     if (error) { toast({ title: 'Failed to add member', description: error.message, variant: 'destructive' }); return }
     await qc.invalidateQueries({ queryKey: ['/supabase/list-members', listId] })
     await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
@@ -921,7 +921,7 @@ export default function TasksPage() {
   }
 
   async function updateListColor(listId: string, color: string) {
-    await supabase.from('task_list_members').update({ color }).eq('list_id', listId).eq('user_id', effectiveUser!.id)
+    await supabase.from('task_list_members').update({ color }).eq('list_id', listId).eq('user_id', Number(effectiveUser!.id))
     qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
   }
 

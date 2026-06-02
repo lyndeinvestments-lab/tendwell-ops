@@ -145,10 +145,12 @@ export default function RevenueReportPage() {
       pipelineStages.filter((s: any) => s.name === 'Active').map((s: any) => s.id)
     )
     for (const t of stageTransitions) {
+      if (t.property_id == null || t.created_at == null) continue
       const stageName = (t.pipeline_stages as any)?.name
       if (stageName === 'Active' || activeStageIds.has(t.to_stage_id)) {
-        if (!map[t.property_id] || t.created_at < map[t.property_id]) {
-          map[t.property_id] = t.created_at
+        const key = String(t.property_id)
+        if (!map[key] || t.created_at < map[key]) {
+          map[key] = t.created_at
         }
       }
     }
@@ -208,7 +210,7 @@ export default function RevenueReportPage() {
       const ce = log.field_name === 'ce_charged' ? parseFloat(log.new_value || '0') : (prop.ce_charged || 0)
       const pay = log.field_name === 'cleaner_pay' ? parseFloat(log.new_value || '0') : (prop.cleaner_pay || 0)
       const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
-      map[pid].push({ ce, pay, date: log.changed_at })
+      map[pid].push({ ce, pay, date: log.changed_at ?? '' })
     }
     const result: Record<string, number[]> = {}
     for (const [pid, entries] of Object.entries(map)) {
