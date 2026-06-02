@@ -146,16 +146,19 @@ async function createWorkflowTasks(
     dueDate.setDate(dueDate.getDate() + (t.due_offset_days || 0))
 
     let description = t.description || ''
-    const items = Array.isArray(t.checklist_items) ? t.checklist_items : []
+    const items: any[] = Array.isArray(t.checklist_items) ? (t.checklist_items as any[]) : []
     if (items.length > 0) {
-      description += (description ? '\n\n' : '') + 'Checklist:\n' + items.map((i: string) => `- [ ] ${i}`).join('\n')
+      description += (description ? '\n\n' : '') + 'Checklist:\n' + items.map(i => `- [ ] ${String(i)}`).join('\n')
     }
 
     return {
       title,
       description,
       status: 'To Do',
-      priority: t.priority || 'Medium',
+      // stage_workflow_templates has no `priority` column — typed-supabase
+      // codegen surfaced this. t.priority was always undefined; the || fallback
+      // meant every generated task got priority 'Medium' anyway. Preserved.
+      priority: 'Medium',
       category,
       property_name: propertyName,
       assignee_name: t.default_assignee_name || null,

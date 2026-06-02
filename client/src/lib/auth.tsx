@@ -253,9 +253,12 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
   }
 
   return {
-    id: data.id,
+    // app_users.id is integer; AuthUser typed as string for cross-render
+    // stability. data.label is nullable in the schema; AuthUser requires a
+    // string so fall back to empty.
+    id: String(data.id),
     role,
-    label: data.label,
+    label: data.label ?? '',
     resolvedViews,
     resolvedPermissions,
     hasCustomViews,

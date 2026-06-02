@@ -28,7 +28,7 @@ const SENSITIVE_KEYS = ACCESS_COLS.filter(c => c.sensitive).map(c => c.key)
 async function logAccessEvent(propertyId: string, fieldName: string, action: 'reveal' | 'update') {
   try {
     await supabase.from('access_audit_log').insert({
-      property_id: propertyId,
+      property_id: Number(propertyId),
       field_name: fieldName,
       action,
       timestamp: new Date().toISOString(),
@@ -152,7 +152,7 @@ export default function AccessCodesPage() {
 
   const { mutate: updateField } = useGuardedMutation('access-codes', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', id)
+      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },

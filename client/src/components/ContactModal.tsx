@@ -181,7 +181,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         entity_name: contact?.full_name ?? null,
         action: 'update',
         field_name: variables.field,
-        old_value: contact?.[variables.field] ?? null,
+        old_value: (contact as any)?.[variables.field] ?? null,
         new_value: variables.value != null ? String(variables.value) : null,
         changed_by: user?.label ?? null,
       })
@@ -231,6 +231,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   // Log interaction
   const { mutate: logInteraction, isPending: logging } = useMutation({
     mutationFn: async () => {
+      if (!contactId) throw new Error('Cannot log interaction without a contact id')
       const { error } = await supabase.from('contact_interactions').insert({
         contact_id: contactId,
         interaction_type: interactionType,
@@ -248,8 +249,8 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
 
   function handleFieldBlur(field: string) {
     if (isCreate || !contactId) return
-    const newValue = field === 'tags' ? form.tags : (form[field]?.trim() || null)
-    if (contact && newValue !== (contact[field] || null)) {
+    const newValue = field === 'tags' ? form.tags : ((form as any)[field]?.trim() || null)
+    if (contact && newValue !== ((contact as any)[field] || null)) {
       saveField({ field, value: newValue })
     }
   }

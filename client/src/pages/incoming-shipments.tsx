@@ -78,14 +78,19 @@ export default function IncomingShipmentsPage() {
     queryKey: ['/incoming_shipments/receivers', receiverIds.join(',')],
     queryFn: async () => {
       if (receiverIds.length === 0) return {}
+      // TODO: incoming_shipments.received_by is auth.users.uuid; app_users.id
+      // is integer. This lookup never matches, so the "received by" name has
+      // always been blank in the UI. To fix properly we need an auth.users
+      // → app_users bridge (e.g. by google_email). For now, satisfy the typed
+      // client without changing observed behavior.
       const { data, error: e } = await supabase
         .from('app_users')
         .select('id,label')
-        .in('id', receiverIds)
+        .in('id', receiverIds as unknown as number[])
       if (e) throw e
       const m: Record<string, string> = {}
-      for (const u of (data ?? []) as Array<{ id: string; label: string | null }>) {
-        if (u.id) m[u.id] = u.label ?? '—'
+      for (const u of (data ?? [])) {
+        if (u.id != null) m[String(u.id)] = u.label ?? '—'
       }
       return m
     },

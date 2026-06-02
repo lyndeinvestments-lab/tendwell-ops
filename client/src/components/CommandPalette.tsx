@@ -147,7 +147,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       }
     }
     for (const p of matchedProperties) {
-      items.push({ type: 'property', id: `prop-${p.id}`, action: () => { onClose(); openPropertyModal(p.id) } })
+      items.push({ type: 'property', id: `prop-${p.id}`, action: () => { onClose(); openPropertyModal(String(p.id)) } })
     }
     for (const c of matchedContacts) {
       items.push({ type: 'property' as const, id: `contact-${c.id}`, action: () => { onClose(); navigate('/contacts') } })
