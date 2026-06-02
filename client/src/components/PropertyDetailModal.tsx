@@ -7,6 +7,7 @@ import { profitColorClass } from '@/lib/profit-colors'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -765,9 +766,11 @@ export function PropertyDetailModal() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      // Setting/clearing contact_id flips dashboard-unassigned and shifts
+      // contact-properties / previous-properties caches too — broad
+      // invalidation via the registry is the right call here.
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       toast({ title: 'Client updated' })
       setContactPopoverOpen(false)
     },
@@ -832,11 +835,11 @@ export function PropertyDetailModal() {
           logPropertyEdit(propertyId!, field, oldVal, newVal, property?.name ?? null, user?.label ?? null)
         }
       }
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      // Bulk edit can touch any property field — including financials, bedroom
+      // count, stage_id, etc. Invalidate every property-derived cache so
+      // dashboard KPIs, master list, pipeline, pro-forma, revenue, and
+      // previous-properties all reflect the change immediately.
+      invalidateAllPropertyQueries(qc)
       toast({ title: 'Saved' })
       setIsEditing(false)
     },
@@ -862,10 +865,10 @@ export function PropertyDetailModal() {
         property?.name ?? null,
         user?.label ?? null,
       )
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
+      // Inline single-field edit — same broad scope as the bulk edit; the
+      // edited field could be a financial, the address, or anything else
+      // that the dashboards/master list/pipeline derive from.
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       toast({ title: 'Saved' })
       setInlineField(null)
@@ -888,11 +891,9 @@ export function PropertyDetailModal() {
         property?.name ?? null,
         user?.label ?? null,
       )
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/operational_properties'] })
+      // Linen program flag affects operational reports, the master list,
+      // and any property-derived caches that filter by program enrollment.
+      invalidateAllPropertyQueries(qc)
       toast({ title: next ? 'Linen program enabled' : 'Linen program disabled' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
@@ -956,9 +957,10 @@ export function PropertyDetailModal() {
       if (!result.ok) throw new Error(result.error)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      // Stage transitions affect every property-derived cache: pipeline,
+      // dashboard counts/velocity, master list, pro-forma, revenue,
+      // previous-properties (a move to Offboarded shows it there), etc.
+      invalidateAllPropertyQueries(qc)
       toast({ title: 'Stage updated' })
       setStagePopoverOpen(false)
     },
@@ -1180,8 +1182,10 @@ export function PropertyDetailModal() {
                     toast({ title: 'Save failed', description: error.message, variant: 'destructive' })
                   } else {
                     toast({ title: 'Missing data filled in' })
-                    qc.invalidateQueries({ queryKey: ['/supabase/property-detail'] })
-                    qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+                    // "Fill missing data" can write to financials, bedrooms,
+                    // square footage — every property-derived cache should
+                    // refresh so the previously-missing values populate.
+                    invalidateAllPropertyQueries(qc)
                     closePropertyModal()
                   }
                 }}
