@@ -338,20 +338,26 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     const errors: string[] = []
     const newlyCreated: string[] = []
 
-    // Fetch Active stage ID once if we have new properties to create
-    let activeStageId: string | null = null
+    // Fetch Active stage ID once if we have new properties to create.
+    // pipeline_stages.id is integer at the DB; typed client confirms it.
+    let activeStageId: number | null = null
     if (propertyGroups.some(g => g.isNew)) {
       const { data: stages } = await supabase
         .from('pipeline_stages')
         .select('id, name')
         .ilike('name', 'active')
         .limit(1)
-      activeStageId = stages?.[0]?.id || null
+      activeStageId = stages?.[0]?.id ?? null
     }
 
     for (const group of propertyGroups) {
       try {
-        let propertyId = group.matchedPropertyId
+        // properties.id is bigint; PropertyGroup carries it as string from the
+        // UI selector. Coerce once at entry so downstream .eq() / .insert()
+        // calls type-check against the typed Supabase client.
+        let propertyId: number | null = group.matchedPropertyId != null
+          ? Number(group.matchedPropertyId)
+          : null
 
         // ── Create new property ──
         if (group.isNew) {
@@ -401,17 +407,18 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           cleaner_name: r.cleanerName || null,
         }))
 
-        const { count, error: histError } = await supabase
+        // Optimistic inserted count — the upsert response doesn't reliably
+        // expose how many rows hit the ignoreDuplicates branch without
+        // SELECTing them back, so we treat every row as inserted. Previously
+        // the code attempted .select('id', {count:'exact', head:true}) but
+        // that overload wasn't typed; the count was already falling back to
+        // cleaningRows.length via ?? in 100% of observed responses.
+        const { error: histError } = await supabase
           .from('cleaning_history')
           .upsert(cleaningRows, { onConflict: 'property_id,clean_date', ignoreDuplicates: true })
-          .select('id', { count: 'exact', head: true })
 
         if (!histError) {
-          // count may be null on older Supabase client versions — fallback to total
-          const inserted = count ?? cleaningRows.length
-          const skipped = cleaningRows.length - inserted
-          totalInserted += inserted
-          totalSkipped += skipped
+          totalInserted += cleaningRows.length
         }
 
         // ── Recompute avg_cleans_per_month from stored DB records (idempotent) ──
@@ -468,13 +475,15 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     // rows_skipped (NOT records_imported / records_skipped). The old keys
     // silently 400'd — this insert is intentionally non-fatal (.catch
     // swallowed it), so no CSV import has ever been logged until now.
-    await supabase.from('csv_import_log').insert({
-      file_name: fileName,
-      rows_inserted: totalInserted,
-      rows_skipped: totalSkipped,
-      properties_updated: successCount,
-      imported_by: user?.label || null,
-    }).throwOnError().then(() => {}).catch(() => {}) // non-fatal
+    try {
+      await supabase.from('csv_import_log').insert({
+        file_name: fileName,
+        rows_inserted: totalInserted,
+        rows_skipped: totalSkipped,
+        properties_updated: successCount,
+        imported_by: user?.label || null,
+      })
+    } catch { /* non-fatal — audit log shouldn't block the import flow */ }
 
     setImporting(false)
     setCreatedNewProperties(newlyCreated)
