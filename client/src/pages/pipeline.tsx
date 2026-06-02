@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, STAGE_ORDER, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { profitTier, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useAuth, canAccessView } from '@/lib/auth'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import {
@@ -486,14 +487,19 @@ export default function PipelinePage() {
     },
     onSuccess: (_data, variables) => {
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      // Stage transitions touch every property-derived cache (pipeline,
+      // master list, all dashboard aggregates, pro-forma, revenue,
+      // previous-properties when moving to Offboarded). Registry walks
+      // all of them, including dashboard-velocity which was previously
+      // missed — so the velocity widget now updates the moment a card
+      // is dragged instead of waiting for its 5 min stale window.
+      invalidateAllPropertyQueries(qc)
+      // Non-property caches that also reflect the transition:
       qc.invalidateQueries({ queryKey: ['/supabase/stage_transitions_recent'] })
       qc.invalidateQueries({ queryKey: ['/supabase/transitions-period'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      if (toStage?.name === 'Offboarded') qc.invalidateQueries({ queryKey: ['/supabase/previous-properties'] })
 
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
@@ -516,7 +522,15 @@ export default function PipelinePage() {
       const { error } = await supabase.from('properties').update({ follow_up_date: date || null }).eq('id', Number(propId))
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] }),
+    onSuccess: () => {
+      // follow_up_date drives the dashboard "Follow-Ups Due Today" widget
+      // (queryKey /supabase/dashboard-followups). Without the registry
+      // invalidation, changing a date here didn't surface on the
+      // dashboard until the 60s default expired — silent staleness on
+      // a high-visibility widget. Registry covers dashboard-followups,
+      // master-list, pro-forma, etc.
+      invalidateAllPropertyQueries(qc)
+    },
     onError: (error: any) => toast({ title: 'Failed to save follow-up date', description: error?.message, variant: 'destructive' }),
   })
 
@@ -561,7 +575,10 @@ export default function PipelinePage() {
         changed_by: user?.label ?? null,
         metadata: { address: newLeadAddress.trim() || null },
       })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      // New lead insert grows every property-derived count and list.
+      // Without the registry walk, the dashboard "Active properties" and
+      // unassigned counts both stayed stale until window-focus refetch.
+      invalidateAllPropertyQueries(qc)
       toast({ title: 'Lead added to pipeline' })
       setAddLeadOpen(false)
       resetAddLeadForm()
