@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -75,7 +76,10 @@ export default function LinenTrackerPage() {
       logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      // Linen-field edits update a properties row; the registry walk
+      // covers linen-tracker plus every other property-derived view
+      // (master-list, dashboards, etc.).
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: 'Saved' })
@@ -111,7 +115,9 @@ export default function LinenTrackerPage() {
       return { id: p.id, changed: Object.keys(updates).length, sleep: sleepCount(p) }
     },
     onSuccess: (r: any) => {
-      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+      // Auto-fill rewrites 5 towel columns on a properties row — same
+      // blast radius as a manual edit.
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       if (r.changed === 0) toast({ title: 'Nothing to fill — all towel fields already set' })
@@ -153,7 +159,8 @@ export default function LinenTrackerPage() {
         for (const [field, value] of Object.entries(c)) logPropertyEdit(p.id, field, (p as any)[field], value, p.name)
       }
     }
-    qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+    // Bulk auto-fill touched many properties rows; broad invalidation.
+    invalidateAllPropertyQueries(qc)
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     toast({ title: `Auto-filled ${ok} of ${candidates.length} rows` })
   }
@@ -554,7 +561,9 @@ export default function LinenTrackerPage() {
                       supabase.from('properties').update({ [k]: s[k] ?? null }).eq('id', copyTarget.id)
                     )
                     Promise.all(updates).then(() => {
-                      qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+                      // Copy-from-property writes every numeric linen field
+                      // on the target properties row.
+                      invalidateAllPropertyQueries(qc)
                       toast({ title: 'Linen data copied', description: `Copied from ${s.name} to ${copyTarget.name}` })
                       setCopyTarget(null)
                     }).catch(() => {

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
 import { useTaggableUsers } from '@/hooks/use-taggable-users'
@@ -113,12 +114,12 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
     },
     onSuccess: () => {
       setDraft('')
+      // Posting a note also writes to properties.notes (or linen_notes)
+      // as a legacy-column mirror at line 79 — so every property-derived
+      // cache should refresh. Registry walk covers what the old 6-key
+      // list did and the missing dashboards/pro-forma/revenue too.
       qc.invalidateQueries({ queryKey })
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', String(propertyId)] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/master-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      invalidateAllPropertyQueries(qc)
     },
     onError: (e: any) => toast({ title: 'Failed to post note', description: e.message || '', variant: 'destructive' }),
   })

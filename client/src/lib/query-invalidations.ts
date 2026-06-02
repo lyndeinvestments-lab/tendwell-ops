@@ -31,6 +31,12 @@ const PROPERTY_QUERY_KEY_PREFIXES = [
   // serve a stale property list (renamed/moved/created elsewhere) for
   // up to its 30s staleTime after any property mutation.
   '/supabase/command-palette-properties',
+  // Linen Tracker is a property-derived read view (queries all properties
+  // with their towel/bed columns). Without this prefix, any property
+  // mutation made elsewhere — including the modal's linen-program toggle,
+  // the bulk-edit save, etc. — left linen-tracker stale until window-focus
+  // refetch.
+  '/supabase/linen-tracker',
 ]
 
 export function invalidateAllPropertyQueries(qc: QueryClient) {
