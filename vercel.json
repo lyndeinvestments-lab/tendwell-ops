@@ -21,7 +21,14 @@
     }
   },
   "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/:path*" }
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/((?!api/|assets/|.*\\..*).*)", "destination": "/index.html" }
+  ],
+  "redirects": [
+    { "source": "/onboarding", "destination": "/#/onboarding", "permanent": false },
+    { "source": "/onboard", "destination": "/#/onboard", "permanent": false },
+    { "source": "/weigh-in", "destination": "/#/weigh-in", "permanent": false },
+    { "source": "/shipment-report", "destination": "/#/shipment-report", "permanent": false }
   ],
   "crons": [
     { "path": "/api/notify/digest", "schedule": "0 12 * * *" },

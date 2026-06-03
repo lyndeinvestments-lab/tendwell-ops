@@ -293,19 +293,21 @@ function AppLayout() {
   );
 
   if (!user) {
-    // Allow public onboarding form without authentication
-    if (window.location.hash.startsWith('#/onboard')) {
-      return (
-        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
-          <OnboardingFormPage />
-        </Suspense>
-      );
-    }
-    // Allow public onboarding intake form without authentication
+    // Public onboarding intake form (no auth). Match the longer prefix first
+    // so #/onboarding doesn't get swallowed by the #/onboard check below.
     if (window.location.hash.startsWith('#/onboarding')) {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <OnboardingIntakePage />
+        </Suspense>
+      );
+    }
+    // Public token-gated onboarding form (legacy). Use an exact-ish match so
+    // it can't shadow the intake route above.
+    if (window.location.hash === '#/onboard' || window.location.hash.startsWith('#/onboard?')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <OnboardingFormPage />
         </Suspense>
       );
     }
