@@ -17,6 +17,8 @@ import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, 
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
+import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 type InspectionStatus = 'scheduled' | 'completed' | 'skipped'
 type ReinspectUrgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
@@ -286,6 +288,15 @@ export default function InspectionsPage() {
         </div>
       </div>
 
+      <Tabs defaultValue="priority" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="self-start">
+          <TabsTrigger value="priority" data-testid="tab-priority">Priority Dashboard</TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
+        </TabsList>
+        <TabsContent value="priority" className="flex-1 overflow-y-auto mt-3">
+          <InspectionPriorityDashboard />
+        </TabsContent>
+        <TabsContent value="history" className="flex-1 flex flex-col min-h-0 mt-3 space-y-4">
       <div className="flex items-center gap-2 flex-wrap text-xs">
         <label className="text-muted-foreground">Status</label>
         <Select value={statusFilter} onValueChange={v => { setStatusFilter(v as 'all' | InspectionStatus); setPage(1) }}>
@@ -498,6 +509,8 @@ export default function InspectionsPage() {
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
+        </TabsContent>
+      </Tabs>
 
       {/* Detail drawer */}
       <Sheet open={!!activeDetail} onOpenChange={v => !v && setActiveDetail(null)}>
