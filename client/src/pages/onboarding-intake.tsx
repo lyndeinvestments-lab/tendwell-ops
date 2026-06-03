@@ -38,6 +38,7 @@ export default function OnboardingIntakePage() {
   const [hotTub, setHotTub] = useState<YesNo>('')
   const [pool, setPool] = useState<YesNo>('')
   const [linenProgram, setLinenProgram] = useState<YesNo>('')
+  const [deepClean, setDeepClean] = useState<YesNo>('')
 
   const [doorCode, setDoorCode] = useState('')
   const [autoCode, setAutoCode] = useState('')
@@ -141,6 +142,7 @@ export default function OnboardingIntakePage() {
         hot_tub: hotTub === 'yes' ? true : hotTub === 'no' ? false : null,
         pool: pool === 'yes' ? true : pool === 'no' ? false : null,
         linen_program: linenProgram === 'yes' ? true : linenProgram === 'no' ? false : null,
+        onboarding_deep_clean: deepClean === 'yes' ? true : deepClean === 'no' ? false : null,
         door_code: doorCode.trim() || null,
         auto_code: autoCode.trim() || null,
         other_codes: otherCodesCombined,
@@ -298,7 +300,7 @@ export default function OnboardingIntakePage() {
               />
               <p className="text-xs text-muted-foreground mt-1">List the bed size for each room so we can stock the right linens.</p>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
                 <label className={labelCls}>Hot Tub</label>
                 <ToggleYesNo value={hotTub} onChange={setHotTub} dataTestId="toggle-hot-tub" />
@@ -310,6 +312,10 @@ export default function OnboardingIntakePage() {
               <div>
                 <label className={labelCls}>Linen Program</label>
                 <ToggleYesNo value={linenProgram} onChange={setLinenProgram} dataTestId="toggle-linen-program" />
+              </div>
+              <div>
+                <label className={labelCls}>Onboarding Deep Clean</label>
+                <ToggleYesNo value={deepClean} onChange={setDeepClean} dataTestId="toggle-onboarding-deep-clean" />
               </div>
             </div>
           </CardContent>
