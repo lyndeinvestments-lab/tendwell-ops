@@ -22,6 +22,8 @@ export default function OnboardingIntakePage() {
 
   const [clientName, setClientName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
+  const [invoiceSameAsPrimary, setInvoiceSameAsPrimary] = useState(true)
+  const [invoiceEmail, setInvoiceEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [propertyName, setPropertyName] = useState('')
   const [address, setAddress] = useState('')
@@ -126,6 +128,7 @@ export default function OnboardingIntakePage() {
         status: 'pending',
         client_name: clientName.trim(),
         contact_email: contactEmail.trim() || null,
+        invoice_email: (invoiceSameAsPrimary ? contactEmail.trim() : invoiceEmail.trim()) || null,
         contact_phone: contactPhone.trim() || null,
         property_name: propertyName.trim() || null,
         address: address.trim(),
@@ -241,6 +244,31 @@ export default function OnboardingIntakePage() {
                 <label className={labelCls}>Phone</label>
                 <Input type="tel" value={contactPhone} onChange={e => setContactPhone(e.target.value)} className={inputCls} data-testid="input-contact-phone" />
               </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className={`${labelCls} !mb-0`}>Invoice Email</label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={invoiceSameAsPrimary}
+                    onChange={e => setInvoiceSameAsPrimary(e.target.checked)}
+                    className="h-3.5 w-3.5"
+                    data-testid="checkbox-invoice-same-as-primary"
+                  />
+                  Same as primary email
+                </label>
+              </div>
+              <Input
+                type="email"
+                value={invoiceSameAsPrimary ? contactEmail : invoiceEmail}
+                onChange={e => setInvoiceEmail(e.target.value)}
+                disabled={invoiceSameAsPrimary}
+                placeholder={invoiceSameAsPrimary ? '' : 'invoices@example.com'}
+                className={`${inputCls} ${invoiceSameAsPrimary ? 'opacity-60' : ''}`}
+                data-testid="input-invoice-email"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Where we should send invoices. Defaults to your primary email.</p>
             </div>
             <div>
               <label className={labelCls}>Property Address *</label>
