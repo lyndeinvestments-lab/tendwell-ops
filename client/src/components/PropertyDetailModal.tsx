@@ -649,6 +649,7 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean): strin
   const MISSING = 'No information there'
   const v = (x: any) => (x == null || x === '' ? MISSING : String(x))
 
+  lines.push(property.name && String(property.name).trim() !== '' ? String(property.name) : MISSING)
   lines.push(property.address && String(property.address).trim() !== '' ? String(property.address) : MISSING)
 
   if (includeFinancials) {
