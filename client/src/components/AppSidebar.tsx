@@ -53,6 +53,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Lost Items', href: '/lost-items', view: 'lost-items', icon: PackageSearch },
       { title: 'Incoming Shipments', href: '/incoming-shipments', view: 'incoming-shipments', icon: PackagePlus },
       { title: 'Laundry Weigh-Ins', href: '/laundry-weigh-ins', view: 'laundry-weigh-ins', icon: Scale },
+      { title: 'Onboarding Queue', href: '/onboarding-queue', view: 'onboarding-queue', icon: ClipboardCheck },
     ],
   },
   {
