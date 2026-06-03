@@ -20,6 +20,7 @@ interface OnboardingSubmission {
   client_name: string | null
   contact_email: string | null
   contact_phone: string | null
+  invoice_email: string | null
   property_name: string | null
   address: string | null
   bedrooms: number | null
@@ -327,6 +328,7 @@ export default function OnboardingQueuePage() {
                       <KV k="Name" v={r.client_name} />
                       <KV k="Email" v={r.contact_email} />
                       <KV k="Phone" v={r.contact_phone} />
+                      <KV k="Invoice Email" v={r.invoice_email && r.invoice_email !== r.contact_email ? r.invoice_email : (r.invoice_email ? `${r.invoice_email} (same as primary)` : '—')} wide />
                     </Section>
                     <Section title="Property">
                       <KV k="Address" v={r.address} />
