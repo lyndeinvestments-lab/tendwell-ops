@@ -876,6 +876,27 @@ export function PropertyDetailModal() {
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
+  const { mutate: toggleHotTub } = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { error } = await supabase.from('properties').update({ hot_tub: next }).eq('id', Number(propertyId!))
+      if (error) throw error
+      return next
+    },
+    onSuccess: (next: boolean) => {
+      logPropertyEdit(
+        propertyId!,
+        'hot_tub',
+        String(property?.hot_tub ?? false),
+        String(next),
+        property?.name ?? null,
+        user?.label ?? null,
+      )
+      invalidateAllPropertyQueries(qc)
+      toast({ title: next ? 'Hot tub: Yes' : 'Hot tub: No' })
+    },
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+  })
+
   const { mutate: toggleLinenProgram } = useMutation({
     mutationFn: async (next: boolean) => {
       const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!))
@@ -1358,31 +1379,24 @@ export function PropertyDetailModal() {
                   <span>Hot tub</span>
                 </label>
               )}
-              {/* Additional property facts — non-sensitive chips.
-                  Hidden while editing because the same fields live as editable
-                  inputs in the grid above (avoids duplication). */}
+              {/* Hot tub toggle chip (click to flip) + follow-up indicator.
+                  Beds/Kitchens/Check-in/Check-out chips were removed because
+                  the same fields are now click-to-edit in the grid above. */}
               {!isEditing && (
                 <div className="flex flex-wrap gap-2 text-xs">
-                  {property.number_of_beds != null && (
-                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                      Beds: <span className="tabular-nums text-foreground font-medium">{property.number_of_beds}</span>
-                    </span>
-                  )}
-                  {property.kitchens != null && (
-                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                      Kitchens: <span className="tabular-nums text-foreground font-medium">{property.kitchens}</span>
-                    </span>
-                  )}
-                  {property.hot_tub && (
-                    <span className="px-2 py-0.5 rounded bg-primary/10 text-primary font-medium">Hot tub</span>
-                  )}
-                  {(property.check_in_time || property.check_out_time) && (
-                    <span className="px-2 py-0.5 rounded bg-muted text-muted-foreground">
-                      Check-in: <span className="tabular-nums text-foreground font-medium">{property.check_in_time || '—'}</span>
-                      {' · '}
-                      Check-out: <span className="tabular-nums text-foreground font-medium">{property.check_out_time || '—'}</span>
-                    </span>
-                  )}
+                  <button
+                    type="button"
+                    disabled={!canEditProperty}
+                    onClick={() => canEditProperty && toggleHotTub(!property.hot_tub)}
+                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                      property.hot_tub
+                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    } ${canEditProperty ? 'cursor-pointer' : 'cursor-default'}`}
+                    data-testid="chip-toggle-hot_tub"
+                  >
+                    Hot tub: <span className="tabular-nums">{property.hot_tub ? 'Yes' : 'No'}</span>
+                  </button>
                   {property.follow_up_date && (
                     <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
                       Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
