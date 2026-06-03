@@ -35,7 +35,10 @@ interface OnboardingSubmission {
   wifi_info: string | null
   filter_size: string | null
   ical_url: string | null
+  api_client_id: string | null
   api_key: string | null
+  check_in_time: string | null
+  check_out_time: string | null
   notes: string | null
   photos: string[]
   submitted_at: string
@@ -95,25 +98,28 @@ export default function OnboardingQueuePage() {
   const { mutate: approve } = useMutation({
     mutationFn: async (sub: OnboardingSubmission) => {
       setWorking(sub.id)
+      const propertyPayload = {
+        name: sub.property_name || sub.address || sub.client_name || 'New Property',
+        address: sub.address,
+        bedrooms: sub.bedrooms,
+        number_of_beds: sub.number_of_beds,
+        full_baths: sub.full_baths,
+        half_baths: sub.half_baths,
+        square_footage: sub.square_footage,
+        hot_tub: sub.hot_tub ?? false,
+        linen_program: sub.linen_program ?? false,
+        door_code: sub.door_code,
+        auto_code: sub.auto_code,
+        other_codes: sub.other_codes,
+        wifi_info: sub.wifi_info,
+        filter_size: sub.filter_size,
+        check_in_time: sub.check_in_time,
+        check_out_time: sub.check_out_time,
+        stage_id: ONBOARDING_STAGE_ID,
+      }
       const { data: newProp, error: insErr } = await supabase
         .from('properties')
-        .insert({
-          name: sub.property_name || sub.address || sub.client_name || 'New Property',
-          address: sub.address,
-          bedrooms: sub.bedrooms,
-          number_of_beds: sub.number_of_beds,
-          full_baths: sub.full_baths,
-          half_baths: sub.half_baths,
-          square_footage: sub.square_footage,
-          hot_tub: sub.hot_tub ?? false,
-          linen_program: sub.linen_program ?? false,
-          door_code: sub.door_code,
-          auto_code: sub.auto_code,
-          other_codes: sub.other_codes,
-          wifi_info: sub.wifi_info,
-          filter_size: sub.filter_size,
-          stage_id: ONBOARDING_STAGE_ID,
-        })
+        .insert(propertyPayload as any)
         .select('id')
         .single()
       if (insErr) throw insErr
@@ -257,11 +263,14 @@ export default function OnboardingQueuePage() {
                       <KV k="Other Codes" v={r.other_codes} wide />
                       <KV k="Wi-Fi" v={r.wifi_info} wide />
                       <KV k="A/C Filter" v={r.filter_size} />
+                      <KV k="Check-in" v={r.check_in_time} />
+                      <KV k="Check-out" v={r.check_out_time} />
                     </Section>
-                    {(r.ical_url || r.api_key) && (
+                    {(r.ical_url || r.api_key || r.api_client_id) && (
                       <Section title="Booking Integration">
                         {r.ical_url && <KV k="iCal URL" v={r.ical_url} wide />}
-                        {r.api_key && <KV k="API Key" v={r.api_key} wide secret />}
+                        {r.api_client_id && <KV k="Client ID / public key" v={r.api_client_id} wide secret />}
+                        {r.api_key && <KV k="API secret / client secret / token" v={r.api_key} wide secret />}
                       </Section>
                     )}
                     {r.notes && (

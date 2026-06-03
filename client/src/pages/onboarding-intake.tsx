@@ -48,9 +48,12 @@ export default function OnboardingIntakePage() {
   const [wifiPassword, setWifiPassword] = useState('')
 
   const [filterSize, setFilterSize] = useState('')
+  const [checkInTime, setCheckInTime] = useState('')
+  const [checkOutTime, setCheckOutTime] = useState('')
 
   const [integrationKind, setIntegrationKind] = useState<IntegrationKind>('')
   const [icalUrl, setIcalUrl] = useState('')
+  const [apiClientId, setApiClientId] = useState('')
   const [apiKey, setApiKey] = useState('')
 
   const [notes, setNotes] = useState('')
@@ -140,7 +143,10 @@ export default function OnboardingIntakePage() {
         other_codes: otherCodesCombined,
         wifi_info: wifiCombined,
         filter_size: filterSize.trim() || null,
+        check_in_time: checkInTime.trim() || null,
+        check_out_time: checkOutTime.trim() || null,
         ical_url: integrationKind === 'ical' ? icalUrl.trim() || null : null,
+        api_client_id: integrationKind === 'api_key' ? apiClientId.trim() || null : null,
         api_key: integrationKind === 'api_key' ? apiKey.trim() || null : null,
         notes: notes.trim() || null,
         photos: photos.map(p => p.path),
@@ -330,6 +336,22 @@ export default function OnboardingIntakePage() {
         </Card>
 
         <Card>
+          <CardHeader><CardTitle className="text-sm">Check-in & Check-out Times</CardTitle></CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelCls}>Check-in Time</label>
+                <Input value={checkInTime} onChange={e => setCheckInTime(e.target.value)} className={inputCls} placeholder="e.g. 4:00 PM" data-testid="input-check-in-time" />
+              </div>
+              <div>
+                <label className={labelCls}>Check-out Time</label>
+                <Input value={checkOutTime} onChange={e => setCheckOutTime(e.target.value)} className={inputCls} placeholder="e.g. 10:00 AM" data-testid="input-check-out-time" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader><CardTitle className="text-sm">A/C Filter (optional)</CardTitle></CardHeader>
           <CardContent>
             <label className={labelCls}>Filter Size</label>
@@ -363,10 +385,17 @@ export default function OnboardingIntakePage() {
               </div>
             )}
             {integrationKind === 'api_key' && (
-              <div>
-                <label className={labelCls}>API Key</label>
-                <Input value={apiKey} onChange={e => setApiKey(e.target.value)} className={inputCls} type="password" data-testid="input-api-key" />
-                <p className="text-xs text-muted-foreground mt-1">Stored securely. Only admins can view this.</p>
+              <div className="space-y-4">
+                <div>
+                  <label className={labelCls}>Client ID / public key (optional)</label>
+                  <Input value={apiClientId} onChange={e => setApiClientId(e.target.value)} className={inputCls} data-testid="input-api-client-id" />
+                  <p className="text-xs text-muted-foreground mt-1">For services that provide a client ID or public key, paste it here.</p>
+                </div>
+                <div>
+                  <label className={labelCls}>API secret / client secret / token</label>
+                  <Input value={apiKey} onChange={e => setApiKey(e.target.value)} className={inputCls} type="password" data-testid="input-api-key" />
+                  <p className="text-xs text-muted-foreground mt-1">Paste your API secret, client secret, or access token from the provider. Only admins can view this.</p>
+                </div>
               </div>
             )}
           </CardContent>
