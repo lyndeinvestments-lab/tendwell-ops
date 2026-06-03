@@ -151,7 +151,7 @@ export function InspectionPriorityDashboard() {
   const { data: properties, isLoading: propertiesLoading } = useQuery<PropertyRow[]>({
     queryKey: ['/supabase/inspection-priority/properties', stageFilter],
     queryFn: async () => {
-      let q = supabase.from('properties').select('id, name, address, stage_id, pipeline_stages(name)').order('name')
+      let q = supabase.from('properties').select('id, name, address, stage_id, pipeline_stages(name)').order('name').eq('exempt_from_inspections', false)
       if (stageFilter === 'active') q = q.eq('stage_id', ACTIVE_STAGE_ID)
       else if (stageFilter === 'active_onboarding') q = q.in('stage_id', [3, ACTIVE_STAGE_ID])
       else q = q.in('stage_id', [1, 2, 3, ACTIVE_STAGE_ID])

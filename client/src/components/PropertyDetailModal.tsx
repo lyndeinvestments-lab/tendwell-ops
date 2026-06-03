@@ -897,6 +897,29 @@ export function PropertyDetailModal() {
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
+  const { mutate: toggleInspectionExempt } = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { error } = await supabase.from('properties').update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!))
+      if (error) throw error
+      return next
+    },
+    onSuccess: (next: boolean) => {
+      logPropertyEdit(
+        propertyId!,
+        'exempt_from_inspections',
+        String((property as any)?.exempt_from_inspections ?? false),
+        String(next),
+        property?.name ?? null,
+        user?.label ?? null,
+      )
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/properties'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
+      toast({ title: next ? 'Inspection exempt enabled' : 'Inspection exempt removed' })
+    },
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+  })
+
   const { mutate: toggleLinenProgram } = useMutation({
     mutationFn: async (next: boolean) => {
       const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!))
@@ -1396,6 +1419,20 @@ export function PropertyDetailModal() {
                     data-testid="chip-toggle-hot_tub"
                   >
                     Hot tub: <span className="tabular-nums">{property.hot_tub ? 'Yes' : 'No'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEditProperty}
+                    onClick={() => canEditProperty && toggleInspectionExempt(!(property as any).exempt_from_inspections)}
+                    title="When on, this property is hidden from the inspection priority dashboard and property verifications."
+                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                      (property as any).exempt_from_inspections
+                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    } ${canEditProperty ? 'cursor-pointer' : 'cursor-default'}`}
+                    data-testid="chip-toggle-exempt_from_inspections"
+                  >
+                    Inspection exempt: <span className="tabular-nums">{(property as any).exempt_from_inspections ? 'Yes' : 'No'}</span>
                   </button>
                   {property.follow_up_date && (
                     <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">

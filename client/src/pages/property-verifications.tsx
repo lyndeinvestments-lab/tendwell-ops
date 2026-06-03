@@ -97,6 +97,7 @@ export default function InspectionsPage() {
       const { data, error } = await supabase
         .from('properties')
         .select(`${fields}, pipeline_stages!properties_stage_id_fkey(name)`)
+        .eq('exempt_from_inspections', false)
         .order('name')
       if (error) throw error
       return (data || []).filter((p: any) => (p.pipeline_stages as any)?.name === 'Active')
