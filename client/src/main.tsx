@@ -2,8 +2,11 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-if (!window.location.hash) {
-  window.location.hash = "#/";
+// One-time migration from legacy hash routing: rewrite /#/foo → /foo so old
+// bookmarks and emailed links land on the right page.
+if (window.location.hash.startsWith("#/")) {
+  const path = window.location.hash.slice(1);
+  window.history.replaceState(null, "", path);
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -551,11 +551,14 @@ export default function CostTrackingPage() {
   // Read ?stage= deep link from /master-list → /cost-tracking redirects so old
   // links from the dashboard cards keep working post-consolidation.
   useEffect(() => {
+    // Read ?stage= deep-link param. Supports both clean URLs (?stage=…) and
+    // the legacy hash form (#/cost-tracking?stage=…) for old bookmarks.
+    const search = window.location.search
     const hash = window.location.hash || ''
     const qIdx = hash.indexOf('?')
-    if (qIdx === -1) return
-    const params = new URLSearchParams(hash.slice(qIdx))
-    const urlStage = params.get('stage')
+    const rawParams = search ? new URLSearchParams(search) : (qIdx !== -1 ? new URLSearchParams(hash.slice(qIdx)) : null)
+    if (!rawParams) return
+    const urlStage = rawParams.get('stage')
     if (urlStage) {
       const normalized = urlStage.charAt(0).toUpperCase() + urlStage.slice(1)
       if (STATUS_OPTIONS.includes(normalized)) {
@@ -564,7 +567,9 @@ export default function CostTrackingPage() {
       } else if (urlStage === 'all') {
         setShowAllStages(true)
       }
-      window.history.replaceState(null, '', window.location.pathname + hash.slice(0, qIdx))
+      // Strip the param so refreshes don't re-apply it.
+      const cleanHash = qIdx !== -1 ? hash.slice(0, qIdx) : hash
+      window.history.replaceState(null, '', window.location.pathname + cleanHash)
     }
   }, [])
 

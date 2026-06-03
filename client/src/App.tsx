@@ -1,5 +1,4 @@
 import { Switch, Route, Router, useLocation, Redirect } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -293,34 +292,32 @@ function AppLayout() {
   );
 
   if (!user) {
+    const path = window.location.pathname;
     // Public onboarding intake form (no auth). Match the longer prefix first
-    // so #/onboarding doesn't get swallowed by the #/onboard check below.
-    if (window.location.hash.startsWith('#/onboarding')) {
+    // so /onboarding doesn't get swallowed by the /onboard check below.
+    if (path === '/onboarding' || path.startsWith('/onboarding/')) {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <OnboardingIntakePage />
         </Suspense>
       );
     }
-    // Public token-gated onboarding form (legacy). Use an exact-ish match so
-    // it can't shadow the intake route above.
-    if (window.location.hash === '#/onboard' || window.location.hash.startsWith('#/onboard?')) {
+    // Public token-gated onboarding form (legacy /onboard?token=…).
+    if (path === '/onboard') {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <OnboardingFormPage />
         </Suspense>
       );
     }
-    // Allow public laundry weigh-in form without authentication
-    if (window.location.hash.startsWith('#/weigh-in')) {
+    if (path === '/weigh-in' || path.startsWith('/weigh-in/')) {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <LaundryWeighInPage />
         </Suspense>
       );
     }
-    // Allow public shipment report form without authentication
-    if (window.location.hash.startsWith('#/shipment-report')) {
+    if (path === '/shipment-report' || path.startsWith('/shipment-report/')) {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <ShipmentReportPage />
@@ -398,7 +395,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>
-            <Router hook={useHashLocation}>
+            <Router>
               <ErrorBoundary>
                 <AppLayout />
               </ErrorBoundary>

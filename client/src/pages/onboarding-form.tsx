@@ -23,10 +23,11 @@ export default function OnboardingFormPage() {
     wifi_info: '', auto_code: '', door_code: '', other_codes: '', notes: '',
   })
 
-  // Get token from URL hash
-  const hash = window.location.hash
-  const tokenMatch = hash.match(/token=([a-zA-Z0-9-]+)/)
-  const token = tokenMatch?.[1] || ''
+  // Token comes from ?token= (new clean URLs) with a fallback to the legacy
+  // hash-based form (#/onboard?token=…) for any in-flight emailed links.
+  const searchParams = new URLSearchParams(window.location.search)
+  const hashTokenMatch = window.location.hash.match(/token=([a-zA-Z0-9-]+)/)
+  const token = searchParams.get('token') || hashTokenMatch?.[1] || ''
 
   if (!token) {
     return (
