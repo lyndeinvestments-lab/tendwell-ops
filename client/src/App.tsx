@@ -71,6 +71,8 @@ const CleanerMetricsPage = lazyRetry(() => import("@/pages/cleaner-metrics"));
 const NorthStarPage = lazyRetry(() => import("@/pages/north-star"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
 const OnboardingFormPage = lazyRetry(() => import("@/pages/onboarding-form"));
+const OnboardingIntakePage = lazyRetry(() => import("@/pages/onboarding-intake"));
+const OnboardingQueuePage = lazyRetry(() => import("@/pages/onboarding-queue"));
 const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
 const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"));
 const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
@@ -239,6 +241,7 @@ function AppRoutes() {
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
         <Route path="/laundry-weigh-ins">{() => <GuardedRoute viewId="laundry-weigh-ins" component={LaundryWeighInsPage} />}</Route>
+        <Route path="/onboarding-queue">{() => <GuardedRoute viewId="onboarding-queue" component={OnboardingQueuePage} />}</Route>
         <Route path="/cleaners">{() => <GuardedRoute viewId="cleaners" component={CleanersPage} />}</Route>
         <Route path="/alerts">{() => <GuardedRoute viewId="alerts" component={AlertsPage} />}</Route>
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
@@ -248,6 +251,7 @@ function AppRoutes() {
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
+        <Route path="/onboarding" component={OnboardingIntakePage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />
         <Route path="/shipment-report" component={ShipmentReportPage} />
         <Route path="/no-access" component={NoAccess} />
@@ -294,6 +298,14 @@ function AppLayout() {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <OnboardingFormPage />
+        </Suspense>
+      );
+    }
+    // Allow public onboarding intake form without authentication
+    if (window.location.hash.startsWith('#/onboarding')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <OnboardingIntakePage />
         </Suspense>
       );
     }
