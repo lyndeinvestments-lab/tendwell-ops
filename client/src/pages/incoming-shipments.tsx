@@ -167,6 +167,12 @@ export default function IncomingShipmentsPage() {
     [shipments, receivingId],
   )
 
+  const [viewingId, setViewingId] = useState<string | null>(null)
+  const viewingRow = useMemo(
+    () => (shipments ?? []).find(s => s.id === viewingId) ?? null,
+    [shipments, viewingId],
+  )
+
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-5 h-full flex flex-col gap-4">
@@ -241,6 +247,7 @@ export default function IncomingShipmentsPage() {
             onMarkReceived={(id) => { setReceivingId(id); setReceivingNotes('') }}
             onUndo={(id) => undoReceived.mutate(id)}
             undoingId={undoReceived.isPending ? undoReceived.variables ?? null : null}
+            onView={(id) => setViewingId(id)}
           />
         )}
       </div>
@@ -288,6 +295,60 @@ export default function IncomingShipmentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!viewingId} onOpenChange={open => { if (!open) setViewingId(null) }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Shipment details</DialogTitle>
+            <DialogDescription>
+              {viewingRow ? `Submitted ${safeFormatTimestamp(viewingRow.submitted_at)}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          {viewingRow && (
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <ShipKV k="Sender" v={viewingRow.sender_name} />
+                <ShipKV k="Property" v={viewingRow.property_name} />
+                <ShipKV k="Tracking #" v={viewingRow.tracking_number || '—'} mono />
+                <ShipKV k="Estimated delivery" v={safeFormatDate(viewingRow.estimated_delivery, 'MMM d, yyyy')} />
+                <ShipKV k="Delivery responsible" v={viewingRow.delivery_responsible} />
+                <ShipKV k="Status" v={viewingRow.received_at ? 'Received' : 'Pending'} />
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mb-1">Description</p>
+                <div className="rounded-md border border-border bg-muted/30 p-2.5 whitespace-pre-wrap break-words">
+                  {viewingRow.description}
+                </div>
+              </div>
+              {viewingRow.received_at && (
+                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-1.5">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Received {safeFormatTimestamp(viewingRow.received_at)}</span>
+                    {viewingRow.received_by && receiverMap?.[viewingRow.received_by] && (
+                      <span className="text-muted-foreground">· by {receiverMap[viewingRow.received_by]}</span>
+                    )}
+                  </div>
+                  {viewingRow.received_notes && (
+                    <div className="text-xs italic text-muted-foreground whitespace-pre-wrap break-words pl-5.5">
+                      "{viewingRow.received_notes}"
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function ShipKV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground">{k}</p>
+      <p className={`text-sm break-words ${mono ? 'font-mono text-xs' : ''}`}>{v || '—'}</p>
     </div>
   )
 }
@@ -320,7 +381,7 @@ function SummaryTile({
 }
 
 function ListView({
-  rows, receiverMap, canEdit, onMarkReceived, onUndo, undoingId,
+  rows, receiverMap, canEdit, onMarkReceived, onUndo, undoingId, onView,
 }: {
   rows: Shipment[]
   receiverMap: Record<string, string>
@@ -328,6 +389,7 @@ function ListView({
   onMarkReceived: (id: string) => void
   onUndo: (id: string) => void
   undoingId: string | null
+  onView: (id: string) => void
 }) {
   if (rows.length === 0) {
     return (
@@ -358,12 +420,13 @@ function ListView({
             return (
               <tr
                 key={s.id}
-                className={`border-b border-border/50 hover:bg-muted/20 ${isReceived ? 'opacity-70' : ''}`}
+                className={`border-b border-border/50 hover:bg-muted/20 cursor-pointer ${isReceived ? 'opacity-70' : ''}`}
                 data-testid={`row-shipment-${s.id}`}
+                onClick={() => onView(s.id)}
               >
                 <td className="py-1.5 px-3 font-medium">{s.sender_name}</td>
                 <td className="py-1.5 px-3 text-muted-foreground">{s.property_name}</td>
-                <td className="py-1.5 px-3 max-w-[320px] truncate" title={s.description}>{s.description}</td>
+                <td className="py-1.5 px-3 max-w-[320px] truncate text-primary hover:underline" title={s.description}>{s.description}</td>
                 <td className="py-1.5 px-3 font-mono text-[11px] text-muted-foreground">{s.tracking_number || '—'}</td>
                 <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
                   {safeFormatDate(s.estimated_delivery, 'MMM d, yyyy')}
@@ -402,7 +465,7 @@ function ListView({
                     </span>
                   )}
                 </td>
-                <td className="py-1.5 px-3 text-right">
+                <td className="py-1.5 px-3 text-right" onClick={e => e.stopPropagation()}>
                   {canEdit && !isReceived && (
                     <Button size="sm" variant="default" className="h-7 gap-1 text-xs"
                       onClick={() => onMarkReceived(s.id)}
