@@ -8,7 +8,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
-import { Check, X, RefreshCw, ChevronDown, ChevronRight, Building2, ExternalLink, Image as ImageIcon } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Check, X, RefreshCw, ChevronDown, ChevronRight, Building2, ExternalLink, Image as ImageIcon, Link2, Search } from 'lucide-react'
 
 interface OnboardingSubmission {
   id: string
@@ -70,6 +72,7 @@ export default function OnboardingQueuePage() {
   const [tab, setTab] = useState<Tab>('pending')
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [working, setWorking] = useState<string | null>(null)
+  const [mergeFor, setMergeFor] = useState<OnboardingSubmission | null>(null)
 
   const { data: rows, isLoading, isRefetching, refetch } = useQuery<OnboardingSubmission[]>({
     queryKey: ['/onboarding_submissions', tab],
@@ -98,7 +101,11 @@ export default function OnboardingQueuePage() {
   const { mutate: approve } = useMutation({
     mutationFn: async (sub: OnboardingSubmission) => {
       setWorking(sub.id)
-      const propertyPayload = {
+      // properties.check_in_time / check_out_time are NOT NULL with column
+      // defaults. Strip nulls so the defaults apply when the client didn't
+      // fill those fields in (any other null field is fine — the column
+      // simply stays null).
+      const propertyPayload: Record<string, any> = {
         name: sub.property_name || sub.address || sub.client_name || 'New Property',
         address: sub.address,
         bedrooms: sub.bedrooms,
@@ -116,6 +123,9 @@ export default function OnboardingQueuePage() {
         check_in_time: sub.check_in_time,
         check_out_time: sub.check_out_time,
         stage_id: ONBOARDING_STAGE_ID,
+      }
+      for (const k of Object.keys(propertyPayload)) {
+        if (propertyPayload[k] == null) delete propertyPayload[k]
       }
       const { data: newProp, error: insErr } = await supabase
         .from('properties')
@@ -145,6 +155,78 @@ export default function OnboardingQueuePage() {
     },
     onError: (e: any) => {
       toast({ title: 'Approval failed', description: e?.message || 'Try again.', variant: 'destructive' })
+      setWorking(null)
+    },
+  })
+
+  const { mutate: mergeWithExisting } = useMutation({
+    mutationFn: async ({ sub, propertyId }: { sub: OnboardingSubmission; propertyId: number }) => {
+      setWorking(sub.id)
+      // Fetch current property values so we only fill in missing/empty fields —
+      // we never overwrite data already entered by an admin.
+      const { data: existing, error: fetchErr } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('id', propertyId)
+        .single()
+      if (fetchErr) throw fetchErr
+
+      const candidate: Record<string, any> = {
+        address: sub.address,
+        bedrooms: sub.bedrooms,
+        number_of_beds: sub.number_of_beds,
+        full_baths: sub.full_baths,
+        half_baths: sub.half_baths,
+        square_footage: sub.square_footage,
+        hot_tub: sub.hot_tub,
+        linen_program: sub.linen_program,
+        door_code: sub.door_code,
+        auto_code: sub.auto_code,
+        other_codes: sub.other_codes,
+        wifi_info: sub.wifi_info,
+        filter_size: sub.filter_size,
+        check_in_time: sub.check_in_time,
+        check_out_time: sub.check_out_time,
+      }
+      const patch: Record<string, any> = {}
+      for (const [k, v] of Object.entries(candidate)) {
+        if (v == null) continue
+        const cur = (existing as any)?.[k]
+        if (cur == null || cur === '' || cur === false) patch[k] = v
+      }
+
+      if (Object.keys(patch).length > 0) {
+        const { error: upErr } = await supabase.from('properties').update(patch as any).eq('id', propertyId)
+        if (upErr) throw upErr
+      }
+
+      const { error: subErr } = await supabase
+        .from('onboarding_submissions')
+        .update({
+          status: 'converted',
+          approved_at: new Date().toISOString(),
+          approved_by: user?.label || (user as any)?.google_email || 'admin',
+          property_id: propertyId,
+        })
+        .eq('id', sub.id)
+      if (subErr) throw subErr
+
+      return { propertyId, filled: Object.keys(patch).length }
+    },
+    onSuccess: ({ propertyId, filled }) => {
+      toast({
+        title: 'Merged',
+        description: filled > 0
+          ? `Linked to property #${propertyId} and filled ${filled} empty field${filled === 1 ? '' : 's'}.`
+          : `Linked to property #${propertyId}. No fields needed updating.`,
+      })
+      qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      setWorking(null)
+      setMergeFor(null)
+    },
+    onError: (e: any) => {
+      toast({ title: 'Merge failed', description: e?.message || 'Try again.', variant: 'destructive' })
       setWorking(null)
     },
   })
@@ -305,9 +387,12 @@ export default function OnboardingQueuePage() {
                     )}
 
                     {r.status === 'pending' && (
-                      <div className="flex gap-2 pt-2">
+                      <div className="flex gap-2 pt-2 flex-wrap">
                         <Button size="sm" onClick={() => approve(r)} disabled={isWorking} data-testid={`button-approve-${r.id}`}>
                           <Check className="w-3.5 h-3.5 mr-1.5" /> Approve & Create Property
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setMergeFor(r)} disabled={isWorking} data-testid={`button-merge-${r.id}`}>
+                          <Link2 className="w-3.5 h-3.5 mr-1.5" /> Merge with Existing
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => reject(r)} disabled={isWorking} data-testid={`button-reject-${r.id}`}>
                           <X className="w-3.5 h-3.5 mr-1.5" /> Reject
@@ -321,7 +406,135 @@ export default function OnboardingQueuePage() {
           })}
         </div>
       )}
+
+      <MergePropertyDialog
+        submission={mergeFor}
+        working={!!working && mergeFor?.id === working}
+        onClose={() => setMergeFor(null)}
+        onPick={(propertyId) => mergeFor && mergeWithExisting({ sub: mergeFor, propertyId })}
+      />
     </div>
+  )
+}
+
+interface PropertyMatch {
+  id: number
+  name: string
+  address: string | null
+  stage_id: number | null
+  pipeline_stages?: { name: string | null } | null
+}
+
+function MergePropertyDialog({
+  submission,
+  working,
+  onClose,
+  onPick,
+}: {
+  submission: OnboardingSubmission | null
+  working: boolean
+  onClose: () => void
+  onPick: (propertyId: number) => void
+}) {
+  const [search, setSearch] = useState('')
+
+  const initialQuery = useMemo(() => {
+    if (!submission) return ''
+    return submission.client_name || submission.address || submission.property_name || ''
+  }, [submission])
+
+  const effectiveQuery = search || initialQuery
+
+  const { data: matches, isLoading } = useQuery<PropertyMatch[]>({
+    queryKey: ['/onboarding_submissions/merge-candidates', submission?.id, effectiveQuery],
+    enabled: !!submission,
+    queryFn: async () => {
+      const tokens = effectiveQuery
+        .split(/[,\s]+/)
+        .map(t => t.trim())
+        .filter(t => t.length >= 2)
+        .slice(0, 4)
+
+      const ors: string[] = []
+      for (const t of tokens) {
+        const safe = t.replace(/[,()%]/g, ' ')
+        ors.push(`name.ilike.%${safe}%`)
+        ors.push(`address.ilike.%${safe}%`)
+      }
+      let q = supabase
+        .from('properties')
+        .select('id,name,address,stage_id,pipeline_stages(name)')
+        .order('id', { ascending: false })
+        .limit(40)
+      if (ors.length > 0) q = q.or(ors.join(','))
+      const { data, error } = await q
+      if (error) throw error
+      return (data ?? []) as unknown as PropertyMatch[]
+    },
+    staleTime: 10_000,
+  })
+
+  return (
+    <Dialog open={!!submission} onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Merge with existing property</DialogTitle>
+          <DialogDescription>
+            Find the existing listing this submission matches. We'll link the submission and fill in any blank fields on the property — without overwriting data that's already there.
+          </DialogDescription>
+        </DialogHeader>
+
+        {submission && (
+          <div className="rounded-md border border-border bg-muted/30 p-3 text-xs space-y-0.5">
+            <p><span className="text-muted-foreground">Client:</span> {submission.client_name || '—'}</p>
+            <p><span className="text-muted-foreground">Address:</span> {submission.address || '—'}</p>
+          </div>
+        )}
+
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={initialQuery ? `Searching for "${initialQuery}" — refine here` : 'Search by name or address'}
+            className="pl-8 h-9 text-sm"
+            data-testid="input-merge-search"
+          />
+        </div>
+
+        <div className="max-h-[360px] overflow-y-auto -mx-2">
+          {isLoading ? (
+            <div className="space-y-2 px-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
+          ) : (matches?.length ?? 0) === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">No matching properties.</p>
+          ) : (
+            <ul className="space-y-1 px-2">
+              {matches!.map(m => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => onPick(m.id)}
+                    disabled={working}
+                    className="w-full text-left px-3 py-2 rounded-md border border-border hover:bg-muted/50 transition-colors text-sm disabled:opacity-50"
+                    data-testid={`button-pick-property-${m.id}`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium truncate">{m.name}</span>
+                      {m.pipeline_stages?.name && <Badge variant="outline" className="shrink-0">{m.pipeline_stages.name}</Badge>}
+                    </div>
+                    {m.address && <p className="text-xs text-muted-foreground truncate mt-0.5">{m.address}</p>}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={working}>Cancel</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
