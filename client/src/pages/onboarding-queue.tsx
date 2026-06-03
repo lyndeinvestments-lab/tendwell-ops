@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
+import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
@@ -32,6 +32,7 @@ interface OnboardingSubmission {
   hot_tub: boolean | null
   pool: boolean | null
   linen_program: boolean | null
+  onboarding_deep_clean: boolean | null
   door_code: string | null
   auto_code: string | null
   other_codes: string | null
@@ -199,6 +200,21 @@ export default function OnboardingQueuePage() {
       if (Object.keys(patch).length > 0) {
         const { error: upErr } = await supabase.from('properties').update(patch as any).eq('id', propertyId)
         if (upErr) throw upErr
+
+        // Audit every field the merge filled so it's reversible from
+        // Activity Feed if something gets merged into the wrong property.
+        const changedBy = user?.label || (user as any)?.google_email || 'admin'
+        const propertyName = (existing as any)?.name ?? null
+        for (const [field, newValue] of Object.entries(patch)) {
+          await logPropertyEdit(
+            propertyId,
+            field,
+            (existing as any)?.[field] ?? null,
+            newValue ?? null,
+            propertyName,
+            `${changedBy} (onboarding merge)`,
+          )
+        }
       }
 
       const { error: subErr } = await supabase
@@ -340,6 +356,7 @@ export default function OnboardingQueuePage() {
                       <KV k="Hot Tub" v={fmtBool(r.hot_tub)} />
                       <KV k="Pool" v={fmtBool(r.pool)} />
                       <KV k="Linen Program" v={fmtBool(r.linen_program)} />
+                      <KV k="Onboarding Deep Clean" v={fmtBool(r.onboarding_deep_clean)} />
                     </Section>
                     <Section title="Access & Wi-Fi">
                       <KV k="Door Code" v={r.door_code} />
