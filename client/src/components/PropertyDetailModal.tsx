@@ -1624,15 +1624,18 @@ export function PropertyDetailModal() {
                           hot_tub: (form.hot_tub ?? property.hot_tub) ? true : false,
                         }
                         const c = calculateLinens(src)
+                        const sleep = sleepCount(src)
+                        const guestEmpty = !src.guest_count || Number(src.guest_count) === 0
                         setForm(f => ({
                           ...f,
+                          ...(guestEmpty && sleep > 0 ? { guest_count: sleep } : {}),
                           bath_towels: c.bath_towels,
                           hand_towels: c.hand_towels,
                           washcloths: c.washcloths,
                           bathmats: c.bathmats,
                           pool_towels: c.pool_towels,
                         }))
-                        toast({ title: `Auto-filled linens (sleep count ${sleepCount(src)})` })
+                        toast({ title: `Auto-filled linens (sleep count ${sleep})` })
                       }}
                       className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
                       title="Compute from guest count (falls back to bed counts) + baths + hot tub"
