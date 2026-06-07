@@ -91,7 +91,7 @@ export default function LinenTrackerPage() {
   // writes them in one update. Never runs silently — always a user action.
   const { mutate: autoFillLinens, isPending: autoFilling } = useGuardedMutation('linen-tracker', {
     mutationFn: async ({ p, overwrite }: { p: any; overwrite: boolean }) => {
-      const c = calculateLinens({
+      const inputs = {
         guest_count: p.guest_count,
         king_beds: p.king_beds,
         queen_beds: p.queen_beds,
@@ -99,20 +99,26 @@ export default function LinenTrackerPage() {
         twin_beds: p.twin_beds,
         full_baths: p.full_baths,
         hot_tub: !!p.hot_tub,
-      })
+      }
+      const c = calculateLinens(inputs)
       // Only touch fields that are empty unless the caller opted into overwrite
       const updates: Record<string, number> = {}
+      // Backfill guest_count from bed formula when it's missing
+      if (!p.guest_count || p.guest_count === 0) {
+        const fromBeds = sleepCount({ king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds })
+        if (fromBeds > 0) updates.guest_count = fromBeds
+      }
       for (const key of ['bath_towels', 'hand_towels', 'washcloths', 'bathmats', 'pool_towels'] as const) {
         const current = p[key]
         if (overwrite || current == null || current === 0) updates[key] = c[key]
       }
-      if (Object.keys(updates).length === 0) return { id: p.id, changed: 0, sleep: sleepCount(p) }
+      if (Object.keys(updates).length === 0) return { id: p.id, changed: 0, sleep: sleepCount(inputs) }
       const { error } = await supabase.from('properties').update(updates).eq('id', p.id)
       if (error) throw error
       for (const [field, value] of Object.entries(updates)) {
         logPropertyEdit(p.id, field, p[field], value, p.name)
       }
-      return { id: p.id, changed: Object.keys(updates).length, sleep: sleepCount(p) }
+      return { id: p.id, changed: Object.keys(updates).length, sleep: sleepCount(inputs) }
     },
     onSuccess: (r: any) => {
       // Auto-fill rewrites 5 towel columns on a properties row — same
@@ -150,13 +156,18 @@ export default function LinenTrackerPage() {
         king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds,
         full_baths: p.full_baths, hot_tub: !!p.hot_tub,
       })
-      const { error } = await supabase.from('properties').update({
+      const bulkUpdates: Record<string, number> = {
         bath_towels: c.bath_towels, hand_towels: c.hand_towels, washcloths: c.washcloths,
         bathmats: c.bathmats, pool_towels: c.pool_towels,
-      }).eq('id', p.id)
+      }
+      if (!p.guest_count || p.guest_count === 0) {
+        const fromBeds = sleepCount({ king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds })
+        if (fromBeds > 0) bulkUpdates.guest_count = fromBeds
+      }
+      const { error } = await supabase.from('properties').update(bulkUpdates).eq('id', p.id)
       if (!error) {
         ok++
-        for (const [field, value] of Object.entries(c)) logPropertyEdit(p.id, field, (p as any)[field], value, p.name)
+        for (const [field, value] of Object.entries(bulkUpdates)) logPropertyEdit(p.id, field, (p as any)[field], value, p.name)
       }
     }
     // Bulk auto-fill touched many properties rows; broad invalidation.
