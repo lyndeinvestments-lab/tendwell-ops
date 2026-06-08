@@ -34,7 +34,27 @@ const STANDARD_ITEMS = [
   { key: 'hand_towels', label: 'Hand Towels', reqKey: 'hand_towels' },
   { key: 'bathmats', label: 'Bathmats', reqKey: 'bathmats' },
   { key: 'pool_towels', label: 'Pool Towels', reqKey: 'pool_towels' },
+  // Requirement = 3 × total kitchens across the operational set (computed in
+  // the requirements query under the synthetic `kitchen_towels_required` key).
+  { key: 'kitchen_towels', label: 'Kitchen Towels', reqKey: 'kitchen_towels_required', description: '3 per kitchen' },
 ] as const
+
+// On-hand-only items: tracked quantity with NO required target / variance.
+// Mattress encasements (one per bed size) and pillows (the pillow itself,
+// not pillowcases — king + standard).
+const ENCASEMENT_ITEMS = [
+  { key: 'king_encasements', label: 'King Encasements' },
+  { key: 'queen_encasements', label: 'Queen Encasements' },
+  { key: 'full_encasements', label: 'Full Encasements' },
+  { key: 'twin_encasements', label: 'Twin Encasements' },
+] as const
+
+const PILLOW_ITEMS = [
+  { key: 'king_pillows', label: 'King Pillows' },
+  { key: 'standard_pillows', label: 'Standard Pillows' },
+] as const
+
+const ON_HAND_ITEMS = [...ENCASEMENT_ITEMS, ...PILLOW_ITEMS] as const
 
 // "Extra" individual pieces (not in rolls)
 const EXTRA_ITEMS = [
@@ -52,7 +72,7 @@ const EXTRA_ITEMS = [
   { key: 'twin_pillowcase_extras', label: 'Twin Pillowcases (extras)' },
 ] as const
 
-const ALL_ITEMS = [...STANDARD_ITEMS, ...EXTRA_ITEMS]
+const ALL_ITEMS = [...STANDARD_ITEMS, ...EXTRA_ITEMS, ...ON_HAND_ITEMS]
 
 function VarianceBadge({ value }: { value: number }) {
   if (value > 0) return <span className="text-xs font-medium text-green-600 dark:text-green-400">+{value}</span>
@@ -90,15 +110,19 @@ export default function LinenInventoryPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, stage_name')
+        .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, kitchens, stage_name')
         .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
       const totals: Record<string, number> = {}
       const keys = ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels']
       for (const k of keys) totals[k] = 0
+      let kitchens = 0
       for (const p of (data || [])) {
         for (const k of keys) totals[k] += (p as any)[k] ?? 0
+        kitchens += (p as any).kitchens ?? 0
       }
+      // Kitchen towels: 3 per kitchen across the operational set.
+      totals['kitchen_towels_required'] = Math.round(kitchens * 3)
       return totals
     },
   })
@@ -152,6 +176,14 @@ export default function LinenInventoryPage() {
     })).filter(r => r.onHand > 0)
   }, [latestCount])
 
+  // On-hand-only rows (encasements + pillows): always shown, no required/variance.
+  const onHandRows = useMemo(() => {
+    return ON_HAND_ITEMS.map(item => ({
+      ...item,
+      onHand: latestCount ? (latestCount as any)[item.key] ?? 0 : null,
+    }))
+  }, [latestCount])
+
   const totalRequired = snapshotRows.reduce((s, r) => s + r.required, 0)
   const totalOnHand = snapshotRows.reduce((s, r) => s + (r.onHand ?? 0), 0)
   const totalVariance = latestCount ? totalOnHand - totalRequired : null
@@ -203,6 +235,7 @@ export default function LinenInventoryPage() {
         'Counted By': h.counted_by || '',
       }
       for (const item of STANDARD_ITEMS) row[item.label] = h[item.key] ?? 0
+      for (const item of ON_HAND_ITEMS) row[item.label] = h[item.key] ?? 0
       for (const item of EXTRA_ITEMS) {
         if (h[item.key]) row[item.label] = h[item.key]
       }
@@ -331,6 +364,18 @@ export default function LinenInventoryPage() {
                         <td className="py-2 px-3 text-right">{row.variance != null ? <VarianceBadge value={row.variance} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
                       </tr>
                     ))}
+                    {/* Encasements & pillows — on-hand only, no required target */}
+                    <tr className="bg-muted/40">
+                      <td colSpan={4} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Encasements & Pillows</td>
+                    </tr>
+                    {onHandRows.map(row => (
+                      <tr key={row.key} className="border-b border-border/50">
+                        <td className="py-2 px-3 text-xs font-medium">{row.label}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">—</td>
+                        <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>
+                        <td className="py-2 px-3 text-right text-muted-foreground text-xs">—</td>
+                      </tr>
+                    ))}
                     {/* Extras section */}
                     {extraRows.length > 0 && (
                       <>
@@ -445,6 +490,44 @@ export default function LinenInventoryPage() {
                           placeholder="0"
                         />
                         {requirements && <p className="text-xs text-muted-foreground mt-0.5">Need: {requirements[item.reqKey] ?? 0}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Mattress Encasements — on-hand only, no requirement */}
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Mattress Encasements</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {ENCASEMENT_ITEMS.map(item => (
+                      <div key={item.key}>
+                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <Input
+                          type="number" inputMode="numeric"
+                          value={countValues[item.key] || ''}
+                          onChange={e => setCountValues(v => ({ ...v, [item.key]: e.target.value }))}
+                          className="h-10 text-base font-medium"
+                          placeholder="0"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pillows — the pillow itself (not pillowcases); on-hand only */}
+                <div>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pillows</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {PILLOW_ITEMS.map(item => (
+                      <div key={item.key}>
+                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <Input
+                          type="number" inputMode="numeric"
+                          value={countValues[item.key] || ''}
+                          onChange={e => setCountValues(v => ({ ...v, [item.key]: e.target.value }))}
+                          className="h-10 text-base font-medium"
+                          placeholder="0"
+                        />
                       </div>
                     ))}
                   </div>
