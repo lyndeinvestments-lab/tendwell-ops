@@ -15,7 +15,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Card, CardContent } from '@/components/ui/card'
 import { IssueDetailSheet } from '@/components/IssueDetailSheet'
 import {
-  Search, X, AlertTriangle, Plus, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
+  Search, X, AlertTriangle, Plus, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MessageSquare,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import Papa from 'papaparse'
@@ -225,7 +225,8 @@ export default function IssuesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
-      toast({ title: 'Issue logged' })
+      toast({ title: newForm.issue_type === 'guest_feedback' ? 'Guest feedback logged' : 'Issue logged' })
+      setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
       setNewForm({ ...newForm, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
     },
@@ -380,9 +381,14 @@ export default function IssuesPage() {
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: section })); setAddOpen(true) }}>
-              <Plus className="w-3.5 h-3.5" /> Log Issue
-            </Button>
+            <>
+              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'guest_feedback', priority: 'normal' })); setAddOpen(true) }}>
+                <MessageSquare className="w-3.5 h-3.5" /> Guest Feedback
+              </Button>
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'needs_attention' })); setAddOpen(true) }}>
+                <AlertTriangle className="w-3.5 h-3.5" /> Log Issue
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -536,7 +542,16 @@ export default function IssuesPage() {
       <Sheet open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
         <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle className="text-base">Log New Issue</SheetTitle>
+            <SheetTitle className="text-base flex items-center gap-2">
+              {newForm.issue_type === 'guest_feedback'
+                ? <><MessageSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Log Guest Feedback</>
+                : <><AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" /> Log Issue</>}
+            </SheetTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {newForm.issue_type === 'guest_feedback'
+                ? 'Retroactive guest feedback for the record — document what was reported, found, and resolved.'
+                : 'Something that needs fixing. After saving, copy the share link to send it to a cleaner.'}
+            </p>
           </SheetHeader>
           <div className="mt-4 space-y-3">
             <div className="grid grid-cols-2 gap-3">
@@ -551,21 +566,13 @@ export default function IssuesPage() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Type</label>
-                <select value={newForm.issue_type} onChange={e => setNewForm(f => ({ ...f, issue_type: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                  <option value="needs_attention">Needs Attention</option>
-                  <option value="guest_feedback">Guest Feedback</option>
-                </select>
-              </div>
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 text-sm h-8 cursor-pointer">
-                  <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
-                  Mark urgent
-                </label>
-              </div>
-            </div>
+            {newForm.issue_type === 'needs_attention' && (
+              <label className="flex items-center gap-2 text-sm rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-900/10 px-3 h-10 cursor-pointer">
+                <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
+                <span className="font-medium">Mark urgent</span>
+                <span className="text-xs text-muted-foreground">— needs fixing right away</span>
+              </label>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>
               <select value={newForm.property_id} onChange={e => {
@@ -600,34 +607,36 @@ export default function IssuesPage() {
               <label className="text-xs font-medium text-muted-foreground block mb-1">Details</label>
               <textarea value={newForm.details} onChange={e => setNewForm(f => ({ ...f, details: e.target.value }))} className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Describe the issue…" />
             </div>
+            {newForm.issue_type === 'guest_feedback' && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Assessment</label>
+                  <textarea value={newForm.assessment} onChange={e => setNewForm(f => ({ ...f, assessment: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="What was found…" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Resolution</label>
+                  <textarea value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="How was it resolved…" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Coverage</label>
+                  <select value={newForm.coverage} onChange={e => setNewForm(f => ({ ...f, coverage: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
+                    <option value="">N/A</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                </div>
+              </>
+            )}
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Assessment</label>
-              <textarea value={newForm.assessment} onChange={e => setNewForm(f => ({ ...f, assessment: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="What was found…" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Resolution</label>
-              <textarea value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="How was it resolved…" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Coverage</label>
-                <select value={newForm.coverage} onChange={e => setNewForm(f => ({ ...f, coverage: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                  <option value="">N/A</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Remarks</label>
-                <Input value={newForm.remarks} onChange={e => setNewForm(f => ({ ...f, remarks: e.target.value }))} className="h-8 text-sm" />
-              </div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Remarks</label>
+              <Input value={newForm.remarks} onChange={e => setNewForm(f => ({ ...f, remarks: e.target.value }))} className="h-8 text-sm" />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Slack Link</label>
               <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder="https://tendwell.slack.com/..." />
             </div>
             <Button className="w-full h-10" disabled={!newForm.property_name || !newForm.details || adding} onClick={() => addIssue()}>
-              {adding ? 'Saving…' : 'Log Issue'}
+              {adding ? 'Saving…' : (newForm.issue_type === 'guest_feedback' ? 'Save Feedback' : 'Log Issue')}
             </Button>
           </div>
         </SheetContent>
