@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ExternalLink, Upload, Check, Loader2, MessageSquare, Image as ImageIcon, AlertTriangle } from 'lucide-react'
+import { ExternalLink, Upload, Check, Loader2, MessageSquare, Image as ImageIcon, AlertTriangle, Link2 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 
 const STATUSES = ['In Progress', 'Completed', 'Just FYI', 'Disregard']
@@ -27,6 +27,7 @@ export function IssueDetailSheet({
   const qc = useQueryClient()
   const [comment, setComment] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [copied, setCopied] = useState(false)
   const issueId = issue?.id
 
   const { data: comments, isLoading: commentsLoading } = useQuery({
@@ -130,6 +131,20 @@ export function IssueDetailSheet({
             </SheetHeader>
 
             <div className="mt-4 space-y-4">
+              {/* Shareable cleaner link */}
+              {issue.share_token && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/issue/${issue.share_token}`
+                    navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
+                  }}
+                  className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+                >
+                  {copied ? <><Check className="w-4 h-4" /> Link copied — send it to the cleaner</> : <><Link2 className="w-4 h-4" /> Copy cleaner share link</>}
+                </button>
+              )}
+
               {/* Status / complete */}
               {canEdit && (
                 <div className="flex items-center gap-2 pb-3 border-b border-border">
