@@ -573,18 +573,22 @@ export type Database = {
         Row: {
           assessment: string | null
           category: string
+          completed_at: string | null
           coverage: string | null
           created_at: string
           created_by: string | null
           details: string | null
           id: string
+          issue_type: string | null
           last_touch: string | null
+          priority: string
           property_id: number | null
           property_name: string | null
           reference: string | null
           remarks: string | null
           report_date: string
           resolution: string | null
+          share_token: string | null
           slack_link: string | null
           status: string
           updated_at: string
@@ -592,18 +596,22 @@ export type Database = {
         Insert: {
           assessment?: string | null
           category?: string
+          completed_at?: string | null
           coverage?: string | null
           created_at?: string
           created_by?: string | null
           details?: string | null
           id?: string
+          issue_type?: string | null
           last_touch?: string | null
+          priority?: string
           property_id?: number | null
           property_name?: string | null
           reference?: string | null
           remarks?: string | null
           report_date?: string
           resolution?: string | null
+          share_token?: string | null
           slack_link?: string | null
           status?: string
           updated_at?: string
@@ -611,18 +619,22 @@ export type Database = {
         Update: {
           assessment?: string | null
           category?: string
+          completed_at?: string | null
           coverage?: string | null
           created_at?: string
           created_by?: string | null
           details?: string | null
           id?: string
+          issue_type?: string | null
           last_touch?: string | null
+          priority?: string
           property_id?: number | null
           property_name?: string | null
           reference?: string | null
           remarks?: string | null
           report_date?: string
           resolution?: string | null
+          share_token?: string | null
           slack_link?: string | null
           status?: string
           updated_at?: string

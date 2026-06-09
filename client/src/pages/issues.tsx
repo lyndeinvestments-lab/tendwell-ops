@@ -13,6 +13,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { TablePagination } from '@/components/TablePagination'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
+import { IssueDetailSheet } from '@/components/IssueDetailSheet'
 import {
   Search, X, AlertTriangle, Plus, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink,
 } from 'lucide-react'
@@ -57,6 +58,7 @@ export default function IssuesPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [section, setSection] = useState<'needs_attention' | 'guest_feedback'>('needs_attention')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('report_date')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
@@ -68,6 +70,9 @@ export default function IssuesPage() {
   const [importRunning, setImportRunning] = useState(false)
   const [newForm, setNewForm] = useState({
     report_date: new Date().toISOString().split('T')[0],
+    issue_type: 'needs_attention',
+    priority: 'normal',
+    property_id: '',
     property_name: '',
     category: 'Cleaning Not As Expected',
     last_touch: '',
@@ -155,19 +160,24 @@ export default function IssuesPage() {
   const filtered = useMemo(() => {
     if (!issues) return []
     let result = issues.filter((i: any) => {
+      const matchSection = (i.issue_type || 'needs_attention') === section
       const matchSearch = !search.trim() || [i.property_name, i.details, i.last_touch].some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const matchStatus = statusFilter === 'all' || i.status === statusFilter
       const matchCategory = categoryFilter === 'all' || i.category === categoryFilter
-      return matchSearch && matchStatus && matchCategory
+      return matchSection && matchSearch && matchStatus && matchCategory
     })
     result = [...result].sort((a: any, b: any) => {
+      // Open urgent issues float to the top of the list.
+      const aU = a.priority === 'urgent' && a.status !== 'Completed' ? 0 : 1
+      const bU = b.priority === 'urgent' && b.status !== 'Completed' ? 0 : 1
+      if (aU !== bU) return aU - bU
       const dir = sortDir === 'asc' ? 1 : -1
       const av = a[sortKey] || ''
       const bv = b[sortKey] || ''
       return av.localeCompare(bv) * dir
     })
     return result
-  }, [issues, search, statusFilter, categoryFilter, sortKey, sortDir])
+  }, [issues, search, statusFilter, categoryFilter, sortKey, sortDir, section])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -176,6 +186,9 @@ export default function IssuesPage() {
     mutationFn: async () => {
       const { error } = await supabase.from('cleaning_issues').insert({
         report_date: newForm.report_date,
+        issue_type: newForm.issue_type,
+        priority: newForm.priority,
+        property_id: newForm.property_id ? Number(newForm.property_id) : null,
         property_name: newForm.property_name,
         category: newForm.category,
         last_touch: newForm.last_touch || null,
@@ -214,7 +227,7 @@ export default function IssuesPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
       toast({ title: 'Issue logged' })
       setAddOpen(false)
-      setNewForm({ ...newForm, property_name: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
+      setNewForm({ ...newForm, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
     },
     onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
   })
@@ -367,7 +380,7 @@ export default function IssuesPage() {
             </Button>
           )}
           {canEdit && (
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAddOpen(true)}>
+            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: section })); setAddOpen(true) }}>
               <Plus className="w-3.5 h-3.5" /> Log Issue
             </Button>
           )}
@@ -383,6 +396,22 @@ export default function IssuesPage() {
               <p className="text-lg font-semibold">{count}</p>
             </CardContent>
           </Card>
+        ))}
+      </div>
+
+      {/* Section tabs — Guest Feedback vs Needs Attention */}
+      <div className="flex gap-2">
+        {([
+          { key: 'needs_attention', label: 'Needs Attention' },
+          { key: 'guest_feedback', label: 'Guest Feedback' },
+        ] as const).map(t => (
+          <button
+            key={t.key}
+            onClick={() => { setSection(t.key); setPage(1) }}
+            className={`px-3 h-8 rounded-md border text-sm transition-colors ${section === t.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+          >
+            {t.label}
+          </button>
         ))}
       </div>
 
@@ -429,7 +458,10 @@ export default function IssuesPage() {
                 className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${issue.status === 'In Progress' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
                 onClick={() => setDetailIssue(issue)}
               >
-                <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">{issue.property_name}</td>
+                <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                  {issue.priority === 'urgent' && issue.status !== 'Completed' && <span className="mr-1 text-[10px] font-semibold text-red-600 dark:text-red-400">⚠ URGENT</span>}
+                  {issue.property_name}
+                </td>
                 <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
                 <td className="py-2 px-3"><CategoryBadge category={issue.category} /></td>
                 <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
@@ -463,60 +495,13 @@ export default function IssuesPage() {
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      {/* Detail Sheet */}
-      <Sheet open={!!detailIssue} onOpenChange={v => !v && setDetailIssue(null)}>
-        <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
-          {detailIssue && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="text-base">{detailIssue.property_name}</SheetTitle>
-                <div className="flex items-center gap-2 mt-1">
-                  <StatusBadge status={detailIssue.status} />
-                  <span className="text-xs text-muted-foreground">{format(new Date(detailIssue.report_date), 'MMMM d, yyyy')}</span>
-                </div>
-              </SheetHeader>
-              <div className="mt-4 space-y-4">
-                {[
-                  { label: 'Category', value: detailIssue.category },
-                  { label: 'Last Touch', value: detailIssue.last_touch },
-                  { label: 'Details', value: detailIssue.details },
-                  { label: 'Assessment', value: detailIssue.assessment },
-                  { label: 'Resolution', value: detailIssue.resolution },
-                  { label: 'Coverage', value: detailIssue.coverage },
-                  { label: 'Remarks', value: detailIssue.remarks },
-                  { label: 'Slack Link', value: detailIssue.slack_link, isLink: true },
-                ].map((row: any) => row.value ? (
-                  <div key={row.label}>
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{row.label}</span>
-                    {row.isLink ? (
-                      <a href={row.value} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline flex items-center gap-1">
-                        <ExternalLink className="w-3.5 h-3.5" /> Open in Slack
-                      </a>
-                    ) : (
-                      <p className="text-sm whitespace-pre-wrap">{row.value}</p>
-                    )}
-                  </div>
-                ) : null)}
-                {canEdit && (
-                  <div className="pt-2 border-t border-border">
-                    <span className="text-xs font-medium text-muted-foreground block mb-1">Update Status</span>
-                    <select
-                      value={detailIssue.status}
-                      onChange={e => {
-                        updateStatus({ id: detailIssue.id, status: e.target.value })
-                        setDetailIssue({ ...detailIssue, status: e.target.value })
-                      }}
-                      className="h-8 text-sm border border-input rounded-md px-2 bg-background w-full"
-                    >
-                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
+      {/* Detail Sheet — CRM: info, comments, photos, status */}
+      <IssueDetailSheet
+        issue={detailIssue}
+        canEdit={canEdit}
+        onClose={() => setDetailIssue(null)}
+        onChanged={() => qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })}
+      />
 
       {/* Import Preview Sheet */}
       {importData && (
@@ -566,11 +551,30 @@ export default function IssuesPage() {
                 </select>
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                <select value={newForm.issue_type} onChange={e => setNewForm(f => ({ ...f, issue_type: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
+                  <option value="needs_attention">Needs Attention</option>
+                  <option value="guest_feedback">Guest Feedback</option>
+                </select>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm h-8 cursor-pointer">
+                  <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
+                  Mark urgent
+                </label>
+              </div>
+            </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>
-              <select value={newForm.property_name} onChange={e => setNewForm(f => ({ ...f, property_name: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
+              <select value={newForm.property_id} onChange={e => {
+                const id = e.target.value
+                const name = (properties || []).find((p: any) => String(p.id) === id)?.name || ''
+                setNewForm(f => ({ ...f, property_id: id, property_name: name }))
+              }} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
                 <option value="">Select property…</option>
-                {(properties || []).map((p: any) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                {(properties || []).map((p: any) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
               </select>
             </div>
             <div>
