@@ -245,7 +245,7 @@ function SetupStatusTiles({
         ? 'complete'
         : 'partial'
 
-  const hasAuto = !!(property.auto_code && String(property.auto_code).trim())
+  const hasAuto = !!property.has_auto_code
   const hasDoor = !!(property.door_code && String(property.door_code).trim())
   const hasOther = !!(property.other_codes && String(property.other_codes).trim())
   const lockStatus: 'complete' | 'missing' = (hasAuto || hasDoor || hasOther) ? 'complete' : 'missing'
@@ -411,7 +411,7 @@ function SetupStatusTiles({
         <Tile icon={Lock} title="Lock Access Setup" status={lockStatus} href="/access-codes" testId={`tile-lock-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
             <span>Auto code</span>
-            <TextCell field="auto_code" />
+            <span className="text-foreground text-right">{property.has_auto_code ? 'Yes' : 'No'}</span>
             <span>Door code</span>
             <TextCell field="door_code" />
             <span>Other</span>
@@ -1512,7 +1512,7 @@ export default function CostTrackingPage() {
                         <div className="rounded-md border border-border/60 bg-card p-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access &amp; Codes</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <EditText label="Auto Code"   value={p.auto_code}   canEdit={canEditSetup} onSave={saveText('auto_code')}   testId={`row-detail-auto_code-${p.id}`} />
+                            <EditText label="Auto Code"   value={p.has_auto_code ? 'Yes' : 'No'} canEdit={false} onSave={() => {}}   testId={`row-detail-auto_code-${p.id}`} />
                             <EditText label="Door Code"   value={p.door_code}   canEdit={canEditSetup} onSave={saveText('door_code')}   testId={`row-detail-door_code-${p.id}`} />
                             <EditText label="Other Codes" value={p.other_codes} canEdit={canEditSetup} onSave={saveText('other_codes')} testId={`row-detail-other_codes-${p.id}`} />
                             <EditText label="WiFi"        value={p.wifi_info}   canEdit={canEditSetup} onSave={saveText('wifi_info')}   testId={`row-detail-wifi_info-${p.id}`} placeholder="SSID / password / notes" />

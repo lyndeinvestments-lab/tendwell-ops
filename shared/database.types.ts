@@ -3030,6 +3030,7 @@ export type Database = {
       operational_properties: {
         Row: {
           address: string | null
+          has_auto_code: boolean | null
           auto_code: string | null
           avg_cleans_per_month: number | null
           bath_towels: number | null

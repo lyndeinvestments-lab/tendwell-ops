@@ -26,7 +26,6 @@ const FIELDS: { key: string; prop: string; label: string; type: FieldType }[] = 
   { key: 'hot_tub', prop: 'hot_tub', label: 'Hot Tub', type: 'bool' },
   { key: 'linen_program', prop: 'linen_program', label: 'Linen Program', type: 'bool' },
   { key: 'door_code', prop: 'door_code', label: 'Front Door Code', type: 'text' },
-  { key: 'auto_code', prop: 'auto_code', label: 'Auto / Garage Code', type: 'text' },
   { key: 'other_codes', prop: 'other_codes', label: 'Other Codes', type: 'text' },
   { key: 'wifi_info', prop: 'wifi_info', label: 'Wi-Fi', type: 'text' },
   { key: 'filter_size', prop: 'filter_size', label: 'A/C Filter Size', type: 'text' },
@@ -113,6 +112,7 @@ export function OnboardingReviewDialog({
   // Editable field values for create mode (prefilled from the submission).
   const [createVals, setCreateVals] = useState<Record<string, any>>({})
   const [beds, setBeds] = useState<Beds>({ king: 0, queen: 0, full: 0, twin: 0 })
+  const [hasAutoCode, setHasAutoCode] = useState(false)
   const [linkContact, setLinkContact] = useState(true)
   const [contactName, setContactName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
@@ -141,6 +141,7 @@ export function OnboardingReviewDialog({
       setBeds(hasStructured
         ? { king: existing.king_beds ?? 0, queen: existing.queen_beds ?? 0, full: existing.full_beds ?? 0, twin: existing.twin_beds ?? 0 }
         : parseBeds(submission.bed_sizes))
+      setHasAutoCode(!!existing.has_auto_code)
       setContactName(existingContact?.full_name ?? submission.client_name ?? '')
       setContactEmail(existingContact?.email ?? submission.contact_email ?? '')
       setContactPhone(existingContact?.phone ?? submission.contact_phone ?? '')
@@ -149,6 +150,7 @@ export function OnboardingReviewDialog({
       for (const f of FIELDS) vals[f.prop] = submission[f.key]
       setCreateVals(vals)
       setBeds(parseBeds(submission.bed_sizes))
+      setHasAutoCode(false)
       setContactName(submission.client_name ?? '')
       setContactEmail(submission.contact_email ?? '')
       setContactPhone(submission.contact_phone ?? '')
@@ -184,6 +186,7 @@ export function OnboardingReviewDialog({
           stage_id: ONBOARDING_STAGE_ID,
           king_beds: beds.king, queen_beds: beds.queen, full_beds: beds.full, twin_beds: beds.twin,
           bed_sizes_text: submission.bed_sizes ?? null,
+          has_auto_code: hasAutoCode,
         }
         for (const f of FIELDS) {
           if (f.prop === 'name') continue
@@ -214,6 +217,7 @@ export function OnboardingReviewDialog({
       if (submission.bed_sizes && existing.bed_sizes_text !== submission.bed_sizes) {
         patch.bed_sizes_text = submission.bed_sizes
       }
+      if ((existing.has_auto_code ?? false) !== hasAutoCode) patch.has_auto_code = hasAutoCode
 
       if (linkContact && contactName.trim()) {
         if (existing.contact_id) {
@@ -346,6 +350,15 @@ export function OnboardingReviewDialog({
               </div>
               <p className="text-[11px] text-muted-foreground">Counts are pre-filled from the typed text — adjust as needed. Saved to the structured King/Queen/Full/Twin columns.</p>
             </div>
+
+            {/* Auto code (smart lock) — admin sets; the code value lives in Settings */}
+            <label className="flex items-start gap-2 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30">
+              <Checkbox checked={hasAutoCode} onCheckedChange={(v) => setHasAutoCode(!!v)} className="mt-0.5" />
+              <div className="text-xs flex-1">
+                <div className="font-medium">Auto Code (smart lock)</div>
+                <div className="text-muted-foreground">Check if this property has the shared smart-lock auto code installed. The code value itself is managed in Settings.</div>
+              </div>
+            </label>
 
             {/* Contact */}
             <div className="rounded-lg border border-border p-3 space-y-2">

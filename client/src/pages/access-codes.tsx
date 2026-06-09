@@ -11,12 +11,12 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import { EmptyState } from '@/components/EmptyState'
 
 const ACCESS_COLS = [
-  { key: 'auto_code', label: 'Auto Code', sensitive: true },
   { key: 'door_code', label: 'Door Code', sensitive: true },
   { key: 'other_codes', label: 'Other Codes', sensitive: true },
   { key: 'wifi_info', label: 'WiFi Info', sensitive: true },
@@ -102,10 +102,11 @@ function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }:
 
 function CopyAllButton({ p }: { p: any }) {
   const [copied, setCopied] = useState(false)
+  const { get } = useAppSettings()
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation()
     const parts = [`Property: ${p.name}`]
-    if (p.auto_code) parts.push(`Auto: ${p.auto_code}`)
+    if (p.has_auto_code) parts.push(`Auto: ${get('auto_code', '') || 'yes'}`)
     if (p.door_code) parts.push(`Door: ${p.door_code}`)
     if (p.wifi_info) parts.push(`WiFi: ${p.wifi_info}`)
     if (p.other_codes) parts.push(`Other: ${p.other_codes}`)
@@ -134,15 +135,17 @@ export default function AccessCodesPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [sortKey, setSortKey] = useState<'name' | 'stage_name' | 'auto_code' | 'door_code' | 'other_codes' | 'wifi_info' | 'notes'>('name')
+  const [sortKey, setSortKey] = useState<'name' | 'stage_name' | 'door_code' | 'other_codes' | 'wifi_info' | 'notes'>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const { get: getSetting } = useAppSettings()
+  const autoCodeValue = getSetting('auto_code', '')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/access-codes'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, stage_name, auto_code, door_code, other_codes, wifi_info, notes, updated_at')
+        .select('id, name, stage_name, has_auto_code, door_code, other_codes, wifi_info, notes, updated_at')
         .in('stage_name', ['Active', 'Onboarding', 'Offboarding'])
         .not('name', 'is', null)
       if (error) throw error
@@ -265,6 +268,7 @@ export default function AccessCodesPage() {
                   <SortIcon col="stage_name" />
                 </span>
               </th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Auto Code</th>
               {ACCESS_COLS.map(c => (
                 <th
                   key={c.key}
@@ -286,21 +290,20 @@ export default function AccessCodesPage() {
             {isLoading ? (
               [...Array(6)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(ACCESS_COLS.length + 4)].map((_, j) => (
+                  {[...Array(ACCESS_COLS.length + 5)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={ACCESS_COLS.length + 4} className="py-12">
+                <td colSpan={ACCESS_COLS.length + 5} className="py-12">
                   <EmptyState icon={KeyRound} title="No properties found" description="No properties match your current filters." />
                 </td>
               </tr>
             ) : (
               paged.map((p: any) => {
                 const codeKeys: Array<{ key: string; label: string }> = [
-                  { key: 'auto_code', label: 'Auto Code' },
                   { key: 'door_code', label: 'Door Code' },
                   { key: 'other_codes', label: 'Other Codes' },
                 ]
@@ -347,6 +350,7 @@ export default function AccessCodesPage() {
                       </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name || '—'}</td>
+                    <td className="py-2 px-3 text-xs whitespace-nowrap">{p.has_auto_code ? <span className="font-mono">{autoCodeValue || 'Yes'}</span> : <span className="text-muted-foreground">—</span>}</td>
                     {ACCESS_COLS.map(c => {
                       const isEmpty = c.sensitive && (!p[c.key] || p[c.key].trim() === '')
                       return (

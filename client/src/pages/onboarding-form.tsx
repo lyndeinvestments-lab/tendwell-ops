@@ -20,7 +20,7 @@ export default function OnboardingFormPage() {
     bedrooms: '', full_baths: '', half_baths: '', square_footage: '',
     number_of_beds: '', guest_count: '', kitchens: '1',
     hot_tub: false, pet_friendly: '',
-    wifi_info: '', auto_code: '', door_code: '', other_codes: '', notes: '',
+    wifi_info: '', door_code: '', other_codes: '', notes: '',
   })
 
   // Token comes from ?token= (new clean URLs) with a fallback to the legacy
@@ -79,7 +79,6 @@ export default function OnboardingFormPage() {
       hot_tub: form.hot_tub,
       pet_friendly: form.pet_friendly || null,
       wifi_info: form.wifi_info || null,
-      auto_code: form.auto_code || null,
       door_code: form.door_code || null,
       other_codes: form.other_codes || null,
       notes: form.notes || null,
@@ -169,7 +168,6 @@ export default function OnboardingFormPage() {
           <CardHeader><CardTitle className="text-sm">Access & Wi-Fi</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div><label className={labelCls}>Auto Code</label><Input value={form.auto_code} onChange={e => setForm(f => ({ ...f, auto_code: e.target.value }))} className={inputCls} /></div>
               <div><label className={labelCls}>Door Code</label><Input value={form.door_code} onChange={e => setForm(f => ({ ...f, door_code: e.target.value }))} className={inputCls} /></div>
               <div><label className={labelCls}>Other Codes</label><Input value={form.other_codes} onChange={e => setForm(f => ({ ...f, other_codes: e.target.value }))} className={inputCls} /></div>
               <div><label className={labelCls}>Wi-Fi Info</label><Input value={form.wifi_info} onChange={e => setForm(f => ({ ...f, wifi_info: e.target.value }))} className={inputCls} placeholder="Network: xxx / Password: xxx" /></div>
