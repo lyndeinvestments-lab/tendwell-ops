@@ -15,6 +15,7 @@ import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-c
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts } from '@/hooks/use-contacts'
+import { useAlerts } from '@/pages/alerts'
 
 function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
@@ -114,6 +115,7 @@ export default function DashboardPage() {
   })
 
   const { data: stages } = usePipelineStages()
+  const { activeAlerts } = useAlerts()
 
   const { data: transitions, isLoading: transLoading } = useQuery({
     queryKey: ['/supabase/stage_transitions_recent', sinceDate, untilDate],
@@ -362,6 +364,30 @@ export default function DashboardPage() {
   const onboarding = properties?.filter((p: any) => p.stage_id === onboardingStage?.id).length ?? 0
   const offboarding = properties?.filter((p: any) => p.stage_id === offboardingStage?.id).length ?? 0
 
+  // Today's Actions — one prioritized panel combining past-due follow-ups and
+  // stalled onboardings. Stalled onboardings reuse the shared useAlerts() logic
+  // so this panel, the Alerts page, and the bell never diverge.
+  const todayStr = new Date().toISOString().split('T')[0]
+  const stalledOnboardings = activeAlerts.filter((a: any) => a.category === 'Onboarding')
+  const actionItems = [
+    ...((followUps as any[]) || []).map((p: any) => {
+      const overdue = p.follow_up_date < todayStr
+      return {
+        key: `fu_${p.id}`, kind: 'follow-up' as const, name: p.name,
+        detail: overdue ? 'Follow-up overdue' : 'Follow-up due today',
+        overdue, propertyId: String(p.id),
+      }
+    }),
+    ...stalledOnboardings.map((a: any) => ({
+      key: a.id, kind: 'onboarding' as const,
+      name: (a.title || '').replace(/^Onboarding Stalled:\s*/, ''),
+      detail: a.description, overdue: false, propertyId: a.propertyId,
+    })),
+  ].sort((x, y) => {
+    const rank = (it: any) => (it.kind === 'follow-up' ? (it.overdue ? 0 : 1) : 2)
+    return rank(x) - rank(y)
+  })
+
   const financialProps = activeProps.filter((p: any) => !p.exclude_from_financials)
   const totalRevenue = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_revenue_estimate || 0), 0)
   const totalProfit = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_profit_estimate || 0), 0)
@@ -463,6 +489,46 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Today's Actions — consolidated priority panel */}
+      {!isLoading && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <ClipboardCheck className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold">Today's Actions</span>
+              {actionItems.length > 0 && (
+                <span className="ml-1 text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5 tabular-nums">{actionItems.length}</span>
+              )}
+            </div>
+            {actionItems.length === 0 ? (
+              <p className="text-xs text-muted-foreground">All caught up — nothing needs action today.</p>
+            ) : (
+              <div className="space-y-1 max-h-72 overflow-y-auto">
+                {actionItems.map((it) => (
+                  <div key={it.key} className="flex items-center justify-between text-xs gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {it.kind === 'follow-up'
+                        ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                        : <TrendingUp className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                      <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
+                      <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-blue-600 dark:text-blue-400' : 'text-primary'}>
+                        {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button onClick={() => navigate('/alerts')} className="text-xs text-primary hover:underline mt-2 block">
+              View all alerts →
+            </button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
@@ -535,37 +601,6 @@ export default function DashboardPage() {
           }
         />
       </div>
-
-      {/* Follow-Up Due Today */}
-      {!isLoading && followUps && followUps.length > 0 && (
-        <Card className="border-primary/30 bg-primary/5">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <CalendarDays className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">{followUps.length} Follow-Up{followUps.length !== 1 ? 's' : ''} Due</span>
-            </div>
-            <div className="space-y-1 max-h-32 overflow-y-auto">
-              {followUps.map((p: any) => {
-                const isOverdue = p.follow_up_date < new Date().toISOString().split('T')[0]
-                return (
-                  <div key={p.id} className="flex items-center justify-between text-xs gap-2">
-                    <span className="truncate cursor-pointer hover:underline" onClick={() => openPropertyModal(p.id)}>{p.name}</span>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-muted-foreground">{(p.pipeline_stages as any)?.name}</span>
-                      <span className={isOverdue ? 'text-destructive font-medium' : 'text-primary'}>
-                        {isOverdue ? 'Overdue' : 'Today'}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-            <button onClick={() => navigate('/pipeline')} className="text-xs text-primary hover:underline mt-2 block">
-              View Pipeline →
-            </button>
-          </CardContent>
-        </Card>
-      )}
 
       {/* 30-Day Activity Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
