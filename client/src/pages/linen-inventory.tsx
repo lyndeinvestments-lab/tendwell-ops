@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Boxes, Check, ChevronDown, ChevronUp, Download, Plus,
 } from 'lucide-react'
@@ -143,6 +144,7 @@ export default function LinenInventoryPage() {
   })
 
   // Count history
+  const [detailCount, setDetailCount] = useState<any>(null)
   const { data: history, isLoading: histLoading } = useQuery({
     queryKey: ['/supabase/linen-inventory-history'],
     enabled: viewMode === 'history',
@@ -618,7 +620,7 @@ export default function LinenInventoryPage() {
                 ) : !history?.length ? (
                   <tr><td colSpan={9}><EmptyState icon={Boxes} title="No count history" description="Record your first inventory count to start tracking." /></td></tr>
                 ) : history.map((h: any) => (
-                  <tr key={h.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                  <tr key={h.id} onClick={() => setDetailCount(h)} title="Click to see every field" className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer">
                     <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(h.counted_at), 'MMM d, yyyy h:mm a')}</td>
                     <td className="py-2 px-3 text-xs">{h.counted_by || '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-right">{h.king_rolls || 0}</td>
@@ -635,6 +637,42 @@ export default function LinenInventoryPage() {
             </table>
           </div>
         </>
+      )}
+
+      {detailCount && (
+        <Dialog open={!!detailCount} onOpenChange={(o) => { if (!o) setDetailCount(null) }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Count detail — {format(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a')}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 text-sm">
+              <div className="text-xs text-muted-foreground">Counted by {detailCount.counted_by || '—'}</div>
+              {[
+                { title: 'Sheets, Towels & Kitchen', items: STANDARD_ITEMS },
+                { title: 'On Hand — Encasements & Pillows', items: ON_HAND_ITEMS },
+                { title: 'Extras', items: EXTRA_ITEMS },
+              ].map(group => (
+                <div key={group.title}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{group.title}</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
+                    {group.items.map((it: any) => (
+                      <div key={it.key} className="flex items-center justify-between gap-2 border-b border-border/40 py-0.5">
+                        <span className="text-xs text-muted-foreground">{it.label}</span>
+                        <span className="text-sm font-medium tabular-nums">{detailCount[it.key] ?? 0}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {detailCount.notes && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-sm whitespace-pre-wrap bg-muted/30 rounded p-2">{detailCount.notes}</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )
