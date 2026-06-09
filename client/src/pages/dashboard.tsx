@@ -711,14 +711,16 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
-            {isLoading ? (
+            {isLoading || !stages ? (
               <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
+            ) : financialProps.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">No active properties with financial data.</p>
             ) : (
               <div className="space-y-2.5">
                 {[
-                  { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high, pct: active > 0 ? (profitBuckets.high / active * 100) : 0 },
-                  { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid, pct: active > 0 ? (profitBuckets.mid / active * 100) : 0 },
-                  { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low, pct: active > 0 ? (profitBuckets.low / active * 100) : 0 },
+                  { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high, pct: (profitBuckets.high / financialProps.length * 100) },
+                  { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid, pct: (profitBuckets.mid / financialProps.length * 100) },
+                  { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low, pct: (profitBuckets.low / financialProps.length * 100) },
                 ].map(b => (
                   <div key={b.label} className="cursor-pointer" onClick={() => navigate('/cost-tracking')}>
                     <div className="flex justify-between text-xs mb-1">

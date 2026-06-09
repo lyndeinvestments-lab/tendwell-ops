@@ -14,6 +14,14 @@ function fmt(n: number | null | undefined) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// Last calendar day of a "YYYY-MM" month as "YYYY-MM-DD". Hardcoding "-31"
+// produces an invalid date for 30-day months (e.g. 2026-06-31), which makes
+// Postgres reject the query and the stat cards silently fall back to 0.
+function monthEnd(month: string) {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${new Date(y, m, 0).getDate()}`
+}
+
 export default function ReportPage() {
   usePageTitle('Executive Summary')
   const reportRef = useRef<HTMLDivElement>(null)
@@ -39,7 +47,7 @@ export default function ReportPage() {
     queryKey: ['/supabase/report-cleans', month],
     queryFn: async () => {
       const startDate = `${month}-01`
-      const endDate = `${month}-31`
+      const endDate = monthEnd(month)
       const { data, error } = await supabase
         .from('cleaning_history')
         .select('id, property_id, clean_date')
@@ -55,7 +63,7 @@ export default function ReportPage() {
     queryKey: ['/supabase/report-issues', month],
     queryFn: async () => {
       const startDate = `${month}-01`
-      const endDate = `${month}-31`
+      const endDate = monthEnd(month)
       const { data, error } = await supabase
         .from('cleaning_issues')
         .select('id, category, status, property_name')
