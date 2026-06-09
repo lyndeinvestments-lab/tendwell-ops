@@ -417,6 +417,56 @@ export type Database = {
           },
         ]
       }
+      cleaner_coaching_flags: {
+        Row: {
+          cleaner_id: string
+          created_at: string
+          id: string
+          issue_count: number | null
+          issue_rate: number | null
+          notes: string | null
+          reason: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          total_cleans: number | null
+        }
+        Insert: {
+          cleaner_id: string
+          created_at?: string
+          id?: string
+          issue_count?: number | null
+          issue_rate?: number | null
+          notes?: string | null
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          total_cleans?: number | null
+        }
+        Update: {
+          cleaner_id?: string
+          created_at?: string
+          id?: string
+          issue_count?: number | null
+          issue_rate?: number | null
+          notes?: string | null
+          reason?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          total_cleans?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cleaner_coaching_flags_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "cleaners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cleaners: {
         Row: {
           app_role: string | null
