@@ -1894,6 +1894,7 @@ export type Database = {
       properties: {
         Row: {
           address: string | null
+          has_auto_code: boolean
           archived_at: string | null
           archived_by: string | null
           archived_reason: string | null
@@ -1973,6 +1974,7 @@ export type Database = {
           archived_by?: string | null
           archived_reason?: string | null
           auto_code?: string | null
+          has_auto_code?: boolean
           avg_cleans_per_month?: number | null
           bath_towels?: number | null
           bathmats?: number | null
@@ -2048,6 +2050,7 @@ export type Database = {
           archived_by?: string | null
           archived_reason?: string | null
           auto_code?: string | null
+          has_auto_code?: boolean
           avg_cleans_per_month?: number | null
           bath_towels?: number | null
           bathmats?: number | null
