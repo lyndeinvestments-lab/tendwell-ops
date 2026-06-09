@@ -41,7 +41,6 @@ export default function OnboardingIntakePage() {
   const [deepClean, setDeepClean] = useState<YesNo>('')
 
   const [doorCode, setDoorCode] = useState('')
-  const [autoCode, setAutoCode] = useState('')
   const [poolCode, setPoolCode] = useState('')
   const [closetCode, setClosetCode] = useState('')
   const [lockboxCode, setLockboxCode] = useState('')
@@ -144,7 +143,6 @@ export default function OnboardingIntakePage() {
         linen_program: linenProgram === 'yes' ? true : linenProgram === 'no' ? false : null,
         onboarding_deep_clean: deepClean === 'yes' ? true : deepClean === 'no' ? false : null,
         door_code: doorCode.trim() || null,
-        auto_code: autoCode.trim() || null,
         other_codes: otherCodesCombined,
         wifi_info: wifiCombined,
         filter_size: filterSize.trim() || null,
@@ -328,10 +326,6 @@ export default function OnboardingIntakePage() {
               <div>
                 <label className={labelCls}>Front Door Code</label>
                 <Input value={doorCode} onChange={e => setDoorCode(e.target.value)} className={inputCls} data-testid="input-door-code" />
-              </div>
-              <div>
-                <label className={labelCls}>Auto / Garage Code</label>
-                <Input value={autoCode} onChange={e => setAutoCode(e.target.value)} className={inputCls} data-testid="input-auto-code" />
               </div>
               <div>
                 <label className={labelCls}>Pool Code</label>
