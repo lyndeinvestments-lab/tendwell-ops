@@ -145,6 +145,7 @@ export function InspectionPriorityDashboard() {
 
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState<'active' | 'active_onboarding' | 'all'>('active')
+  const [priorityFilter, setPriorityFilter] = useState<'all' | 'critical' | 'never'>('all')
   const [scheduleFor, setScheduleFor] = useState<Record<number, string>>({})
   const [working, setWorking] = useState<number | null>(null)
 
@@ -189,12 +190,15 @@ export function InspectionPriorityDashboard() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    if (!q) return aggregates
-    return aggregates.filter(a =>
+    let base = aggregates
+    if (priorityFilter === 'critical') base = base.filter(a => a.priority >= 85)
+    else if (priorityFilter === 'never') base = base.filter(a => !a.lastCompleted)
+    if (!q) return base
+    return base.filter(a =>
       a.property.name.toLowerCase().includes(q) ||
       (a.property.address ?? '').toLowerCase().includes(q),
     )
-  }, [aggregates, search])
+  }, [aggregates, search, priorityFilter])
 
   const summary = useMemo(() => {
     const neverInspected = filtered.filter(a => !a.lastCompleted).length
@@ -230,6 +234,35 @@ export function InspectionPriorityDashboard() {
     },
   })
 
+  // Critical (priority ≥ 85) properties that don't already have a scheduled
+  // inspection — the set the "Schedule all critical" bulk action acts on.
+  const criticalUnscheduled = useMemo(
+    () => filtered.filter(a => a.priority >= 85 && !a.hasScheduled),
+    [filtered],
+  )
+
+  const bulkScheduleMut = useMutation({
+    mutationFn: async ({ propertyIds, date }: { propertyIds: number[]; date: string }) => {
+      const rows = propertyIds.map(id => ({
+        property_id: id,
+        status: 'scheduled',
+        scheduled_for: date,
+        inspected_at: date,
+        reinspect_urgency: 'none',
+      }))
+      const { error } = await supabase.from('inspections').insert(rows as any)
+      if (error) throw error
+      return propertyIds.length
+    },
+    onSuccess: (count, vars) => {
+      toast({ title: `Scheduled ${count} inspection${count === 1 ? '' : 's'}`, description: `For ${vars.date}` })
+      qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/inspections'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-inspections'] })
+    },
+    onError: (e: any) => toast({ title: 'Bulk schedule failed', description: e?.message || 'Try again.', variant: 'destructive' }),
+  })
+
   const isLoading = propertiesLoading || inspectionsLoading
   const tomorrow = format(new Date(Date.now() + 86400000), 'yyyy-MM-dd')
 
@@ -262,6 +295,27 @@ export function InspectionPriorityDashboard() {
             <SelectItem value="all" className="text-xs">All pre-offboard</SelectItem>
           </SelectContent>
         </Select>
+        <Select value={priorityFilter} onValueChange={(v) => setPriorityFilter(v as typeof priorityFilter)}>
+          <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">All priorities</SelectItem>
+            <SelectItem value="critical" className="text-xs">Critical only</SelectItem>
+            <SelectItem value="never" className="text-xs">Never inspected</SelectItem>
+          </SelectContent>
+        </Select>
+        {canEdit && criticalUnscheduled.length > 0 && (
+          <Button
+            size="sm"
+            className="h-8 text-xs"
+            onClick={() => bulkScheduleMut.mutate({ propertyIds: criticalUnscheduled.map(a => a.property.id), date: tomorrow })}
+            disabled={bulkScheduleMut.isPending}
+            data-testid="button-schedule-all-critical"
+            title={`Schedule a ${tomorrow} inspection for every Critical property without one already scheduled`}
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1" />
+            Schedule all critical ({criticalUnscheduled.length})
+          </Button>
+        )}
         <span className="text-muted-foreground ml-auto">{filtered.length} propert{filtered.length === 1 ? 'y' : 'ies'}</span>
       </div>
 
