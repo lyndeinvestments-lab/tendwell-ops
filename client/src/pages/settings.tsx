@@ -466,6 +466,7 @@ function AppSettingsSection() {
     { key: 'amenity_kitchen', label: 'Kitchen Supplies ($ per kitchen)', placeholder: '2.05', section: 'amenity' },
     { key: 'amenity_trash_bag', label: 'Trash Bags ($ per bed)', placeholder: '0.06', section: 'amenity' },
     { key: 'amenity_hot_tub', label: 'Hot Tub Chemicals ($ per property)', placeholder: '0.88', section: 'amenity' },
+    { key: 'auto_code', label: 'Smart-Lock Auto Code (shared)', placeholder: 'e.g. 1656', section: 'access', type: 'text' },
   ]
 
   const [localValues, setLocalValues] = useState<Record<string, string>>(
@@ -487,13 +488,14 @@ function AppSettingsSection() {
   const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
   const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
   const OPS_FIELDS = ALL_FIELDS.filter(f => f.section === 'ops')
+  const ACCESS_FIELDS = ALL_FIELDS.filter(f => f.section === 'access')
 
   function FieldRow({ f }: { f: typeof ALL_FIELDS[number] }) {
     return (
       <div key={f.key} className="grid grid-cols-[180px_1fr] items-center gap-2">
         <label className="text-xs text-muted-foreground">{f.label}</label>
         <Input
-          type="number"
+          type={(f as any).type === 'text' ? 'text' : 'number'}
           value={localValues[f.key] ?? f.placeholder}
           placeholder={f.placeholder}
           className="h-7 text-xs"
@@ -562,6 +564,17 @@ function AppSettingsSection() {
         <p className="text-xs text-muted-foreground">Configure when follow-up reminders, stale alerts, and inspection warnings trigger</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {OPS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <KeyRound className="w-4 h-4" />
+          Smart-Lock Access
+        </h2>
+        <p className="text-xs text-muted-foreground">The shared smart-lock auto code. Every property marked as having an auto code uses this value — changing it here updates it everywhere.</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {ACCESS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
       </div>
 

@@ -9,6 +9,7 @@ import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -641,10 +642,10 @@ const LINEN_FIELD_KEYS = [
   'king_beds', 'queen_beds', 'full_beds', 'twin_beds',
   'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels',
 ] as const
-const ACCESS_FIELD_KEYS = ['auto_code', 'door_code', 'other_codes', 'wifi_info'] as const
+const ACCESS_FIELD_KEYS = ['door_code', 'other_codes', 'wifi_info'] as const
 const AC_FIELD_KEYS = ['filter_size', 'last_filter_changed'] as const
 
-function buildPropertyCopyText(property: any, includeFinancials: boolean): string {
+function buildPropertyCopyText(property: any, includeFinancials: boolean, autoCodeValue: string): string {
   const lines: string[] = []
   const MISSING = 'No information there'
   const v = (x: any) => (x == null || x === '' ? MISSING : String(x))
@@ -681,7 +682,7 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean): strin
 
   lines.push(`Guest count: ${v(property.guest_count)}`)
   lines.push(`Hot tub: ${property.hot_tub ? 'Yes' : 'No'}`)
-  lines.push(`Auto code: ${v(property.auto_code)}`)
+  if (property.has_auto_code) lines.push(`Auto code: ${autoCodeValue || '(set in Settings)'}`)
   lines.push(`Door code: ${v(property.door_code)}`)
   lines.push(`Other codes: ${v(property.other_codes)}`)
   lines.push(`WiFi: ${v(property.wifi_info)}`)
@@ -717,6 +718,8 @@ export function PropertyDetailModal() {
   const { modalState, closePropertyModal } = usePropertyModal()
   const { user, effectiveUser } = useAuth()
   const { toast } = useToast()
+  const { get: getSetting } = useAppSettings()
+  const autoCodeValue = getSetting('auto_code', '')
   const qc = useQueryClient()
   const [, navigate] = useLocation()
   const [isEditing, setIsEditing] = useState(false)
@@ -894,6 +897,20 @@ export function PropertyDetailModal() {
       )
       invalidateAllPropertyQueries(qc)
       toast({ title: next ? 'Hot tub: Yes' : 'Hot tub: No' })
+    },
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: toggleAutoCode } = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { error } = await supabase.from('properties').update({ has_auto_code: next } as any).eq('id', Number(propertyId!))
+      if (error) throw error
+      return next
+    },
+    onSuccess: (next: boolean) => {
+      logPropertyEdit(propertyId!, 'has_auto_code', String((property as any)?.has_auto_code ?? false), String(next), property?.name ?? null, user?.label ?? null)
+      invalidateAllPropertyQueries(qc)
+      toast({ title: next ? 'Auto code: Yes' : 'Auto code: No' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
@@ -1126,7 +1143,7 @@ export function PropertyDetailModal() {
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(
-                        buildPropertyCopyText(property, canViewFinancials),
+                        buildPropertyCopyText(property, canViewFinancials, autoCodeValue),
                       )
                       setCopied(true)
                       toast({ title: 'Property details copied' })
@@ -1456,7 +1473,7 @@ export function PropertyDetailModal() {
 
               {/* Access-config status — only for users who already see Access */}
               {canViewAccess && (() => {
-                const accessKeys = ['auto_code', 'door_code', 'other_codes', 'wifi_info'] as const
+                const accessKeys = ['door_code', 'other_codes', 'wifi_info'] as const
                 const filled = accessKeys.filter(k => property[k] && String(property[k]).trim() !== '').length
                 const missing = accessKeys.length - filled
                 return (
@@ -1739,6 +1756,24 @@ export function PropertyDetailModal() {
                   <div>
                     <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access & WiFi</h4>
                     <div className="space-y-2">
+                      <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditAccess ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
+                        <input
+                          type="checkbox"
+                          checked={!!property.has_auto_code}
+                          disabled={!canEditAccess}
+                          onChange={e => toggleAutoCode(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-input"
+                          data-testid="modal-input-has_auto_code-ops"
+                        />
+                        <div className="text-xs flex-1">
+                          <div className="font-medium">Auto Code (smart lock)</div>
+                          <div className="text-muted-foreground">
+                            {property.has_auto_code
+                              ? (autoCodeValue ? <>Yes — code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared)</> : <>Yes — set in Settings</>)
+                              : 'No auto code'}
+                          </div>
+                        </div>
+                      </label>
                       {ACCESS_FIELD_KEYS.map(k => {
                         const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
                         return (
@@ -1783,6 +1818,24 @@ export function PropertyDetailModal() {
                 <div>
                   <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access Codes</h4>
                   <div className="space-y-3">
+                    <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditAccess ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
+                      <input
+                        type="checkbox"
+                        checked={!!property.has_auto_code}
+                        disabled={!canEditAccess}
+                        onChange={e => toggleAutoCode(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-input"
+                        data-testid="modal-input-has_auto_code"
+                      />
+                      <div className="text-xs flex-1">
+                        <div className="font-medium">Auto Code (smart lock)</div>
+                        <div className="text-muted-foreground">
+                          {property.has_auto_code
+                            ? (autoCodeValue ? <>Yes — code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared, managed in Settings)</> : <>Yes — set the shared code in Settings</>)
+                            : 'No auto code on this property'}
+                        </div>
+                      </div>
+                    </label>
                     {ACCESS_FIELD_KEYS.map(k => {
                       const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
                       return (
