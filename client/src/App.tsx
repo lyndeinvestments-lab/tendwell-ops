@@ -108,6 +108,7 @@ function AlertBellButton() {
 
   const badgeCount = visibleAlerts.length;
   const previewItems = visibleAlerts.slice(0, 5);
+  const infoCount = useMemo(() => activeAlerts.filter(a => a.severity === 'info').length, [activeAlerts]);
 
   return (
     <div className="relative">
@@ -125,7 +126,7 @@ function AlertBellButton() {
         <PopoverContent className="w-72 p-2" align="end">
           <div className="space-y-1">
             {previewItems.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No active alerts</p>
+              <p className="text-xs text-muted-foreground text-center py-3">{infoCount > 0 ? `No critical alerts · ${infoCount} info` : 'No active alerts'}</p>
             ) : (
               previewItems.map((item, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded hover:bg-muted">
