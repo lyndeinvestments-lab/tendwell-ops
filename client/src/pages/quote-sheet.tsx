@@ -649,6 +649,7 @@ export default function QuoteSheetPage() {
               {([
                 { col: 'name', label: 'Name' },
                 { col: 'client', label: 'Client' },
+                { col: 'created_at', label: 'Quote Date' },
                 { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
                 { col: 'cleaner_pay', label: 'Cleaner Pay' },
                 { col: 'bedrooms', label: 'Bedrooms' },
@@ -682,18 +683,18 @@ export default function QuoteSheetPage() {
             {isLoading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(15)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(16)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !properties || properties.length === 0 ? (
               <tr>
-                <td colSpan={15}>
+                <td colSpan={16}>
                   <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={15}>
+                <td colSpan={16}>
                   <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
                 </td>
               </tr>
@@ -708,6 +709,21 @@ export default function QuoteSheetPage() {
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground truncate max-w-[14rem]" title={p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : ''}>
                       {p.contact_id ? contactById.get(String(p.contact_id)) ?? '—' : '—'}
+                    </td>
+                    <td className="py-2 px-3 text-xs whitespace-nowrap">
+                      {p.created_at ? (() => {
+                        const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
+                        const stale = !p.archived_at && days > 90
+                        return (
+                          <span
+                            className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}
+                            title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
+                          >
+                            {new Date(p.created_at).toLocaleDateString()}
+                            <span className="ml-1 opacity-70">({days}d)</span>
+                          </span>
+                        )
+                      })() : '—'}
                     </td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
                     <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
@@ -814,6 +830,7 @@ export default function QuoteSheetPage() {
               return (
                 <tr className="bg-muted/60 border-t-2 border-border font-semibold">
                   <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
+                  <td className="py-2 px-3 text-xs"></td>
                   <td className="py-2 px-3 text-xs"></td>
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.cleaner_pay))}</td>
