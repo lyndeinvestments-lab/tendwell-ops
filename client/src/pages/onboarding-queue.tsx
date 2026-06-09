@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
+import { OnboardingReviewDialog } from '@/components/OnboardingReviewDialog'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -53,8 +54,6 @@ interface OnboardingSubmission {
 
 type Tab = 'pending' | 'converted' | 'rejected' | 'all'
 
-const ONBOARDING_STAGE_ID = 3
-
 function fmtBool(v: boolean | null) {
   if (v === null) return '—'
   return v ? 'Yes' : 'No'
@@ -75,6 +74,8 @@ export default function OnboardingQueuePage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [working, setWorking] = useState<string | null>(null)
   const [mergeFor, setMergeFor] = useState<OnboardingSubmission | null>(null)
+  const [createFor, setCreateFor] = useState<OnboardingSubmission | null>(null)
+  const [mergeReview, setMergeReview] = useState<{ sub: OnboardingSubmission; propertyId: number } | null>(null)
 
   const { data: rows, isLoading, isRefetching, refetch } = useQuery<OnboardingSubmission[]>({
     queryKey: ['/onboarding_submissions', tab],
@@ -99,154 +100,6 @@ export default function OnboardingQueuePage() {
     }
     return c
   }, [rows])
-
-  const { mutate: approve } = useMutation({
-    mutationFn: async (sub: OnboardingSubmission) => {
-      setWorking(sub.id)
-      // properties.check_in_time / check_out_time are NOT NULL with column
-      // defaults. Strip nulls so the defaults apply when the client didn't
-      // fill those fields in (any other null field is fine — the column
-      // simply stays null).
-      const propertyPayload: Record<string, any> = {
-        name: sub.property_name || sub.address || sub.client_name || 'New Property',
-        address: sub.address,
-        bedrooms: sub.bedrooms,
-        number_of_beds: sub.number_of_beds,
-        full_baths: sub.full_baths,
-        half_baths: sub.half_baths,
-        square_footage: sub.square_footage,
-        hot_tub: sub.hot_tub ?? false,
-        linen_program: sub.linen_program ?? false,
-        door_code: sub.door_code,
-        auto_code: sub.auto_code,
-        other_codes: sub.other_codes,
-        wifi_info: sub.wifi_info,
-        filter_size: sub.filter_size,
-        check_in_time: sub.check_in_time,
-        check_out_time: sub.check_out_time,
-        stage_id: ONBOARDING_STAGE_ID,
-      }
-      for (const k of Object.keys(propertyPayload)) {
-        if (propertyPayload[k] == null) delete propertyPayload[k]
-      }
-      const { data: newProp, error: insErr } = await supabase
-        .from('properties')
-        .insert(propertyPayload as any)
-        .select('id')
-        .single()
-      if (insErr) throw insErr
-
-      const { error: updErr } = await supabase
-        .from('onboarding_submissions')
-        .update({
-          status: 'converted',
-          approved_at: new Date().toISOString(),
-          approved_by: user?.label || (user as any)?.google_email || 'admin',
-          property_id: newProp.id,
-        })
-        .eq('id', sub.id)
-      if (updErr) throw updErr
-
-      return newProp.id
-    },
-    onSuccess: (propertyId) => {
-      toast({ title: 'Approved', description: `Property created (#${propertyId}) in Onboarding stage.` })
-      qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      setWorking(null)
-    },
-    onError: (e: any) => {
-      toast({ title: 'Approval failed', description: e?.message || 'Try again.', variant: 'destructive' })
-      setWorking(null)
-    },
-  })
-
-  const { mutate: mergeWithExisting } = useMutation({
-    mutationFn: async ({ sub, propertyId }: { sub: OnboardingSubmission; propertyId: number }) => {
-      setWorking(sub.id)
-      // Fetch current property values so we only fill in missing/empty fields —
-      // we never overwrite data already entered by an admin.
-      const { data: existing, error: fetchErr } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('id', propertyId)
-        .single()
-      if (fetchErr) throw fetchErr
-
-      const candidate: Record<string, any> = {
-        address: sub.address,
-        bedrooms: sub.bedrooms,
-        number_of_beds: sub.number_of_beds,
-        full_baths: sub.full_baths,
-        half_baths: sub.half_baths,
-        square_footage: sub.square_footage,
-        hot_tub: sub.hot_tub,
-        linen_program: sub.linen_program,
-        door_code: sub.door_code,
-        auto_code: sub.auto_code,
-        other_codes: sub.other_codes,
-        wifi_info: sub.wifi_info,
-        filter_size: sub.filter_size,
-        check_in_time: sub.check_in_time,
-        check_out_time: sub.check_out_time,
-      }
-      const patch: Record<string, any> = {}
-      for (const [k, v] of Object.entries(candidate)) {
-        if (v == null) continue
-        const cur = (existing as any)?.[k]
-        if (cur == null || cur === '' || cur === false) patch[k] = v
-      }
-
-      if (Object.keys(patch).length > 0) {
-        const { error: upErr } = await supabase.from('properties').update(patch as any).eq('id', propertyId)
-        if (upErr) throw upErr
-
-        // Audit every field the merge filled so it's reversible from
-        // Activity Feed if something gets merged into the wrong property.
-        const changedBy = user?.label || (user as any)?.google_email || 'admin'
-        const propertyName = (existing as any)?.name ?? null
-        for (const [field, newValue] of Object.entries(patch)) {
-          await logPropertyEdit(
-            propertyId,
-            field,
-            (existing as any)?.[field] ?? null,
-            newValue ?? null,
-            propertyName,
-            `${changedBy} (onboarding merge)`,
-          )
-        }
-      }
-
-      const { error: subErr } = await supabase
-        .from('onboarding_submissions')
-        .update({
-          status: 'converted',
-          approved_at: new Date().toISOString(),
-          approved_by: user?.label || (user as any)?.google_email || 'admin',
-          property_id: propertyId,
-        })
-        .eq('id', sub.id)
-      if (subErr) throw subErr
-
-      return { propertyId, filled: Object.keys(patch).length }
-    },
-    onSuccess: ({ propertyId, filled }) => {
-      toast({
-        title: 'Merged',
-        description: filled > 0
-          ? `Linked to property #${propertyId} and filled ${filled} empty field${filled === 1 ? '' : 's'}.`
-          : `Linked to property #${propertyId}. No fields needed updating.`,
-      })
-      qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
-      setWorking(null)
-      setMergeFor(null)
-    },
-    onError: (e: any) => {
-      toast({ title: 'Merge failed', description: e?.message || 'Try again.', variant: 'destructive' })
-      setWorking(null)
-    },
-  })
 
   const { mutate: reject } = useMutation({
     mutationFn: async (sub: OnboardingSubmission) => {
@@ -407,8 +260,8 @@ export default function OnboardingQueuePage() {
 
                     {r.status === 'pending' && (
                       <div className="flex gap-2 pt-2 flex-wrap">
-                        <Button size="sm" onClick={() => approve(r)} disabled={isWorking} data-testid={`button-approve-${r.id}`}>
-                          <Check className="w-3.5 h-3.5 mr-1.5" /> Approve & Create Property
+                        <Button size="sm" onClick={() => setCreateFor(r)} disabled={isWorking} data-testid={`button-approve-${r.id}`}>
+                          <Check className="w-3.5 h-3.5 mr-1.5" /> Review & Create Property
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setMergeFor(r)} disabled={isWorking} data-testid={`button-merge-${r.id}`}>
                           <Link2 className="w-3.5 h-3.5 mr-1.5" /> Merge with Existing
@@ -428,9 +281,22 @@ export default function OnboardingQueuePage() {
 
       <MergePropertyDialog
         submission={mergeFor}
-        working={!!working && mergeFor?.id === working}
+        working={false}
         onClose={() => setMergeFor(null)}
-        onPick={(propertyId) => mergeFor && mergeWithExisting({ sub: mergeFor, propertyId })}
+        onPick={(propertyId) => { if (mergeFor) { setMergeReview({ sub: mergeFor, propertyId }); setMergeFor(null) } }}
+      />
+
+      <OnboardingReviewDialog
+        submission={createFor}
+        propertyId={null}
+        onClose={() => setCreateFor(null)}
+        onDone={() => setCreateFor(null)}
+      />
+      <OnboardingReviewDialog
+        submission={mergeReview?.sub ?? null}
+        propertyId={mergeReview?.propertyId ?? null}
+        onClose={() => setMergeReview(null)}
+        onDone={() => setMergeReview(null)}
       />
     </div>
   )
@@ -499,7 +365,7 @@ function MergePropertyDialog({
         <DialogHeader>
           <DialogTitle>Merge with existing property</DialogTitle>
           <DialogDescription>
-            Find the existing listing this submission matches. We'll link the submission and fill in any blank fields on the property — without overwriting data that's already there.
+            Find the existing listing this submission matches. You'll then review it field by field and choose what to keep before anything is saved.
           </DialogDescription>
         </DialogHeader>
 
