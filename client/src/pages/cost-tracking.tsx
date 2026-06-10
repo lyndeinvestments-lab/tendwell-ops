@@ -22,6 +22,9 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink, Trash2 } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
 import { TablePagination } from '@/components/TablePagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/lib/auth'
@@ -36,31 +39,32 @@ const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding', 'Offboarded']
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
   const t = profitTier(pct)
-  const cls = t === 'high' ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
-              t === 'mid'  ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
-                             'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
+  const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
   return (
     <div className="flex items-center gap-1">
-      <span data-testid={`badge-profit-${Math.round(pct)}`} className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>
-        {pct.toFixed(1)}%
+      <span data-testid={`badge-profit-${Math.round(pct)}`}>
+        <StatusBadge tone={tone} className="tabular-nums">{pct.toFixed(1)}%</StatusBadge>
       </span>
-      <span className={`text-xs font-medium px-1 py-0.5 rounded ${cls}`}>{tier}</span>
+      <StatusBadge tone={tone}>{tier}</StatusBadge>
     </div>
   )
 }
 
 function StageBadge({ stage }: { stage: string | null }) {
   if (!stage) return <span className="text-muted-foreground text-xs">—</span>
-  const colors: Record<string, string> = {
-    Active: 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
-    Onboarding: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
-    Offboarding: 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
-    Lead: 'text-gray-600 bg-gray-50 border-gray-200',
-    Quote: 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+  // Map pipeline stages to semantic tones; Active→success, Onboarding→info,
+  // Offboarding→warning, Lead/Quote→neutral, Offboarded→neutral.
+  const toneMap: Record<string, 'success' | 'info' | 'warning' | 'neutral' | 'primary'> = {
+    Active: 'success',
+    Onboarding: 'info',
+    Offboarding: 'warning',
+    Lead: 'neutral',
+    Quote: 'primary',
+    Offboarded: 'neutral',
   }
-  const cls = colors[stage] || 'text-gray-600 bg-gray-50 border-gray-200'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{stage}</span>
+  const tone = toneMap[stage] ?? 'neutral'
+  return <StatusBadge tone={tone}>{stage}</StatusBadge>
 }
 
 function fmt(n: number | null | undefined) {
@@ -131,7 +135,7 @@ function EditToggle({
         <button
           type="button"
           onClick={() => onChange(!value)}
-          className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors ${value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
+          className={`px-2 py-0.5 rounded-md border text-2xs font-medium transition-colors ${value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
           data-testid={testId}
         >
           {value ? 'Yes' : 'No'}
@@ -186,7 +190,7 @@ function AutoField({ label, value }: { label: string; value: React.ReactNode }) 
   return (
     <div>
       <span className="text-muted-foreground block">
-        {label} <span className="text-[10px] uppercase tracking-wide text-muted-foreground/60">· auto</span>
+        {label} <span className="text-2xs uppercase tracking-wide text-muted-foreground/60">· auto</span>
       </span>
       <span className="font-medium break-words">{value}</span>
     </div>
@@ -256,20 +260,17 @@ function SetupStatusTiles({
   const hasFilterSize = !!(property.filter_size && String(property.filter_size).trim())
   const filterStatus: 'complete' | 'missing' = hasFilterSize ? 'complete' : 'missing'
 
-  const STATUS_STYLES: Record<string, string> = {
-    complete: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 border-green-200 dark:border-green-800',
-    partial: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-    missing: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-800',
-  }
-  const STATUS_LABELS: Record<string, string> = { complete: 'Complete', partial: 'Partial', missing: 'Missing' }
+  const STATUS_TONE_MAP = {
+    complete: 'success',
+    partial: 'warning',
+    missing: 'destructive',
+  } as const
 
-  function StatusBadge({ status }: { status: 'complete' | 'partial' | 'missing' }) {
+  function SetupBadge({ status }: { status: 'complete' | 'partial' | 'missing' }) {
+    const labels = { complete: 'Complete', partial: 'Partial', missing: 'Missing' }
     return (
-      <span
-        className={`inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-medium ${STATUS_STYLES[status]}`}
-        data-testid={`setup-badge-${status}`}
-      >
-        {STATUS_LABELS[status]}
+      <span data-testid={`setup-badge-${status}`}>
+        <StatusBadge tone={STATUS_TONE_MAP[status]}>{labels[status]}</StatusBadge>
       </span>
     )
   }
@@ -296,12 +297,12 @@ function SetupStatusTiles({
             <Icon className="w-3.5 h-3.5 text-muted-foreground" />
             <span className="text-xs font-semibold">{title}</span>
           </div>
-          <StatusBadge status={status} />
+          <SetupBadge status={status} />
         </div>
         <div className="text-xs text-muted-foreground space-y-1">{children}</div>
         <Link
           href={href}
-          className="text-[11px] text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
+          className="text-2xs text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
         >
           Open {title} <ExternalLink className="w-3 h-3" />
         </Link>
@@ -373,10 +374,10 @@ function SetupStatusTiles({
 
   return (
     <div data-testid={`setup-status-tiles-${property.id}`}>
-      <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+      <h4 className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
         Setup Status
         {canEdit && (
-          <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 normal-case tracking-normal">
+          <span className="ml-2 text-2xs font-normal text-muted-foreground/70 normal-case tracking-normal">
             · Click any value to edit
           </span>
         )}
@@ -404,7 +405,7 @@ function SetupStatusTiles({
             <NumCell field="pool_towels" />
           </div>
           {linenStatus !== 'complete' && linenMissing.length > 0 && (
-            <p className="text-[10px] text-amber-700 dark:text-amber-400">Missing: {linenMissing.join(', ')}</p>
+            <p className="text-2xs text-warning">Missing: {linenMissing.join(', ')}</p>
           )}
         </Tile>
 
@@ -418,7 +419,7 @@ function SetupStatusTiles({
             <TextCell field="other_codes" />
           </div>
           {lockStatus === 'missing' && (
-            <p className="text-[10px] text-amber-700 dark:text-amber-400">
+            <p className="text-2xs text-warning">
               Add at least one: auto code, door code, or other access info.
             </p>
           )}
@@ -430,7 +431,7 @@ function SetupStatusTiles({
             <TextCell field="wifi_info" placeholder="SSID / password / notes" />
           </div>
           {!hasWifi && (
-            <p className="text-[10px] text-amber-700 dark:text-amber-400">Add SSID and password (or unit instructions).</p>
+            <p className="text-2xs text-warning">Add SSID and password (or unit instructions).</p>
           )}
         </Tile>
 
@@ -448,7 +449,7 @@ function SetupStatusTiles({
             )}
           </div>
           {filterStatus === 'missing' && (
-            <p className="text-[10px] text-amber-700 dark:text-amber-400">Filter size required for filter scheduling.</p>
+            <p className="text-2xs text-warning">Filter size required for filter scheduling.</p>
           )}
         </Tile>
       </div>
@@ -972,38 +973,36 @@ export default function CostTrackingPage() {
   }
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Master List <span className="text-muted-foreground text-sm font-normal">· Cost Tracking</span></h1>
-          <p className="text-sm text-muted-foreground">Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates).</p>
-          {!isLoading && Object.keys(stageTally).length > 0 && (
-            <div className="flex items-center gap-1.5 mt-2 flex-wrap" data-testid="stage-tally">
-              <span className="text-xs text-muted-foreground">Showing:</span>
-              {(['Active', 'Onboarding', 'Offboarding', 'Lead', 'Quote', 'Offboarded'] as const).map(stage => {
-                const n = stageTally[stage] || 0
-                if (n === 0) return null
-                return (
-                  <button
-                    key={stage}
-                    type="button"
-                    onClick={() => { setStatusFilter(statusFilter === stage ? 'all' : stage); setPage(1) }}
-                    className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
-                    title={`Filter to ${stage}`}
-                    data-testid={`tally-${stage}`}
-                  >
-                    <span className="inline-flex items-center gap-1 align-middle">
-                      <StageBadge stage={stage} />
-                      <span className={`text-xs font-semibold ${statusFilter === stage ? 'text-primary' : 'text-foreground'}`}>{n}</span>
-                    </span>
-                  </button>
-                )
-              })}
-              <span className="text-xs text-muted-foreground">· Total {displayProperties.length}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Master List · Cost Tracking"
+        subtitle="Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates)."
+        beneath={!isLoading && Object.keys(stageTally).length > 0 ? (
+          <div className="flex items-center gap-1.5 flex-wrap" data-testid="stage-tally">
+            <span className="text-xs text-muted-foreground">Showing:</span>
+            {(['Active', 'Onboarding', 'Offboarding', 'Lead', 'Quote', 'Offboarded'] as const).map(stage => {
+              const n = stageTally[stage] || 0
+              if (n === 0) return null
+              return (
+                <button
+                  key={stage}
+                  type="button"
+                  onClick={() => { setStatusFilter(statusFilter === stage ? 'all' : stage); setPage(1) }}
+                  className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+                  title={`Filter to ${stage}`}
+                  data-testid={`tally-${stage}`}
+                >
+                  <span className="inline-flex items-center gap-1 align-middle">
+                    <StageBadge stage={stage} />
+                    <span className={`text-xs font-semibold ${statusFilter === stage ? 'text-primary' : 'text-foreground'}`}>{n}</span>
+                  </span>
+                </button>
+              )
+            })}
+            <span className="text-xs text-muted-foreground">· Total {displayProperties.length}</span>
+          </div>
+        ) : undefined}
+        actions={<div className="flex items-center gap-2 flex-wrap">
           <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title="Hide Lead, Quote, and Offboarded properties">
             <input
               type="checkbox"
@@ -1056,8 +1055,8 @@ export default function CostTrackingPage() {
           >
             {bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit'}
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -1360,7 +1359,7 @@ export default function CostTrackingPage() {
                                 <span className="font-medium text-foreground">{clientLabel || '—'}</span>
                               )}
                               {paymentMethod && (
-                                <span className="ml-1 text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">{paymentMethod}</span>
+                                <span className="ml-1 text-2xs px-1 py-0.5 rounded bg-primary/10 text-primary">{paymentMethod}</span>
                               )}
                             </span>
                             {/* Address — inline editable */}
@@ -1444,7 +1443,7 @@ export default function CostTrackingPage() {
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
                             Property Details
                             {canEditSetup && (
-                              <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 normal-case tracking-normal">
+                              <span className="ml-2 text-2xs font-normal text-muted-foreground/70 normal-case tracking-normal">
                                 · Click any value to edit
                               </span>
                             )}
@@ -1625,6 +1624,6 @@ export default function CostTrackingPage() {
           })()}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

@@ -192,6 +192,11 @@ npm run db:push    # Push Drizzle schema to SQLite
 - **Form validation**: Zod schemas + react-hook-form
 - **Path aliases**: `@/` = `client/src/`, `@shared/` = `shared/`
 - **Dark mode**: Enabled via `next-themes`, class-based. CSS vars in `client/src/index.css`
+- **Status colors**: NEVER hardcode `text-red-700 bg-red-50 dark:...` chips. Use the semantic tokens `success` / `warning` / `info` / `destructive` (with alpha variants like `bg-success/10`) via `<StatusBadge>` or the `TONE_*` maps in `client/src/lib/status-colors.ts`
+- **Page shell**: Every internal page wraps content in `<PageContainer>` (standard padding/max-width) with a `<PageHeader>` title row (actions/filters in its `actions`/`beneath` slots)
+- **KPI tiles**: Use the shared `<StatCard>` (`components/StatCard.tsx`) — don't define per-page KpiCards
+- **Error/empty states**: Surface query errors with `<ErrorState onRetry>`, empty lists with `<EmptyState>`
+- **Microtype**: Use `text-2xs` (11px) instead of `text-[10px]`/`text-[11px]`
 
 ---
 
@@ -207,6 +212,13 @@ npm run db:push    # Push Drizzle schema to SQLite
 
 ## Current State & Recent Work
 
+- **Design-system unification + perf pass (2026-06-09, branch `claude/full-redesign-20260609`):**
+  - New semantic status tokens (`success`/`warning`/`info`) in index.css + Tailwind; real shadow scale (was all-zero); `text-2xs` utility
+  - New shared components: `StatusBadge`, `StatCard`, `PageContainer`, `ErrorState` (+ existing `PageHeader`/`EmptyState` now used app-wide)
+  - All ~38 pages migrated to the shared shell; hardcoded per-page status color maps removed (only data-driven palettes like CLEANER_COLORS remain)
+  - Perf: inspections page moved to server-side pagination/filtering (was a 2,000-row client fetch) with chunked CSV export; contacts page joined the shared `['contacts']` query-key family (fixes stale-after-mutation); PropertyDetailModal tabs now fetch lazily and recharts is code-split out of the always-mounted modal (`PropertyModalChart.tsx`)
+  - index.html: light/dark `theme-color` + `color-scheme` meta
+  - Backups: git tag `backup-pre-redesign-20260609`, branch `backup/pre-redesign-20260609`, source archive in `_backups/`
 - CRM module built (contacts, activity logging, Bill.com payment integration label)
 - Mobile UX pass (sidebar, pipeline, dashboard)
 - Universal property modal wired across all pages

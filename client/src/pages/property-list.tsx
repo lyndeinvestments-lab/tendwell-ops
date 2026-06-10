@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/use-toast'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
 
 function StageBadgePopover({ propertyId, propertyName, currentStageName, stageColor, stages }: {
@@ -179,56 +181,56 @@ export default function PropertyListPage() {
   }
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Property List</h1>
-          <p className="text-sm text-muted-foreground">Active operational properties</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search properties…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              data-testid="input-search-properties"
-              className="pl-8 pr-7 h-8 w-56 text-sm"
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-            <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses ({properties?.length ?? 0})</SelectItem>
-              {stages?.map((s: any) => {
-                const count = properties?.filter((p: any) => p.stage_name === s.name).length ?? 0
-                return (
-                  <SelectItem key={s.id} value={s.name}>{s.name} ({count})</SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={exportCsv}
-            disabled={filtered.length === 0}
-            className="h-8 text-xs gap-1.5"
-            data-testid="button-export-csv"
-          >
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </Button>
-        </div>
-      </div>
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Property List"
+        subtitle="Active operational properties"
+        actions={
+          <>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search properties…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                data-testid="input-search-properties"
+                className="pl-8 pr-7 h-8 w-56 text-sm"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
+              <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses ({properties?.length ?? 0})</SelectItem>
+                {stages?.map((s: any) => {
+                  const count = properties?.filter((p: any) => p.stage_name === s.name).length ?? 0
+                  return (
+                    <SelectItem key={s.id} value={s.name}>{s.name} ({count})</SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCsv}
+              disabled={filtered.length === 0}
+              className="h-8 text-xs gap-1.5"
+              data-testid="button-export-csv"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </Button>
+          </>
+        }
+      />
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -324,6 +326,6 @@ export default function PropertyListPage() {
         </table>
       </div>
       {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
-    </div>
+    </PageContainer>
   )
 }

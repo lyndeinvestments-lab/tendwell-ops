@@ -10,6 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button'
 import { Search, Loader2, AlertTriangle, RefreshCw, Plus, KanbanSquare, List as ListIcon } from 'lucide-react'
 import { format } from 'date-fns'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import {
   STATUS_COLORS, STATUS_LABELS, LOST_ITEM_PIPELINE,
   authFetch,
@@ -104,61 +107,59 @@ export default function LostItemsPage() {
 
   if (!canAccess) {
     return (
-      <div className="p-5">
+      <PageContainer>
         <h1 className="text-xl font-semibold">Lost Items</h1>
         <p className="text-sm text-muted-foreground mt-2">
           Your role doesn't have access to Lost Items. Contact an admin if you need this view.
         </p>
-      </div>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="p-5 h-full flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Lost Items</h1>
-          <p className="text-sm text-muted-foreground">
-            Live data from Haven-OS · auto-refreshes every 30s
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <ViewToggle value={view} onChange={setView} />
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search description, guest, location…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 w-full sm:w-72 text-sm"
-              data-testid="input-lost-items-search"
-            />
-          </div>
-          <Select value={statusFilter} onValueChange={v => setStatusFilter(v as StatusFilter)}>
-            <SelectTrigger className="h-8 w-44 text-xs" data-testid="select-lost-items-status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="all">All statuses</SelectItem>
-              {LOST_ITEM_PIPELINE.map(k => (
-                <SelectItem key={k} value={k}>{STATUS_LABELS[k]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
-            <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-          {canEdit ? (
-            <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewCaseOpen(true)} data-testid="button-new-lost-item">
-              <Plus className="w-3.5 h-3.5" />
-              New Case
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Lost Items"
+        subtitle="Live data from Haven-OS · auto-refreshes every 30s"
+        actions={
+          <>
+            <ViewToggle value={view} onChange={setView} />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search description, guest, location…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 h-8 w-full sm:w-72 text-sm"
+                data-testid="input-lost-items-search"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={v => setStatusFilter(v as StatusFilter)}>
+              <SelectTrigger className="h-8 w-44 text-xs" data-testid="select-lost-items-status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="all">All statuses</SelectItem>
+                {LOST_ITEM_PIPELINE.map(k => (
+                  <SelectItem key={k} value={k}>{STATUS_LABELS[k]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
+              <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
+              Refresh
             </Button>
-          ) : null}
-        </div>
-      </div>
+            {canEdit ? (
+              <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewCaseOpen(true)} data-testid="button-new-lost-item">
+                <Plus className="w-3.5 h-3.5" />
+                New Case
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
         {LOST_ITEM_PIPELINE.map(s => (
@@ -173,12 +174,7 @@ export default function LostItemsPage() {
         ))}
       </div>
 
-      {isError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>Couldn't load Lost Items: {error instanceof Error ? error.message : 'Unknown error'}</span>
-        </div>
-      )}
+      {isError && <ErrorState onRetry={() => refetch()} description={`Couldn't load Lost Items: ${error instanceof Error ? error.message : 'Unknown error'}`} />}
 
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -212,7 +208,7 @@ export default function LostItemsPage() {
           Loading…
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
 
@@ -257,7 +253,7 @@ function SummaryTile({
         (active ? 'border-primary ring-1 ring-primary/40 bg-primary/5' : 'border-border hover:bg-muted/40')
       }
     >
-      <div className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 inline-flex items-center gap-1 border ${colorClass}`}>
+      <div className={`text-2xs font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 inline-flex items-center gap-1 border ${colorClass}`}>
         {label}
       </div>
       <div className="text-2xl font-semibold tabular-nums mt-1">{count}</div>
@@ -298,13 +294,13 @@ function ListView({
                 onClick={() => onCaseClick(c.id)}
                 data-testid={`row-lost-item-${c.id}`}
               >
-                <td className="py-1.5 px-3 font-mono text-[11px]">{c.case_number}</td>
+                <td className="py-1.5 px-3 font-mono text-2xs">{c.case_number}</td>
                 <td className="py-1.5 px-3 max-w-[280px] truncate" title={c.item_description}>{c.item_description}</td>
                 <td className="py-1.5 px-3 text-muted-foreground">{c.property?.name ?? c.property_name ?? '—'}</td>
                 <td className="py-1.5 px-3 text-muted-foreground">{c.guest_name ?? '—'}</td>
                 <td className="py-1.5 px-3 text-muted-foreground">{a?.assignee?.label ?? '—'}</td>
                 <td className="py-1.5 px-3">
-                  <span className={`px-1.5 py-0.5 rounded font-medium text-[10px] border ${STATUS_COLORS[c.status]}`}>
+                  <span className={`px-1.5 py-0.5 rounded font-medium text-2xs border ${STATUS_COLORS[c.status]}`}>
                     {STATUS_LABELS[c.status]}
                   </span>
                 </td>

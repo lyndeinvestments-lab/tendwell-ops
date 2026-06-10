@@ -13,6 +13,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
@@ -382,40 +384,40 @@ export default function CleanersPage() {
   const activeCleaners = (cleaners || []).filter((c: any) => c.is_active)
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Cleaners</h1>
-          <p className="text-sm text-muted-foreground">Roster, assignments, and cost reconciliation</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            {(['list', 'calendar', 'reconciliation'] as ViewMode[]).map(v => (
-              <button
-                key={v}
-                onClick={() => setViewMode(v)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-              >
-                {v === 'list' ? 'Roster' : v === 'calendar' ? 'Calendar' : <><span className="sm:hidden">Recon</span><span className="hidden sm:inline">Reconciliation</span></>}
-              </button>
-            ))}
-          </div>
-          {viewMode === 'list' && (
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                type="search" placeholder="Search…" value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
-              />
-              {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5" /></button>}
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Cleaners"
+        subtitle="Roster, assignments, and cost reconciliation"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center border rounded-md overflow-hidden">
+              {(['list', 'calendar', 'reconciliation'] as ViewMode[]).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setViewMode(v)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                >
+                  {v === 'list' ? 'Roster' : v === 'calendar' ? 'Calendar' : <><span className="sm:hidden">Recon</span><span className="hidden sm:inline">Reconciliation</span></>}
+                </button>
+              ))}
             </div>
-          )}
-          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Add Cleaner
-          </Button>
-        </div>
-      </div>
+            {viewMode === 'list' && (
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <Input
+                  type="search" placeholder="Search…" value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
+                />
+                {search && <button onClick={() => setSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2"><X className="w-3.5 h-3.5" /></button>}
+              </div>
+            )}
+            <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)}>
+              <Plus className="w-3.5 h-3.5" /> Add Cleaner
+            </Button>
+          </div>
+        }
+      />
 
       {/* Roster View */}
       {viewMode === 'list' && (
@@ -452,7 +454,7 @@ export default function CleanersPage() {
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
                       <td className="py-2 px-3">
                         {c.app_role ? (
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.app_role === 'inspector' ? 'text-purple-700 bg-purple-50 border-purple-200 dark:text-purple-400 dark:bg-purple-900/20 dark:border-purple-800' : 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-800'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.app_role === 'inspector' ? 'text-info bg-info/10 border-info/25' : 'text-primary bg-primary/10 border-primary/25'}`}>
                             {c.app_role === 'inspector' ? 'Inspector' : 'Cleaner'}
                           </span>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
@@ -461,7 +463,7 @@ export default function CleanersPage() {
                       <td className="py-2 px-3 text-xs tabular-nums">{stats.total}</td>
                       <td className="py-2 px-3 text-xs tabular-nums">{avgPay > 0 ? fmt(avgPay) : '—'}</td>
                       <td className="py-2 px-3">
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-gray-600 bg-gray-50 border-gray-200'}`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
                           {c.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -619,7 +621,7 @@ export default function CleanersPage() {
                       <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailCleaner(c)}>
                         <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
                         <td className="py-2 px-3">
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-gray-600 bg-gray-50 border-gray-200'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
                             {c.is_active ? 'Active' : 'Inactive'}
                           </span>
                         </td>
@@ -632,7 +634,7 @@ export default function CleanersPage() {
                             <span>
                               {fmt(expected)}
                               {diff != null && Math.abs(diff) > 0.01 && (
-                                <span className={`ml-1 ${diff > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
+                                <span className={`ml-1 ${diff > 0 ? 'text-destructive' : 'text-success'}`}>
                                   ({diff > 0 ? '+' : ''}{fmt(diff)})
                                 </span>
                               )}
@@ -687,7 +689,7 @@ export default function CleanersPage() {
                 <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" placeholder="For login access" />
               </div>
             </div>
-            <p className="text-[11px] text-muted-foreground -mt-1">
+            <p className="text-2xs text-muted-foreground -mt-1">
               Entering an email grants this cleaner sign-in access with the Cleaning role.
             </p>
             <div>
@@ -841,6 +843,6 @@ export default function CleanersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

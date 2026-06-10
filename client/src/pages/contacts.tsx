@@ -75,8 +75,11 @@ export default function ContactsPage() {
   const [sourceReportOpen, setSourceReportOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
 
+  // Nested under the shared CONTACTS_QUERY_KEY prefix so any mutation that
+  // invalidates ['contacts'] (ContactModal create/update, merges, etc.) also
+  // refreshes this page's join query via TanStack's fuzzy key matching.
   const { data: contacts, isLoading } = useQuery({
-    queryKey: ['/supabase/contacts'],
+    queryKey: [...CONTACTS_QUERY_KEY, 'with-property-counts'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contacts')
@@ -189,7 +192,7 @@ export default function ContactsPage() {
   }, [contacts])
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
+    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Clients</h1>
@@ -474,8 +477,8 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
         new_value: primary.full_name,
         metadata: { merged_from_id: secondary.id },
       })
-      qc.invalidateQueries({ queryKey: ['/supabase/contacts'] })
-      // Also refresh the shared useContacts cache used app-wide.
+      // Refresh the shared useContacts cache app-wide; fuzzy matching also
+      // covers this page's ['contacts', 'with-property-counts'] join query.
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       toast({ title: 'Clients merged successfully.' })
     } catch (e: any) {

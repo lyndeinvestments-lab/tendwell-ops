@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useState, useEffect } from 'react'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -48,40 +48,85 @@ type Inspection = {
   inspectors?: { full_name: string } | null
 }
 
+const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
+
+type InspectionFilters = {
+  search: string
+  inspectorFilter: string
+  statusFilter: 'all' | InspectionStatus
+  dateFrom: string
+  dateTo: string
+  minScore: string
+}
+
+// The free-text search used to match property name, cleaner name, and notes
+// client-side. Property/cleaner names live on joined tables, which PostgREST
+// can't OR against parent columns — so we resolve matching ids first, then
+// fold them into a single .or() clause alongside the top-level ilike filters.
+async function buildSearchOrClause(search: string): Promise<string | null> {
+  // Strip characters that are significant in PostgREST or()/ilike syntax.
+  const term = search.trim().replace(/[%_,()."\\]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!term) return null
+  const [propRes, cleanerRes] = await Promise.all([
+    supabase.from('properties').select('id').ilike('name', `%${term}%`).limit(200),
+    supabase.from('cleaners').select('id').ilike('full_name', `%${term}%`).limit(200),
+  ])
+  const parts = [`notes.ilike.%${term}%`, `cleaner_name.ilike.%${term}%`]
+  const propIds = (propRes.data ?? []).map(p => p.id)
+  if (propIds.length) parts.push(`property_id.in.(${propIds.join(',')})`)
+  const cleanerIds = (cleanerRes.data ?? []).map(c => c.id)
+  if (cleanerIds.length) parts.push(`cleaner_id.in.(${cleanerIds.join(',')})`)
+  return parts.join(',')
+}
+
+// Applies the shared filter set to any inspections query builder (page query,
+// average-score query, and CSV export all use the same predicate).
+function applyInspectionFilters(query: any, f: InspectionFilters, orClause: string | null): any {
+  let q = query
+  if (orClause) q = q.or(orClause)
+  if (f.statusFilter !== 'all') q = q.eq('status', f.statusFilter)
+  if (f.inspectorFilter === 'unassigned') q = q.is('inspector_id', null)
+  else if (f.inspectorFilter !== 'all') q = q.eq('inspector_id', f.inspectorFilter)
+  if (f.dateFrom) q = q.gte('inspected_at', f.dateFrom)
+  if (f.dateTo) q = q.lte('inspected_at', f.dateTo + 'T23:59:59')
+  if (f.minScore !== 'any') q = q.gte('overall_score', Number(f.minScore))
+  return q
+}
+
 function scoreColorClass(score: number | null): string {
   if (score == null) return 'bg-muted text-muted-foreground'
-  if (score >= 4) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-  if (score >= 3) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (score >= 4) return 'bg-success/15 text-success'
+  if (score >= 3) return 'bg-warning/15 text-warning'
+  return 'bg-destructive/15 text-destructive'
 }
 
 const URGENCY_BADGE: Record<ReinspectUrgency, { label: string; cls: string }> = {
   none:     { label: '',         cls: '' },
-  low:      { label: 'Low',      cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  medium:   { label: 'Medium',   cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  high:     { label: 'High',     cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  critical: { label: 'Critical', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  low:      { label: 'Low',      cls: 'bg-success/15 text-success' },
+  medium:   { label: 'Medium',   cls: 'bg-warning/15 text-warning' },
+  high:     { label: 'High',     cls: 'bg-warning/20 text-warning' },
+  critical: { label: 'Critical', cls: 'bg-destructive/15 text-destructive' },
 }
 
 function StatusPill({ status }: { status: InspectionStatus }) {
   const map: Record<InspectionStatus, string> = {
-    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    scheduled: 'bg-info/15 text-info',
+    completed: 'bg-success/15 text-success',
     skipped:   'bg-muted text-muted-foreground',
   }
-  return <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
+  return <span className={`inline-block text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
 }
 
 function ScorePill({ label, score }: { label: string; score: number | null }) {
   if (score == null) return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <span className="text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="text-2xs uppercase tracking-wide">{label}</span>
       <span>—</span>
     </span>
   )
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${scoreColorClass(score)}`}>
-      <span className="text-[10px] uppercase tracking-wide opacity-80">{label}</span>
+      <span className="text-2xs uppercase tracking-wide opacity-80">{label}</span>
       <span className="font-semibold tabular-nums">{score}</span>
     </span>
   )
@@ -170,80 +215,119 @@ export default function InspectionsPage() {
     }
   }
 
-  const { data: inspections, isLoading } = useQuery<Inspection[]>({
-    queryKey: ['/supabase/inspections-all'],
+  // Debounce free-text search so each keystroke doesn't fire a server query.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const filters: InspectionFilters = {
+    search: debouncedSearch,
+    inspectorFilter,
+    statusFilter,
+    dateFrom,
+    dateTo,
+    minScore,
+  }
+
+  // Server-side pagination: filters are pushed into the Supabase query and
+  // only the current page is fetched, with { count: 'exact' } for the total.
+  // The '/supabase/inspections-all' key prefix is kept so existing fuzzy
+  // invalidations (delete here, InspectionFormSheet saves) still refresh us.
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['/supabase/inspections-all', { page, pageSize, ...filters }],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('inspections')
-        .select('id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)')
+      const orClause = await buildSearchOrClause(filters.search)
+      let q = supabase.from('inspections').select(INSPECTION_SELECT, { count: 'exact' })
+      q = applyInspectionFilters(q, filters, orClause)
+      const from = (page - 1) * pageSize
+      const { data, error, count } = await q
         .order('inspected_at', { ascending: false })
-        .limit(2000)
+        .range(from, from + pageSize - 1)
       if (error) throw error
-      return (data || []) as unknown as Inspection[]
+      return { rows: (data || []) as unknown as Inspection[], total: count ?? 0 }
+    },
+    placeholderData: keepPreviousData,
+  })
+
+  const inspections = pageData?.rows
+  const totalCount = pageData?.total ?? 0
+  const paged = inspections ?? []
+  const hasActiveFilters = !!(debouncedSearch || inspectorFilter !== 'all' || statusFilter !== 'all' || dateFrom || dateTo || minScore !== 'any')
+
+  // Average overall score across ALL matching rows (not just the current
+  // page) — fetched as a single lightweight column with the same filters.
+  const { data: avgScore } = useQuery({
+    queryKey: ['/supabase/inspections-all', 'avg-score', filters],
+    queryFn: async () => {
+      const orClause = await buildSearchOrClause(filters.search)
+      let q = supabase.from('inspections').select('overall_score').not('overall_score', 'is', null)
+      q = applyInspectionFilters(q, filters, orClause)
+      const { data, error } = await q.limit(5000)
+      if (error) throw error
+      const scores = (data ?? []).map((r: { overall_score: number | null }) => r.overall_score).filter((s): s is number => s != null)
+      if (!scores.length) return null
+      return scores.reduce((a, b) => a + b, 0) / scores.length
     },
   })
 
   const { data: cleaners } = useCleaners()
 
-  const filtered = useMemo(() => {
-    if (!inspections) return []
-    const q = search.trim().toLowerCase()
-    const min = minScore === 'any' ? null : Number(minScore)
-    return inspections.filter(i => {
-      if (q) {
-        const propName = i.properties?.name?.toLowerCase() ?? ''
-        const cleanerName = (i.cleaners?.full_name ?? i.cleaner_name ?? '').toLowerCase()
-        const notes = (i.notes ?? '').toLowerCase()
-        if (!propName.includes(q) && !cleanerName.includes(q) && !notes.includes(q)) return false
+  const [exporting, setExporting] = useState(false)
+
+  // Export fetches ALL matching rows on demand (chunked), independent of the
+  // current page, so the CSV matches the full filtered result set.
+  async function exportCsv() {
+    if (exporting) return
+    setExporting(true)
+    try {
+      const orClause = await buildSearchOrClause(filters.search)
+      const all: Inspection[] = []
+      const CHUNK = 1000
+      const MAX_ROWS = 20000
+      for (let from = 0; from < MAX_ROWS; from += CHUNK) {
+        let q = supabase.from('inspections').select(INSPECTION_SELECT)
+        q = applyInspectionFilters(q, filters, orClause)
+        const { data, error } = await q
+          .order('inspected_at', { ascending: false })
+          .range(from, from + CHUNK - 1)
+        if (error) throw error
+        const chunkRows = (data || []) as unknown as Inspection[]
+        all.push(...chunkRows)
+        if (chunkRows.length < CHUNK) break
       }
-      if (inspectorFilter !== 'all') {
-        if (inspectorFilter === 'unassigned' && i.inspector_id) return false
-        if (inspectorFilter !== 'unassigned' && i.inspector_id !== inspectorFilter) return false
-      }
-      if (statusFilter !== 'all' && i.status !== statusFilter) return false
-      if (dateFrom && i.inspected_at < dateFrom) return false
-      if (dateTo && i.inspected_at > dateTo + 'T23:59:59') return false
-      if (min != null && (i.overall_score ?? 0) < min) return false
-      return true
-    })
-  }, [inspections, search, inspectorFilter, statusFilter, dateFrom, dateTo, minScore])
-
-  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
-
-  const avgScore = useMemo(() => {
-    if (!filtered.length) return null
-    const scores = filtered.map(i => i.overall_score).filter((s): s is number => s != null)
-    if (!scores.length) return null
-    return scores.reduce((a, b) => a + b, 0) / scores.length
-  }, [filtered])
-
-  function exportCsv() {
-    const rows = filtered.map(i => ({
-      'Property': i.properties?.name ?? '',
-      'Cleaner': i.cleaners?.full_name ?? i.cleaner_name ?? '',
-      'Inspector': i.inspectors?.full_name ?? '',
-      'Inspected At': i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
-      'Overall': i.overall_score ?? '',
-      'Cleanliness': i.cleanliness_score ?? '',
-      'Linens': i.linens_score ?? '',
-      'Supplies': i.supplies_score ?? '',
-      'Exterior': i.exterior_score ?? '',
-      'Notes': i.notes ?? '',
-      'Photos': (i.photos_url ?? []).length,
-    }))
-    const csv = Papa.unparse(rows)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `inspections-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
-    toast({ title: 'CSV exported', description: `${rows.length} rows` })
+      const rows = all.map(i => ({
+        'Property': i.properties?.name ?? '',
+        'Cleaner': i.cleaners?.full_name ?? i.cleaner_name ?? '',
+        'Inspector': i.inspectors?.full_name ?? '',
+        'Inspected At': i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
+        'Overall': i.overall_score ?? '',
+        'Cleanliness': i.cleanliness_score ?? '',
+        'Linens': i.linens_score ?? '',
+        'Supplies': i.supplies_score ?? '',
+        'Exterior': i.exterior_score ?? '',
+        'Notes': i.notes ?? '',
+        'Photos': (i.photos_url ?? []).length,
+      }))
+      const csv = Papa.unparse(rows)
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `inspections-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast({ title: 'CSV exported', description: `${rows.length} rows` })
+    } catch (e: any) {
+      toast({ title: 'Export failed', description: e?.message, variant: 'destructive' })
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
-    <div className="p-3 sm:p-5 space-y-4 h-full flex flex-col overflow-x-hidden">
+    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col overflow-x-hidden">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
@@ -266,9 +350,9 @@ export default function InspectionsPage() {
               New Inspection
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5">
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            {exporting ? 'Exporting…' : 'Export CSV'}
           </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -331,19 +415,19 @@ export default function InspectionsPage() {
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded px-2 bg-background" />
         <label className="text-muted-foreground">To</label>
         <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded px-2 bg-background" />
-        <span className="text-muted-foreground ml-auto">{filtered.length} record{filtered.length === 1 ? '' : 's'}</span>
+        <span className="text-muted-foreground ml-auto">{totalCount} record{totalCount === 1 ? '' : 's'}</span>
       </div>
 
       {/* Mobile: cards (no horizontal scroll) */}
       <div className="md:hidden flex-1 overflow-y-auto -mx-1 px-1 space-y-2">
         {isLoading ? (
           [...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-lg" />)
-        ) : filtered.length === 0 ? (
+        ) : paged.length === 0 ? (
           <EmptyState
             icon={ClipboardCheck}
             title="No inspections"
             description={
-              inspections?.length
+              hasActiveFilters
                 ? 'No records match the current filters.'
                 : 'Tap + New Inspection to log or schedule one.'
             }
@@ -361,7 +445,7 @@ export default function InspectionsPage() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <StatusPill status={i.status} />
                     {i.reinspect_urgency !== 'none' && (
-                      <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                      <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
                         {URGENCY_BADGE[i.reinspect_urgency].label}
                       </span>
                     )}
@@ -431,14 +515,14 @@ export default function InspectionsPage() {
                   {[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
-            ) : filtered.length === 0 ? (
+            ) : paged.length === 0 ? (
               <tr>
                 <td colSpan={8}>
                   <EmptyState
                     icon={ClipboardCheck}
                     title="No inspections"
                     description={
-                      inspections?.length
+                      hasActiveFilters
                         ? 'No records match the current filters. Clear filters or widen the date range.'
                         : 'Log an inspection from a property modal → Inspections tab. Records appear here.'
                     }
@@ -457,7 +541,7 @@ export default function InspectionsPage() {
                       <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
                       <StatusPill status={i.status} />
                       {i.reinspect_urgency !== 'none' && (
-                        <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                        <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
                           {URGENCY_BADGE[i.reinspect_urgency].label}
                         </span>
                       )}
@@ -506,8 +590,8 @@ export default function InspectionsPage() {
         </table>
       </div>
 
-      {!isLoading && filtered.length > 0 && (
-        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      {!isLoading && totalCount > 0 && (
+        <TablePagination total={totalCount} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
         </TabsContent>
       </Tabs>
@@ -525,7 +609,7 @@ export default function InspectionsPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusPill status={activeDetail.status} />
                 {activeDetail.reinspect_urgency !== 'none' && (
-                  <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
+                  <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
                     Re-inspect: {URGENCY_BADGE[activeDetail.reinspect_urgency].label}
                   </span>
                 )}

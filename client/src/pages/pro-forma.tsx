@@ -13,6 +13,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History } from 'lucide-react'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
@@ -55,7 +57,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
     onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
   })
 
-  const labelColor = value === 'as_needed' ? 'text-amber-600 dark:text-amber-400' : ''
+  const labelColor = value === 'as_needed' ? 'text-warning' : ''
 
   return (
     <div className="flex items-center gap-1.5">
@@ -562,21 +564,22 @@ export default function ProFormaPage() {
   const totalColCount = baseColCount + scenarioColCount
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
+    <PageContainer width="full" className="h-full flex flex-col">
+      {!inWrapper && (
+        <PageHeader
+          title="Pro Forma"
+          subtitle="Financial projections for active properties"
+        />
+      )}
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        {inWrapper ? (
+        {inWrapper && (
           <div className="text-xs text-muted-foreground">
             {filtered?.length ?? 0} {filtered?.length === 1 ? 'property' : 'properties'}
           </div>
-        ) : (
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Pro Forma</h1>
-            <p className="text-sm text-muted-foreground">Financial projections for active properties</p>
-          </div>
         )}
-        <div className="flex items-center gap-3">
+        <div className={`flex items-center gap-3 ${inWrapper ? '' : 'ml-auto'}`}>
           {asNeededCount > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+            <div className="flex items-center gap-1.5 text-xs text-warning">
               <AlertTriangle className="w-3 h-3" />
               <span>{asNeededCount} using default frequency (2/mo)</span>
             </div>
@@ -625,6 +628,7 @@ export default function ProFormaPage() {
           </div>
         </div>
       </div>
+
 
       {/* Feature 3: Filter bar */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -682,16 +686,16 @@ export default function ProFormaPage() {
 
       {/* Feature 5: Duplicate warning banner */}
       {visibleDuplicatePairs.length > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-700 px-4 py-3 space-y-2">
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
+            <span className="text-xs font-semibold text-warning">
               {visibleDuplicatePairs.length} potential duplicate{visibleDuplicatePairs.length > 1 ? 's' : ''} detected
             </span>
           </div>
           <ul className="space-y-1">
             {visibleDuplicatePairs.map(pair => (
-              <li key={pair.key} className="flex items-center justify-between gap-3 text-xs text-amber-700 dark:text-amber-400">
+              <li key={pair.key} className="flex items-center justify-between gap-3 text-xs text-warning">
                 <span>
                   <span className="font-medium">{pair.a.name}</span>
                   {' '}&amp;{' '}
@@ -699,7 +703,7 @@ export default function ProFormaPage() {
                   {' — '}CE: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, Cost: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
                 </span>
                 <button
-                  className="shrink-0 text-[11px] px-2 py-0.5 rounded border border-amber-400/50 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:border-amber-600/50 dark:hover:bg-amber-900/40"
+                  className="shrink-0 text-2xs px-2 py-0.5 rounded border border-warning/50 text-warning hover:bg-warning/20"
                   onClick={async () => {
                     setLocalDismissed(prev => {
                       const n = new Set(prev); n.add(pair.key)
@@ -859,9 +863,9 @@ export default function ProFormaPage() {
               </th>
               {hasScenarios && (
                 <>
-                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Rev</th>
-                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Cost</th>
-                  <th className="text-left text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Profit</th>
+                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Rev</th>
+                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Cost</th>
+                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Profit</th>
                 </>
               )}
             </tr>
@@ -957,7 +961,7 @@ export default function ProFormaPage() {
                       <button
                         title={scenarioOn ? 'Disable scenario mode' : 'Enable scenario mode'}
                         onClick={() => toggleScenario(p.id)}
-                        className={`p-0.5 rounded transition-colors ${scenarioOn ? 'text-blue-500 bg-blue-100 dark:bg-blue-900/40' : 'text-muted-foreground hover:text-blue-500'}`}
+                        className={`p-0.5 rounded transition-colors ${scenarioOn ? 'text-info bg-info/15' : 'text-muted-foreground hover:text-info'}`}
                       >
                         <FlaskConical className="w-3.5 h-3.5" />
                       </button>
@@ -965,7 +969,7 @@ export default function ProFormaPage() {
                     {/* Feature 2: Scenario columns */}
                     {hasScenarios && (
                       <>
-                        <td className="py-2 px-3 text-xs tabular-nums text-blue-600 dark:text-blue-400">
+                        <td className="py-2 px-3 text-xs tabular-nums text-info">
                           {scenarioOn ? (
                             <div className="flex items-center gap-1">
                               <Input
@@ -988,10 +992,10 @@ export default function ProFormaPage() {
                             </div>
                           ) : '—'}
                         </td>
-                        <td className="py-2 px-3 text-xs tabular-nums text-blue-600 dark:text-blue-400">
+                        <td className="py-2 px-3 text-xs tabular-nums text-info">
                           {scenarioOn && scenarioCost != null ? fmt(scenarioCost) : '—'}
                         </td>
-                        <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${scenarioProfit != null && scenarioProfit < 0 ? 'text-destructive' : 'text-blue-600 dark:text-blue-400'}`}>
+                        <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${scenarioProfit != null && scenarioProfit < 0 ? 'text-destructive' : 'text-info'}`}>
                           {scenarioOn && scenarioProfit != null ? fmt(scenarioProfit) : '—'}
                         </td>
                       </>
@@ -1006,7 +1010,7 @@ export default function ProFormaPage() {
                 <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-[44px] bottom-0 z-30 bg-muted/90 backdrop-blur" colSpan={7}>
                   Monthly Totals ({filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length})
                   {duplicateExcludedIds.size > 0 && (
-                    <span className="ml-1 font-normal text-amber-600 dark:text-amber-400">
+                    <span className="ml-1 font-normal text-warning">
                       (excl. {duplicateExcludedIds.size} suspected dupes)
                     </span>
                   )}
@@ -1116,10 +1120,10 @@ export default function ProFormaPage() {
                       </span>
                       <span>{log.properties_updated} {log.properties_updated === 1 ? 'property' : 'properties'} updated</span>
                       {log.records_imported > 0 && (
-                        <span className="text-green-700 dark:text-green-400">{log.records_imported} new records</span>
+                        <span className="text-success">{log.records_imported} new records</span>
                       )}
                       {log.records_skipped > 0 && (
-                        <span className="text-amber-600 dark:text-amber-400">{log.records_skipped} skipped (dupes)</span>
+                        <span className="text-warning">{log.records_skipped} skipped (dupes)</span>
                       )}
                     </div>
                   </div>
@@ -1178,6 +1182,6 @@ export default function ProFormaPage() {
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+    </PageContainer>
   )
 }

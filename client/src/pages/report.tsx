@@ -170,7 +170,7 @@ export default function ReportPage() {
                   <p className="text-xs text-muted-foreground">Est. Monthly Revenue</p>
                   {isLoading ? <Skeleton className="h-7 w-20 mt-1" /> : <p className="text-2xl font-semibold">{fmt(totalRevenue)}</p>}
                 </div>
-                <DollarSign className="w-5 h-5 text-green-600 opacity-60" />
+                <DollarSign className="w-5 h-5 text-success opacity-60" />
               </div>
             </CardContent>
           </Card>
@@ -192,7 +192,7 @@ export default function ReportPage() {
                   <p className="text-xs text-muted-foreground">Avg Profit Margin</p>
                   {isLoading ? <Skeleton className="h-7 w-16 mt-1" /> : <p className={`text-2xl font-semibold ${profitColorClass(avgMargin)}`}>{avgMargin.toFixed(1)}%</p>}
                 </div>
-                <TrendingDown className="w-5 h-5 text-amber-500 opacity-60" />
+                <TrendingDown className="w-5 h-5 text-warning opacity-60" />
               </div>
             </CardContent>
           </Card>
@@ -201,9 +201,9 @@ export default function ReportPage() {
         {/* Operations Summary */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
           <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total Cleans ({monthLabel.split(' ')[0]})</p><p className="text-lg font-semibold">{totalCleans}</p></CardContent></Card>
-          <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Issues Logged</p><p className={`text-lg font-semibold ${totalIssues > 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{totalIssues}</p></CardContent></Card>
+          <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Issues Logged</p><p className={`text-lg font-semibold ${totalIssues > 0 ? 'text-warning' : ''}`}>{totalIssues}</p></CardContent></Card>
           <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Issue Rate</p><p className="text-lg font-semibold">{issueRate}%</p></CardContent></Card>
-          <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Open Tasks</p><p className={`text-lg font-semibold ${overdueTasks > 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{openTasks}{overdueTasks > 0 && <span className="text-xs ml-1">({overdueTasks} urgent)</span>}</p></CardContent></Card>
+          <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Open Tasks</p><p className={`text-lg font-semibold ${overdueTasks > 0 ? 'text-destructive' : ''}`}>{openTasks}{overdueTasks > 0 && <span className="text-xs ml-1">({overdueTasks} urgent)</span>}</p></CardContent></Card>
         </div>
 
         {/* QuickBooks Actuals */}
@@ -212,16 +212,16 @@ export default function ReportPage() {
             <CardHeader className="pb-2"><CardTitle className="text-sm">QuickBooks Actuals (YTD)</CardTitle></CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
-                <div><p className="text-xs text-muted-foreground">Revenue</p><p className="text-lg font-semibold text-green-600 dark:text-green-400">{fmt(qboRaw.totalIncome)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Revenue</p><p className="text-lg font-semibold text-success">{fmt(qboRaw.totalIncome)}</p></div>
                 <div><p className="text-xs text-muted-foreground">Total Costs</p><p className="text-lg font-semibold">{fmt((qboRaw.totalCOGS ?? 0) + (qboRaw.totalExpenses ?? 0))}</p></div>
-                <div><p className="text-xs text-muted-foreground">Net Income</p><p className={`text-lg font-semibold ${qboRaw.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboRaw.netIncome)}</p></div>
+                <div><p className="text-xs text-muted-foreground">Net Income</p><p className={`text-lg font-semibold ${qboRaw.netIncome < 0 ? 'text-destructive' : 'text-success'}`}>{fmt(qboRaw.netIncome)}</p></div>
               </div>
               {qboRaw.monthly && (
                 <div className="mt-3 grid grid-cols-4 gap-3 text-xs">
                   {Object.entries(qboRaw.monthly).map(([m, d]: [string, any]) => (
                     <div key={m}>
                       <p className="text-muted-foreground">{m}</p>
-                      <p className={`font-medium ${d.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(d.netIncome)}</p>
+                      <p className={`font-medium ${d.netIncome < 0 ? 'text-destructive' : 'text-success'}`}>{fmt(d.netIncome)}</p>
                     </div>
                   ))}
                 </div>
@@ -233,7 +233,7 @@ export default function ReportPage() {
         {/* Top & Bottom Properties */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <Card>
-            <CardHeader className="pb-2"><CardTitle className="text-sm text-green-600 dark:text-green-400">Top 5 by Margin</CardTitle></CardHeader>
+            <CardHeader className="pb-2"><CardTitle className="text-sm text-success">Top 5 by Margin</CardTitle></CardHeader>
             <CardContent className="pt-0">
               {topProperties.map((p: any) => (
                 <div key={p.id} className="flex items-center justify-between py-1.5 text-xs border-b border-border/30 last:border-0">

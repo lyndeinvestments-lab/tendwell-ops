@@ -17,6 +17,8 @@ import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { profitColorClass } from '@/lib/profit-colors'
 import { useAppSettings } from '@/hooks/use-app-settings'
@@ -590,13 +592,11 @@ export default function QuoteSheetPage() {
   }
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Quote Sheet</h1>
-          <p className="text-sm text-muted-foreground">Properties currently in Quote stage</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Quote Sheet"
+        subtitle="Properties currently in Quote stage"
+        actions={<div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
             <Download className="w-3.5 h-3.5" /> Export CSV
           </Button>
@@ -631,7 +631,7 @@ export default function QuoteSheetPage() {
                 data-testid={`view-mode-${m}`}
               >
                 {m}
-                {m === 'archived' ? <span className="ml-1 text-[10px] opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
+                {m === 'archived' ? <span className="ml-1 text-2xs opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
               </button>
             ))}
           </div>
@@ -639,8 +639,8 @@ export default function QuoteSheetPage() {
             <Plus className="w-3.5 h-3.5" />
             New Quote
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -716,7 +716,7 @@ export default function QuoteSheetPage() {
                         const stale = !p.archived_at && days > 90
                         return (
                           <span
-                            className={stale ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'}
+                            className={stale ? 'text-warning font-medium' : 'text-muted-foreground'}
                             title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
                           >
                             {new Date(p.created_at).toLocaleDateString()}
@@ -807,7 +807,7 @@ export default function QuoteSheetPage() {
                         )}
                       </div>
                       {p.archived_at && viewMode !== 'active' ? (
-                        <div className="mt-1 text-[10px] text-muted-foreground italic">
+                        <div className="mt-1 text-2xs text-muted-foreground italic">
                           Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
                           {p.archived_reason ? <> — {p.archived_reason}</> : null}
                         </div>
@@ -886,7 +886,7 @@ export default function QuoteSheetPage() {
                 <button
                   type="button"
                   onClick={() => setNewClientOpen(true)}
-                  className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
+                  className="text-2xs uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
                   data-testid="button-new-client-from-quote"
                 >
                   <Plus className="w-2.5 h-2.5" /> New
@@ -1168,7 +1168,7 @@ export default function QuoteSheetPage() {
                 data-testid="input-archive-reason"
                 autoFocus
               />
-              <p className="text-[11px] text-muted-foreground mt-1">
+              <p className="text-2xs text-muted-foreground mt-1">
                 Required. Visible in the archived view so you can audit why a quote didn't onboard.
               </p>
             </div>
@@ -1232,7 +1232,7 @@ export default function QuoteSheetPage() {
                 data-testid="input-new-client-phone"
               />
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               You can fill in company, address, payment method, and more later from the Clients page.
             </p>
           </div>
@@ -1253,6 +1253,6 @@ export default function QuoteSheetPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

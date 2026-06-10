@@ -12,8 +12,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { Search, RefreshCw, AlertTriangle, Loader2, PackagePlus, Check, Undo2 } from 'lucide-react'
+import { Search, RefreshCw, Loader2, Check, Undo2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { ErrorState } from '@/components/ErrorState'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type DeliveryResponsible = 'Haven' | 'Tendwell'
@@ -175,52 +178,47 @@ export default function IncomingShipmentsPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-5 h-full flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <PackagePlus className="w-5 h-5 text-muted-foreground" />
-            Incoming Shipments
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Submissions from the public report form · auto-refreshes every 30s
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search sender, property, description, tracking…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 h-8 w-full sm:w-80 text-sm"
-              data-testid="input-shipments-search"
-            />
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Incoming Shipments"
+        subtitle="Submissions from the public report form · auto-refreshes every 30s"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search sender, property, description, tracking…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 h-8 w-full sm:w-80 text-sm"
+                data-testid="input-shipments-search"
+              />
+            </div>
+            <Select value={respFilter} onValueChange={v => setRespFilter(v as RespFilter)}>
+              <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-shipments-responsible">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All parties</SelectItem>
+                <SelectItem value="Haven">Haven</SelectItem>
+                <SelectItem value="Tendwell">Tendwell</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
+              <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
           </div>
-          <Select value={respFilter} onValueChange={v => setRespFilter(v as RespFilter)}>
-            <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-shipments-responsible">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All parties</SelectItem>
-              <SelectItem value="Haven">Haven</SelectItem>
-              <SelectItem value="Tendwell">Tendwell</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
-            <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       <div className="grid grid-cols-3 gap-2">
         <SummaryTile label="Pending" count={counts.pending}
-          colorClass="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30"
+          colorClass="bg-warning/15 text-warning border-warning/30"
           onClick={() => setStatusFilter('pending')} active={statusFilter === 'pending'} />
         <SummaryTile label="Received" count={counts.received}
-          colorClass="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
+          colorClass="bg-success/15 text-success border-success/30"
           onClick={() => setStatusFilter('received')} active={statusFilter === 'received'} />
         <SummaryTile label="All" count={counts.total}
           colorClass="bg-muted text-foreground border-border"
@@ -228,10 +226,10 @@ export default function IncomingShipmentsPage() {
       </div>
 
       {isError && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          <span>Couldn't load Incoming Shipments: {error instanceof Error ? error.message : 'Unknown error'}</span>
-        </div>
+        <ErrorState
+          onRetry={() => refetch()}
+          description={`Couldn't load Incoming Shipments: ${error instanceof Error ? error.message : 'Unknown error'}`}
+        />
       )}
 
       <div className="flex-1 overflow-auto">
@@ -315,15 +313,15 @@ export default function IncomingShipmentsPage() {
                 <ShipKV k="Status" v={viewingRow.received_at ? 'Received' : 'Pending'} />
               </div>
               <div>
-                <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground mb-1">Description</p>
+                <p className="text-2xs uppercase tracking-wide font-medium text-muted-foreground mb-1">Description</p>
                 <div className="rounded-md border border-border bg-muted/30 p-2.5 whitespace-pre-wrap break-words">
                   {viewingRow.description}
                 </div>
               </div>
               {viewingRow.received_at && (
-                <div className="rounded-md border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-1.5">
+                <div className="rounded-md border border-success/20 bg-success/5 p-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs">
-                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <Check className="w-3.5 h-3.5 text-success" />
                     <span>Received {safeFormatTimestamp(viewingRow.received_at)}</span>
                     {viewingRow.received_by && receiverMap?.[viewingRow.received_by] && (
                       <span className="text-muted-foreground">· by {receiverMap[viewingRow.received_by]}</span>
@@ -340,14 +338,14 @@ export default function IncomingShipmentsPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }
 
 function ShipKV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div>
-      <p className="text-[11px] uppercase tracking-wide font-medium text-muted-foreground">{k}</p>
+      <p className="text-2xs uppercase tracking-wide font-medium text-muted-foreground">{k}</p>
       <p className={`text-sm break-words ${mono ? 'font-mono text-xs' : ''}`}>{v || '—'}</p>
     </div>
   )
@@ -372,7 +370,7 @@ function SummaryTile({
         (active ? 'border-primary ring-1 ring-primary/40 bg-primary/5' : 'border-border hover:bg-muted/40')
       }
     >
-      <div className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 inline-flex items-center gap-1 border ${colorClass}`}>
+      <div className={`text-2xs font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 inline-flex items-center gap-1 border ${colorClass}`}>
         {label}
       </div>
       <div className="text-2xl font-semibold tabular-nums mt-1">{count}</div>
@@ -427,15 +425,15 @@ function ListView({
                 <td className="py-1.5 px-3 font-medium">{s.sender_name}</td>
                 <td className="py-1.5 px-3 text-muted-foreground">{s.property_name}</td>
                 <td className="py-1.5 px-3 max-w-[320px] truncate text-primary hover:underline" title={s.description}>{s.description}</td>
-                <td className="py-1.5 px-3 font-mono text-[11px] text-muted-foreground">{s.tracking_number || '—'}</td>
+                <td className="py-1.5 px-3 font-mono text-2xs text-muted-foreground">{s.tracking_number || '—'}</td>
                 <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
                   {safeFormatDate(s.estimated_delivery, 'MMM d, yyyy')}
                 </td>
                 <td className="py-1.5 px-3">
-                  <span className={`px-1.5 py-0.5 rounded font-medium text-[10px] border ${
+                  <span className={`px-1.5 py-0.5 rounded font-medium text-2xs border ${
                     s.delivery_responsible === 'Haven'
-                      ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30'
-                      : 'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-500/30'
+                      ? 'bg-info/15 text-info border-info/30'
+                      : 'bg-primary/10 text-primary border-primary/25'
                   }`}>
                     {s.delivery_responsible}
                   </span>
@@ -446,21 +444,21 @@ function ListView({
                 <td className="py-1.5 px-3">
                   {isReceived ? (
                     <div className="flex flex-col">
-                      <span className="px-1.5 py-0.5 rounded font-medium text-[10px] border bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 inline-flex items-center gap-1 w-fit">
+                      <span className="px-1.5 py-0.5 rounded font-medium text-2xs border bg-success/15 text-success border-success/30 inline-flex items-center gap-1 w-fit">
                         <Check className="w-3 h-3" /> Received
                       </span>
-                      <span className="text-[10px] text-muted-foreground mt-0.5 tabular-nums">
+                      <span className="text-2xs text-muted-foreground mt-0.5 tabular-nums">
                         {safeFormatTimestamp(s.received_at)}
                         {s.received_by && receiverMap[s.received_by] ? ` · ${receiverMap[s.received_by]}` : ''}
                       </span>
                       {s.received_notes && (
-                        <span className="text-[10px] text-muted-foreground italic mt-0.5 max-w-[240px] truncate" title={s.received_notes}>
-                          “{s.received_notes}”
+                        <span className="text-2xs text-muted-foreground italic mt-0.5 max-w-[240px] truncate" title={s.received_notes}>
+                          "{s.received_notes}"
                         </span>
                       )}
                     </div>
                   ) : (
-                    <span className="px-1.5 py-0.5 rounded font-medium text-[10px] border bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
+                    <span className="px-1.5 py-0.5 rounded font-medium text-2xs border bg-warning/15 text-warning border-warning/30">
                       Pending
                     </span>
                   )}

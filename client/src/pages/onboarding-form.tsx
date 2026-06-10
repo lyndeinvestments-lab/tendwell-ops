@@ -46,8 +46,8 @@ export default function OnboardingFormPage() {
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="max-w-md w-full">
           <CardContent className="p-8 text-center space-y-4">
-            <div className="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center mx-auto">
-              <Check className="w-6 h-6 text-green-600 dark:text-green-400" />
+            <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto">
+              <Check className="w-6 h-6 text-success" />
             </div>
             <h2 className="text-lg font-semibold">Property Info Submitted</h2>
             <p className="text-sm text-muted-foreground">Thank you! We've received your property information and will follow up shortly.</p>

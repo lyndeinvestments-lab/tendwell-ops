@@ -97,11 +97,11 @@ export default function IssueSharePage() {
         <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
           <div className="flex items-center gap-2 flex-wrap mb-2">
             {issue.priority === 'urgent' && !completed && (
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded border text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800">
+              <span className="inline-flex items-center gap-1 text-2xs font-semibold px-2 py-0.5 rounded border text-destructive bg-destructive/10 border-destructive/25">
                 <AlertTriangle className="w-3 h-3" /> URGENT
               </span>
             )}
-            <span className={`text-[11px] font-medium px-2 py-0.5 rounded border ${completed ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' : 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800'}`}>
+            <span className={`text-2xs font-medium px-2 py-0.5 rounded border ${completed ? 'text-success bg-success/10 border-success/25' : 'text-warning bg-warning/10 border-warning/25'}`}>
               {issue.status}
             </span>
             <span className="text-xs text-muted-foreground ml-auto">{format(new Date(issue.report_date), 'MMM d, yyyy')}</span>
@@ -157,10 +157,10 @@ export default function IssueSharePage() {
           {comments.length > 0 ? (
             <ul className="space-y-2 mb-3">
               {comments.map((c: any) => (
-                <li key={c.id} className={`rounded-md border p-2 ${c.author_type === 'cleaner' ? 'border-border bg-muted/20' : 'border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-900/10'}`}>
+                <li key={c.id} className={`rounded-md border p-2 ${c.author_type === 'cleaner' ? 'border-border bg-muted/20' : 'border-info/25 bg-info/5'}`}>
                   <div className="flex items-center justify-between gap-2 mb-0.5">
                     <span className="text-xs font-medium">{c.author_name || (c.author_type === 'cleaner' ? 'Cleaner' : 'Tendwell')}</span>
-                    <span className="text-[10px] text-muted-foreground">{formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
+                    <span className="text-2xs text-muted-foreground">{formatDistanceToNow(new Date(c.created_at), { addSuffix: true })}</span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{c.content}</p>
                 </li>
@@ -183,14 +183,14 @@ export default function IssueSharePage() {
             <Check className="w-4 h-4" /> {busy === 'complete' ? 'Saving…' : 'Mark as Complete'}
           </Button>
         ) : (
-          <div className="rounded-lg border border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10 p-4 text-center">
-            <Check className="w-6 h-6 text-green-600 dark:text-green-400 mx-auto mb-1" />
-            <p className="text-sm font-medium text-green-700 dark:text-green-400">This issue is marked complete.</p>
+          <div className="rounded-lg border border-success/25 bg-success/5 p-4 text-center">
+            <Check className="w-6 h-6 text-success mx-auto mb-1" />
+            <p className="text-sm font-medium text-success">This issue is marked complete.</p>
             {issue.completed_at && <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(issue.completed_at), 'MMM d, yyyy h:mm a')}</p>}
           </div>
         )}
 
-        <p className="text-center text-[11px] text-muted-foreground pt-2">Powered by Tendwell Cleaning</p>
+        <p className="text-center text-2xs text-muted-foreground pt-2">Powered by Tendwell Cleaning</p>
       </div>
     </div>
   )

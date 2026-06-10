@@ -11,7 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Check, X, RefreshCw, ChevronDown, ChevronRight, Building2, ExternalLink, Image as ImageIcon, Link2, Search } from 'lucide-react'
+import { Check, X, RefreshCw, ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, Link2, Search } from 'lucide-react'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 
 interface OnboardingSubmission {
   id: string
@@ -133,16 +135,16 @@ export default function OnboardingQueuePage() {
   if (!effectiveUser) return null
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold flex items-center gap-2"><Building2 className="w-5 h-5" /> Onboarding Queue</h1>
-          <p className="text-xs text-muted-foreground mt-1">Public submissions from <code className="px-1 py-0.5 rounded bg-muted text-[11px]">/onboarding</code>. Review and create properties.</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching} data-testid="button-refresh">
-          <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? 'animate-spin' : ''}`} /> Refresh
-        </Button>
-      </div>
+    <PageContainer width="lg">
+      <PageHeader
+        title="Onboarding Queue"
+        subtitle={<>Public submissions from <code className="px-1 py-0.5 rounded bg-muted text-2xs">/onboarding</code>. Review and create properties.</>}
+        actions={
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching} data-testid="button-refresh">
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
+        }
+      />
 
       <div className="flex gap-2 flex-wrap text-sm">
         {([
@@ -298,7 +300,7 @@ export default function OnboardingQueuePage() {
         onClose={() => setMergeReview(null)}
         onDone={() => setMergeReview(null)}
       />
-    </div>
+    </PageContainer>
   )
 }
 
@@ -426,7 +428,7 @@ function MergePropertyDialog({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{title}</p>
+      <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{title}</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">{children}</div>
     </div>
   )
@@ -436,7 +438,7 @@ function KV({ k, v, wide, secret }: { k: string; v: any; wide?: boolean; secret?
   const display = v == null || v === '' ? '—' : String(v)
   return (
     <div className={wide ? 'sm:col-span-2' : ''}>
-      <p className="text-[11px] text-muted-foreground">{k}</p>
+      <p className="text-2xs text-muted-foreground">{k}</p>
       <p className={`text-sm break-words ${secret ? 'font-mono' : ''}`}>{display}</p>
     </div>
   )

@@ -9,6 +9,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
+import { StatusTone, TONE_TEXT } from '@/lib/status-colors'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -143,29 +148,30 @@ function CommentBody({ text, userLabels }: { text: string; userLabels: string[] 
   let key = 0
   while ((m = re.exec(text)) !== null) {
     if (m.index > last) parts.push(<span key={key++}>{text.slice(last, m.index)}</span>)
-    parts.push(<span key={key++} className="text-blue-600 dark:text-blue-400 font-medium">{m[0]}</span>)
+    parts.push(<span key={key++} className="text-info font-medium">{m[0]}</span>)
     last = m.index + m[0].length
   }
   if (last < text.length) parts.push(<span key={key++}>{text.slice(last)}</span>)
   return <>{parts}</>
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const cls = {
-    'To Do': 'text-gray-700 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-900/20 dark:border-gray-800',
-    'In Progress': 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-800',
-    'Done': 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800',
-    'Blocked': 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800',
-  }[status] || 'text-gray-600 bg-gray-50 border-gray-200'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border whitespace-nowrap ${cls}`}>{status}</span>
+const TASK_STATUS_TONES: Record<string, StatusTone> = {
+  'To Do': 'neutral',
+  'In Progress': 'info',
+  'Done': 'success',
+  'Blocked': 'destructive',
+}
+
+function TaskStatusBadge({ status }: { status: string }) {
+  return <StatusBadge status={status} tone={TASK_STATUS_TONES[status] ?? 'neutral'} />
 }
 
 function PriorityBadge({ priority }: { priority: string }) {
   const cls = {
-    'Urgent': 'text-red-700 dark:text-red-400',
-    'High': 'text-amber-700 dark:text-amber-400',
-    'Medium': 'text-blue-700 dark:text-blue-400',
-    'Low': 'text-gray-500',
+    'Urgent': TONE_TEXT.destructive,
+    'High': TONE_TEXT.warning,
+    'Medium': TONE_TEXT.info,
+    'Low': TONE_TEXT.neutral,
   }[priority] || ''
   const icon = priority === 'Urgent' ? '🔴' : priority === 'High' ? '🟠' : priority === 'Medium' ? '🔵' : '⚪'
   return <span className={`text-xs ${cls}`}>{icon} {priority}</span>
@@ -178,7 +184,7 @@ function DueDateLabel({ date }: { date: string | null }) {
   const today = isToday(d)
   const daysUntil = differenceInDays(d, new Date())
   const label = today ? 'Today' : overdue ? `${Math.abs(daysUntil)}d overdue` : daysUntil <= 7 ? `${daysUntil}d` : format(d, 'MMM d')
-  const cls = overdue ? 'text-red-600 dark:text-red-400 font-medium' : today ? 'text-amber-600 dark:text-amber-400 font-medium' : 'text-muted-foreground'
+  const cls = overdue ? 'text-destructive font-medium' : today ? 'text-warning font-medium' : 'text-muted-foreground'
   return <span className={`text-xs ${cls}`}>{label}</span>
 }
 
@@ -244,8 +250,8 @@ function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: a
                 {dayTasks.slice(0, 3).map((t: any) => (
                   <button key={t.id} onClick={() => onTaskClick(t)}
                     className={`w-full text-left text-xs px-1 py-0.5 rounded truncate ${
-                      t.status === 'Done' ? 'bg-green-100 dark:bg-green-900/20 text-green-700 dark:text-green-400 line-through' :
-                      t.priority === 'Urgent' ? 'bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-400' :
+                      t.status === 'Done' ? 'bg-success/10 text-success line-through' :
+                      t.priority === 'Urgent' ? 'bg-destructive/10 text-destructive' :
                       'bg-primary/10 text-primary'
                     }`}>
                     {t.title}
@@ -329,7 +335,7 @@ function ReparentPopover({
                   className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent"
                 >
                   <div className="font-medium truncate">{t.title}</div>
-                  {t.property_name && <div className="text-muted-foreground text-[10px] truncate">{t.property_name}</div>}
+                  {t.property_name && <div className="text-muted-foreground text-2xs truncate">{t.property_name}</div>}
                 </button>
               ))}
             </div>
@@ -353,7 +359,7 @@ function ReparentPopover({
             >
               Create & move {countLabel}
             </Button>
-            <p className="text-[10px] text-muted-foreground">List, priority, and category inherit from the first selected task. You can edit details after creation.</p>
+            <p className="text-2xs text-muted-foreground">List, priority, and category inherit from the first selected task. You can edit details after creation.</p>
           </div>
         )}
       </PopoverContent>
@@ -473,7 +479,7 @@ export default function TasksPage() {
   const activeList = visibleLists.find(l => l.id === resolvedListId) || null
 
   // ─── Tasks query (filtered by list or global) ────────────────────────────
-  const { data: tasks, isLoading } = useQuery({
+  const { data: tasks, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/tasks', resolvedListId, visibleLists.map(l => l.id).join(',')],
     queryFn: async () => {
       let query = supabase.from('tasks').select('*').order('created_at', { ascending: false })
@@ -1007,7 +1013,7 @@ export default function TasksPage() {
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
+    <PageContainer className="h-full flex flex-col">
       {/* List selector bar */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <button onClick={() => setActiveListId('global')}
@@ -1040,52 +1046,52 @@ export default function TasksPage() {
       </div>
 
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">
-            {resolvedListId === 'global' ? 'All My Tasks' : activeList?.name || 'Tasks'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {stats.overdue > 0 && <span className="text-red-600 dark:text-red-400 font-medium">{stats.overdue} overdue</span>}
+      <PageHeader
+        title={resolvedListId === 'global' ? 'All My Tasks' : activeList?.name || 'Tasks'}
+        subtitle={
+          <>
+            {stats.overdue > 0 && <span className="text-destructive font-medium">{stats.overdue} overdue</span>}
             {stats.overdue > 0 && ' · '}
             {stats.inProgress} in progress · {stats.todo} to do · {stats.done} done
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center border rounded-md overflow-hidden">
-            {(['list', 'board', 'calendar'] as ViewMode[]).map(v => (
-              <button key={v} onClick={() => setViewMode(v)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>
-                {v === 'list' ? 'List' : v === 'board' ? 'Board' : 'Calendar'}
-              </button>
-            ))}
-          </div>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
-            <Download className="w-3.5 h-3.5" /> Export
-          </Button>
-          {canEdit && (
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => {
-              const defaultListId = resolvedListId !== 'global'
-                ? resolvedListId
-                : (visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || '')
-              setNewForm(f => ({ ...f, list_id: defaultListId }))
-              setAddOpen(true)
-            }}>
-              <Plus className="w-3.5 h-3.5" /> New Task
+          </>
+        }
+        actions={
+          <>
+            <div className="flex items-center border rounded-md overflow-hidden">
+              {(['list', 'board', 'calendar'] as ViewMode[]).map(v => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>
+                  {v === 'list' ? 'List' : v === 'board' ? 'Board' : 'Calendar'}
+                </button>
+              ))}
+            </div>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
+              <Download className="w-3.5 h-3.5" /> Export
             </Button>
-          )}
-        </div>
-      </div>
+            {canEdit && (
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => {
+                const defaultListId = resolvedListId !== 'global'
+                  ? resolvedListId
+                  : (visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || '')
+                setNewForm(f => ({ ...f, list_id: defaultListId }))
+                setAddOpen(true)
+              }}>
+                <Plus className="w-3.5 h-3.5" /> New Task
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: 'To Do', count: stats.todo, filter: 'To Do' as StatusFilter, cls: '' },
-          { label: 'In Progress', count: stats.inProgress, filter: 'In Progress' as StatusFilter, cls: 'text-blue-600 dark:text-blue-400' },
-          { label: 'Overdue', count: stats.overdue, filter: 'all' as StatusFilter, cls: 'text-red-600 dark:text-red-400' },
-          { label: 'Done', count: stats.done, filter: 'Done' as StatusFilter, cls: 'text-green-600 dark:text-green-400' },
+          { label: 'In Progress', count: stats.inProgress, filter: 'In Progress' as StatusFilter, cls: TONE_TEXT.info },
+          { label: 'Overdue', count: stats.overdue, filter: 'all' as StatusFilter, cls: TONE_TEXT.destructive },
+          { label: 'Done', count: stats.done, filter: 'Done' as StatusFilter, cls: TONE_TEXT.success },
         ].map(c => (
-          <Card key={c.label} className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => { setStatusFilter(c.filter) }}>
+          <Card key={c.label} className="cursor-pointer shadow-xs hover:bg-muted/30 hover:shadow-sm transition-all" onClick={() => { setStatusFilter(c.filter) }}>
             <CardContent className="p-3">
               <p className="text-xs text-muted-foreground">{c.label}</p>
               <p className={`text-lg font-semibold ${c.cls}`}>{c.count}</p>
@@ -1142,7 +1148,7 @@ export default function TasksPage() {
         {(priorityFilter !== 'all' || assigneeFilter !== 'all' || groupBy !== 'none') && (
           <button
             onClick={() => { setPriorityFilter('all'); setAssigneeFilter('all'); setGroupBy('none') }}
-            className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+            className="text-2xs text-muted-foreground hover:text-foreground underline underline-offset-2"
           >
             Reset
           </button>
@@ -1155,7 +1161,8 @@ export default function TasksPage() {
       </div>
 
       {/* ═══ LIST VIEW ═══ */}
-      {viewMode === 'list' && (
+      {isError && <ErrorState onRetry={() => refetch()} />}
+      {!isError && viewMode === 'list' && (
         <div className="overflow-auto flex-1 rounded-lg border border-border">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted border-b border-border z-20">
@@ -1225,7 +1232,7 @@ export default function TasksPage() {
                   if (showGroupHeader) lastGroupKey = groupKey
                   const groupHeader = showGroupHeader ? (
                     <tr key={`group-${groupKey}`} className="bg-muted/40 border-y border-border">
-                      <td colSpan={colCount} className="py-1.5 px-3 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <td colSpan={colCount} className="py-1.5 px-3 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
                         {groupLabelOf(groupKey!)}
                       </td>
                     </tr>
@@ -1240,7 +1247,7 @@ export default function TasksPage() {
                 return (
                   <React.Fragment key={task.id}>
                     {groupHeader}
-                    <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : overdue ? 'bg-red-50/30 dark:bg-red-900/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
+                    <tr className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${isSelected ? 'bg-primary/5' : overdue ? 'bg-destructive/5' : task.status === 'Done' ? 'opacity-60' : ''}`} onClick={() => setDetailTask(task)}>
                       {canEdit && (
                         <td className="py-2 pl-3 pr-1 sticky left-0 z-10 bg-background w-8" onClick={e => e.stopPropagation()}>
                           <Checkbox
@@ -1269,13 +1276,13 @@ export default function TasksPage() {
                           <span className={task.status === 'Done' ? 'line-through' : ''}>{task.title}</span>
                           {task.property_name && <span className="text-muted-foreground ml-1">· {task.property_name}</span>}
                           {hasSubs && (
-                            <span className="text-[10px] text-muted-foreground bg-muted rounded px-1.5 py-0.5 ml-1 flex-shrink-0">
+                            <span className="text-2xs text-muted-foreground bg-muted rounded px-1.5 py-0.5 ml-1 flex-shrink-0">
                               {progress.done}/{progress.total}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-2 px-3"><StatusBadge status={task.status} /></td>
+                      <td className="py-2 px-3"><TaskStatusBadge status={task.status} /></td>
                       <td className="py-2 px-3"><PriorityBadge priority={task.priority} /></td>
                       <td className="py-2 px-3"><DueDateLabel date={task.due_date} /></td>
                       <td className="py-2 px-3 text-xs">{task.assignee_name || '—'}</td>
@@ -1293,7 +1300,7 @@ export default function TasksPage() {
                     {hasSubs && isExpanded && subs.map((sub: any) => {
                       const subOverdue = sub.due_date && isPast(new Date(sub.due_date + 'T00:00:00')) && !isToday(new Date(sub.due_date + 'T00:00:00')) && sub.status !== 'Done'
                       return (
-                        <tr key={sub.id} className={`border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer ${subOverdue ? 'bg-red-50/20 dark:bg-red-900/5' : sub.status === 'Done' ? 'opacity-50' : ''}`} onClick={() => setDetailTask(sub)}>
+                        <tr key={sub.id} className={`border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer ${subOverdue ? 'bg-destructive/5' : sub.status === 'Done' ? 'opacity-50' : ''}`} onClick={() => setDetailTask(sub)}>
                           {canEdit && <td className="py-1.5 pl-3 pr-1 sticky left-0 z-10 bg-background w-8" />}
                           <td className={`py-1.5 px-3 text-xs ${canEdit ? '' : 'sticky left-0 z-10'} bg-background`}>
                             <div className="flex items-center gap-1.5 pl-6">
@@ -1301,7 +1308,7 @@ export default function TasksPage() {
                               <span className={sub.status === 'Done' ? 'line-through text-muted-foreground' : ''}>{sub.title}</span>
                             </div>
                           </td>
-                          <td className="py-1.5 px-3"><StatusBadge status={sub.status} /></td>
+                          <td className="py-1.5 px-3"><TaskStatusBadge status={sub.status} /></td>
                           <td className="py-1.5 px-3"><PriorityBadge priority={sub.priority} /></td>
                           <td className="py-1.5 px-3"><DueDateLabel date={sub.due_date} /></td>
                           <td className="py-1.5 px-3 text-xs">{sub.assignee_name || '—'}</td>
@@ -1354,7 +1361,7 @@ export default function TasksPage() {
       )}
 
       {/* ═══ BOARD VIEW ═══ */}
-      {viewMode === 'board' && (
+      {!isError && viewMode === 'board' && (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <div className="flex-1 overflow-x-auto">
             <div className="flex gap-3 min-w-[900px] h-full">
@@ -1370,7 +1377,7 @@ export default function TasksPage() {
                       return (
                         <DraggableCard key={task.id} task={task}>
                           <div onClick={() => setDetailTask(task)}
-                            className={`rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30 transition-colors ${overdue ? 'border-red-200 dark:border-red-800' : ''}`}>
+                            className={`rounded-lg border border-border p-3 cursor-pointer shadow-xs hover:bg-muted/30 hover:shadow-sm transition-all ${overdue ? 'border-destructive/40' : ''}`}>
                             <p className="text-xs font-medium mb-1">{task.title}</p>
                             {task.property_name && <p className="text-xs text-muted-foreground mb-1">{task.property_name}</p>}
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1394,7 +1401,7 @@ export default function TasksPage() {
       )}
 
       {/* ═══ CALENDAR VIEW ═══ */}
-      {viewMode === 'calendar' && (
+      {!isError && viewMode === 'calendar' && (
         <CalendarView tasks={filtered} onTaskClick={setDetailTask} />
       )}
 
@@ -1406,7 +1413,7 @@ export default function TasksPage() {
               <SheetHeader>
                 <SheetTitle className="text-base pr-8">{detailTask.title}</SheetTitle>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <StatusBadge status={detailTask.status} />
+                  <TaskStatusBadge status={detailTask.status} />
                   <PriorityBadge priority={detailTask.priority} />
                   <DueDateLabel date={detailTask.due_date} />
                 </div>
@@ -1435,7 +1442,7 @@ export default function TasksPage() {
                           {subs.map((sub: any) => (
                             <div key={sub.id} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded bg-muted/30 hover:bg-muted/50 cursor-pointer" onClick={() => setDetailTask(sub)}>
                               <button onClick={e => { e.stopPropagation(); updateTask({ id: sub.id, updates: { status: sub.status === 'Done' ? 'To Do' : 'Done', completed_at: sub.status === 'Done' ? null : new Date().toISOString() } }) }}>
-                                {sub.status === 'Done' ? <CheckSquare className="w-4 h-4 text-green-500" /> : <Clock className="w-4 h-4 text-muted-foreground" />}
+                                {sub.status === 'Done' ? <CheckSquare className="w-4 h-4 text-success" /> : <Clock className="w-4 h-4 text-muted-foreground" />}
                               </button>
                               <span className={`flex-1 ${sub.status === 'Done' ? 'line-through text-muted-foreground' : ''}`}>{sub.title}</span>
                               {sub.assignee_name && <span className="text-muted-foreground">{sub.assignee_name}</span>}
@@ -1527,7 +1534,7 @@ export default function TasksPage() {
                       }} className="h-7 w-full text-xs border border-input rounded px-1 bg-background mt-0.5">
                         {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
-                    ) : <StatusBadge status={detailTask.status} />}
+                    ) : <TaskStatusBadge status={detailTask.status} />}
                   </div>
                   <div>
                     <span className="text-muted-foreground block">Priority</span>
@@ -1613,7 +1620,7 @@ export default function TasksPage() {
                       <div key={a.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           <span className={a.role === 'primary' ? 'font-medium' : ''}>{a.user?.label}</span>
-                          <span className={`text-[10px] px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{a.role}</span>
+                          <span className={`text-2xs px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{a.role}</span>
                         </div>
                         {canEdit && <button onClick={() => toggleAssignee(detailTask.id, a.user_id, false)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
                       </div>
@@ -1631,8 +1638,8 @@ export default function TasksPage() {
                             <div key={u.id} className="flex items-center justify-between px-2 py-1.5 text-xs hover:bg-accent rounded">
                               <span>{u.label}</span>
                               <div className="flex gap-1">
-                                <button onClick={() => toggleAssignee(detailTask.id, u.id, true)} className="text-primary text-[10px] hover:underline">Primary</button>
-                                <button onClick={() => toggleAssignee(detailTask.id, u.id, false)} className="text-muted-foreground text-[10px] hover:underline">Secondary</button>
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, true)} className="text-primary text-2xs hover:underline">Primary</button>
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, false)} className="text-muted-foreground text-2xs hover:underline">Secondary</button>
                               </div>
                             </div>
                           ))}
@@ -1871,6 +1878,6 @@ export default function TasksPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

@@ -9,8 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
+import { ErrorState } from '@/components/ErrorState'
+import { StatusTone, TONE_TEXT } from '@/lib/status-colors'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Badge } from '@/components/ui/badge'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -28,15 +32,15 @@ interface Alert {
   requiredView?: string // view the user must have access to in order to see this alert
 }
 
-const SEVERITY_CONFIG = {
-  critical: { icon: AlertTriangle, color: 'text-red-700 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800', badge: 'bg-red-500' },
-  warning: { icon: AlertCircle, color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800', badge: 'bg-amber-500' },
-  info: { icon: Info, color: 'text-blue-700 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800', badge: 'bg-blue-500' },
+const SEVERITY_CONFIG: Record<'critical' | 'warning' | 'info', { icon: typeof AlertTriangle; tone: StatusTone; bg: string }> = {
+  critical: { icon: AlertTriangle, tone: 'destructive', bg: 'bg-destructive/5 border-destructive/25' },
+  warning: { icon: AlertCircle, tone: 'warning', bg: 'bg-warning/5 border-warning/25' },
+  info: { icon: Info, tone: 'info', bg: 'bg-info/5 border-info/25' },
 }
 
 export function useAlerts() {
   const { effectiveUser } = useAuth()
-  const { data: properties } = useQuery({
+  const { data: properties, isError, refetch } = useQuery({
     queryKey: ['/supabase/alerts-properties'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -229,7 +233,7 @@ export function useAlerts() {
     return activeAlerts.filter(a => a.severity === 'critical' || a.severity === 'warning').length
   }, [activeAlerts])
 
-  return { alerts, activeAlerts, badgeCount, dismissedSet }
+  return { alerts, activeAlerts, badgeCount, dismissedSet, isError, refetch }
 }
 
 type SeverityFilter = 'all' | 'critical' | 'warning' | 'info'
@@ -238,7 +242,7 @@ export default function AlertsPage() {
   usePageTitle('Alerts')
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
-  const { alerts, dismissedSet } = useAlerts()
+  const { alerts, dismissedSet, isError, refetch } = useAlerts()
   const qcAlerts = useQueryClient()
   const [showDismissed, setShowDismissed] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string>('All')
@@ -335,45 +339,56 @@ export default function AlertsPage() {
 
   const SEVERITY_PILLS: Array<{ value: SeverityFilter; label: string; count: number; cls: string }> = [
     { value: 'all', label: 'All', count: criticalCount + warningCount + infoCount, cls: 'border-border' },
-    { value: 'critical', label: 'Critical', count: criticalCount, cls: 'border-red-300 dark:border-red-800 text-red-700 dark:text-red-400' },
-    { value: 'warning', label: 'Warning', count: warningCount, cls: 'border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400' },
-    { value: 'info', label: 'Info', count: infoCount, cls: 'border-blue-300 dark:border-blue-800 text-blue-700 dark:text-blue-400' },
+    { value: 'critical', label: 'Critical', count: criticalCount, cls: `border-destructive/40 ${TONE_TEXT.destructive}` },
+    { value: 'warning', label: 'Warning', count: warningCount, cls: `border-warning/40 ${TONE_TEXT.warning}` },
+    { value: 'info', label: 'Info', count: infoCount, cls: `border-info/40 ${TONE_TEXT.info}` },
   ]
 
+  if (isError) {
+    return (
+      <PageContainer>
+        <PageHeader title="Alerts" />
+        <ErrorState onRetry={() => refetch()} />
+      </PageContainer>
+    )
+  }
+
   return (
-    <div className="p-5 space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Alerts</h1>
-          <p className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500" /> {criticalCount} critical</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500" /> {warningCount} warning</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-500" /> {infoCount} info</span>
+    <PageContainer>
+      <PageHeader
+        title="Alerts"
+        subtitle={
+          <span className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-destructive" /> {criticalCount} critical</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning" /> {warningCount} warning</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-info" /> {infoCount} info</span>
             {dismissedCount > 0 && <span className="text-muted-foreground/70">· {dismissedCount} dismissed</span>}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {warningCount > 3 && (
-            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={async () => {
-              const toDismiss = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id))
-              await Promise.all(toDismiss.map(a =>
-                supabase.from('alert_dismissals').upsert({ alert_key: a.id, dismissed_at: new Date().toISOString(), snoozed_until: null }, { onConflict: 'alert_key' })
-              ))
-              qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
-            }}>
-              Dismiss All Warnings ({warningCount})
-            </Button>
-          )}
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-            Show dismissed ({dismissedCount})
-          </label>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <>
+            {warningCount > 3 && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={async () => {
+                const toDismiss = alerts.filter(a => a.severity === 'warning' && !dismissedSet.has(a.id))
+                await Promise.all(toDismiss.map(a =>
+                  supabase.from('alert_dismissals').upsert({ alert_key: a.id, dismissed_at: new Date().toISOString(), snoozed_until: null }, { onConflict: 'alert_key' })
+                ))
+                qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
+              }}>
+                Dismiss All Warnings ({warningCount})
+              </Button>
+            )}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
+              Show dismissed ({dismissedCount})
+            </label>
+          </>
+        }
+      />
 
       {/* Severity filter pills */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Severity</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Severity</span>
         {SEVERITY_PILLS.map(p => (
           <button
             key={p.value}
@@ -392,7 +407,7 @@ export default function AlertsPage() {
 
       {/* Category filter tabs */}
       <div className="flex items-center gap-1.5 flex-wrap -mt-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Category</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Category</span>
         {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM']
           .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
           .map(cat => (
@@ -448,10 +463,10 @@ export default function AlertsPage() {
 
       <div className="space-y-2">
         {visibleAlerts.length === 0 ? (
-          <Card className="border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10">
+          <Card className="border-success/25 bg-success/5 shadow-xs">
             <CardContent className="p-8 text-center space-y-1">
-              <CheckCircle2 className="w-7 h-7 text-green-600 dark:text-green-400 mx-auto" />
-              <p className="text-sm text-green-700 dark:text-green-400 font-medium">All clear! No active alerts.</p>
+              <CheckCircle2 className="w-7 h-7 text-success mx-auto" />
+              <p className="text-sm text-success font-medium">All clear! No active alerts.</p>
               <p className="text-xs text-muted-foreground">
                 {categoryFilter !== 'All' || severityFilter !== 'all'
                   ? 'Try clearing filters above to see alerts in other categories or severities.'
@@ -466,7 +481,7 @@ export default function AlertsPage() {
             const dismissed = dismissedSet.has(alert.id)
             const isSelected = selectedIds.has(alert.id)
             return (
-              <Card key={alert.id} className={`border ${config.bg} ${dismissed ? 'opacity-50' : ''} ${isSelected ? 'ring-2 ring-primary/40' : ''}`}>
+              <Card key={alert.id} className={`border shadow-xs ${config.bg} ${dismissed ? 'opacity-50' : ''} ${isSelected ? 'ring-2 ring-primary/40' : ''}`}>
                 <CardContent className="p-3 flex items-start gap-3">
                   {!dismissed && (
                     <Checkbox
@@ -476,16 +491,16 @@ export default function AlertsPage() {
                       aria-label={`Select alert: ${alert.title}`}
                     />
                   )}
-                  <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${config.color}`} />
+                  <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${TONE_TEXT[config.tone]}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className={`text-sm font-medium ${config.color}`}>{alert.title}</p>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-normal">
+                      <p className={`text-sm font-medium ${TONE_TEXT[config.tone]}`}>{alert.title}</p>
+                      <StatusBadge tone="neutral" className="font-normal">
                         {alert.category}
-                      </Badge>
-                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 font-normal capitalize ${config.color} border-current/30`}>
+                      </StatusBadge>
+                      <StatusBadge tone={config.tone} className="font-normal capitalize">
                         {alert.severity}
-                      </Badge>
+                      </StatusBadge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{alert.description}</p>
                   </div>
@@ -544,6 +559,6 @@ export default function AlertsPage() {
           })
         )}
       </div>
-    </div>
+    </PageContainer>
   )
 }

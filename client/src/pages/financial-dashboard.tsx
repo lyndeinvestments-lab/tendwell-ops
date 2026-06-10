@@ -10,6 +10,10 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
+import { ErrorState } from '@/components/ErrorState'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import {
   DollarSign,
@@ -79,11 +83,15 @@ const CPM_OPTIONS = [
 
 // ─── KpiCard ──────────────────────────────────────────────────────────────────
 
+/**
+ * Thin adapter over the shared StatCard — preserves this page's
+ * `data-testid="kpi-…"` contract on the value and the scenario overlay.
+ */
 function KpiCard({
   title,
   value,
   subtitle,
-  icon: Icon,
+  icon,
   loading,
   alert,
   scenario,
@@ -96,51 +104,36 @@ function KpiCard({
   alert?: boolean
   scenario?: string | number | null
 }) {
+  const hasScenario = scenario != null && scenario !== ''
   return (
-    <Card className={`border-card-border ${alert ? 'border-destructive/40' : ''}`}>
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
-            {loading ? (
-              <>
-                <Skeleton className="h-7 w-24 mt-1.5" />
-                <Skeleton className="h-3 w-16 mt-2" />
-              </>
-            ) : (
-              <>
-                <div className="flex items-end gap-3 mt-1 flex-wrap">
-                  <p
-                    data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-')}`}
-                    className={`text-xl font-semibold ${alert ? 'text-destructive' : 'text-foreground'}`}
-                  >
-                    {value}
-                  </p>
-                  {scenario != null && scenario !== '' && (
-                    <span className="text-base font-semibold text-blue-500 dark:text-blue-400">
-                      {scenario}
-                    </span>
-                  )}
-                </div>
-                {(subtitle || scenario != null) && (
-                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                    {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-                    {scenario != null && scenario !== '' && (
-                      <p className="text-xs text-blue-500 dark:text-blue-400">scenario</p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-          <div
-            className={`w-8 h-8 rounded-md ${alert ? 'bg-destructive/10' : 'bg-primary/10'} flex items-center justify-center flex-shrink-0 ml-2`}
+    <StatCard
+      title={title}
+      value={
+        <span className="flex items-end gap-3 flex-wrap">
+          <span
+            data-testid={`kpi-${title.toLowerCase().replace(/\s+/g, '-')}`}
+            className={alert ? 'text-destructive' : undefined}
           >
-            <Icon className={`w-4 h-4 ${alert ? 'text-destructive' : 'text-primary'}`} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+            {value}
+          </span>
+          {hasScenario && (
+            <span className="text-base font-semibold text-info">{scenario}</span>
+          )}
+        </span>
+      }
+      subtitle={
+        subtitle || hasScenario ? (
+          <span className="flex items-center gap-2 flex-wrap">
+            {subtitle && <span>{subtitle}</span>}
+            {hasScenario && <span className="text-info">scenario</span>}
+          </span>
+        ) : undefined
+      }
+      icon={icon}
+      loading={loading}
+      tone={alert ? 'destructive' : 'primary'}
+      className="h-full"
+    />
   )
 }
 
@@ -176,7 +169,7 @@ export default function FinancialDashboardPage() {
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc' | 'name'>('desc')
 
   // ── Data ──
-  const { data: properties, isLoading, isError } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/financial-dashboard'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -340,32 +333,31 @@ export default function FinancialDashboardPage() {
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="p-5 space-y-6 h-full overflow-auto">
+    <PageContainer className="space-y-6 h-full overflow-auto">
       {/* ── Header ── */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Financial Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Monthly financial overview for active properties
-          </p>
-        </div>
-        {hasScenario && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={resetScenario}
-            className="h-8 text-xs gap-1.5"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset Scenario
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        title="Financial Dashboard"
+        subtitle="Monthly financial overview for active properties"
+        actions={
+          hasScenario ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={resetScenario}
+              className="h-8 text-xs gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset Scenario
+            </Button>
+          ) : undefined
+        }
+      />
 
       {isError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load dashboard data. Please refresh the page.
-        </div>
+        <ErrorState
+          title="Failed to load dashboard data"
+          onRetry={() => refetch()}
+        />
       )}
 
       {/* ── KPI Cards ── */}
@@ -418,7 +410,7 @@ export default function FinancialDashboardPage() {
       </div>
 
       {/* ── Scenario Simulator ── */}
-      <Card className="border-card-border">
+      <Card className="border-card-border shadow-xs">
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <BarChart3 className="w-4 h-4 text-primary" />
@@ -460,7 +452,7 @@ export default function FinancialDashboardPage() {
             )}
 
             {hasScenario && (
-              <div className="flex items-center gap-1.5 text-xs text-blue-500 dark:text-blue-400 ml-1">
+              <div className="flex items-center gap-1.5 text-xs text-info ml-1">
                 <span className="font-medium">
                   Scenario active: {scenarioCpm} clean{scenarioCpm !== 1 ? 's' : ''}/mo
                 </span>
@@ -493,9 +485,9 @@ export default function FinancialDashboardPage() {
                 { label: 'Avg Margin', current: fmtPct(actuals.avgMargin), next: fmtPct(scenario.avgMargin) },
               ].map((row) => (
                 <div key={row.label} className="text-xs">
-                  <p className="text-muted-foreground font-medium uppercase tracking-wide text-[10px] mb-1">{row.label}</p>
+                  <p className="text-muted-foreground font-medium uppercase tracking-wide text-2xs mb-1">{row.label}</p>
                   <p className="text-foreground tabular-nums">{row.current}</p>
-                  <p className="text-blue-500 dark:text-blue-400 tabular-nums font-medium">{row.next}</p>
+                  <p className="text-info tabular-nums font-medium">{row.next}</p>
                 </div>
               ))}
             </div>
@@ -506,7 +498,7 @@ export default function FinancialDashboardPage() {
       {/* ── Alert Panels ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Negative profit */}
-        <Card className="border-destructive/40">
+        <Card className="border-destructive/40 shadow-xs">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2 text-destructive">
               <AlertCircle className="w-4 h-4" />
@@ -549,9 +541,9 @@ export default function FinancialDashboardPage() {
         </Card>
 
         {/* Near break-even */}
-        <Card className="border-amber-500/40">
+        <Card className="border-warning/40 shadow-xs">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <CardTitle className="text-sm font-medium flex items-center gap-2 text-warning">
               <AlertTriangle className="w-4 h-4" />
               Near Break-Even Properties
               {!isLoading && (
@@ -577,11 +569,11 @@ export default function FinancialDashboardPage() {
                 {nearBreakEvenProperties.map((p) => (
                   <li
                     key={p.id}
-                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-amber-500/5 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                    className="flex items-center justify-between text-xs py-1.5 px-2 rounded-md bg-warning/5 hover:bg-warning/10 transition-colors cursor-pointer"
                     onClick={() => openPropertyModal(p.id)}
                   >
                     <span className="font-medium text-foreground truncate pr-2">{p.name}</span>
-                    <span className="text-amber-600 dark:text-amber-400 tabular-nums font-semibold flex-shrink-0">
+                    <span className="text-warning tabular-nums font-semibold flex-shrink-0">
                       {fmt(p.estimated_profit)}/clean · {fmtPct(p.profit_percentage)}
                     </span>
                   </li>
@@ -595,7 +587,7 @@ export default function FinancialDashboardPage() {
       {/* ── Charts ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Profitability Distribution */}
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">Profitability Distribution</CardTitle>
           </CardHeader>
@@ -654,7 +646,7 @@ export default function FinancialDashboardPage() {
         </Card>
 
         {/* Per-property monthly profit */}
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <CardTitle className="text-sm font-medium">Monthly Profit by Property</CardTitle>
@@ -667,7 +659,7 @@ export default function FinancialDashboardPage() {
                       onCheckedChange={setUseScenarioChart}
                       data-testid="toggle-scenario-chart"
                     />
-                    <span className={useScenarioChart ? 'text-blue-500 dark:text-blue-400' : ''}>
+                    <span className={useScenarioChart ? 'text-info' : ''}>
                       Scenario
                     </span>
                   </div>
@@ -741,7 +733,7 @@ export default function FinancialDashboardPage() {
         </Card>
 
         {/* Property List */}
-        <Card className="border-card-border lg:col-span-2">
+        <Card className="border-card-border shadow-xs lg:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">All Active Properties — Monthly Profit</CardTitle>
           </CardHeader>
@@ -769,7 +761,7 @@ export default function FinancialDashboardPage() {
                         <td className="py-1.5 px-2 font-medium">{p.name}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{fmt(prop?.monthly_revenue_estimate)}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{fmt(prop?.monthly_cost_estimate)}</td>
-                        <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${p.value < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(p.value)}</td>
+                        <td className={`py-1.5 px-2 text-right tabular-nums font-medium ${p.value < 0 ? 'text-destructive' : 'text-success'}`}>{fmt(p.value)}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{fmtPct(prop?.profit_percentage)}</td>
                       </tr>
                     )
@@ -785,7 +777,7 @@ export default function FinancialDashboardPage() {
       {canViewIntegrations && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Ramp Spend */}
-          <Card className="border-card-border">
+          <Card className="border-card-border shadow-xs">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <CreditCard className="w-4 h-4 text-primary" />
@@ -839,7 +831,7 @@ export default function FinancialDashboardPage() {
           </Card>
 
           {/* QuickBooks P&L */}
-          <Card className="border-card-border">
+          <Card className="border-card-border shadow-xs">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
                 <BookOpen className="w-4 h-4 text-primary" />
@@ -861,7 +853,7 @@ export default function FinancialDashboardPage() {
                       <div className="grid grid-cols-3 gap-3">
                         <div>
                           <span className="text-xs text-muted-foreground block">Revenue</span>
-                          <span className="text-sm font-medium text-green-600 dark:text-green-400">{fmt(qboData.profitLoss.totalIncome)}</span>
+                          <span className="text-sm font-medium text-success">{fmt(qboData.profitLoss.totalIncome)}</span>
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground block">Total Costs</span>
@@ -869,7 +861,7 @@ export default function FinancialDashboardPage() {
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground block">Net Income</span>
-                          <span className={`text-sm font-medium ${qboData.profitLoss.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(qboData.profitLoss.netIncome)}</span>
+                          <span className={`text-sm font-medium ${qboData.profitLoss.netIncome < 0 ? 'text-destructive' : 'text-success'}`}>{fmt(qboData.profitLoss.netIncome)}</span>
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">{qboData.profitLoss.period}</p>
@@ -881,7 +873,7 @@ export default function FinancialDashboardPage() {
                             {Object.entries(qboData.monthly).map(([month, data]: [string, any]) => (
                               <div key={month} className="flex items-center justify-between text-xs">
                                 <span className="text-muted-foreground">{month}</span>
-                                <span className={`tabular-nums font-medium ${data.netIncome < 0 ? 'text-destructive' : 'text-green-600 dark:text-green-400'}`}>{fmt(data.netIncome)}</span>
+                                <span className={`tabular-nums font-medium ${data.netIncome < 0 ? 'text-destructive' : 'text-success'}`}>{fmt(data.netIncome)}</span>
                               </div>
                             ))}
                           </div>
@@ -911,6 +903,6 @@ export default function FinancialDashboardPage() {
           </Card>
         </div>
       )}
-    </div>
+    </PageContainer>
   )
 }
