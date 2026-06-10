@@ -51,6 +51,18 @@ export default {
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
           border: "var(--destructive-border)",
         },
+        success: {
+          DEFAULT: "hsl(var(--success) / <alpha-value>)",
+          foreground: "hsl(var(--success-foreground) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning) / <alpha-value>)",
+          foreground: "hsl(var(--warning-foreground) / <alpha-value>)",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info) / <alpha-value>)",
+          foreground: "hsl(var(--info-foreground) / <alpha-value>)",
+        },
         ring: "hsl(var(--ring) / <alpha-value>)",
         chart: {
           "1": "hsl(var(--chart-1) / <alpha-value>)",
@@ -86,6 +98,19 @@ export default {
         sans: ["var(--font-sans)"],
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
+      },
+      fontSize: {
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+      },
+      boxShadow: {
+        "2xs": "var(--shadow-2xs)",
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        DEFAULT: "var(--shadow)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
+        xl: "var(--shadow-xl)",
+        "2xl": "var(--shadow-2xl)",
       },
       keyframes: {
         "accordion-down": {
