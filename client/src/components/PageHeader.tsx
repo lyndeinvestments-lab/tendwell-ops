@@ -33,7 +33,7 @@ export function PageHeader({ title, subtitle, actions, beneath, sticky, classNam
     >
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-foreground truncate">{title}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground truncate">{title}</h1>
           {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
         </div>
         {actions && <div className="flex items-center gap-2 flex-wrap">{actions}</div>}
