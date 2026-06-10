@@ -118,7 +118,7 @@ function AlertBellButton() {
           <button className="relative flex items-center justify-center w-8 h-8 rounded-md hover:bg-muted transition-colors" title="Alerts">
             <Bell className="w-3.5 h-3.5 text-muted-foreground" />
             {badgeCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-destructive-foreground text-xs font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                 {badgeCount > 99 ? '99+' : badgeCount}
               </span>
             )}

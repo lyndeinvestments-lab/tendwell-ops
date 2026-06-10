@@ -12,6 +12,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Checkbox } from '@/components/ui/checkbox'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
+import { ErrorState } from '@/components/ErrorState'
+import { StatusTone, TONE_SOFT } from '@/lib/status-colors'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
@@ -32,20 +37,18 @@ const SYSTEM_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
+const ROLE_TONES: Record<string, StatusTone> = {
+  admin: 'primary',
+  operations: 'info',
+  cleaning: 'warning',
+  viewer: 'neutral',
+}
+
 function RoleBadge({ role }: { role: string }) {
-  const cls = role === 'admin'
-    ? 'text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800'
-    : role === 'operations'
-    ? 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-    : role === 'viewer'
-    ? 'text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
-    : role === 'cleaning'
-    ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-    : 'text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800'
   return (
-    <span className={`text-xs font-medium px-1.5 py-0.5 rounded border capitalize ${cls}`}>
+    <StatusBadge tone={ROLE_TONES[role] ?? 'warning'} className="capitalize">
       {role}
-    </span>
+    </StatusBadge>
   )
 }
 
@@ -298,7 +301,7 @@ function PermissionsSection() {
                         {!effectivePerms[roleId]?.system && (
                           <button
                             onClick={() => handleDeleteRoleCheck(roleId)}
-                            className="text-muted-foreground/60 hover:text-red-600"
+                            className="text-muted-foreground/60 hover:text-destructive"
                             title="Delete role"
                           >
                             <Trash2 className="w-3 h-3" />
@@ -312,8 +315,8 @@ function PermissionsSection() {
               <tr className="border-b border-border/50">
                 {roleIds.map(roleId => (
                   <React.Fragment key={`sub-${roleId}`}>
-                    <th className="text-center text-[10px] text-muted-foreground/70 py-0.5 px-1 w-10">View</th>
-                    <th className="text-center text-[10px] text-muted-foreground/70 py-0.5 px-1 w-10">Edit</th>
+                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">View</th>
+                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">Edit</th>
                   </React.Fragment>
                 ))}
               </tr>
@@ -322,7 +325,7 @@ function PermissionsSection() {
               {viewGroups.map(({ group, views }) => (
                 <React.Fragment key={`group-${group}`}>
                   <tr>
-                    <td colSpan={roleIds.length * 2 + 1} className="bg-muted/40 py-1.5 px-3 font-medium text-muted-foreground uppercase tracking-wider text-[10px]">
+                    <td colSpan={roleIds.length * 2 + 1} className="bg-muted/40 py-1.5 px-3 font-medium text-muted-foreground uppercase tracking-wider text-2xs">
                       {group}
                     </td>
                   </tr>
@@ -385,7 +388,7 @@ function PermissionsSection() {
               <div className="text-xs text-muted-foreground">
                 Slug: <code className="bg-muted px-1 rounded">{newRoleSlug}</code>
                 {slugCollision && (
-                  <span className="text-red-600 ml-2">Already exists</span>
+                  <span className="text-destructive ml-2">Already exists</span>
                 )}
               </div>
             )}
@@ -413,7 +416,7 @@ function PermissionsSection() {
           </DialogHeader>
           {deleteBlockedUsers.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-sm text-red-600">
+              <p className="text-sm text-destructive">
                 Cannot delete — {deleteBlockedUsers.length} user{deleteBlockedUsers.length !== 1 ? 's' : ''} have this role:
               </p>
               <ul className="text-sm list-disc pl-5 space-y-0.5">
@@ -671,7 +674,7 @@ function OnboardingTemplateSection() {
                     onKeyDown={e => e.key === 'Enter' && updateTemplate({ id: t.id, task_name: editValue })}
                   />
                   <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => updateTemplate({ id: t.id, task_name: editValue })}>
-                    <Check className="w-3 h-3 text-green-600" />
+                    <Check className="w-3 h-3 text-success" />
                   </Button>
                   <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)}>
                     <X className="w-3 h-3" />
@@ -683,7 +686,7 @@ function OnboardingTemplateSection() {
                   <Button size="sm" variant="ghost" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100" onClick={() => { setEditingId(t.id); setEditValue(t.task_name) }}>
                     <Pencil className="w-3 h-3" />
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600" onClick={() => deleteTemplate(t.id)}>
+                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive" onClick={() => deleteTemplate(t.id)}>
                     <Trash2 className="w-3 h-3" />
                   </Button>
                 </>
@@ -830,14 +833,14 @@ function CustomViewsDialog({
         </p>
 
         <div className="space-y-3">
-          <div className="flex items-center gap-4 text-[10px] text-muted-foreground uppercase tracking-wider pl-1">
+          <div className="flex items-center gap-4 text-2xs text-muted-foreground uppercase tracking-wider pl-1">
             <span className="flex-1">Page</span>
             <span className="w-10 text-center">View</span>
             <span className="w-10 text-center">Edit</span>
           </div>
           {viewGroups.map(({ group, views }) => (
             <div key={group}>
-              <div className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">{group}</div>
+              <div className="text-2xs font-medium text-muted-foreground uppercase tracking-wider mb-1">{group}</div>
               <div className="space-y-0.5">
                 {views.map(v => {
                   const perm = selectedPerms[v.id] ?? { view: false, edit: false }
@@ -910,7 +913,7 @@ function UsersSection() {
     return options
   }, [rolePermissions])
 
-  const { data: users, isLoading } = useQuery({
+  const { data: users, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/settings-users'],
     // app_users full row changes only via the admin invite/edit flows on
     // this page; 5 min is well inside an admin session and mutations
@@ -1071,6 +1074,9 @@ function UsersSection() {
           </Button>
         </div>
 
+        {isError ? (
+          <ErrorState title="Couldn't load users" onRetry={() => refetch()} />
+        ) : (
         <div className="rounded-lg border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/80 border-b border-border">
@@ -1105,7 +1111,7 @@ function UsersSection() {
                         <span className="flex items-center gap-1.5">
                           {u.label}
                           {hasCustom && (
-                            <span className="text-[10px] font-medium px-1 py-0.5 rounded bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border border-orange-200 dark:border-orange-800">
+                            <span className={`text-2xs font-medium px-1 py-0.5 rounded border ${TONE_SOFT.warning}`}>
                               Custom
                             </span>
                           )}
@@ -1192,7 +1198,7 @@ function UsersSection() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 w-6 p-0 text-muted-foreground hover:text-red-600"
+                              className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => setConfirmDeleteId(u.id)}
                               aria-label={`Remove ${u.label}`}
                               data-testid={`button-delete-user-${u.id}`}
@@ -1209,6 +1215,7 @@ function UsersSection() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* Invite Dialog */}
@@ -1422,7 +1429,7 @@ function NotificationsSection() {
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   {prefs.email_enabled ? (
-                    <span className="text-green-600 dark:text-green-400">on · {prefs.digest_frequency}</span>
+                    <span className="text-success">on · {prefs.digest_frequency}</span>
                   ) : (
                     <span className="text-muted-foreground">off</span>
                   )}
@@ -1532,11 +1539,11 @@ function NotificationLogViewer() {
               <div key={l.id} className="p-2.5 space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium truncate">{l.event_type}</span>
-                  <span className={`text-xs flex-shrink-0 ${l.status === 'sent' ? 'text-green-600 dark:text-green-400' : l.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>{l.status}</span>
+                  <span className={`text-xs flex-shrink-0 ${l.status === 'sent' ? 'text-success' : l.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{l.status}</span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate">{l.recipient_email}</p>
-                <p className="text-[10px] text-muted-foreground">{new Date(l.sent_at).toLocaleString()}</p>
-                {l.error && <p className="text-xs text-red-600 dark:text-red-400">{l.error}</p>}
+                <p className="text-2xs text-muted-foreground">{new Date(l.sent_at).toLocaleString()}</p>
+                {l.error && <p className="text-xs text-destructive">{l.error}</p>}
               </div>
             ))}
           </div>
@@ -1558,7 +1565,7 @@ function NotificationLogViewer() {
                   <td className="px-2 py-1">{l.event_type}</td>
                   <td className="px-2 py-1 truncate max-w-[180px]">{l.recipient_email}</td>
                   <td className="px-2 py-1">
-                    <span className={l.status === 'sent' ? 'text-green-600 dark:text-green-400' : l.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}>
+                    <span className={l.status === 'sent' ? 'text-success' : l.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>
                       {l.status}
                     </span>
                   </td>
@@ -1835,14 +1842,14 @@ function IntegrationsSection() {
 
   type Status = 'connected' | 'configured' | 'not_configured' | 'unknown'
   function statusBadge(s: Status) {
-    const map: Record<Status, { label: string; cls: string }> = {
-      connected: { label: 'Connected', cls: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800' },
-      configured: { label: 'Configured', cls: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800' },
-      not_configured: { label: 'Not configured', cls: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800' },
-      unknown: { label: 'Unknown', cls: 'bg-muted text-muted-foreground border-border' },
+    const map: Record<Status, { label: string; tone: StatusTone }> = {
+      connected: { label: 'Connected', tone: 'success' },
+      configured: { label: 'Configured', tone: 'info' },
+      not_configured: { label: 'Not configured', tone: 'warning' },
+      unknown: { label: 'Unknown', tone: 'neutral' },
     }
     const m = map[s]
-    return <span className={`text-[10px] px-1.5 py-0.5 rounded border ${m.cls}`}>{m.label}</span>
+    return <span className={`text-2xs px-1.5 py-0.5 rounded border ${TONE_SOFT[m.tone]}`}>{m.label}</span>
   }
 
   const integrations = [
@@ -1917,7 +1924,7 @@ function IntegrationsSection() {
                   {statusBadge(it.status)}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{it.description}</p>
-                <p className="text-[11px] text-muted-foreground/80 mt-1">{it.detail}</p>
+                <p className="text-2xs text-muted-foreground/80 mt-1">{it.detail}</p>
               </div>
               {action ? <div className="flex-shrink-0">{action}</div> : null}
             </div>
@@ -1963,14 +1970,11 @@ export default function SettingsPage() {
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
 
   return (
-    <div className="p-5 space-y-6 h-full flex flex-col max-w-3xl">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-          <Shield className="w-5 h-5" />
-          Settings
-        </h1>
-        <p className="text-sm text-muted-foreground">Manage users, permissions, integrations, and application settings</p>
-      </div>
+    <PageContainer width="lg" className="space-y-6 h-full flex flex-col">
+      <PageHeader
+        title="Settings"
+        subtitle="Manage users, permissions, integrations, and application settings"
+      />
 
       <UsersSection />
       <PermissionsSection />
@@ -1980,6 +1984,6 @@ export default function SettingsPage() {
       <WorkflowTemplatesSection />
       <AppSettingsSection />
       <OnboardingTemplateSection />
-    </div>
+    </PageContainer>
   )
 }

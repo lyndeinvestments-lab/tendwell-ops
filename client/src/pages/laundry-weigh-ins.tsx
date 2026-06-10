@@ -11,7 +11,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/EmptyState'
-import { Search, Scale, Download, Trash2, Sparkles, Shirt, Camera, ExternalLink, Copy, Check } from 'lucide-react'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
+import { StatusBadge } from '@/components/StatusBadge'
+import { Search, Scale, Download, Trash2, Sparkles, Shirt, Camera, ExternalLink, Copy, Check, Users } from 'lucide-react'
 import { format, parseISO, subDays } from 'date-fns'
 import Papa from 'papaparse'
 
@@ -63,7 +68,7 @@ export default function LaundryWeighInsPage() {
     }
   }
 
-  const { data: rows, isLoading, isError } = useQuery({
+  const { data: rows, isLoading, isError, refetch } = useQuery({
     queryKey: ['laundry-weigh-ins', rangeFilter],
     queryFn: async (): Promise<WeighIn[]> => {
       let query = supabase
@@ -136,40 +141,35 @@ export default function LaundryWeighInsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-md bg-primary/10 flex items-center justify-center">
-            <Scale className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold leading-tight">Laundry Weigh-Ins</h1>
-            <p className="text-xs text-muted-foreground">Daily cleaner submissions from the public form</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" asChild>
-            <a href={FORM_URL} target="_blank" rel="noreferrer">
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Open form
-            </a>
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleCopyLink}>
-            {copied ? <Check className="w-4 h-4 mr-2 text-emerald-600" /> : <Copy className="w-4 h-4 mr-2" />}
-            {copied ? 'Copied' : 'Copy link'}
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
-            <Download className="w-4 h-4 mr-2" />
-            Export CSV
-          </Button>
-        </div>
-      </div>
+    <PageContainer width="xl">
+      <PageHeader
+        title="Laundry Weigh-Ins"
+        subtitle="Daily cleaner submissions from the public form"
+        actions={
+          <>
+            <Button variant="outline" size="sm" asChild>
+              <a href={FORM_URL} target="_blank" rel="noreferrer">
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Open form
+              </a>
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleCopyLink}>
+              {copied ? <Check className="w-4 h-4 mr-2 text-success" /> : <Copy className="w-4 h-4 mr-2" />}
+              {copied ? 'Copied' : 'Copy link'}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
+              <Download className="w-4 h-4 mr-2" />
+              Export CSV
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard label="Submissions" value={stats.total.toLocaleString()} />
-        <StatCard label="Clean lbs" value={stats.cleanLbs.toFixed(1)} accent="text-emerald-600 dark:text-emerald-400" />
-        <StatCard label="Dirty lbs" value={stats.dirtyLbs.toFixed(1)} accent="text-amber-600 dark:text-amber-400" />
-        <StatCard label="Unique cleaners" value={stats.cleaners.toLocaleString()} />
+        <StatCard title="Submissions" value={stats.total.toLocaleString()} icon={Scale} loading={isLoading} />
+        <StatCard title="Clean lbs" value={stats.cleanLbs.toFixed(1)} icon={Sparkles} tone="success" loading={isLoading} />
+        <StatCard title="Dirty lbs" value={stats.dirtyLbs.toFixed(1)} icon={Shirt} tone="warning" loading={isLoading} />
+        <StatCard title="Unique cleaners" value={stats.cleaners.toLocaleString()} icon={Users} loading={isLoading} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -208,11 +208,7 @@ export default function LaundryWeighInsPage() {
           ))}
         </div>
       ) : isError ? (
-        <EmptyState
-          icon={Scale}
-          title="Could not load weigh-ins"
-          description="Refresh to try again."
-        />
+        <ErrorState title="Could not load weigh-ins" onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={Scale}
@@ -220,7 +216,7 @@ export default function LaundryWeighInsPage() {
           description="Submissions from the public form will show up here."
         />
       ) : (
-        <Card>
+        <Card className="shadow-xs">
           <CardContent className="p-0">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -306,32 +302,21 @@ export default function LaundryWeighInsPage() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function StatCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
-  return (
-    <Card>
-      <CardContent className="p-3">
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className={`text-xl font-semibold tabular-nums ${accent ?? ''}`}>{value}</div>
-      </CardContent>
-    </Card>
+    </PageContainer>
   )
 }
 
 function TypePill({ type }: { type: 'clean' | 'dirty' }) {
   if (type === 'clean') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+      <StatusBadge tone="success">
         <Sparkles className="w-3 h-3" /> Clean
-      </span>
+      </StatusBadge>
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+    <StatusBadge tone="warning">
       <Shirt className="w-3 h-3" /> Dirty
-    </span>
+    </StatusBadge>
   )
 }

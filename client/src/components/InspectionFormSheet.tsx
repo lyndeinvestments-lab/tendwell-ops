@@ -17,10 +17,10 @@ type Urgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
 const URGENCY_OPTIONS: { value: Urgency; label: string; ring: string; bg: string }[] = [
   { value: 'none',     label: 'None',     ring: 'border-border',                bg: 'bg-muted text-muted-foreground' },
-  { value: 'low',      label: 'Low',      ring: 'border-emerald-500',           bg: 'bg-emerald-500 text-white' },
-  { value: 'medium',   label: 'Medium',   ring: 'border-amber-500',             bg: 'bg-amber-500 text-white' },
-  { value: 'high',     label: 'High',     ring: 'border-orange-500',            bg: 'bg-orange-500 text-white' },
-  { value: 'critical', label: 'Critical', ring: 'border-red-600',               bg: 'bg-red-600 text-white' },
+  { value: 'low',      label: 'Low',      ring: 'border-emerald-500',           bg: 'bg-emerald-500 text-primary-foreground' },
+  { value: 'medium',   label: 'Medium',   ring: 'border-amber-500',             bg: 'bg-amber-500 text-primary-foreground' },
+  { value: 'high',     label: 'High',     ring: 'border-orange-500',            bg: 'bg-orange-500 text-primary-foreground' },
+  { value: 'critical', label: 'Critical', ring: 'border-red-600',               bg: 'bg-red-600 text-destructive-foreground' },
 ]
 
 const SCORE_AREAS = [

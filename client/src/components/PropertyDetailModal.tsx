@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
@@ -20,8 +20,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
+
+// Recharts is heavy — load it only when a chart actually renders inside the
+// modal instead of bundling it with the always-mounted modal shell.
+const PropertyModalChart = lazy(() => import('@/components/PropertyModalChart'))
 
 // ── Access code cell (always visible, click to copy) ────────────────────────
 function RevealCell({ value }: { value: string | null; field: string; id: string }) {
@@ -48,7 +51,7 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
 }
 
 // ── Inspections Tab ──────────────────────────────────────────────────────────
-function VerificationHistory({ propertyId }: { propertyId: string }) {
+function VerificationHistory({ propertyId, enabled = true }: { propertyId: string; enabled?: boolean }) {
   const { data: verifications, isLoading } = useQuery({
     queryKey: ['/supabase/property-verifications-history', propertyId],
     queryFn: async () => {
@@ -60,6 +63,7 @@ function VerificationHistory({ propertyId }: { propertyId: string }) {
       if (error) throw error
       return data || []
     },
+    enabled,
   })
 
   if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
@@ -171,14 +175,19 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
   return (
     <div className="space-y-3">
       {chartData.length >= 2 && (
-        <ResponsiveContainer width="100%" height={120}>
-          <AreaChart data={chartData}>
-            <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-            <YAxis domain={[0, 10]} tick={{ fontSize: 10 }} />
-            <RechartsTooltip />
-            <Area type="monotone" dataKey="score" stroke="#3b82f6" fill="#3b82f680" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <Suspense fallback={<Skeleton className="h-[120px] w-full" />}>
+          <PropertyModalChart
+            data={chartData}
+            dataKey="score"
+            xKey="date"
+            height={120}
+            stroke="#3b82f6"
+            fill="#3b82f680"
+            yDomain={[0, 10]}
+            showTooltip
+            tickFontSize={10}
+          />
+        </Suspense>
       )}
 
       <div className="flex items-center justify-between">
@@ -243,7 +252,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       <Dialog open={!!lightboxUrl} onOpenChange={() => setLightboxUrl(null)}>
         <DialogContent className="max-w-3xl p-2">
           <DialogTitle className="sr-only">Photo preview</DialogTitle>
-          {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" loading="lazy" decoding="async" className="w-full rounded" />}
+          {lightboxUrl && <img src={lightboxUrl} alt="Inspection photo" loading="lazy" decoding="async" className="w-full max-h-[80vh] object-contain rounded" />}
         </DialogContent>
       </Dialog>
     </div>
@@ -294,7 +303,7 @@ function AssignmentsTab({ propertyId }: { propertyId: string }) {
 }
 
 // ── Photos Tab ───────────────────────────────────────────────────────────────
-function PhotosTab({ propertyId }: { propertyId: string }) {
+function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled?: boolean }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const [uploading, setUploading] = useState(false)
@@ -310,6 +319,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
       if (error) throw error
       return data || []
     },
+    enabled,
   })
 
   const { mutate: deletePhoto } = useMutation({
@@ -377,7 +387,7 @@ function PhotosTab({ propertyId }: { propertyId: string }) {
                 </button>
                 <button
                   onClick={() => { if (confirm('Delete this photo?')) deletePhoto(p.id) }}
-                  className="bg-red-500/90 text-white p-1.5 rounded text-xs hover:bg-red-500"
+                  className="bg-red-500/90 text-destructive-foreground p-1.5 rounded text-xs hover:bg-red-500"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -548,7 +558,7 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
 }
 
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
-function FinancialsEnhancement({ property }: { property: any }) {
+function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
   const { data: editHistory } = useQuery({
     queryKey: ['/supabase/property-edit-history', property.id],
     queryFn: async () => {
@@ -561,6 +571,7 @@ function FinancialsEnhancement({ property }: { property: any }) {
       if (error) throw error
       return data || []
     },
+    enabled,
   })
 
   const chartData = useMemo(() => {
@@ -610,13 +621,17 @@ function FinancialsEnhancement({ property }: { property: any }) {
       {chartData.length >= 2 ? (
         <div>
           <span className="text-xs text-muted-foreground block mb-1">Profit % History</span>
-          <ResponsiveContainer width="100%" height={100}>
-            <AreaChart data={chartData}>
-              <XAxis dataKey="date" tick={{ fontSize: 9 }} />
-              <YAxis tick={{ fontSize: 9 }} />
-              <Area type="monotone" dataKey="pct" stroke="#22c55e" fill="#22c55e40" />
-            </AreaChart>
-          </ResponsiveContainer>
+          <Suspense fallback={<Skeleton className="h-[100px] w-full" />}>
+            <PropertyModalChart
+              data={chartData}
+              dataKey="pct"
+              xKey="date"
+              height={100}
+              stroke="#22c55e"
+              fill="#22c55e40"
+              tickFontSize={9}
+            />
+          </Suspense>
         </div>
       ) : (
         <p className="text-xs text-muted-foreground italic">Not enough history yet</p>
@@ -728,6 +743,9 @@ export function PropertyDetailModal() {
   const [inlineValue, setInlineValue] = useState('')
   const [savingMissing, setSavingMissing] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Controlled tab state so tab-specific queries only run for the active tab
+  // (Overview stays eager). Reset whenever a different property is opened.
+  const [activeTab, setActiveTab] = useState('overview')
 
   const propertyId = modalState?.propertyId
   const highlightFields = modalState?.highlightFields ?? []
@@ -788,6 +806,12 @@ export function PropertyDetailModal() {
       setIsEditing(false)
     }
   }, [property?.id])
+
+  // Reset to Overview each time the modal opens (or switches property), so a
+  // reopened modal doesn't resume on a stale tab.
+  useEffect(() => {
+    setActiveTab('overview')
+  }, [propertyId])
 
   const { mutate: saveEdits, isPending: saving } = useMutation({
     mutationFn: async () => {
@@ -1257,7 +1281,7 @@ export function PropertyDetailModal() {
             </div>
           </div>
         ) : (
-          <Tabs defaultValue="overview" className="mt-2">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
               <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
               {sourceContext !== 'property-list' && canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
@@ -1618,7 +1642,7 @@ export function PropertyDetailModal() {
                     </span>
                   </div>
                 </div>
-                <FinancialsEnhancement property={property} />
+                <FinancialsEnhancement property={property} enabled={activeTab === 'financials'} />
               </TabsContent>
             )}
 
@@ -1882,13 +1906,13 @@ export function PropertyDetailModal() {
 
             {/* ── Verification Tab ── */}
             <TabsContent value="inspections" className="mt-3">
-              <VerificationHistory propertyId={String(property.id)} />
+              <VerificationHistory propertyId={String(property.id)} enabled={activeTab === 'inspections'} />
             </TabsContent>
 
             {/* ── Assignments Tab ── */}
             {/* ── Photos Tab ── */}
             <TabsContent value="photos" className="mt-3">
-              <PhotosTab propertyId={String(property.id)} />
+              <PhotosTab propertyId={String(property.id)} enabled={activeTab === 'photos'} />
             </TabsContent>
 
             {/* Supplies is now inside Operations tab */}

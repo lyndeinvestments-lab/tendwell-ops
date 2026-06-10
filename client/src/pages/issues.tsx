@@ -10,6 +10,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
+import { StatusTone } from '@/lib/status-colors'
 import { TablePagination } from '@/components/TablePagination'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Card, CardContent } from '@/components/ui/card'
@@ -38,13 +43,14 @@ const STATUSES = ['Needs Attention', 'In Progress', 'Completed']
 
 type SortKey = 'report_date' | 'property_name' | 'category' | 'status'
 
-function StatusBadge({ status }: { status: string }) {
-  const cls = {
-    'Needs Attention': 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800',
-    'Completed': 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800',
-    'In Progress': 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800',
-  }[status] || 'text-gray-600 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-900/20 dark:border-gray-800'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border whitespace-nowrap ${cls}`}>{status}</span>
+const ISSUE_STATUS_TONES: Record<string, StatusTone> = {
+  'Needs Attention': 'destructive',
+  'Completed': 'success',
+  'In Progress': 'warning',
+}
+
+function IssueStatusBadge({ status }: { status: string }) {
+  return <StatusBadge status={status} tone={ISSUE_STATUS_TONES[status] ?? 'neutral'} />
 }
 
 function CategoryBadge({ category }: { category: string }) {
@@ -89,7 +95,7 @@ export default function IssuesPage() {
   })
 
   // ─── Queries ──────────────────────────────────────────────────────────────
-  const { data: issues, isLoading } = useQuery({
+  const { data: issues, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/cleaning-issues'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -362,57 +368,59 @@ export default function IssuesPage() {
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
+    <PageContainer className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Issues Tracker</h1>
-          <p className="text-sm text-muted-foreground">
-            {stats.total} total · <span className="text-amber-600 dark:text-amber-400">{stats.inProgress} in progress</span> · {stats.completed} completed
+      <PageHeader
+        title="Issues Tracker"
+        subtitle={
+          <>
+            {stats.total} total · <span className="text-warning">{stats.inProgress} in progress</span> · {stats.completed} completed
             {stats.fyi > 0 && <> · {stats.fyi} FYI</>}
             {stats.disregarded > 0 && <> · {stats.disregarded} disregarded</>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          {canEdit && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5"
-              onClick={() => {
-                const input = document.createElement('input')
-                input.type = 'file'
-                input.accept = '.csv'
-                input.onchange = e => {
-                  const file = (e.target as HTMLInputElement).files?.[0]
-                  if (file) handleImportFile(file)
-                }
-                input.click()
-              }}
-            >
-              <Upload className="w-3.5 h-3.5" /> Import CSV
+          </>
+        }
+        actions={
+          <>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
+              <Download className="w-3.5 h-3.5" /> Export CSV
             </Button>
-          )}
-          {canEdit && (
-            <>
-              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'guest_feedback', priority: 'normal' })); setAddOpen(true) }}>
-                <MessageSquare className="w-3.5 h-3.5" /> Guest Feedback
+            {canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.csv'
+                  input.onchange = e => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (file) handleImportFile(file)
+                  }
+                  input.click()
+                }}
+              >
+                <Upload className="w-3.5 h-3.5" /> Import CSV
               </Button>
-              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'needs_attention' })); setAddOpen(true) }}>
-                <AlertTriangle className="w-3.5 h-3.5" /> Log Issue
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
+            )}
+            {canEdit && (
+              <>
+                <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'guest_feedback', priority: 'normal' })); setAddOpen(true) }}>
+                  <MessageSquare className="w-3.5 h-3.5" /> Guest Feedback
+                </Button>
+                <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'needs_attention' })); setAddOpen(true) }}>
+                  <AlertTriangle className="w-3.5 h-3.5" /> Log Issue
+                </Button>
+              </>
+            )}
+          </>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([cat, count]) => (
-          <Card key={cat} className="cursor-pointer hover:bg-muted/30 transition-colors" onClick={() => { setCategoryFilter(cat); setPage(1) }}>
+          <Card key={cat} className="cursor-pointer shadow-xs hover:bg-muted/30 hover:shadow-sm transition-all" onClick={() => { setCategoryFilter(cat); setPage(1) }}>
             <CardContent className="p-3">
               <p className="text-xs text-muted-foreground truncate">{cat}</p>
               <p className="text-lg font-semibold">{count}</p>
@@ -455,6 +463,9 @@ export default function IssuesPage() {
       </div>
 
       {/* Table */}
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
@@ -477,18 +488,18 @@ export default function IssuesPage() {
             ) : paged.map((issue: any) => (
               <tr
                 key={issue.id}
-                className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${issue.status === 'In Progress' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
+                className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${issue.status === 'In Progress' ? 'bg-warning/5' : ''}`}
                 onClick={() => setDetailIssue(issue)}
               >
                 <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                  {issue.priority === 'urgent' && issue.status !== 'Completed' && <span className="mr-1 text-[10px] font-semibold text-red-600 dark:text-red-400">⚠ URGENT</span>}
+                  {issue.priority === 'urgent' && issue.status !== 'Completed' && <span className="mr-1 text-2xs font-semibold text-destructive">⚠ URGENT</span>}
                   {issue.property_name}
                 </td>
                 <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
                 <td className="py-2 px-3"><CategoryBadge category={issue.category} /></td>
                 <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
                 <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
-                <td className="py-2 px-3"><StatusBadge status={issue.status} /></td>
+                <td className="py-2 px-3"><IssueStatusBadge status={issue.status} /></td>
                 <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                   {issue.slack_link ? (
                     <a href={issue.slack_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
@@ -512,6 +523,7 @@ export default function IssuesPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
@@ -538,7 +550,7 @@ export default function IssuesPage() {
                   <div className="font-medium">{row.property_name}</div>
                   <div className="text-muted-foreground truncate">{row.details}</div>
                   <div className="flex gap-2 mt-1">
-                    <StatusBadge status={row.status} />
+                    <IssueStatusBadge status={row.status} />
                     <span className="text-muted-foreground">{row.category}</span>
                   </div>
                 </div>
@@ -560,8 +572,8 @@ export default function IssuesPage() {
           <SheetHeader>
             <SheetTitle className="text-base flex items-center gap-2">
               {newForm.issue_type === 'guest_feedback'
-                ? <><MessageSquare className="w-4 h-4 text-blue-600 dark:text-blue-400" /> Log Guest Feedback</>
-                : <><AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" /> Log Issue</>}
+                ? <><MessageSquare className="w-4 h-4 text-info" /> Log Guest Feedback</>
+                : <><AlertTriangle className="w-4 h-4 text-warning" /> Log Issue</>}
             </SheetTitle>
             <p className="text-xs text-muted-foreground mt-1">
               {newForm.issue_type === 'guest_feedback'
@@ -583,7 +595,7 @@ export default function IssuesPage() {
               </div>
             </div>
             {newForm.issue_type === 'needs_attention' && (
-              <label className="flex items-center gap-2 text-sm rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-900/10 px-3 h-10 cursor-pointer">
+              <label className="flex items-center gap-2 text-sm rounded-md border border-warning/25 bg-warning/5 px-3 h-10 cursor-pointer">
                 <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
                 <span className="font-medium">Mark urgent</span>
                 <span className="text-xs text-muted-foreground">— needs fixing right away</span>
@@ -674,6 +686,6 @@ export default function IssuesPage() {
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+    </PageContainer>
   )
 }

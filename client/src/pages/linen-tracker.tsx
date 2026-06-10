@@ -15,6 +15,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check, Sparkles } from 'lucide-react'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
 import Papa from 'papaparse'
 
@@ -57,7 +60,7 @@ export default function LinenTrackerPage() {
   const [sortKey, setSortKey] = useState<string>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/linen-tracker'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -341,20 +344,19 @@ export default function LinenTrackerPage() {
   }
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Linen Requirements</h1>
-          <p className="text-sm text-muted-foreground">Active & onboarding properties — required quantities for one full set</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <PageContainer className="h-full flex flex-col">
+      <PageHeader
+        title="Linen Requirements"
+        subtitle="Active & onboarding properties — required quantities for one full set"
+        actions={
+          <>
           {incompleteCount > 0 && (
             <button
               onClick={() => { setShowIncompleteOnly(v => !v); setPage(1) }}
               className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
                 showIncompleteOnly
-                  ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400'
-                  : 'border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                  ? 'bg-destructive/10 border-destructive/25 text-destructive'
+                  : 'border-destructive/25 text-destructive hover:bg-destructive/10'
               }`}
             >
               <AlertTriangle className="w-3 h-3" />
@@ -412,18 +414,22 @@ export default function LinenTrackerPage() {
               </button>
             )}
           </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {incompleteCount > 0 && (
         <div className="flex items-center gap-4 text-xs text-muted-foreground -mt-1 mb-1">
           <span className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+            <span className="w-1.5 h-1.5 rounded-full bg-destructive inline-block" />
             Empty fields (red = needs data)
           </span>
         </div>
       )}
 
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
@@ -474,11 +480,11 @@ export default function LinenTrackerPage() {
               paged.map((p: any) => {
                 const incomplete = hasIncompleteData(p)
                 return (
-                  <tr key={p.id} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${incomplete ? 'bg-red-50/30 dark:bg-red-900/5' : ''}`}>
+                  <tr key={p.id} className={`group border-b border-border/50 hover:bg-muted/20 transition-colors ${incomplete ? 'bg-destructive/5' : ''}`}>
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <div className="flex items-center gap-1.5">
                         {incomplete && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" title="No linen data — all fields are zero" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" title="No linen data — all fields are zero" />
                         )}
                         <button
                           onClick={() => openPropertyModal(p.id, 'linen-tracker')}
@@ -545,6 +551,7 @@ export default function LinenTrackerPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
@@ -620,7 +627,7 @@ export default function LinenTrackerPage() {
                     <td className="py-1.5 px-2 text-muted-foreground">{row.changeCount} values</td>
                     <td className="py-1.5 px-2">
                       {row.matchedProperty ? (
-                        <span className="text-green-600 dark:text-green-400 flex items-center gap-1"><Check className="w-3 h-3" /> Ready</span>
+                        <span className="text-success flex items-center gap-1"><Check className="w-3 h-3" /> Ready</span>
                       ) : (
                         <span className="text-muted-foreground">No match</span>
                       )}
@@ -645,6 +652,6 @@ export default function LinenTrackerPage() {
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

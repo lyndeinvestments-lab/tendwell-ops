@@ -332,7 +332,7 @@ export function InspectionPriorityDashboard() {
               <div key={a.property.id} className={`px-3 py-3 sm:px-4 border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors ${idx % 2 === 1 ? 'bg-muted/10' : ''}`}>
                 <div className="flex items-center gap-3 flex-wrap">
                   <div className="flex flex-col items-center w-12 shrink-0" title={a.priorityReason}>
-                    <div className={`w-9 h-9 rounded-md flex items-center justify-center text-white text-xs font-semibold ${priorityColor(a.priority)}`}>
+                    <div className={`w-9 h-9 rounded-md flex items-center justify-center text-primary-foreground text-xs font-semibold ${priorityColor(a.priority)}`}>
                       {Math.round(a.priority)}
                     </div>
                     <span className="text-[10px] text-muted-foreground mt-0.5">{priorityLabel(a.priority)}</span>

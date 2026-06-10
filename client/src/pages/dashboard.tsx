@@ -9,6 +9,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
+import { ErrorState } from '@/components/ErrorState'
+import { TONE_SOFT } from '@/lib/status-colors'
 import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
@@ -17,35 +22,35 @@ import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts } from '@/hooks/use-contacts'
 import { useAlerts } from '@/pages/alerts'
 
-function KpiCard({ title, value, subtitle, icon: Icon, loading, alert, onClick, hint }: {
+/**
+ * Thin adapter over the shared StatCard — preserves this page's
+ * `data-testid="kpi-…"` contract on the value and the `hint` tooltip.
+ */
+function KpiCard({ title, value, subtitle, icon, loading, alert, onClick, hint }: {
   title: string; value: string | number; subtitle?: string
   icon: React.ComponentType<{ className?: string }>; loading: boolean; alert?: boolean
   onClick?: () => void; hint?: string
 }) {
   return (
-    <Card
-      className={`border-card-border ${alert ? 'border-destructive/40' : ''} ${onClick ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}`}
-      onClick={onClick}
-    >
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide" title={hint}>{title}</p>
-            {loading ? (
-              <Skeleton className="h-7 w-16 mt-1.5" />
-            ) : (
-              <>
-                <p data-testid={`kpi-${title.toLowerCase().replace(/\s+/g,'-')}`} className={`text-xl font-semibold mt-1 ${alert ? 'text-destructive' : 'text-foreground'}`}>{value}</p>
-                {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-              </>
-            )}
-          </div>
-          <div className={`w-8 h-8 rounded-md ${alert ? 'bg-destructive/10' : 'bg-primary/10'} flex items-center justify-center`}>
-            <Icon className={`w-4 h-4 ${alert ? 'text-destructive' : 'text-primary'}`} />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <div title={hint} className="h-full">
+      <StatCard
+        title={title}
+        value={
+          <span
+            data-testid={`kpi-${title.toLowerCase().replace(/\s+/g,'-')}`}
+            className={alert ? 'text-destructive' : undefined}
+          >
+            {value}
+          </span>
+        }
+        subtitle={subtitle}
+        icon={icon}
+        loading={loading}
+        tone={alert ? 'destructive' : 'primary'}
+        onClick={onClick}
+        className="h-full"
+      />
+    </div>
   )
 }
 
@@ -103,7 +108,7 @@ export default function DashboardPage() {
     }
   }, [preset, customFrom, customTo])
 
-  const { data: properties, isLoading, isError } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -439,16 +444,14 @@ export default function DashboardPage() {
   const offboarded30Deduped = dedup(offboarded30)
 
   return (
-    <div className="p-5 space-y-5">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Operations overview</p>
-      </div>
+    <PageContainer className="space-y-5">
+      <PageHeader title="Dashboard" subtitle="Operations overview" />
 
       {isError && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
-          Failed to load dashboard data. Please refresh the page.
-        </div>
+        <ErrorState
+          title="Failed to load dashboard data"
+          onRetry={() => refetch()}
+        />
       )}
 
       {/* Date Range Filter Bar */}
@@ -491,7 +494,7 @@ export default function DashboardPage() {
 
       {/* Today's Actions — consolidated priority panel */}
       {!isLoading && (
-        <Card className="border-primary/30 bg-primary/5">
+        <Card className="border-primary/30 bg-primary/5 shadow-xs">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-3">
               <ClipboardCheck className="w-4 h-4 text-primary" />
@@ -509,12 +512,12 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2 min-w-0">
                       {it.kind === 'follow-up'
                         ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                        : <TrendingUp className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />}
+                        : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
                       <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
-                      <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-blue-600 dark:text-blue-400' : 'text-primary'}>
+                      <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
                         {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
                       </span>
                     </div>
@@ -604,13 +607,13 @@ export default function DashboardPage() {
 
       {/* 30-Day Activity Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <UserCheck className="w-4 h-4 text-blue-500" />
+              <UserCheck className="w-4 h-4 text-info" />
               <span className="text-sm font-medium">New Properties ({periodLabel})</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
-                <span className="ml-auto text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">{newProps30Deduped.length}</span>
+                <span className="ml-auto text-sm font-semibold tabular-nums text-info">{newProps30Deduped.length}</span>
               )}
             </div>
             {trans30Loading ? (
@@ -630,10 +633,10 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
-              <UserMinus className="w-4 h-4 text-gray-500" />
+              <UserMinus className="w-4 h-4 text-muted-foreground" />
               <span className="text-sm font-medium">Offboarded ({periodLabel})</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
                 <span className="ml-auto text-sm font-semibold tabular-nums text-muted-foreground">{offboarded30Deduped.length}</span>
@@ -666,7 +669,7 @@ export default function DashboardPage() {
       {canViewFinancials && !isLoading && (negativeProfit.length > 0 || missingData.length > 0) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {negativeProfit.length > 0 && (
-            <Card className="border-destructive/30 bg-destructive/5">
+            <Card className="border-destructive/30 bg-destructive/5 shadow-xs">
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <AlertTriangle className="w-4 h-4 text-destructive" />
@@ -689,11 +692,11 @@ export default function DashboardPage() {
             </Card>
           )}
           {missingData.length > 0 && (
-            <Card className="border-amber-500/30 bg-amber-500/5">
+            <Card className="border-warning/30 bg-warning/5 shadow-xs">
               <CardContent className="p-4">
                 <button className="flex items-center gap-2 mb-2 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
-                  <AlertCircle className="w-4 h-4 text-amber-500" />
-                  <span className="text-sm font-medium text-amber-600 dark:text-amber-400">{missingData.length} Properties Missing Data<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
+                  <AlertCircle className="w-4 h-4 text-warning" />
+                  <span className="text-sm font-medium text-warning">{missingData.length} Properties Missing Data<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
                   <span className="ml-auto text-muted-foreground">
                     {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
                   </span>
@@ -711,7 +714,7 @@ export default function DashboardPage() {
                       <div key={p.id} className="flex items-center justify-between text-xs gap-2">
                         <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <span className="text-amber-600 dark:text-amber-400">{missingLabels.join(', ')}</span>
+                          <span className="text-warning">{missingLabels.join(', ')}</span>
                           <Button
                             size="sm"
                             variant="outline"
@@ -741,7 +744,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Profit Distribution */}
         {canViewFinancials && (
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
@@ -774,7 +777,7 @@ export default function DashboardPage() {
         )}
 
         {/* Properties by Stage */}
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Properties by Stage<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
@@ -801,7 +804,7 @@ export default function DashboardPage() {
         </Card>
 
         {/* Recent Stage Transitions */}
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Recent Transitions ({periodLabel})</CardTitle>
           </CardHeader>
@@ -852,7 +855,7 @@ export default function DashboardPage() {
 
       {/* Quality Leaderboard + Scheduled This Week */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <ClipboardCheck className="w-4 h-4 text-primary" /> Quality Leaderboard
@@ -885,10 +888,8 @@ export default function DashboardPage() {
               const bottom = sorted.slice(-3).reverse()
 
               function ScorePill({ avg }: { avg: number }) {
-                const cls = avg >= 8 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                            avg >= 6 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' :
-                            'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                return <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${cls}`}>{avg.toFixed(1)}</span>
+                const tone = avg >= 8 ? 'success' : avg >= 6 ? 'warning' : 'destructive'
+                return <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${TONE_SOFT[tone]}`}>{avg.toFixed(1)}</span>
               }
 
               return (
@@ -923,7 +924,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-card-border">
+        <Card className="border-card-border shadow-xs">
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div>
@@ -931,7 +932,7 @@ export default function DashboardPage() {
                 <p className="text-xl font-semibold mt-1">{scheduledThisWeek?.length ?? 0}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">cleaning assignments</p>
                 {(scheduledThisWeek?.length ?? 0) === 0 && active > 0 && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                  <p className="text-xs text-warning mt-1 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
                     <button onClick={() => navigate('/cleaners')} className="hover:underline">Set up assignments →</button>
                   </p>
@@ -945,14 +946,14 @@ export default function DashboardPage() {
             {recentInspections && recentInspections.filter((i: any) => (i.overall_score || 10) < 7).length > 0 && (
               <div className="mt-4 pt-3 border-t border-border/40">
                 <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-red-500" /> Quality Alerts
+                  <AlertTriangle className="w-3 h-3 text-destructive" /> Quality Alerts
                 </p>
                 {recentInspections.filter((i: any) => (i.overall_score || 10) < 7).slice(0, 3).map((i: any) => (
                   <div key={i.property_id + i.inspected_at} className="flex items-center justify-between text-xs py-0.5">
                     <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(i.property_id)}>
                       {(i.properties as any)?.name}
                     </span>
-                    <span className="text-red-600 font-medium">{i.overall_score}/10</span>
+                    <span className="text-destructive font-medium">{i.overall_score}/10</span>
                   </div>
                 ))}
               </div>
@@ -962,7 +963,7 @@ export default function DashboardPage() {
       </div>
 
       {/* CRM Overview */}
-      <Card className="border-card-border">
+      <Card className="border-card-border shadow-xs">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Users className="w-4 h-4 text-primary" /> CRM Overview
@@ -978,7 +979,7 @@ export default function DashboardPage() {
               <p className="text-xs text-muted-foreground">New (30 days)</p>
               <p className="text-lg font-semibold tabular-nums">
                 {crmStats.new30}
-                {crmStats.new30 > 0 && <span className="text-xs font-normal text-green-600 ml-1">+{crmStats.new30}</span>}
+                {crmStats.new30 > 0 && <span className="text-xs font-normal text-success ml-1">+{crmStats.new30}</span>}
               </p>
             </div>
             <div>
@@ -1021,6 +1022,6 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   )
 }
