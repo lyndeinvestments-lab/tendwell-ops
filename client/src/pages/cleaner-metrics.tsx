@@ -5,10 +5,12 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useCleaners } from '@/hooks/use-cleaners'
 import { useAuth, canEditView } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
+import { StatCard } from '@/components/StatCard'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import { Users, AlertTriangle, TrendingUp, CheckSquare, Flag } from 'lucide-react'
 
 // Advisory pay / coaching recommendation derived from issue-rate thresholds.
@@ -153,24 +155,24 @@ export default function CleanerMetricsPage() {
   const cleanerWithMostIssues = [...metrics].sort((a, b) => b.issueRate - a.issueRate).find(m => m.totalCleans >= 5)
 
   return (
-    <div className="p-5 space-y-6 h-full overflow-auto">
-      <div>
-        <h1 className="text-xl font-semibold text-foreground">Cleaner Performance</h1>
-        <p className="text-sm text-muted-foreground">Issue rates, clean counts, and performance by cleaner</p>
-      </div>
+    <PageContainer width="full" className="h-full overflow-auto">
+      <PageHeader
+        title="Cleaner Performance"
+        subtitle="Issue rates, clean counts, and performance by cleaner"
+      />
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Active Cleaners</p><p className="text-lg font-semibold">{cleaners?.length || 0}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total Cleans</p><p className="text-lg font-semibold">{totalCleans}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Total Issues</p><p className={`text-lg font-semibold ${totalIssues > 0 ? 'text-amber-600 dark:text-amber-400' : ''}`}>{totalIssues}</p></CardContent></Card>
-        <Card><CardContent className="p-3"><p className="text-xs text-muted-foreground">Avg Issue Rate</p><p className="text-lg font-semibold">{avgIssueRate.toFixed(1)}%</p></CardContent></Card>
+        <StatCard title="Active Cleaners" value={cleaners?.length || 0} icon={Users} tone="neutral" />
+        <StatCard title="Total Cleans" value={totalCleans} icon={CheckSquare} tone="info" />
+        <StatCard title="Total Issues" value={totalIssues} icon={AlertTriangle} tone={totalIssues > 0 ? 'warning' : 'neutral'} />
+        <StatCard title="Avg Issue Rate" value={`${avgIssueRate.toFixed(1)}%`} icon={TrendingUp} tone="neutral" />
       </div>
 
       {cleanerWithMostIssues && cleanerWithMostIssues.issueRate > 5 && (
-        <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 p-3 flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-          <p className="text-xs text-amber-700 dark:text-amber-400">
+        <div className="rounded-md border border-warning/25 bg-warning/5 p-3 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
+          <p className="text-xs text-warning">
             <strong>{cleanerWithMostIssues.full_name}</strong> has the highest issue rate at {cleanerWithMostIssues.issueRate.toFixed(1)}% ({cleanerWithMostIssues.issueCount} issues / {cleanerWithMostIssues.totalCleans} cleans)
             {cleanerWithMostIssues.topIssueCategory && <span> — most common: {cleanerWithMostIssues.topIssueCategory}</span>}
           </p>
@@ -200,11 +202,11 @@ export default function CleanerMetricsPage() {
             ) : metrics.length === 0 ? (
               <tr><td colSpan={10}><EmptyState icon={Users} title="No cleaners" description="Add cleaners and assignments to see performance metrics." /></td></tr>
             ) : metrics.map((m: any) => (
-              <tr key={m.id} className={`border-b border-border/50 hover:bg-muted/20 ${m.issueRate > 10 ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
+              <tr key={m.id} className={`border-b border-border/50 hover:bg-muted/20 ${m.issueRate > 10 ? 'bg-warning/5' : ''}`}>
                 <td className="py-2 px-3 text-xs font-medium">{m.full_name}</td>
                 <td className="py-2 px-3 text-xs tabular-nums text-right">{m.totalCleans}</td>
                 <td className="py-2 px-3 text-xs tabular-nums text-right">{m.issueCount}</td>
-                <td className={`py-2 px-3 text-xs tabular-nums text-right font-medium ${m.issueRate > 10 ? 'text-red-600 dark:text-red-400' : m.issueRate > 5 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}`}>{m.issueRate.toFixed(1)}%</td>
+                <td className={`py-2 px-3 text-xs tabular-nums text-right font-medium ${m.issueRate > 10 ? 'text-destructive' : m.issueRate > 5 ? 'text-warning' : 'text-success'}`}>{m.issueRate.toFixed(1)}%</td>
                 <td className="py-2 px-3 text-xs tabular-nums text-right">{m.resolutionRate.toFixed(0)}%</td>
                 <td className="py-2 px-3 text-xs tabular-nums text-right">${m.totalPay.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                 <td className="py-2 px-3 text-xs tabular-nums text-right">${m.avgPay.toFixed(2)}</td>
@@ -216,7 +218,7 @@ export default function CleanerMetricsPage() {
                     return (
                       <span
                         title={rec.title}
-                        className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${rec.tone === 'bad' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}
+                        className={`inline-block rounded px-1.5 py-0.5 text-2xs font-medium ${rec.tone === 'bad' ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success'}`}
                       >
                         {rec.label}
                       </span>
@@ -229,7 +231,7 @@ export default function CleanerMetricsPage() {
                     if (flagId) {
                       return (
                         <span className="inline-flex items-center gap-1.5 justify-end">
-                          <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400"><Flag className="w-3 h-3" /> Flagged</span>
+                          <span className="inline-flex items-center gap-1 text-warning"><Flag className="w-3 h-3" /> Flagged</span>
                           {canEdit && (
                             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => resolveMut.mutate(flagId)} disabled={resolveMut.isPending} data-testid={`button-resolve-flag-${m.id}`}>
                               Resolve
@@ -239,7 +241,7 @@ export default function CleanerMetricsPage() {
                       )
                     }
                     return canEdit ? (
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1 hover:text-amber-600" onClick={() => flagMut.mutate(m)} disabled={flagMut.isPending} data-testid={`button-flag-${m.id}`}>
+                      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1 hover:text-warning" onClick={() => flagMut.mutate(m)} disabled={flagMut.isPending} data-testid={`button-flag-${m.id}`}>
                         <Flag className="w-3 h-3" /> Flag
                       </Button>
                     ) : <span className="text-muted-foreground">—</span>
@@ -250,6 +252,6 @@ export default function CleanerMetricsPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </PageContainer>
   )
 }

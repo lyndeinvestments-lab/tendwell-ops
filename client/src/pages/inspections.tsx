@@ -95,38 +95,38 @@ function applyInspectionFilters(query: any, f: InspectionFilters, orClause: stri
 
 function scoreColorClass(score: number | null): string {
   if (score == null) return 'bg-muted text-muted-foreground'
-  if (score >= 4) return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-  if (score >= 3) return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-  return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+  if (score >= 4) return 'bg-success/15 text-success'
+  if (score >= 3) return 'bg-warning/15 text-warning'
+  return 'bg-destructive/15 text-destructive'
 }
 
 const URGENCY_BADGE: Record<ReinspectUrgency, { label: string; cls: string }> = {
   none:     { label: '',         cls: '' },
-  low:      { label: 'Low',      cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' },
-  medium:   { label: 'Medium',   cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  high:     { label: 'High',     cls: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  critical: { label: 'Critical', cls: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  low:      { label: 'Low',      cls: 'bg-success/15 text-success' },
+  medium:   { label: 'Medium',   cls: 'bg-warning/15 text-warning' },
+  high:     { label: 'High',     cls: 'bg-warning/20 text-warning' },
+  critical: { label: 'Critical', cls: 'bg-destructive/15 text-destructive' },
 }
 
 function StatusPill({ status }: { status: InspectionStatus }) {
   const map: Record<InspectionStatus, string> = {
-    scheduled: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-    completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+    scheduled: 'bg-info/15 text-info',
+    completed: 'bg-success/15 text-success',
     skipped:   'bg-muted text-muted-foreground',
   }
-  return <span className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
+  return <span className={`inline-block text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
 }
 
 function ScorePill({ label, score }: { label: string; score: number | null }) {
   if (score == null) return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-      <span className="text-[10px] uppercase tracking-wide">{label}</span>
+      <span className="text-2xs uppercase tracking-wide">{label}</span>
       <span>—</span>
     </span>
   )
   return (
     <span className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${scoreColorClass(score)}`}>
-      <span className="text-[10px] uppercase tracking-wide opacity-80">{label}</span>
+      <span className="text-2xs uppercase tracking-wide opacity-80">{label}</span>
       <span className="font-semibold tabular-nums">{score}</span>
     </span>
   )
@@ -327,7 +327,7 @@ export default function InspectionsPage() {
   }
 
   return (
-    <div className="p-3 sm:p-5 space-y-4 h-full flex flex-col overflow-x-hidden">
+    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col overflow-x-hidden">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
@@ -445,7 +445,7 @@ export default function InspectionsPage() {
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <StatusPill status={i.status} />
                     {i.reinspect_urgency !== 'none' && (
-                      <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                      <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
                         {URGENCY_BADGE[i.reinspect_urgency].label}
                       </span>
                     )}
@@ -541,7 +541,7 @@ export default function InspectionsPage() {
                       <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
                       <StatusPill status={i.status} />
                       {i.reinspect_urgency !== 'none' && (
-                        <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                        <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
                           {URGENCY_BADGE[i.reinspect_urgency].label}
                         </span>
                       )}
@@ -609,7 +609,7 @@ export default function InspectionsPage() {
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusPill status={activeDetail.status} />
                 {activeDetail.reinspect_urgency !== 'none' && (
-                  <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
+                  <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
                     Re-inspect: {URGENCY_BADGE[activeDetail.reinspect_urgency].label}
                   </span>
                 )}

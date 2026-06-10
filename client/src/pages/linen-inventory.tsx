@@ -9,7 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
-import { Card, CardContent } from '@/components/ui/card'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   Boxes, Check, ChevronDown, ChevronUp, Download, Plus,
@@ -76,8 +78,8 @@ const EXTRA_ITEMS = [
 const ALL_ITEMS = [...STANDARD_ITEMS, ...EXTRA_ITEMS, ...ON_HAND_ITEMS]
 
 function VarianceBadge({ value }: { value: number }) {
-  if (value > 0) return <span className="text-xs font-medium text-green-600 dark:text-green-400">+{value}</span>
-  if (value < 0) return <span className="text-xs font-medium text-red-600 dark:text-red-400">{value}</span>
+  if (value > 0) return <span className="text-xs font-medium text-success">+{value}</span>
+  if (value < 0) return <span className="text-xs font-medium text-destructive">{value}</span>
   return <span className="text-xs text-muted-foreground">0</span>
 }
 
@@ -255,17 +257,16 @@ export default function LinenInventoryPage() {
   const isLoading = reqLoading || countLoading
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Linen Inventory</h1>
-          <p className="text-sm text-muted-foreground">
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Linen Inventory"
+        subtitle={
+          <span>
             Company-wide linen counts vs. total requirements
-            {latestCount && <span className="ml-2 text-xs">· Last counted {format(new Date(latestCount.counted_at), 'MMM d, yyyy')}</span>}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+            {latestCount && <span className="ml-2">· Last counted {format(new Date(latestCount.counted_at), 'MMM d, yyyy')}</span>}
+          </span>
+        }
+        actions={
           <div className="flex items-center border rounded-md overflow-hidden">
             {(['snapshot', 'record', 'history'] as ViewMode[]).map(v => (
               <button
@@ -277,8 +278,8 @@ export default function LinenInventoryPage() {
               </button>
             ))}
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* ═══ SNAPSHOT VIEW ═══ */}
       {viewMode === 'snapshot' && (
@@ -309,34 +310,20 @@ export default function LinenInventoryPage() {
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-xs text-muted-foreground">Total Required</p>
-                <p className="text-xl font-semibold">{totalRequired.toLocaleString()}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-3">
-                <p className="text-xs text-muted-foreground">Total On Hand</p>
-                <p className="text-xl font-semibold">{latestCount ? totalOnHand.toLocaleString() : '—'}</p>
-              </CardContent>
-            </Card>
-            <Card className={totalVariance != null && totalVariance < 0 ? 'border-red-200 dark:border-red-800' : ''}>
-              <CardContent className="p-3">
-                <p className="text-xs text-muted-foreground">Overall Variance</p>
-                <p className={`text-xl font-semibold ${totalVariance != null && totalVariance < 0 ? 'text-red-600 dark:text-red-400' : totalVariance != null && totalVariance > 0 ? 'text-green-600 dark:text-green-400' : ''}`}>
-                  {totalVariance != null ? (totalVariance > 0 ? '+' : '') + totalVariance.toLocaleString() : '—'}
-                </p>
-              </CardContent>
-            </Card>
-            <Card className={shortages.length > 0 ? 'border-red-200 dark:border-red-800' : ''}>
-              <CardContent className="p-3">
-                <p className="text-xs text-muted-foreground">Shortages</p>
-                <p className={`text-xl font-semibold ${shortages.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                  {latestCount ? shortages.length : '—'}
-                </p>
-              </CardContent>
-            </Card>
+            <StatCard title="Total Required" value={totalRequired.toLocaleString()} icon={Boxes} />
+            <StatCard title="Total On Hand" value={latestCount ? totalOnHand.toLocaleString() : '—'} icon={Boxes} />
+            <StatCard
+              title="Overall Variance"
+              value={totalVariance != null ? (totalVariance > 0 ? '+' : '') + totalVariance.toLocaleString() : '—'}
+              tone={totalVariance != null && totalVariance < 0 ? 'destructive' : totalVariance != null && totalVariance > 0 ? 'success' : 'neutral'}
+              icon={Boxes}
+            />
+            <StatCard
+              title="Shortages"
+              value={latestCount ? String(shortages.length) : '—'}
+              tone={shortages.length > 0 ? 'destructive' : 'success'}
+              icon={Boxes}
+            />
           </div>
 
           {/* Main table */}
@@ -356,7 +343,7 @@ export default function LinenInventoryPage() {
                 ) : (
                   <>
                     {snapshotRows.map(row => (
-                      <tr key={row.key} className={`border-b border-border/50 ${row.variance != null && row.variance < 0 ? 'bg-red-50/30 dark:bg-red-900/5' : ''}`}>
+                      <tr key={row.key} className={`border-b border-border/50 ${row.variance != null && row.variance < 0 ? 'bg-destructive/5' : ''}`}>
                         <td className="py-2 px-3 text-xs font-medium">
                           {row.label}
                           {'description' in row && row.description && <span className="text-muted-foreground font-normal ml-1.5">({(row as any).description})</span>}
@@ -653,7 +640,7 @@ export default function LinenInventoryPage() {
                 { title: 'Extras', items: EXTRA_ITEMS },
               ].map(group => (
                 <div key={group.title}>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{group.title}</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{group.title}</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
                     {group.items.map((it: any) => (
                       <div key={it.key} className="flex items-center justify-between gap-2 border-b border-border/40 py-0.5">
@@ -666,7 +653,7 @@ export default function LinenInventoryPage() {
               ))}
               {detailCount.notes && (
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
                   <p className="text-sm whitespace-pre-wrap bg-muted/30 rounded p-2">{detailCount.notes}</p>
                 </div>
               )}
@@ -674,6 +661,6 @@ export default function LinenInventoryPage() {
           </DialogContent>
         </Dialog>
       )}
-    </div>
+    </PageContainer>
   )
 }

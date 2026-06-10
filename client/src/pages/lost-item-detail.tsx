@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canAccessView } from '@/lib/auth'
+import { PageContainer } from '@/components/PageContainer'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
@@ -108,7 +109,7 @@ export default function LostItemDetailPage() {
 
   if (isLoading || !item) {
     return (
-      <div className="p-6 max-w-7xl mx-auto space-y-6">
+      <PageContainer width="xl" className="space-y-6">
         <Skeleton className="h-4 w-40" />
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-6 w-96" />
@@ -116,13 +117,13 @@ export default function LostItemDetailPage() {
           <Skeleton className="h-64 w-full" />
           <Skeleton className="h-64 w-full" />
         </div>
-      </div>
+      </PageContainer>
     )
   }
 
   if (isError) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <PageContainer width="lg">
         <Link href="/lost-items" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> Back to all cases
         </Link>
@@ -130,12 +131,12 @@ export default function LostItemDetailPage() {
           <AlertTriangle className="w-4 h-4" />
           <span>Couldn't load case: {error instanceof Error ? error.message : 'Unknown error'}</span>
         </div>
-      </div>
+      </PageContainer>
     )
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer width="xl">
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         <div className="flex flex-col gap-5 min-w-0">
           <Link href="/lost-items" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground w-fit">
@@ -145,7 +146,7 @@ export default function LostItemDetailPage() {
 
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-xs text-muted-foreground">{item.case_number}</span>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded font-medium text-[11px] border ${STATUS_COLORS[item.status]}`}>
+            <span className={`inline-flex items-center px-2 py-0.5 rounded font-medium text-2xs border ${STATUS_COLORS[item.status]}`}>
               {STATUS_LABELS[item.status]}
             </span>
             <span className="text-xs text-muted-foreground">
@@ -169,7 +170,7 @@ export default function LostItemDetailPage() {
                     'rounded-full border px-3 py-1 text-xs font-medium transition-colors ' +
                     (active
                       ? (isFailed
-                        ? 'border-rose-500 bg-rose-500 text-white cursor-default'
+                        ? 'border-rose-500 bg-rose-500 text-destructive-foreground cursor-default'
                         : 'border-foreground bg-foreground text-background cursor-default')
                       : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 disabled:cursor-not-allowed')
                   }
@@ -212,7 +213,7 @@ export default function LostItemDetailPage() {
                 ))}
               </select>
               {assignment?.assignee?.label ? (
-                <span className="text-[10px] text-muted-foreground">
+                <span className="text-2xs text-muted-foreground">
                   Assigned {formatDistanceToNow(new Date(assignment.updated_at), { addSuffix: true })}
                 </span>
               ) : null}
@@ -263,12 +264,12 @@ export default function LostItemDetailPage() {
                   </a>
                 ))}
               </div>
-              <p className="text-[10px] text-muted-foreground">Upload happens in Haven-OS.</p>
+              <p className="text-2xs text-muted-foreground">Upload happens in Haven-OS.</p>
             </SidePanel>
           ) : null}
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }
 
@@ -323,7 +324,7 @@ function ActivityFeed({
             data-testid="input-comment"
           />
           <div className="flex items-center justify-between">
-            <span className="text-[11px] text-muted-foreground">
+            <span className="text-2xs text-muted-foreground">
               {comments.length} comment{comments.length === 1 ? '' : 's'}
             </span>
             <Button
@@ -344,7 +345,7 @@ function ActivityFeed({
         <ul className="mt-4 flex flex-col gap-3">
           {comments.map(e => (
             <li key={e.id} className="flex flex-col gap-1 rounded-md border border-border bg-primary/5 p-3">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <div className="flex items-center gap-2 text-2xs text-muted-foreground">
                 <span className="font-medium text-foreground">
                   {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? 'system'}
                 </span>
@@ -365,13 +366,13 @@ function ActivityFeed({
 
       {others.length > 0 ? (
         <details className="mt-5 group">
-          <summary className="cursor-pointer text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground select-none">
+          <summary className="cursor-pointer text-2xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground select-none">
             Activity log ({others.length})
           </summary>
           <ul className="mt-3 flex flex-col gap-2">
             {others.map(e => (
               <li key={e.id} className="flex flex-col gap-0.5 rounded-md border border-border bg-muted/30 p-2.5">
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-2 text-2xs text-muted-foreground">
                   <span className="font-medium text-foreground">
                     {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? 'system'}
                   </span>
@@ -481,7 +482,7 @@ function DetailsCard({
         </dl>
         {item.notes ? (
           <div className="mt-4">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Notes</div>
+            <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Notes</div>
             <p className="mt-1 whitespace-pre-wrap text-sm">{item.notes}</p>
           </div>
         ) : null}
@@ -533,7 +534,7 @@ function DetailsCard({
 function SidePanel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
+      <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
       <div className="mt-2 flex flex-col gap-2">{children}</div>
     </div>
   )
@@ -542,14 +543,14 @@ function SidePanel({ title, children }: { title: string; children: React.ReactNo
 function KV({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
-      <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</dt>
+      <dt className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</dt>
       <dd className={'text-sm break-all text-right ' + (mono ? 'font-mono text-xs' : '')}>{value}</dd>
     </div>
   )
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{children}</span>
+  return <span className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{children}</span>
 }
 
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {

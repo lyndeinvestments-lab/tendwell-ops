@@ -16,6 +16,8 @@ import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3, Wind } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
 
 function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
@@ -24,8 +26,8 @@ function getDueStatus(nextDue: string | null, intervalDays: number): { label: st
   const now = new Date()
   const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
   if (diffDays < 0) return { label: 'Overdue', color: 'text-destructive', icon: AlertTriangle }
-  if (diffDays <= 14) return { label: 'Due soon', color: 'text-amber-600 dark:text-amber-400', icon: Clock }
-  return { label: 'OK', color: 'text-green-600 dark:text-green-400', icon: CheckCircle2 }
+  if (diffDays <= 14) return { label: 'Due soon', color: 'text-warning', icon: Clock }
+  return { label: 'OK', color: 'text-success', icon: CheckCircle2 }
 }
 
 const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding']
@@ -268,71 +270,69 @@ export default function AcFiltersPage() {
   const allDueSoon = (properties || []).filter((p: any) => getDueStatus(p.next_filter_due, intervalDays)?.label === 'Due soon').length
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">AC Filters</h1>
-          <p className="text-sm text-muted-foreground">
-            Track filter sizes and change schedules — click cells to edit
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {(allOverdue > 0 || allDueSoon > 0) && (
-            <div className="flex items-center gap-2 text-xs">
-              {allOverdue > 0 && (
-                <span className="flex items-center gap-1 text-destructive font-medium">
-                  <AlertTriangle className="w-3 h-3" /> {allOverdue} overdue
-                </span>
-              )}
-              {allDueSoon > 0 && (
-                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 font-medium">
-                  <Clock className="w-3 h-3" /> {allDueSoon} due soon
-                </span>
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="AC Filters"
+        subtitle="Track filter sizes and change schedules — click cells to edit"
+        actions={
+          <>
+            {(allOverdue > 0 || allDueSoon > 0) && (
+              <div className="flex items-center gap-2 text-xs">
+                {allOverdue > 0 && (
+                  <span className="flex items-center gap-1 text-destructive font-medium">
+                    <AlertTriangle className="w-3 h-3" /> {allOverdue} overdue
+                  </span>
+                )}
+                {allDueSoon > 0 && (
+                  <span className="flex items-center gap-1 text-warning font-medium">
+                    <Clock className="w-3 h-3" /> {allDueSoon} due soon
+                  </span>
+                )}
+              </div>
+            )}
+            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
+              <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-status-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                {STATUS_OPTIONS.map(s => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                data-testid="input-search-filters"
+                className="pl-8 pr-7 h-8 w-56 text-sm"
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
-          )}
-          <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-            <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-status-filter">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              {STATUS_OPTIONS.map(s => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              data-testid="input-search-filters"
-              className="pl-8 pr-7 h-8 w-56 text-sm"
-            />
-            {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
-              </button>
+            {canEditView('ac-filters', effectiveUser) && (
+              <>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
+                  <Edit3 className="w-3.5 h-3.5" />
+                  {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
+                </Button>
+                <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
+                  <Upload className="w-3.5 h-3.5" />
+                  Import CSV
+                </Button>
+                <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+              </>
             )}
-          </div>
-          {canEditView('ac-filters', effectiveUser) && (
-            <>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
-                <Edit3 className="w-3.5 h-3.5" />
-                {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
-              </Button>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
-                <Upload className="w-3.5 h-3.5" />
-                Import CSV
-              </Button>
-              <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
-            </>
-          )}
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Bulk action bar */}
       {canEditView('ac-filters', effectiveUser) && bulkMode && bulkSelected.size > 0 && (
@@ -425,13 +425,13 @@ export default function AcFiltersPage() {
               paged.map((p: any) => {
                 const dueStatus = getDueStatus(p.next_filter_due, intervalDays)
                 const rowClass = dueStatus?.label === 'Overdue'
-                  ? 'bg-red-100 dark:bg-red-900/20'
+                  ? 'bg-destructive/10'
                   : dueStatus?.label === 'Due soon'
-                  ? 'bg-amber-50/50 dark:bg-amber-900/10'
+                  ? 'bg-warning/5'
                   : ''
                 const justSaved = justSavedId === p.id
                 return (
-                  <tr key={p.id} data-testid={`row-filter-${p.id}`} data-just-saved={justSaved || undefined} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass} ${justSaved ? 'animate-pulse bg-green-100 dark:bg-green-900/30' : ''}`}>
+                  <tr key={p.id} data-testid={`row-filter-${p.id}`} data-just-saved={justSaved || undefined} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${rowClass} ${justSaved ? 'animate-pulse bg-success/10' : ''}`}>
                     {bulkMode && (
                       <td className="py-2 px-3">
                         <Checkbox checked={bulkSelected.has(p.id)} onCheckedChange={() => toggleBulkSelect(p.id)} />
@@ -539,6 +539,6 @@ export default function AcFiltersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

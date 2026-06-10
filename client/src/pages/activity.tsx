@@ -9,6 +9,8 @@ import { useToast } from '@/hooks/use-toast'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import {
   Pencil, Search, X, RotateCcw, Activity,
   Building2, GitBranch, ClipboardCheck, UserCheck, Users,
@@ -61,9 +63,9 @@ function getActionIcon(action: string, entityType: string) {
 }
 
 function getActionColor(action: string): string {
-  if (action === 'create') return 'bg-green-500/10 text-green-600 dark:text-green-400'
-  if (action === 'delete') return 'bg-red-500/10 text-red-600 dark:text-red-400'
-  if (action === 'stage_change') return 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+  if (action === 'create') return 'bg-success/10 text-success'
+  if (action === 'delete') return 'bg-destructive/10 text-destructive'
+  if (action === 'stage_change') return 'bg-info/10 text-info'
   return 'bg-primary/10 text-primary'
 }
 
@@ -321,50 +323,49 @@ export default function ActivityFeedPage() {
   }
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Activity Feed</h1>
-          <p className="text-sm text-muted-foreground">Audit log of all changes across the app</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch('')}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-            <label>From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={e => setDateFrom(e.target.value)}
-              className="h-8 text-xs border border-input rounded px-2 bg-background"
-            />
-            <label>To</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={e => setDateTo(e.target.value)}
-              className="h-8 text-xs border border-input rounded px-2 bg-background"
-            />
-          </div>
-        </div>
-      </div>
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Activity Feed"
+        subtitle="Audit log of all changes across the app"
+        actions={
+          <>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+              <label>From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="h-8 text-xs border border-input rounded px-2 bg-background"
+              />
+              <label>To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="h-8 text-xs border border-input rounded px-2 bg-background"
+              />
+            </div>
+          </>
+        }
+      />
 
       {/* Filter chips */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -505,6 +506,6 @@ export default function ActivityFeedPage() {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   )
 }

@@ -13,6 +13,9 @@ import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
 import {
   TrendingUp, Upload, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus, Sparkles,
 } from 'lucide-react'
@@ -58,21 +61,6 @@ function monthBounds(yyyymm: string): { start: string; end: string } {
   return { start, end }
 }
 
-function KpiCard({ title, value, subtitle, alert }: {
-  title: string; value: string; subtitle?: string; alert?: boolean
-}) {
-  return (
-    <Card className={`border-card-border ${alert ? 'border-destructive/40' : ''}`}>
-      <CardContent className="p-4">
-        <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</p>
-        <p className={`text-xl font-semibold mt-1 ${alert ? 'text-destructive' : 'text-foreground'}`}>
-          {value}
-        </p>
-        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
-      </CardContent>
-    </Card>
-  )
-}
 
 export default function ForecasterPage() {
   const inWrapper = useInProFormaWrapper()
@@ -503,40 +491,41 @@ export default function ForecasterPage() {
 
   const isLoading = loadingMonths
 
+  const controls = (
+    <div className="flex items-center gap-2 flex-wrap">
+      <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+        <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-forecaster-month">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {monthOptions.map(m => (
+            <SelectItem key={m} value={m}>{m}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setUploadOpen(o => !o)} data-testid="button-upload-tasks">
+        <Upload className="w-3.5 h-3.5" /> Upload Tasks
+      </Button>
+      <span className="text-2xs text-muted-foreground" data-testid="text-qbo-refresh-note">
+        Actuals refresh nightly from the scheduled QBO import.
+      </span>
+    </div>
+  )
+
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        {inWrapper ? (
-          <div className="text-xs text-muted-foreground">
-            Period &amp; sources
-          </div>
-        ) : (
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">Forecaster</h1>
-            <p className="text-sm text-muted-foreground">
-              Live proforma — actuals from completed tasks &amp; QBO compared to estimated cost formulas.
-            </p>
-          </div>
-        )}
-        <div className="flex items-center gap-2 flex-wrap">
-          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-            <SelectTrigger className="h-8 w-36 text-sm" data-testid="select-forecaster-month">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {monthOptions.map(m => (
-                <SelectItem key={m} value={m}>{m}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setUploadOpen(o => !o)} data-testid="button-upload-tasks">
-            <Upload className="w-3.5 h-3.5" /> Upload Tasks
-          </Button>
-          <span className="text-[11px] text-muted-foreground" data-testid="text-qbo-refresh-note">
-            Actuals refresh nightly from the scheduled QBO import.
-          </span>
+    <PageContainer width="full" className="h-full flex flex-col">
+      {!inWrapper ? (
+        <PageHeader
+          title="Forecaster"
+          subtitle="Live proforma — actuals from completed tasks & QBO compared to estimated cost formulas."
+          actions={controls}
+        />
+      ) : (
+        <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
+          <div className="text-xs text-muted-foreground">Period &amp; sources</div>
+          {controls}
         </div>
-      </div>
+      )}
 
       {lastBreezeway ? (
         <div
@@ -558,7 +547,7 @@ export default function ForecasterPage() {
             </span>
           </span>
           {lastBreezeway.notes ? (
-            <span className="text-amber-700 dark:text-amber-400 truncate max-w-[40ch]" title={lastBreezeway.notes}>
+            <span className="text-warning truncate max-w-[40ch]" title={lastBreezeway.notes}>
               · {lastBreezeway.notes}
             </span>
           ) : null}
@@ -600,7 +589,7 @@ export default function ForecasterPage() {
       )}
       {actualsSource === 'estimate' && (
         <div
-          className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/20 px-3 py-2 text-xs text-blue-800 dark:text-blue-200"
+          className="rounded-md border border-info/25 bg-info/10 px-3 py-2 text-xs text-info"
           data-testid="actuals-source-banner-estimate"
         >
           Showing <strong>live estimate</strong> for {selectedMonth} — derived from scheduled Breezeway tasks × per-property rates.
@@ -609,7 +598,7 @@ export default function ForecasterPage() {
       )}
       {actualsSource === null && (
         <div
-          className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50/60 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+          className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning"
           data-testid="actuals-source-banner-empty"
         >
           No data available for {selectedMonth}
@@ -627,23 +616,23 @@ export default function ForecasterPage() {
           [...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)
         ) : actualsRow ? (
           <>
-            <KpiCard
+            <StatCard
               title="Revenue"
               value={fmt(actualsRow.revenue)}
               subtitle={prevMonth ? `${actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼'} ${fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100)} vs ${prevMonth.label}` : actualsSource === 'qbo' ? 'Source: QBO P&L' : undefined}
             />
-            <KpiCard
+            <StatCard
               title="Net Income"
               value={fmt(actualsRow.netIncome)}
-              alert={actualsRow.netIncome < 0}
+              tone={actualsRow.netIncome < 0 ? 'destructive' : 'primary'}
               subtitle={`Margin ${fmtPct(actualsRow.netMargin)}`}
             />
-            <KpiCard
+            <StatCard
               title="Tasks"
               value={String(actualsRow.tasks ?? totalPeriodTasks ?? 0)}
               subtitle={`${actualsRow.properties ?? activePropsInPeriod ?? 0} properties`}
             />
-            <KpiCard
+            <StatCard
               title="Gross Margin"
               value={fmtPct(actualsRow.grossMargin)}
               subtitle={`COGS ${fmt(actualsRow.cogs)}`}
@@ -710,16 +699,16 @@ export default function ForecasterPage() {
                           <td className="py-2 text-foreground">{row.category}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.estimated)}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.actual)}</td>
-                          <td className={`py-2 text-right tabular-nums font-medium ${fav ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <td className={`py-2 text-right tabular-nums font-medium ${fav ? 'text-success' : 'text-destructive'}`}>
                             {row.variance > 0 ? '+' : ''}{fmt(row.variance)}
                           </td>
-                          <td className={`py-2 text-right tabular-nums ${fav ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          <td className={`py-2 text-right tabular-nums ${fav ? 'text-success' : 'text-destructive'}`}>
                             {fmtPct(row.variancePct)}
                           </td>
                           <td className="py-2 pl-3">
                             <span className={`text-xs px-2 py-0.5 rounded-full border ${fav
-                              ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                              : 'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                              ? 'text-success bg-success/10 border-success/25'
+                              : 'text-destructive bg-destructive/10 border-destructive/25'}`}>
                               {fav ? 'Favorable' : 'Unfavorable'}
                             </span>
                           </td>
@@ -878,7 +867,7 @@ export default function ForecasterPage() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </PageContainer>
   )
 }
 

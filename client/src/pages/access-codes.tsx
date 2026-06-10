@@ -15,6 +15,8 @@ import { useAppSettings } from '@/hooks/use-app-settings'
 import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 
 const ACCESS_COLS = [
   { key: 'door_code', label: 'Door Code', sensitive: true },
@@ -54,7 +56,7 @@ function CopyButton({ value, field, id }: { value: string; field: string; id: st
       aria-label={copied ? 'Copied!' : `Copy ${field} to clipboard`}
       data-testid={`copy-${field}-${id}`}
     >
-      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+      {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
     </button>
   )
 }
@@ -122,7 +124,7 @@ function CopyAllButton({ p }: { p: any }) {
       aria-label={copied ? 'Copied!' : `Copy all codes for ${p.name}`}
       data-testid={`copy-all-${p.id}`}
     >
-      {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+      {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
     </button>
   )
 }
@@ -214,35 +216,35 @@ export default function AccessCodesPage() {
   }
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Access Codes</h1>
-          <p className="text-sm text-muted-foreground">Click any field to edit — use copy icon for clipboard</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
-            <Download className="w-3.5 h-3.5" />
-            Export CSV
-          </Button>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              data-testid="input-search-access"
-              className="pl-8 pr-7 h-8 w-56 text-sm"
-            />
-            {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Access Codes"
+        subtitle="Click any field to edit — use copy icon for clipboard"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </Button>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                data-testid="input-search-access"
+                className="pl-8 pr-7 h-8 w-56 text-sm"
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </>
+        }
+      />
 
       <div className="overflow-auto flex-1 rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -341,7 +343,7 @@ export default function AccessCodesPage() {
                           <TooltipProvider delayDuration={200}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge className="text-xs py-0 px-1 h-4 bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-100/80 cursor-help">Incomplete</Badge>
+                                <Badge className="text-xs py-0 px-1 h-4 bg-warning/10 text-warning border-warning/25 hover:bg-warning/15 cursor-help">Incomplete</Badge>
                               </TooltipTrigger>
                               <TooltipContent>Missing: {missingLabel}</TooltipContent>
                             </Tooltip>
@@ -354,14 +356,14 @@ export default function AccessCodesPage() {
                     {ACCESS_COLS.map(c => {
                       const isEmpty = c.sensitive && (!p[c.key] || p[c.key].trim() === '')
                       return (
-                        <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''} ${isEmpty ? 'bg-red-100/60 dark:bg-red-900/20' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
+                        <td key={c.key} className={`py-2 px-3 ${c.key === 'notes' ? 'max-w-[200px]' : ''} ${isEmpty ? 'bg-destructive/5' : ''}`} title={c.key === 'notes' && p[c.key] ? p[c.key] : undefined}>
                           <div className="flex items-center gap-1">
                             <InlineEdit
                               value={p[c.key]}
                               type="text"
                               onSave={v => updateField({ id: p.id, field: c.key, value: v, oldValue: p[c.key], propName: p.name })}
                               testId={`inline-${c.key}-${p.id}`}
-                              className={isEmpty ? 'text-red-600 dark:text-red-400' : undefined}
+                              className={isEmpty ? 'text-destructive' : undefined}
                             />
                             {p[c.key] && <CopyButton value={p[c.key]} field={c.key} id={p.id} />}
                           </div>
@@ -370,7 +372,7 @@ export default function AccessCodesPage() {
                     })}
                     <td className={`py-2 px-3 text-xs whitespace-nowrap ${
                       p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
-                        ? 'text-amber-600 dark:text-amber-400 font-medium'
+                        ? 'text-warning font-medium'
                         : 'text-muted-foreground'
                     }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago — codes may have changed' : undefined}>
                       {p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'}
@@ -388,6 +390,6 @@ export default function AccessCodesPage() {
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
-    </div>
+    </PageContainer>
   )
 }

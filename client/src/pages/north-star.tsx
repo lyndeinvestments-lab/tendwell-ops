@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, TrendingUp, Download } from 'lucide-react'
-import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns'
+import { ChevronLeft, ChevronRight, Plus, Pencil, Trash2, Download } from 'lucide-react'
+import { format, endOfMonth } from 'date-fns'
 import Papa from 'papaparse'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 
 const STATUS_COLORS: Record<string, string> = {
   'Green': 'bg-green-500',
@@ -266,33 +268,30 @@ export default function NorthStarPage() {
   const inputCls = 'h-7 text-xs text-center border border-transparent hover:border-input focus:border-input rounded px-1 bg-transparent focus:bg-background w-16 tabular-nums'
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4 overflow-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
-            <TrendingUp className="w-5 h-5" /> North Star
-          </h1>
-          <p className="text-sm text-muted-foreground">KPI scorecard — {monthLabel}</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={prevMonth} disabled={month <= MIN_MONTH}><ChevronLeft className="w-4 h-4" /></Button>
-            <select value={month} onChange={e => setMonth(e.target.value)} className="h-8 text-sm font-medium border border-input rounded-md px-2 bg-background min-w-[150px] text-center">
-              {monthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-            <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={nextMonth} disabled={month >= maxMonth}><ChevronRight className="w-4 h-4" /></Button>
-          </div>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv}>
-            <Download className="w-3.5 h-3.5" /> Export
-          </Button>
-          {canEdit && (
-            <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => openAddMetric()}>
-              <Plus className="w-3.5 h-3.5" /> Add Metric
+    <PageContainer width="full" className="h-full flex flex-col overflow-auto">
+      <PageHeader
+        title="North Star"
+        subtitle={`KPI scorecard — ${monthLabel}`}
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={prevMonth} disabled={month <= MIN_MONTH}><ChevronLeft className="w-4 h-4" /></Button>
+              <select value={month} onChange={e => setMonth(e.target.value)} className="h-8 text-sm font-medium border border-input rounded-md px-2 bg-background min-w-[150px] text-center">
+                {monthOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={nextMonth} disabled={month >= maxMonth}><ChevronRight className="w-4 h-4" /></Button>
+            </div>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv}>
+              <Download className="w-3.5 h-3.5" /> Export
             </Button>
-          )}
-        </div>
-      </div>
+            {canEdit && (
+              <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => openAddMetric()}>
+                <Plus className="w-3.5 h-3.5" /> Add Metric
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Scorecard table */}
       {metricsLoading ? (
@@ -372,7 +371,7 @@ export default function NorthStarPage() {
                             <select
                               value={v.status || 'Green'}
                               onChange={e => saveValue(m.id, 'status', e.target.value)}
-                              className="h-6 text-[10px] border-none bg-transparent cursor-pointer"
+                              className="h-6 text-2xs border-none bg-transparent cursor-pointer"
                             >
                               {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
@@ -383,7 +382,7 @@ export default function NorthStarPage() {
                         <td className="py-1.5 px-2 text-center text-muted-foreground">{m.owner_name || '—'}</td>
                         <td className="py-1.5 px-2 text-center">
                           {isAuto ? (
-                            <span className="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">auto</span>
+                            <span className="text-2xs bg-info/10 text-info px-1.5 py-0.5 rounded">auto</span>
                           ) : (
                             <span className="text-muted-foreground">manual</span>
                           )}
@@ -466,6 +465,6 @@ export default function NorthStarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   )
 }

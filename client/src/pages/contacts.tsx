@@ -192,7 +192,7 @@ export default function ContactsPage() {
   }, [contacts])
 
   return (
-    <div className="p-5 space-y-4 h-full flex flex-col">
+    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Clients</h1>

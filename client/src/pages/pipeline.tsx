@@ -30,6 +30,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, GripVertical, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns'
+import { PageHeader } from '@/components/PageHeader'
+import { StatusBadge } from '@/components/StatusBadge'
+import { ErrorState } from '@/components/ErrorState'
 
 // Kanban-optimised collision: pointer-within first, fall back to closestCenter.
 // closestCenter alone misfires on horizontal boards when card centers don't
@@ -56,20 +59,17 @@ function ProfitBadge({ pct, stageName }: { pct: number | null | undefined; stage
   const isOnboarding = stageName === 'Onboarding'
   if (pct == null) {
     if (isOnboarding) {
-      return <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-medium">No data</span>
+      return <StatusBadge tone="neutral">No data</StatusBadge>
     }
     return null
   }
   const t = profitTier(pct)
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const cls =
-    t === 'high' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
-    t === 'mid'  ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400' :
-                   'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400'
+  const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
   return (
-    <span className={`text-xs px-1.5 py-0.5 rounded font-medium tabular-nums ${cls}`}>
+    <StatusBadge tone={tone} className="tabular-nums">
       {pct.toFixed(0)}%<span className="sr-only"> ({tier} profit)</span>
-    </span>
+    </StatusBadge>
   )
 }
 
@@ -211,9 +211,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           </button>
           <div className="flex items-center gap-1 flex-shrink-0">
             {isStale && (
-              <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
-                Stale
-              </span>
+              <StatusBadge tone="warning">Stale</StatusBadge>
             )}
           </div>
         </div>
@@ -272,7 +270,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       <div className="flex items-center justify-end mt-2 gap-1">
         <div className="flex items-center gap-1 flex-shrink-0">
           {isStale && (
-            <span className="text-xs px-1 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 font-medium">
+            <span className="text-xs px-1 py-0.5 rounded bg-warning/15 text-warning font-medium">
               Stale
             </span>
           )}
@@ -692,10 +690,10 @@ export default function PipelinePage() {
 
   return (
     <div className="p-5 h-full flex flex-col">
-      <div className="mb-3 flex flex-col gap-2 flex-shrink-0 sm:flex-row sm:items-center sm:justify-between sm:flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
-          <p className="text-sm text-muted-foreground">
+      <PageHeader
+        title="Pipeline"
+        subtitle={
+          <span>
             Drag properties between stages
             <Tooltip>
               <TooltipTrigger asChild>
@@ -707,9 +705,9 @@ export default function PipelinePage() {
                 <p><span className="inline-block w-2 h-2 rounded-full bg-red-500 mr-1.5" />{PROFIT_TIER_LABELS.low}</p>
               </TooltipContent>
             </Tooltip>
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+          </span>
+        }
+        actions={<div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 sm:flex-none sm:w-56">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -750,8 +748,9 @@ export default function PipelinePage() {
               {hideEmpty ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} Hide empty
             </Label>
           </div>
-        </div>
-      </div>
+        </div>}
+        className="mb-3 flex-shrink-0"
+      />
 
       {isLoading ? (
         <div className="flex gap-4 overflow-x-auto pb-2 flex-1">
@@ -766,10 +765,7 @@ export default function PipelinePage() {
         </div>
       ) : propsError ? (
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-2">
-            <p className="text-sm font-medium text-destructive">Failed to load pipeline</p>
-            <p className="text-xs text-muted-foreground max-w-sm">{(propsError as any)?.message}</p>
-          </div>
+          <ErrorState onRetry={() => {}} />
         </div>
       ) : (
         <div ref={scrollRef} className="flex-1 overflow-auto relative">
@@ -886,7 +882,7 @@ export default function PipelinePage() {
                   const q = newLeadName.trim().toLowerCase()
                   const match = properties?.find((p: any) => p.name?.toLowerCase().includes(q) || q.includes(p.name?.toLowerCase()))
                   return match ? (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <p className="text-xs text-warning flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
                       A property named "{match.name}" already exists. Create anyway?
                     </p>

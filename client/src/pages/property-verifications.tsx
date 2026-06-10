@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
 import {
   Search, X, ClipboardCheck, Check, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Download,
@@ -479,54 +481,54 @@ export default function InspectionsPage() {
   }
 
   function StatusBadge({ status }: { status: 'due' | 'verified' | 'never' }) {
-    if (status === 'verified') return <span className="text-xs px-1.5 py-0.5 rounded border text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800">Verified</span>
-    if (status === 'due') return <span className="text-xs px-1.5 py-0.5 rounded border text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800">Due</span>
-    return <span className="text-xs px-1.5 py-0.5 rounded border text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800">Never</span>
+    if (status === 'verified') return <span className="text-xs px-1.5 py-0.5 rounded border text-success bg-success/10 border-success/25">Verified</span>
+    if (status === 'due') return <span className="text-xs px-1.5 py-0.5 rounded border text-warning bg-warning/10 border-warning/25">Due</span>
+    return <span className="text-xs px-1.5 py-0.5 rounded border text-destructive bg-destructive/10 border-destructive/25">Never</span>
   }
 
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Property Verification</h1>
-          <p className="text-sm text-muted-foreground">Verify property details every 6 months — click a property to start walkthrough</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {dueCount > 0 && (
-            <button
-              onClick={() => { setShowDueOnly(v => !v); setPage(1) }}
-              className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
-                showDueOnly
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400'
-                  : 'border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20'
-              }`}
-            >
-              <AlertTriangle className="w-3 h-3" />
-              {dueCount} need{dueCount === 1 ? 's' : ''} verification
-            </button>
-          )}
-          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
-            />
-            {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Property Verification"
+        subtitle="Verify property details every 6 months — click a property to start walkthrough"
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {dueCount > 0 && (
+              <button
+                onClick={() => { setShowDueOnly(v => !v); setPage(1) }}
+                className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md border transition-colors ${
+                  showDueOnly
+                    ? 'bg-warning/10 border-warning/30 text-warning'
+                    : 'border-warning/30 text-warning hover:bg-warning/10'
+                }`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {dueCount} need{dueCount === 1 ? 's' : ''} verification
               </button>
             )}
+            <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </Button>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/60 px-3 py-2 text-xs">
@@ -614,7 +616,7 @@ export default function InspectionsPage() {
                 return (
                   <tr
                     key={p.id}
-                    className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSelected ? 'bg-primary/5' : status === 'never' ? 'bg-red-50/30 dark:bg-red-900/5' : status === 'due' ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}
+                    className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSelected ? 'bg-primary/5' : status === 'never' ? 'bg-destructive/5' : status === 'due' ? 'bg-warning/5' : ''}`}
                   >
                     <td className="px-2 py-2 sticky left-0 z-10 bg-background" onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(p.id)} aria-label={`Select ${p.name}`} />
@@ -622,7 +624,7 @@ export default function InspectionsPage() {
                     <td className="py-2 px-3 font-medium text-xs sticky left-8 z-10 bg-background cursor-pointer" onClick={() => openWalkthrough(p)}>{p.name}</td>
                     <td className="py-2 px-3 cursor-pointer" onClick={() => openWalkthrough(p)}><StatusBadge status={status} /></td>
                     <td className="py-2 px-3 text-xs">{v?.assignee_name || <span className="text-muted-foreground">—</span>}</td>
-                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-red-600 dark:text-red-400 font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">—</span>}</td>
+                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-destructive font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">—</span>}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground cursor-pointer" onClick={() => openWalkthrough(p)}>
                       {v?.verified_at ? (
                         <span>
@@ -707,14 +709,14 @@ export default function InspectionsPage() {
                               <textarea
                                 value={currentVal ?? ''}
                                 onChange={e => { setEditValues(v => ({ ...v, [f.key]: e.target.value })); setIsDirty(true) }}
-                                className={`w-full h-16 rounded-md border px-2 py-1.5 text-xs resize-none bg-background focus:outline-none focus:ring-2 focus:ring-ring ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : 'border-input'}`}
+                                className={`w-full h-16 rounded-md border px-2 py-1.5 text-xs resize-none bg-background focus:outline-none focus:ring-2 focus:ring-ring ${changed ? 'border-info/40 bg-info/10' : 'border-input'}`}
                               />
                             ) : (
                               <Input
                                 type={f.type === 'number' ? 'number' : 'text'}
                                 value={currentVal ?? ''}
                                 onChange={e => { setEditValues(v => ({ ...v, [f.key]: f.type === 'number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value })); setIsDirty(true) }}
-                                className={`h-7 text-xs ${changed ? 'border-blue-400 bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
+                                className={`h-7 text-xs ${changed ? 'border-info/40 bg-info/10' : ''}`}
                               />
                             )}
                           </div>
@@ -750,6 +752,6 @@ export default function InspectionsPage() {
           )}
         </SheetContent>
       </Sheet>
-    </div>
+    </PageContainer>
   )
 }

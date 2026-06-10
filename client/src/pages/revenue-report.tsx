@@ -12,6 +12,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowUpDown, Download, DollarSign, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { EmptyState } from '@/components/EmptyState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { StatCard } from '@/components/StatCard'
+import { StatusBadge } from '@/components/StatusBadge'
 import { useToast } from '@/hooks/use-toast'
 import Papa from 'papaparse'
 import { profitTier } from '@/lib/profit-colors'
@@ -25,16 +29,14 @@ function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
   const t = profitTier(pct)
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const cls = t === 'high' ? 'text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' :
-              t === 'mid'  ? 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800' :
-                             'text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
-  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{pct.toFixed(1)}%<span className="sr-only"> ({tier} profit)</span></span>
+  const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
+  return <StatusBadge tone={tone}>{pct.toFixed(1)}%<span className="sr-only"> ({tier} profit)</span></StatusBadge>
 }
 
 function HealthDot({ pct }: { pct: number }) {
   const t = profitTier(pct)
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const color = t === 'high' ? 'bg-green-500' : t === 'mid' ? 'bg-amber-500' : 'bg-red-500'
+  const color = t === 'high' ? 'bg-success' : t === 'mid' ? 'bg-warning' : 'bg-destructive'
   return <span className={`inline-block w-2.5 h-2.5 rounded-full ${color}`} role="img" aria-label={`${tier} profit: ${pct.toFixed(1)}%`} />
 }
 
@@ -375,86 +377,58 @@ export default function RevenueReportPage() {
   }
 
   return (
-    <div className="p-5 h-full flex flex-col space-y-4">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Revenue Report</h1>
-          <p className="text-sm text-muted-foreground">Monthly financial overview across all operational properties</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
-            <SelectTrigger className="h-8 w-28 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
-            <SelectTrigger className="h-8 w-24 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center border rounded-md overflow-hidden">
-            {(['property', 'client', 'forecast'] as ViewMode[]).map(v => (
-              <button
-                key={v}
-                onClick={() => setViewMode(v)}
-                className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
-              >
-                {v === 'property' ? 'By Property' : v === 'client' ? 'By Client' : 'Forecast'}
-              </button>
-            ))}
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Revenue Report"
+        subtitle="Monthly financial overview across all operational properties"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
+              <SelectTrigger className="h-8 w-28 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+              <SelectTrigger className="h-8 w-24 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <div className="flex items-center border rounded-md overflow-hidden">
+              {(['property', 'client', 'forecast'] as ViewMode[]).map(v => (
+                <button
+                  key={v}
+                  onClick={() => setViewMode(v)}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                >
+                  {v === 'property' ? 'By Property' : v === 'client' ? 'By Client' : 'Forecast'}
+                </button>
+              ))}
+            </div>
+            {viewMode === 'forecast' ? (
+              <Button variant="outline" size="sm" onClick={exportForecastCsv} disabled={forecastData.length === 0} className="h-8 gap-1.5 text-xs">
+                <Download className="w-3.5 h-3.5" /> Export CSV
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={exportCsv} disabled={sorted.length === 0} className="h-8 gap-1.5 text-xs">
+                <Download className="w-3.5 h-3.5" /> Export CSV
+              </Button>
+            )}
           </div>
-          {viewMode === 'forecast' ? (
-            <Button variant="outline" size="sm" onClick={exportForecastCsv} disabled={forecastData.length === 0} className="h-8 gap-1.5 text-xs">
-              <Download className="w-3.5 h-3.5" /> Export CSV
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={exportCsv} disabled={sorted.length === 0} className="h-8 gap-1.5 text-xs">
-              <Download className="w-3.5 h-3.5" /> Export CSV
-            </Button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Client Charged</p>
-            {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
-              <p className="text-xl font-semibold mt-1">{fmt(totals.ce)}</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Cleaner Pay</p>
-            {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
-              <p className="text-xl font-semibold mt-1">{fmt(totals.pay)}</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Total Gross Margin</p>
-            {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
-              <p className={`text-xl font-semibold mt-1 ${totals.profit < 0 ? 'text-destructive' : ''}`}>{fmt(totals.profit)}</p>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Avg Gross Margin %</p>
-            {isLoading ? <Skeleton className="h-7 w-24 mt-1.5" /> : (
-              <p className="text-xl font-semibold mt-1">{totals.avgPct.toFixed(1)}%</p>
-            )}
-          </CardContent>
-        </Card>
+        <StatCard title="Total Client Charged" value={fmt(totals.ce)} loading={isLoading} icon={DollarSign} />
+        <StatCard title="Total Cleaner Pay" value={fmt(totals.pay)} loading={isLoading} icon={DollarSign} />
+        <StatCard title="Total Gross Margin" value={fmt(totals.profit)} loading={isLoading} icon={TrendingUp} tone={totals.profit < 0 ? 'destructive' : 'primary'} />
+        <StatCard title="Avg Gross Margin %" value={isLoading ? '—' : `${totals.avgPct.toFixed(1)}%`} loading={isLoading} icon={TrendingUp} />
       </div>
 
       {/* 12-Month Chart */}
@@ -568,15 +542,15 @@ export default function RevenueReportPage() {
                         </div>
                       </td>
                       {p.monthlyRevenues.map((rev: number, mi: number) => (
-                        <td key={mi} className="py-2 px-3 tabular-nums text-xs text-blue-700 dark:text-blue-400">{fmt(rev)}</td>
+                        <td key={mi} className="py-2 px-3 tabular-nums text-xs text-info">{fmt(rev)}</td>
                       ))}
                       <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.sixMonthTotal)}</td>
                     </tr>
                     <tr className="border-b border-border/50 hover:bg-muted/30 transition-colors">
                       {p.monthlyProfit.map((prof: number, mi: number) => (
-                        <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${prof >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(prof)}</td>
+                        <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${prof >= 0 ? 'text-success' : 'text-destructive'}`}>{fmt(prof)}</td>
                       ))}
-                      <td className={`py-1 px-3 tabular-nums text-xs font-medium ${p.monthlyProfit.reduce((s: number, v: number) => s + v, 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(p.monthlyProfit.reduce((s: number, v: number) => s + v, 0))}</td>
+                      <td className={`py-1 px-3 tabular-nums text-xs font-medium ${p.monthlyProfit.reduce((s: number, v: number) => s + v, 0) >= 0 ? 'text-success' : 'text-destructive'}`}>{fmt(p.monthlyProfit.reduce((s: number, v: number) => s + v, 0))}</td>
                     </tr>
                   </Fragment>
                 ))}
@@ -590,12 +564,12 @@ export default function RevenueReportPage() {
                       <td className="py-2 px-3 tabular-nums text-xs">{fmt(forecastData.reduce((s: number, p: any) => s + p.sixMonthTotal, 0))}</td>
                     </tr>
                     <tr className="bg-muted/60 border-b border-border font-semibold">
-                      <td className="py-1 px-3 text-xs uppercase tracking-wide text-green-700 dark:text-green-400" colSpan={3}>Total Profit</td>
+                      <td className="py-1 px-3 text-xs uppercase tracking-wide text-success" colSpan={3}>Total Profit</td>
                       {forecastMonths.map((_m: any, mi: number) => {
                         const totalProfit = forecastData.reduce((s: number, p: any) => s + (p.monthlyProfit?.[mi] || 0), 0)
-                        return <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${totalProfit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(totalProfit)}</td>
+                        return <td key={mi} className={`py-1 px-3 tabular-nums text-xs ${totalProfit >= 0 ? 'text-success' : 'text-destructive'}`}>{fmt(totalProfit)}</td>
                       })}
-                      <td className={`py-1 px-3 tabular-nums text-xs ${forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>{fmt(forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0))}</td>
+                      <td className={`py-1 px-3 tabular-nums text-xs ${forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0) >= 0 ? 'text-success' : 'text-destructive'}`}>{fmt(forecastData.reduce((s: number, p: any) => s + p.monthlyProfit.reduce((ps: number, v: number) => ps + v, 0), 0))}</td>
                     </tr>
                   </Fragment>
                 )}
@@ -691,6 +665,6 @@ export default function RevenueReportPage() {
           </tbody>
         </table>
       </div>}
-    </div>
+    </PageContainer>
   )
 }
