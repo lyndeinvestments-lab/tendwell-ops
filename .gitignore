@@ -17,3 +17,6 @@ test-results/
 tests/.auth/
 .env.cron
 .env*
+
+# Local backups (kept on device, never in repo)
+_backups/
