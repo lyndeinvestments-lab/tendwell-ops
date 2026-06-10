@@ -28,20 +28,22 @@ const CATEGORIES = [
   'Foul Smell / Odor',
   'Damage/Loss',
   'Guest Related',
+  'Trash Pick Up Request',
+  'Hot Tub Servicing',
+  'Touch-Up Clean',
   'Other',
 ]
 
-const STATUSES = ['In Progress', 'Completed', 'Just FYI', 'Disregard']
+const STATUSES = ['Needs Attention', 'In Progress', 'Completed']
 
 type SortKey = 'report_date' | 'property_name' | 'category' | 'status'
 
 function StatusBadge({ status }: { status: string }) {
   const cls = {
+    'Needs Attention': 'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800',
     'Completed': 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800',
     'In Progress': 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800',
-    'Just FYI': 'text-blue-700 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-900/20 dark:border-blue-800',
-    'Disregard': 'text-gray-600 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-900/20 dark:border-gray-800',
-  }[status] || 'text-gray-600 bg-gray-50 border-gray-200'
+  }[status] || 'text-gray-600 bg-gray-50 border-gray-200 dark:text-gray-400 dark:bg-gray-900/20 dark:border-gray-800'
   return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border whitespace-nowrap ${cls}`}>{status}</span>
 }
 
@@ -66,6 +68,7 @@ export default function IssuesPage() {
   const [pageSize, setPageSize] = useState(50)
   const [detailIssue, setDetailIssue] = useState<any>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [importData, setImportData] = useState<any[] | null>(null)
   const [importRunning, setImportRunning] = useState(false)
   const [newForm, setNewForm] = useState({
@@ -80,7 +83,7 @@ export default function IssuesPage() {
     assessment: '',
     resolution: '',
     coverage: '',
-    status: 'In Progress',
+    status: 'Needs Attention',
     remarks: '',
     slack_link: '',
   })
@@ -184,7 +187,7 @@ export default function IssuesPage() {
   // ─── Mutations ────────────────────────────────────────────────────────────
   const { mutate: addIssue, isPending: adding } = useGuardedMutation('issues', {
     mutationFn: async () => {
-      const { error } = await supabase.from('cleaning_issues').insert({
+      const { data: created, error } = await supabase.from('cleaning_issues').insert({
         report_date: newForm.report_date,
         issue_type: newForm.issue_type,
         priority: newForm.priority,
@@ -200,8 +203,20 @@ export default function IssuesPage() {
         remarks: newForm.remarks || null,
         slack_link: newForm.slack_link || null,
         created_by: effectiveUser?.label || null,
-      })
+      }).select('id').single()
       if (error) throw error
+      // Optional initial photo attached at logging time (e.g. the dirty hot tub).
+      if (newPhoto && created?.id) {
+        try {
+          const ext = (newPhoto.name.split('.').pop() || 'jpg').toLowerCase()
+          const path = `${created.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
+          const up = await supabase.storage.from('issue-photos').upload(path, newPhoto, { contentType: newPhoto.type || 'image/jpeg' })
+          if (!up.error) {
+            const { data: urlData } = supabase.storage.from('issue-photos').getPublicUrl(path)
+            await (supabase as any).from('issue_photos').insert({ issue_id: created.id, photo_url: urlData.publicUrl, photo_path: path, phase: 'initial', uploaded_by: effectiveUser?.label || null, author_type: 'staff' })
+          }
+        } catch { /* photo is optional — don't fail the issue creation */ }
+      }
       try {
         const { notify } = await import('@/lib/notify')
         const trailing = [
@@ -228,6 +243,7 @@ export default function IssuesPage() {
       toast({ title: newForm.issue_type === 'guest_feedback' ? 'Guest feedback logged' : 'Issue logged' })
       setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
+      setNewPhoto(null)
       setNewForm({ ...newForm, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
     },
     onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
@@ -591,7 +607,7 @@ export default function IssuesPage() {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Last Touch (person responsible)</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Last Touch (person responsible) — optional</label>
               <select
                 value={newForm.last_touch}
                 onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))}
@@ -634,6 +650,23 @@ export default function IssuesPage() {
             <div>
               <label className="text-xs font-medium text-muted-foreground block mb-1">Slack Link</label>
               <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder="https://tendwell.slack.com/..." />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">Initial photo (optional)</label>
+              {newPhoto ? (
+                <div className="flex items-center gap-2 text-sm rounded-md border border-border px-3 h-9">
+                  <span className="truncate flex-1">{newPhoto.name}</span>
+                  <button type="button" onClick={() => setNewPhoto(null)} className="text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <Button type="button" variant="outline" size="sm" className="h-9 text-xs gap-1.5 w-full" onClick={() => {
+                  const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*'
+                  input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) setNewPhoto(f) }
+                  input.click()
+                }}>
+                  <Upload className="w-3.5 h-3.5" /> Add a photo (e.g. the dirty hot tub)
+                </Button>
+              )}
             </div>
             <Button className="w-full h-10" disabled={!newForm.property_name || !newForm.details || adding} onClick={() => addIssue()}>
               {adding ? 'Saving…' : (newForm.issue_type === 'guest_feedback' ? 'Save Feedback' : 'Log Issue')}
