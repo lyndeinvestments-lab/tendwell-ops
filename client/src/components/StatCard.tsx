@@ -46,9 +46,9 @@ export function StatCard({
           <div className="min-w-0">
             <p className="text-2xs text-muted-foreground font-medium uppercase tracking-wide truncate">{title}</p>
             {loading ? (
-              <Skeleton className="h-7 w-16 mt-1.5" />
+              <Skeleton className="h-8 w-16 mt-1.5" />
             ) : (
-              <p className="text-xl font-semibold tabular-nums mt-0.5">{value}</p>
+              <p className="text-2xl font-semibold tabular-nums mt-0.5 tracking-tight">{value}</p>
             )}
             {subtitle && !loading && (
               <p className="text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
@@ -57,7 +57,7 @@ export function StatCard({
           {Icon && (
             <div
               className={cn(
-                'w-8 h-8 shrink-0 rounded-md flex items-center justify-center',
+                'w-9 h-9 shrink-0 rounded-lg flex items-center justify-center',
                 tone === 'destructive' ? 'bg-destructive/10' : tone === 'warning' ? 'bg-warning/10' : tone === 'success' ? 'bg-success/10' : tone === 'info' ? 'bg-info/10' : 'bg-primary/10',
               )}
             >

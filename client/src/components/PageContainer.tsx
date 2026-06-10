@@ -26,7 +26,7 @@ export function PageContainer({
   className?: string
 }) {
   return (
-    <div className={cn('p-4 sm:p-6 space-y-4 w-full', WIDTHS[width], className)}>
+    <div className={cn('p-5 sm:p-7 space-y-5 w-full', WIDTHS[width], className)}>
       {children}
     </div>
   )
