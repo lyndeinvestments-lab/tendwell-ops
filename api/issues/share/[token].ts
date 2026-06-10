@@ -43,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (req.method === 'GET') {
       const comments = await sb(`issue_comments?issue_id=eq.${issue.id}&select=id,content,author_name,author_type,created_at&order=created_at.asc`)
-      const photos = await sb(`issue_photos?issue_id=eq.${issue.id}&select=id,photo_url,created_at&order=created_at.asc`)
+      const photos = await sb(`issue_photos?issue_id=eq.${issue.id}&select=id,photo_url,phase,created_at&order=created_at.asc`)
       return res.json({ issue, comments: comments || [], photos: photos || [] })
     }
 
@@ -61,7 +61,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'photo') {
         const photo_url = String(body.photo_url || '')
         if (!photo_url) return res.status(400).json({ error: 'No photo' })
-        await sb('issue_photos', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, photo_url, photo_path: body.photo_path || null, uploaded_by: author, author_type: 'cleaner' }) })
+        await sb('issue_photos', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, photo_url, photo_path: body.photo_path || null, phase: body.phase === 'completion' ? 'completion' : 'initial', uploaded_by: author, author_type: 'cleaner' }) })
         return res.json({ ok: true })
       }
 

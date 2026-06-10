@@ -56,7 +56,7 @@ export default function IssueSharePage() {
     finally { setBusy(null) }
   }
 
-  async function uploadPhoto(file: File) {
+  async function uploadPhoto(file: File, phase: 'initial' | 'completion') {
     if (!data?.issue?.id) return
     setBusy('photo')
     try {
@@ -65,7 +65,7 @@ export default function IssueSharePage() {
       const { error } = await supabase.storage.from('issue-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })
       if (error) throw error
       const { data: urlData } = supabase.storage.from('issue-photos').getPublicUrl(path)
-      await post('photo', { photo_url: urlData.publicUrl, photo_path: path })
+      await post('photo', { photo_url: urlData.publicUrl, photo_path: path, phase })
     } catch (e: any) { alert(e?.message || 'Photo upload failed') }
     finally { setBusy(null) }
   }
@@ -117,30 +117,38 @@ export default function IssueSharePage() {
           <Input value={name} onChange={e => rememberName(e.target.value)} placeholder="So we know who replied" className="h-9 text-sm" />
         </div>
 
-        {/* Photos */}
-        <div className="rounded-lg border border-border bg-background p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Photos ({photos.length})</span>
-            {!completed && (
-              <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" disabled={busy === 'photo'} onClick={() => {
-                const input = document.createElement('input')
-                input.type = 'file'; input.accept = 'image/*'; (input as any).capture = 'environment'
-                input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadPhoto(f) }
-                input.click()
-              }}>
-                {busy === 'photo' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Add Photo
-              </Button>
-            )}
-          </div>
-          {photos.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {photos.map((p: any) => (
-                <a key={p.id} href={p.photo_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30">
-                  <img src={p.photo_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                </a>
-              ))}
-            </div>
-          ) : <p className="text-xs text-muted-foreground">No photos yet. Add one so we can see the issue.</p>}
+        {/* Photos — before / after */}
+        <div className="rounded-lg border border-border bg-background p-4 space-y-3">
+          {([
+            { phase: 'initial' as const, label: 'Before' },
+            { phase: 'completion' as const, label: "After — shows it's done" },
+          ]).map(group => {
+            const gp = photos.filter((p: any) => (p.phase || 'initial') === group.phase)
+            return (
+              <div key={group.phase}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">{group.label} ({gp.length})</span>
+                  <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" disabled={busy === 'photo'} onClick={() => {
+                    const input = document.createElement('input')
+                    input.type = 'file'; input.accept = 'image/*'; (input as any).capture = 'environment'
+                    input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) uploadPhoto(f, group.phase) }
+                    input.click()
+                  }}>
+                    {busy === 'photo' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Add
+                  </Button>
+                </div>
+                {gp.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    {gp.map((p: any) => (
+                      <a key={p.id} href={p.photo_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30">
+                        <img src={p.photo_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                      </a>
+                    ))}
+                  </div>
+                ) : <p className="text-xs text-muted-foreground">{group.phase === 'initial' ? 'No before photos.' : 'Add a photo showing the finished work.'}</p>}
+              </div>
+            )
+          })}
         </div>
 
         {/* Comments */}

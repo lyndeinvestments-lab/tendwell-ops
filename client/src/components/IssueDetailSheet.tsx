@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink, Upload, Check, Loader2, MessageSquare, Image as ImageIcon, AlertTriangle, Link2 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
 
-const STATUSES = ['In Progress', 'Completed', 'Just FYI', 'Disregard']
+const STATUSES = ['Needs Attention', 'In Progress', 'Completed']
 
 export function IssueDetailSheet({
   issue,
@@ -78,7 +78,7 @@ export function IssueDetailSheet({
     onError: (e: any) => toast({ title: 'Update failed', description: e?.message, variant: 'destructive' }),
   })
 
-  async function handleUpload(file: File) {
+  async function handleUpload(file: File, phase: 'initial' | 'completion') {
     setUploading(true)
     try {
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
@@ -87,7 +87,7 @@ export function IssueDetailSheet({
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('issue-photos').getPublicUrl(path)
       const { error } = await (supabase as any).from('issue_photos').insert({
-        issue_id: issueId, photo_url: urlData.publicUrl, photo_path: path,
+        issue_id: issueId, photo_url: urlData.publicUrl, photo_path: path, phase,
         uploaded_by: effectiveUser?.label || null, author_type: 'staff',
       })
       if (error) throw error
@@ -175,30 +175,40 @@ export function IssueDetailSheet({
                 </div>
               ) : null)}
 
-              {/* Photos */}
-              <div className="pt-2 border-t border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> Photos ({photos?.length ?? 0})</span>
-                  {canEdit && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={uploading} onClick={() => {
-                      const input = document.createElement('input')
-                      input.type = 'file'; input.accept = 'image/*'
-                      input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleUpload(f) }
-                      input.click()
-                    }}>
-                      {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Add Photo
-                    </Button>
-                  )}
-                </div>
-                {photos && photos.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {photos.map((p: any) => (
-                      <a key={p.id} href={p.photo_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30 hover:opacity-80">
-                        <img src={p.photo_url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                      </a>
-                    ))}
-                  </div>
-                ) : <p className="text-xs text-muted-foreground">No photos yet.</p>}
+              {/* Photos — initial (before) and completion (after) */}
+              <div className="pt-2 border-t border-border space-y-3">
+                {([
+                  { phase: 'initial' as const, label: 'Initial / before' },
+                  { phase: 'completion' as const, label: 'Completion / after' },
+                ]).map(group => {
+                  const groupPhotos = (photos || []).filter((p: any) => (p.phase || 'initial') === group.phase)
+                  return (
+                    <div key={group.phase}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> {group.label} ({groupPhotos.length})</span>
+                        {canEdit && (
+                          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={uploading} onClick={() => {
+                            const input = document.createElement('input')
+                            input.type = 'file'; input.accept = 'image/*'
+                            input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) handleUpload(f, group.phase) }
+                            input.click()
+                          }}>
+                            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Add
+                          </Button>
+                        )}
+                      </div>
+                      {groupPhotos.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {groupPhotos.map((p: any) => (
+                            <a key={p.id} href={p.photo_url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30 hover:opacity-80">
+                              <img src={p.photo_url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                            </a>
+                          ))}
+                        </div>
+                      ) : <p className="text-xs text-muted-foreground">{group.phase === 'initial' ? 'No initial photos.' : 'No completion photos yet.'}</p>}
+                    </div>
+                  )
+                })}
               </div>
 
               {/* Comments */}
