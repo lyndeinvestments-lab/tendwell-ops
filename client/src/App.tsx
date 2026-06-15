@@ -44,6 +44,8 @@ function lazyRetry(factory: () => Promise<{ default: React.ComponentType<any> }>
 const DashboardPage = lazyRetry(() => import("@/pages/dashboard"));
 const PipelinePage = lazyRetry(() => import("@/pages/pipeline"));
 const CostTrackingPage = lazyRetry(() => import("@/pages/cost-tracking"));
+// Admin-only redesign preview sandbox (read-only). Safe to remove later.
+const TestPage = lazyRetry(() => import("@/pages/test"));
 const PropertyListPage = lazyRetry(() => import("@/pages/property-list"));
 const LinenTrackerPage = lazyRetry(() => import("@/pages/linen-tracker"));
 const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
@@ -173,6 +175,17 @@ function GuardedRoute({ viewId, component: Component }: { viewId: string | strin
   return <Component />;
 }
 
+// Strict admin-only route guard. Used by the /test redesign preview so only
+// admins can reach it, regardless of per-view permission config. Emulated
+// sessions (admin viewing-as another user) are treated as non-admin.
+function AdminRoute({ component: Component }: { component: ComponentType }) {
+  const { effectiveUser, isEmulating } = useAuth();
+  if (isEmulating || !effectiveUser || effectiveUser.role !== "admin") {
+    return <NoAccess />;
+  }
+  return <Component />;
+}
+
 function AppRoutes() {
   const { user, effectiveUser, isLoading } = useAuth();
   const [location, setLocation] = useLocation();
@@ -215,6 +228,8 @@ function AppRoutes() {
             with either the legacy `master-list` view or the `cost-tracking`
             view can access it. */}
         <Route path="/master-list">{() => <GuardedRoute viewId={["cost-tracking", "master-list"]} component={CostTrackingPage} />}</Route>
+        {/* Admin-only redesign preview of the Master List (read-only sandbox). */}
+        <Route path="/test">{() => <AdminRoute component={TestPage} />}</Route>
         <Route path="/property-list">{() => <GuardedRoute viewId="property-list" component={PropertyListPage} />}</Route>
         <Route path="/linen-tracker">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
         {/* Alias: production QA hits /linen-requirements (404'd before this PR).
