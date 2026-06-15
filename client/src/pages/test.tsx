@@ -1290,19 +1290,32 @@ export default function TestPage() {
                         onValueChange={v => v && v !== String(p.stage_id) && changeStage({ id: p.id, stageId: v })}
                       >
                         <SelectTrigger
-                          className="h-6 px-1.5 py-0.5 text-xs font-medium gap-1 w-auto border bg-transparent"
+                          className="h-7 w-auto gap-1.5 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-foreground shadow-none hover:bg-muted/60 focus:ring-0 focus:ring-offset-0 [&>svg]:opacity-50"
                           data-testid={`row-stage-${p.id}`}
                         >
-                          <SelectValue><StageBadge stage={p.stage_name} /></SelectValue>
+                          <SelectValue>
+                            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                              <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
+                              {p.stage_name || '—'}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {(stages || []).map((s: any) => (
-                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${STAGE_DOT[s.name] || 'bg-muted-foreground/40'}`} />
+                                {s.name}
+                              </span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                      <StageBadge stage={p.stage_name} />
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+                        <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
+                        {p.stage_name || '—'}
+                      </span>
                     )}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>
