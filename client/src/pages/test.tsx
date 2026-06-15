@@ -1007,7 +1007,10 @@ export default function TestPage() {
       const t = profitTier(p.profit_percentage)
       if (t) tiers[t]++
     }
-    return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct, tiers }
+    const dcCostTotal = filtered.reduce((s: number, p: any) => s + (Number(p.estimated_deep_clean_cost) || 0), 0)
+    const dcIncomeTotal = filtered.reduce((s: number, p: any) => s + (Number(p.deep_clean_3x_ce) || 0), 0)
+    const dcProfitTotal = filtered.reduce((s: number, p: any) => s + (Number(p.profit_deep_clean) || 0), 0)
+    return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct, tiers, dcCostTotal, dcIncomeTotal, dcProfitTotal }
   }, [filtered])
 
   function exportCsv() {
@@ -1697,6 +1700,9 @@ export default function TestPage() {
                 <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
                 <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
                 <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
+                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcCostTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcIncomeTotal)}</td>
+                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcProfitTotal)}</td>
               </tr>
             )}
           </tbody>
