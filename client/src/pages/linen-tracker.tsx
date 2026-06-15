@@ -539,10 +539,13 @@ export default function LinenTrackerPage() {
               })
             )}
             {!isLoading && companyTotals && filtered.length > 0 && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
-                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-20 bg-muted">Company Totals ({properties?.length})</td>
+              <tr className="font-semibold">
+                {/* Cell-level sticky with opaque bg so the whole totals row stays
+                    frozen; first cell pinned left z-20 (above the body's
+                    sticky-left column z-10) so it isn't painted over. */}
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 bottom-0 z-20 bg-muted border-t-2 border-border">Company Totals ({properties?.length})</td>
                 {LINEN_COLS.map(c => (
-                  <td key={c.key} className="py-2 px-3 text-xs tabular-nums font-semibold">
+                  <td key={c.key} className="py-2 px-3 text-xs tabular-nums font-semibold sticky bottom-0 z-10 bg-muted border-t-2 border-border">
                     {c.key === 'linen_notes' ? '' : companyTotals[c.key]?.toLocaleString() ?? 0}
                   </td>
                 ))}
