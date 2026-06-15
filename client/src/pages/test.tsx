@@ -1688,21 +1688,24 @@ export default function TestPage() {
               ))
             )}
             {totals && !isLoading && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
-                <td colSpan={4} className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcCostTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcIncomeTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcProfitTotal)}</td>
+              <tr className="font-semibold">
+                {/* Cell-level sticky (not row-level) so it pins reliably; the first
+                    cell also pins left at z-20 so it stays above the body's
+                    sticky-left Property column (z-10) instead of being painted over. */}
+                <td colSpan={4} className="sticky bottom-0 left-0 z-20 bg-muted border-t-2 border-border py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcCostTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcIncomeTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcProfitTotal)}</td>
               </tr>
             )}
           </tbody>
