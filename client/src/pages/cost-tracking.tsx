@@ -20,7 +20,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAppSettings } from '@/hooks/use-app-settings'
-import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink, Trash2 } from 'lucide-react'
+import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink, Trash2, TrendingUp, Wallet, Percent } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
@@ -29,12 +29,22 @@ import { TablePagination } from '@/components/TablePagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/lib/auth'
 import Papa from 'papaparse'
-import { profitTier } from '@/lib/profit-colors'
+import { profitTier, profitColorClass, PROFIT_THRESHOLDS } from '@/lib/profit-colors'
 import { Link } from 'wouter'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage' | 'break_even_ce'
 
 const STATUS_OPTIONS = ['Active', 'Onboarding', 'Offboarding', 'Offboarded']
+
+// Small status dots for the segmented filter pills (redesign look).
+const STAGE_DOT: Record<string, string> = {
+  Active: 'bg-success',
+  Onboarding: 'bg-info',
+  Offboarding: 'bg-warning',
+  Quote: 'bg-primary',
+  Lead: 'bg-muted-foreground/50',
+  Offboarded: 'bg-muted-foreground/30',
+}
 
 function ProfitBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>
@@ -70,6 +80,72 @@ function StageBadge({ stage }: { stage: string | null }) {
 function fmt(n: number | null | undefined) {
   if (n == null) return '—'
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+// Compact money for the big KPI tiles: $12.3k / $1.2M
+function fmtCompact(n: number | null | undefined) {
+  if (n == null) return '—'
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (abs >= 1_000) return `$${(n / 1_000).toFixed(1)}k`
+  return `$${n.toFixed(0)}`
+}
+
+// Profit % rendered as number + a thin tier-colored meter bar (0–30% scale).
+// Replaces the plain ProfitBadge in the Profit % column for the redesign look.
+function MarginMeter({ pct }: { pct: number | null | undefined }) {
+  if (pct == null) return <span className="text-muted-foreground text-xs">—</span>
+  const t = profitTier(pct)
+  const barColor = t === 'high' ? 'bg-success' : t === 'mid' ? 'bg-warning' : 'bg-destructive'
+  const width = Math.max(4, Math.min(100, (pct / 30) * 100))
+  return (
+    <div className="flex items-center gap-2 min-w-[6.5rem]">
+      <span className={`tabular-nums text-xs font-semibold w-11 text-right ${profitColorClass(pct)}`} data-testid={`badge-profit-${Math.round(pct)}`}>
+        {pct.toFixed(1)}%
+      </span>
+      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// Hero KPI tile for the redesign band.
+function Kpi({
+  icon: Icon, label, value, sub, accent = 'primary', children,
+}: {
+  icon: typeof DollarSignIcon
+  label: string
+  value: string
+  sub?: string
+  accent?: 'primary' | 'success' | 'warning' | 'destructive'
+  children?: React.ReactNode
+}) {
+  const ring = {
+    primary: 'from-primary/12 to-primary/[0.02] ring-primary/15',
+    success: 'from-success/12 to-success/[0.02] ring-success/15',
+    warning: 'from-warning/12 to-warning/[0.02] ring-warning/15',
+    destructive: 'from-destructive/12 to-destructive/[0.02] ring-destructive/15',
+  }[accent]
+  const iconTone = {
+    primary: 'text-primary bg-primary/10',
+    success: 'text-success bg-success/10',
+    warning: 'text-warning bg-warning/10',
+    destructive: 'text-destructive bg-destructive/10',
+  }[accent]
+  return (
+    <div className={`relative rounded-2xl border border-border/60 bg-gradient-to-br ${ring} ring-1 p-4 shadow-sm`}>
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <p className="text-2xs uppercase tracking-wider text-muted-foreground font-medium">{label}</p>
+          <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight">{value}</p>
+          {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
+        </div>
+        <span className={`shrink-0 rounded-xl p-2 ${iconTone}`}><Icon className="w-4 h-4" /></span>
+      </div>
+      {children}
+    </div>
+  )
 }
 
 // Editable variants used inside the expanded master-list row. The user
@@ -926,7 +1002,15 @@ export default function CostTrackingPage() {
       : filtered.length > 0
         ? filtered.reduce((s: number, p: any) => s + (p.profit_percentage || 0), 0) / filtered.length
         : 0
-    return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct }
+    const tiers = { high: 0, mid: 0, low: 0 }
+    for (const p of filtered) {
+      const t = profitTier(p.profit_percentage)
+      if (t) tiers[t]++
+    }
+    const dcCostTotal = filtered.reduce((s: number, p: any) => s + (Number(p.estimated_deep_clean_cost) || 0), 0)
+    const dcIncomeTotal = filtered.reduce((s: number, p: any) => s + (Number(p.deep_clean_3x_ce) || 0), 0)
+    const dcProfitTotal = filtered.reduce((s: number, p: any) => s + (Number(p.profit_deep_clean) || 0), 0)
+    return { ceTotal, payTotal, laundryTotal, consumablesTotal, costTotal, profitTotal, avgProfitPct, tiers, dcCostTotal, dcIncomeTotal, dcProfitTotal }
   }, [filtered])
 
   function exportCsv() {
@@ -978,28 +1062,33 @@ export default function CostTrackingPage() {
         title="Master List · Cost Tracking"
         subtitle="Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates)."
         beneath={!isLoading && Object.keys(stageTally).length > 0 ? (
-          <div className="flex items-center gap-1.5 flex-wrap" data-testid="stage-tally">
-            <span className="text-xs text-muted-foreground">Showing:</span>
+          <div className="flex items-center gap-1 rounded-xl bg-muted/60 p-1 overflow-x-auto w-fit max-w-full" data-testid="stage-tally">
+            <button
+              type="button"
+              onClick={() => { setStatusFilter('all'); setPage(1) }}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${statusFilter === 'all' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+              data-testid="tally-all"
+            >
+              All <span className="tabular-nums text-muted-foreground">{displayProperties.length}</span>
+            </button>
             {(['Active', 'Onboarding', 'Offboarding', 'Lead', 'Quote', 'Offboarded'] as const).map(stage => {
               const n = stageTally[stage] || 0
               if (n === 0) return null
+              const active = statusFilter === stage
               return (
                 <button
                   key={stage}
                   type="button"
-                  onClick={() => { setStatusFilter(statusFilter === stage ? 'all' : stage); setPage(1) }}
-                  className="cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/40 rounded"
+                  onClick={() => { setStatusFilter(active ? 'all' : stage); setPage(1) }}
+                  className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
                   title={`Filter to ${stage}`}
                   data-testid={`tally-${stage}`}
                 >
-                  <span className="inline-flex items-center gap-1 align-middle">
-                    <StageBadge stage={stage} />
-                    <span className={`text-xs font-semibold ${statusFilter === stage ? 'text-primary' : 'text-foreground'}`}>{n}</span>
-                  </span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${STAGE_DOT[stage] || 'bg-muted-foreground/50'}`} />
+                  {stage} <span className="tabular-nums text-muted-foreground">{n}</span>
                 </button>
               )
             })}
-            <span className="text-xs text-muted-foreground">· Total {displayProperties.length}</span>
           </div>
         ) : undefined}
         actions={<div className="flex items-center gap-2 flex-wrap">
@@ -1058,7 +1147,51 @@ export default function CostTrackingPage() {
         </div>}
       />
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {/* ── Hero KPI band (redesign) ─────────────────────────────────── */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {[0, 1, 2, 3].map(i => <Skeleton key={i} className="h-28 rounded-2xl" />)}
+        </div>
+      ) : totals ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <Kpi icon={DollarSignIcon} label="Client Charged" value={fmtCompact(totals.ceTotal)} sub={`${filtered.length} properties`} accent="primary" />
+          <Kpi icon={Wallet} label="Total Cost" value={fmtCompact(totals.costTotal)} sub="Estimated per turn" accent="warning" />
+          <Kpi
+            icon={TrendingUp}
+            label="Net Profit"
+            value={fmtCompact(totals.profitTotal)}
+            sub="Across filtered set"
+            accent={totals.profitTotal >= 0 ? 'success' : 'destructive'}
+          />
+          <Kpi
+            icon={Percent}
+            label="Avg Margin"
+            value={`${totals.avgProfitPct.toFixed(1)}%`}
+            accent={profitTier(totals.avgProfitPct) === 'high' ? 'success' : profitTier(totals.avgProfitPct) === 'mid' ? 'warning' : 'destructive'}
+          >
+            {(() => {
+              const tt = totals.tiers.high + totals.tiers.mid + totals.tiers.low
+              const w = (n: number) => (tt > 0 ? (n / tt) * 100 : 0)
+              return (
+                <div className="mt-3">
+                  <div className="flex h-2 rounded-full overflow-hidden bg-muted">
+                    <div className="bg-success" style={{ width: `${w(totals.tiers.high)}%` }} />
+                    <div className="bg-warning" style={{ width: `${w(totals.tiers.mid)}%` }} />
+                    <div className="bg-destructive" style={{ width: `${w(totals.tiers.low)}%` }} />
+                  </div>
+                  <div className="mt-1.5 flex justify-between text-2xs text-muted-foreground tabular-nums">
+                    <span className="text-success">●{totals.tiers.high} ≥{PROFIT_THRESHOLDS.high}%</span>
+                    <span className="text-warning">●{totals.tiers.mid}</span>
+                    <span className="text-destructive">●{totals.tiers.low} &lt;{PROFIT_THRESHOLDS.mid}%</span>
+                  </div>
+                </div>
+              )
+            })()}
+          </Kpi>
+        </div>
+      ) : null}
+
+      <div className="overflow-auto flex-1 rounded-2xl border border-border/60 bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -1160,19 +1293,32 @@ export default function CostTrackingPage() {
                         onValueChange={v => v && v !== String(p.stage_id) && changeStage({ id: p.id, stageId: v })}
                       >
                         <SelectTrigger
-                          className="h-6 px-1.5 py-0.5 text-xs font-medium gap-1 w-auto border bg-transparent"
+                          className="h-7 w-auto gap-1.5 rounded-lg border-0 bg-transparent px-2 text-xs font-medium text-foreground shadow-none hover:bg-muted/60 focus:ring-0 focus:ring-offset-0 [&>svg]:opacity-50"
                           data-testid={`row-stage-${p.id}`}
                         >
-                          <SelectValue><StageBadge stage={p.stage_name} /></SelectValue>
+                          <SelectValue>
+                            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                              <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
+                              {p.stage_name || '—'}
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {(stages || []).map((s: any) => (
-                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                            <SelectItem key={s.id} value={String(s.id)} className="text-xs">
+                              <span className="inline-flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${STAGE_DOT[s.name] || 'bg-muted-foreground/40'}`} />
+                                {s.name}
+                              </span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     ) : (
-                      <StageBadge stage={p.stage_name} />
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+                        <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
+                        {p.stage_name || '—'}
+                      </span>
                     )}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>
@@ -1255,7 +1401,7 @@ export default function CostTrackingPage() {
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(trashCost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.total_estimated_cost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
-                  <td className="py-2 px-3"><ProfitBadge pct={p.profit_percentage} /></td>
+                  <td className="py-2 px-3"><MarginMeter pct={p.profit_percentage} /></td>
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">
                     {p.total_estimated_cost != null ? '$' + (p.total_estimated_cost / (1 - breakEvenMargin)).toFixed(2) : '—'}
                   </td>
@@ -1542,18 +1688,24 @@ export default function CostTrackingPage() {
               ))
             )}
             {totals && !isLoading && (
-              <tr className="bg-muted/60 border-t-2 border-border font-semibold sticky bottom-0">
-                <td colSpan={4} className="py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
-                <td className="py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
-                <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
+              <tr className="font-semibold">
+                {/* Cell-level sticky (not row-level) so it pins reliably; the first
+                    cell also pins left at z-20 so it stays above the body's
+                    sticky-left Property column (z-10) instead of being painted over. */}
+                <td colSpan={4} className="sticky bottom-0 left-0 z-20 bg-muted border-t-2 border-border py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{totals.avgProfitPct.toFixed(1)}%</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground italic">{fmt(totals.costTotal / (1 - breakEvenMargin))}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcCostTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcIncomeTotal)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(totals.dcProfitTotal)}</td>
               </tr>
             )}
           </tbody>
