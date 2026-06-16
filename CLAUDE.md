@@ -274,6 +274,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 - `20260401_security_rls.sql` — enables RLS on all tables, creates `current_user_role()` helper, restricts `app_users`/`app_settings` to admin writes
 - `20260402_alert_dismissals.sql` — creates `alert_dismissals` table for persistent dismissal/snooze state
 - `20260402_inspections_cleaner.sql` — adds `cleaner_id` FK to `inspections` for quality attribution
+- `20260616_fix_zero_laundry_consumables.sql` — fixes 30+ properties stuck at $0 laundry/consumables (a 2026-06-09 bulk import wrote literal `0`s, which the recalc trigger only auto-fills when `NULL`). Adds an INSERT-time guard treating an explicit `0` as "unset" (UPDATE still preserves a deliberate `0`), and backfills affected rows via null-and-recompute.
 
 ---
 
