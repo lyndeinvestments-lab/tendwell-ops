@@ -116,23 +116,27 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
       id={`col-${stage.name}`}
       className={`flex flex-col h-full ${collapsed ? 'min-w-[140px] max-w-[140px]' : 'min-w-[220px] max-w-[240px]'}`}
     >
-      <div className="flex items-center gap-1.5 mb-2 px-1 flex-shrink-0">
+      {/* Redesign: tinted stage-color header chip + count pill */}
+      <div
+        className="flex items-center gap-1.5 mb-2 px-2 py-1.5 rounded-xl flex-shrink-0 border border-border/40"
+        style={{ backgroundColor: `${color}14` }}
+      >
         <button
           onClick={onToggleCollapse}
-          className="p-0.5 rounded hover:bg-muted transition-colors"
+          className="p-0.5 rounded-md hover:bg-background/60 transition-colors"
           data-testid={`toggle-collapse-${stage.name}`}
           aria-label={collapsed ? `Expand ${stage.name} column` : `Collapse ${stage.name} column`}
         >
           {collapsed ? <ChevronRight className="w-3 h-3 text-muted-foreground" /> : <ChevronDown className="w-3 h-3 text-muted-foreground" />}
         </button>
-        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground truncate">{stage.name}</span>
-        <span className="text-xs text-muted-foreground ml-auto tabular-nums flex-shrink-0">{properties.length}</span>
+        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-background" style={{ backgroundColor: color }} />
+        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80 truncate">{stage.name}</span>
+        <span className="ml-auto text-2xs font-semibold tabular-nums bg-background/70 text-foreground rounded-full px-1.5 py-0.5 flex-shrink-0">{properties.length}</span>
       </div>
       <div
         ref={setNodeRef}
         data-testid={`column-${stage.name}`}
-        className={`flex-1 rounded-lg p-2 space-y-1.5 transition-colors ${isOver ? 'bg-primary/5 ring-1 ring-primary/30' : 'bg-muted/40'}`}
+        className={`flex-1 rounded-2xl p-2 space-y-2 transition-colors ${isOver ? 'bg-primary/10 ring-2 ring-primary/40' : 'bg-muted/40'}`}
       >
         {collapsed ? (
           <div className="flex items-center justify-center py-4 h-full">
@@ -200,7 +204,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         data-testid={`card-property-${property.id}`}
         data-property-id={property.id}
         onClick={handleNameClick}
-        className={`bg-card border border-card-border rounded px-2 py-1 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
+        className={`bg-card border border-card-border rounded-lg px-2.5 py-1.5 shadow-sm cursor-grab active:cursor-grabbing select-none transition-all hover:shadow hover:border-primary/40 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
       >
         <div className="flex items-center justify-between gap-1">
           <button
@@ -241,9 +245,10 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       data-testid={`card-property-${property.id}`}
       data-property-id={property.id}
       onClick={handleNameClick}
-      className={`relative group bg-card border border-card-border rounded-md p-2.5 cursor-grab active:cursor-grabbing select-none transition-opacity hover:border-primary/30 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
+      style={{ borderLeftColor: stageColor, borderLeftWidth: 3 }}
+      className={`relative group bg-card border border-card-border rounded-xl p-3 pl-3.5 shadow-sm cursor-grab active:cursor-grabbing select-none transition-all hover:shadow-md hover:-translate-y-px hover:border-primary/40 ${isDragging ? 'opacity-30' : 'opacity-100'}`}
     >
-      <GripVertical className="w-3 h-3 text-muted-foreground/40 absolute top-2 left-1 group-hover:text-muted-foreground transition-opacity" />
+      <GripVertical className="w-3 h-3 text-muted-foreground/40 absolute top-2.5 right-1.5 group-hover:text-muted-foreground transition-opacity" />
       <span className="text-xs font-semibold text-foreground leading-snug hover:underline text-left w-full block">
         {property.name}
       </span>
@@ -322,7 +327,7 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
 
 function PropertyCardOverlay({ property }: { property: any }) {
   return (
-    <div className="bg-card border border-primary/40 rounded-md p-2.5 shadow-lg w-[220px] cursor-grabbing">
+    <div className="bg-card border border-primary/40 rounded-xl p-3 shadow-xl w-[220px] cursor-grabbing rotate-2">
       <p className="text-xs font-semibold text-foreground">{property.name}</p>
       {property.contacts?.full_name && <p className="text-xs text-muted-foreground mt-0.5">{property.contacts.full_name}</p>}
     </div>
