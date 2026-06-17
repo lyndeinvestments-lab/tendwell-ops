@@ -408,7 +408,7 @@ export default function InspectionsPage() {
           <TabsTrigger value="priority" data-testid="tab-priority">Priority Dashboard</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
         </TabsList>
-        <TabsContent value="priority" className="flex-1 overflow-y-auto mt-3">
+        <TabsContent value="priority" className="flex-1 flex flex-col min-h-0 mt-3">
           <InspectionPriorityDashboard />
         </TabsContent>
         <TabsContent value="history" className="flex-1 flex flex-col min-h-0 mt-3 space-y-4">

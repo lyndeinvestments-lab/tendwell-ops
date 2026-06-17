@@ -267,7 +267,7 @@ export function InspectionPriorityDashboard() {
   const tomorrow = format(new Date(Date.now() + 86400000), 'yyyy-MM-dd')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 flex flex-col flex-1 min-h-0">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <SummaryCard label="Critical" value={summary.critical} hint="Priority ≥ 85" tone="critical" icon={<AlertTriangle className="w-4 h-4" />} />
         <SummaryCard label="High" value={summary.high} hint="Priority 65–84" tone="high" icon={<Sparkles className="w-4 h-4" />} />
@@ -324,7 +324,7 @@ export function InspectionPriorityDashboard() {
       ) : filtered.length === 0 ? (
         <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No properties match.</CardContent></Card>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-2xl border border-border shadow-sm overflow-y-auto flex-1 min-h-0">
           {filtered.map((a, idx) => {
             const isWorking = working === a.property.id
             const pickedDate = scheduleFor[a.property.id]
