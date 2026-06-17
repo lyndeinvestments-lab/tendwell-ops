@@ -1,5 +1,6 @@
 import { useLocation, Link } from 'wouter'
 import { useAuth } from '@/lib/auth'
+import { roleBadgeClasses } from '@/lib/role-colors'
 import { useTheme } from 'next-themes'
 import { useState, useEffect } from 'react'
 import {
@@ -212,7 +213,9 @@ export function AppSidebar() {
               {user.label || 'Signed in'}
             </div>
             {effectiveUser?.role && (
-              <div className="text-[10px] text-muted-foreground capitalize truncate">{effectiveUser.role}</div>
+              <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium capitalize ${roleBadgeClasses(effectiveUser.role)}`}>
+                {effectiveUser.role}
+              </span>
             )}
           </div>
         </div>

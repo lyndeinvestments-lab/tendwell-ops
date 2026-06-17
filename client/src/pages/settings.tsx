@@ -17,6 +17,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { StatusTone, TONE_SOFT } from '@/lib/status-colors'
+import { roleBadgeClasses } from '@/lib/role-colors'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
@@ -37,18 +39,11 @@ const SYSTEM_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
-const ROLE_TONES: Record<string, StatusTone> = {
-  admin: 'primary',
-  operations: 'info',
-  cleaning: 'warning',
-  viewer: 'neutral',
-}
-
 function RoleBadge({ role }: { role: string }) {
   return (
-    <StatusBadge tone={ROLE_TONES[role] ?? 'warning'} className="capitalize">
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium capitalize whitespace-nowrap ${roleBadgeClasses(role)}`}>
       {role}
-    </StatusBadge>
+    </span>
   )
 }
 
@@ -454,16 +449,17 @@ function AppSettingsSection() {
   const { toast } = useToast()
   const { get, saveSetting } = useAppSettings()
 
+  // NOTE: only settings that are actually read by the app are surfaced here.
+  // (default_cleaner_pay, followup_reminder_days, stale_lead_days,
+  // inspection_interval_days were editable but nothing read them — removed to
+  // avoid implying they do something.)
   const ALL_FIELDS = [
     { key: 'cost_inspection', label: 'Inspection Cost ($)', placeholder: '15', section: 'cost' },
     { key: 'cost_trash', label: 'Trash Cost ($)', placeholder: '5', section: 'cost' },
-    { key: 'default_cleaner_pay', label: 'Default Cleaner Pay ($)', placeholder: '75', section: 'cost' },
-    { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '30', section: 'profit' },
-    { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '15', section: 'profit' },
+    { key: 'profit_tier_high', label: 'High Tier Threshold (%)', placeholder: '18', section: 'profit' },
+    { key: 'profit_tier_mid', label: 'Mid Tier Threshold (%)', placeholder: '14', section: 'profit' },
+    { key: 'break_even_target_margin', label: 'Break-Even Target Margin (decimal, e.g. 0.20 = 20%)', placeholder: '0.20', section: 'profit' },
     { key: 'ac_filter_interval', label: 'Replacement Interval (days)', placeholder: '90', section: 'ac' },
-    { key: 'followup_reminder_days', label: 'Follow-Up Reminder Window (days)', placeholder: '7', section: 'ops' },
-    { key: 'stale_lead_days', label: 'Stale Lead Threshold (days)', placeholder: '14', section: 'ops' },
-    { key: 'inspection_interval_days', label: 'Inspection Reminder Interval (days)', placeholder: '90', section: 'ops' },
     { key: 'amenity_bathroom', label: 'Bathroom Amenities ($ per bathroom)', placeholder: '1.05', section: 'amenity' },
     { key: 'amenity_toilet_paper', label: 'Toilet Paper ($ per bathroom)', placeholder: '0.78', section: 'amenity' },
     { key: 'amenity_kitchen', label: 'Kitchen Supplies ($ per kitchen)', placeholder: '2.05', section: 'amenity' },
@@ -490,7 +486,6 @@ function AppSettingsSection() {
   const AMENITY_FIELDS = ALL_FIELDS.filter(f => f.section === 'amenity')
   const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
   const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
-  const OPS_FIELDS = ALL_FIELDS.filter(f => f.section === 'ops')
   const ACCESS_FIELDS = ALL_FIELDS.filter(f => f.section === 'access')
 
   function FieldRow({ f }: { f: typeof ALL_FIELDS[number] }) {
@@ -542,7 +537,7 @@ function AppSettingsSection() {
           <TrendingUp className="w-4 h-4" />
           Profit Tiers
         </h2>
-        <p className="text-xs text-muted-foreground">Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard</p>
+        <p className="text-xs text-muted-foreground">Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard. Break-even target margin drives the break-even flag on Cost Tracking.</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {PROFIT_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -556,17 +551,6 @@ function AppSettingsSection() {
         <p className="text-xs text-muted-foreground">Default interval for AC filter replacement reminders</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {AC_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
-        </div>
-      </div>
-
-      <div className="space-y-3">
-        <h2 className="text-base font-medium flex items-center gap-2">
-          <CalendarDays className="w-4 h-4" />
-          Operational Thresholds
-        </h2>
-        <p className="text-xs text-muted-foreground">Configure when follow-up reminders, stale alerts, and inspection warnings trigger</p>
-        <div className="rounded-lg border border-border p-4 space-y-3">
-          {OPS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
       </div>
 
@@ -2001,14 +1985,39 @@ export default function SettingsPage() {
         subtitle="Manage users, permissions, integrations, and application settings"
       />
 
-      <UsersSection />
-      <PermissionsSection />
-      <RoleDescriptions />
-      <IntegrationsSection />
-      <NotificationsSection />
-      <WorkflowTemplatesSection />
-      <AppSettingsSection />
-      <OnboardingTemplateSection />
+      <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0">
+        <TabsList className="self-start flex-wrap h-auto">
+          <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
+          <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
+          <TabsTrigger value="templates" data-testid="tab-templates">Templates</TabsTrigger>
+          <TabsTrigger value="integrations" data-testid="tab-integrations">Integrations</TabsTrigger>
+        </TabsList>
+
+        <div className="flex-1 overflow-y-auto mt-4">
+          <TabsContent value="users" className="mt-0">
+            <UsersSection />
+          </TabsContent>
+          <TabsContent value="roles" className="mt-0 space-y-6">
+            <PermissionsSection />
+            <RoleDescriptions />
+          </TabsContent>
+          <TabsContent value="notifications" className="mt-0">
+            <NotificationsSection />
+          </TabsContent>
+          <TabsContent value="app" className="mt-0">
+            <AppSettingsSection />
+          </TabsContent>
+          <TabsContent value="templates" className="mt-0 space-y-6">
+            <WorkflowTemplatesSection />
+            <OnboardingTemplateSection />
+          </TabsContent>
+          <TabsContent value="integrations" className="mt-0">
+            <IntegrationsSection />
+          </TabsContent>
+        </div>
+      </Tabs>
     </PageContainer>
   )
 }
