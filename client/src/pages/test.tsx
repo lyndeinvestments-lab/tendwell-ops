@@ -1,571 +1,379 @@
-import { useState, useMemo } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { supabase, logActivity } from '@/lib/supabase'
-import { useAuth, canEditView } from '@/lib/auth'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useToast } from '@/hooks/use-toast'
-import { usePageTitle } from '@/hooks/use-page-title'
-import { EmptyState } from '@/components/EmptyState'
-import { ContactModal } from '@/components/ContactModal'
-import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { useState, useMemo, useEffect } from 'react'
 import { TablePagination } from '@/components/TablePagination'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { useAuth } from '@/lib/auth'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { usePropertyModal } from '@/hooks/use-property-modal'
+import { useToast } from '@/hooks/use-toast'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { Search, X, Download, Building2, DoorOpen, CheckCircle2, LogOut, ArrowUpDown, ArrowUp, ArrowDown, FlaskConical } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
-import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge, FlaskConical, UserPlus, Building2, AlertCircle } from 'lucide-react'
 import Papa from 'papaparse'
-import { format } from 'date-fns'
-import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
 
-const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
-const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6']
-
-type SortKey = 'full_name' | 'company' | 'email' | 'phone' | 'source' | 'payment_method' | 'client_since' | 'properties' | 'tags'
-type SortDir = 'asc' | 'desc'
-
-function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
-  label: string; sortKey: SortKey; currentSort: SortKey; currentDir: SortDir; onSort: (k: SortKey) => void
+function StageBadgePopover({ propertyId, propertyName, currentStageName, stageColor, stages }: {
+  propertyId: string; propertyName: string; currentStageName: string; stageColor: string; stages: any[]
 }) {
-  const active = currentSort === sortKey
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const { effectiveUser } = useAuth()
+
+  const { mutate: changeStage } = useGuardedMutation('property-list', {
+    mutationFn: async (stageId: string) => {
+      const fromStage = stages.find((s: any) => s.name === currentStageName)
+      const toStage = stages.find((s: any) => s.id === stageId)
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(propertyId),
+        propertyName: propertyName,
+        fromStageId: Number(fromStage?.id),
+        fromStageName: fromStage?.name || '',
+        toStageId: Number(stageId),
+        toStageName: toStage?.name || '',
+        changedBy: effectiveUser?.label || 'unknown',
+      })
+      if (!result.ok) throw new Error(result.error)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      toast({ title: 'Stage updated' })
+      setOpen(false)
+    },
+    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+  })
+
   return (
-    <th
-      className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
-      onClick={() => onSort(sortKey)}
-      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(sortKey) } }}
-      tabIndex={0}
-      role="columnheader"
-      aria-sort={active ? (currentDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <span className="flex items-center gap-1">
-        {label}
-        {active ? (
-          currentDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
-        ) : (
-          <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
-        )}
-      </span>
-    </th>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          onClick={e => { e.stopPropagation(); setOpen(true) }}
+          className="text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all duration-300"
+          style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
+          title="Click to change stage"
+        >
+          {currentStageName}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-40 p-1" align="start" onClick={e => e.stopPropagation()}>
+        {stages.map((s: any) => (
+          <button
+            key={s.id}
+            onClick={() => changeStage(s.id)}
+            className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors ${s.name === currentStageName ? 'font-semibold bg-muted/50' : ''}`}
+          >
+            {s.name}
+          </button>
+        ))}
+      </PopoverContent>
+    </Popover>
   )
 }
 
 export default function TestPage() {
-  const { toast } = useToast()
-  usePageTitle('Clients — Redesign Preview')
+  usePageTitle('Property List — Redesign Preview')
+  const { openPropertyModal } = usePropertyModal()
   const [search, setSearch] = useState('')
-  const [sourceFilter, setSourceFilter] = useState(() => {
-    try { return localStorage.getItem('contacts_source_filter') || 'all' } catch { return 'all' }
-  })
-  const [paymentFilter, setPaymentFilter] = useState(() => {
-    try { return localStorage.getItem('contacts_payment_filter') || 'all' } catch { return 'all' }
-  })
-  const [sortKey, setSortKey] = useState<SortKey>(() => {
-    try { return (localStorage.getItem('contacts_sort_key') as SortKey) || 'full_name' } catch { return 'full_name' }
-  })
-  const [sortDir, setSortDir] = useState<SortDir>(() => {
-    try { return (localStorage.getItem('contacts_sort_dir') as SortDir) || 'asc' } catch { return 'asc' }
-  })
+  const [sortKey, setSortKey] = useState<string | null>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
+    }
+  }
+
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline w-3 h-3 ml-1" />
+      : <ArrowDown className="inline w-3 h-3 ml-1" />
+  }
+
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [modalContactId, setModalContactId] = useState<string | null>(null)
-  const [modalMode, setModalMode] = useState<'view' | 'create'>('view')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [sourceReportOpen, setSourceReportOpen] = useState(false)
-  const [duplicateOpen, setDuplicateOpen] = useState(false)
 
-  // Nested under the shared CONTACTS_QUERY_KEY prefix so any mutation that
-  // invalidates ['contacts'] (ContactModal create/update, merges, etc.) also
-  // refreshes this page's join query via TanStack's fuzzy key matching.
-  const { data: contacts, isLoading } = useQuery({
-    queryKey: [...CONTACTS_QUERY_KEY, 'with-property-counts'],
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    try { return localStorage.getItem('property-list-test-filter') || 'all' } catch { return 'all' }
+  })
+
+  useEffect(() => {
+    try { localStorage.setItem('property-list-test-filter', statusFilter) } catch { /* ignore */ }
+  }, [statusFilter])
+
+  const { data: properties, isLoading, isError, refetch } = useQuery({
+    queryKey: ['/supabase/properties-list'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('contacts')
-        .select('*, properties(id)')
+        .from('operational_properties')
+        .select('id, name, address, bedrooms, full_baths, guest_count, square_footage, cleaner_pay, stage_name, stage_color')
       if (error) throw error
       return data || []
     },
   })
 
-  function handleSort(key: SortKey) {
-    const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc'
-    setSortKey(key)
-    setSortDir(newDir)
-    try {
-      localStorage.setItem('contacts_sort_key', key)
-      localStorage.setItem('contacts_sort_dir', newDir)
-    } catch {}
-  }
+  const { data: stages } = usePipelineStages()
+
+  const total = properties?.length ?? 0
+  const countByStage = (name: string) => properties?.filter((p: any) => p.stage_name === name).length ?? 0
+
+  // Only show stages that actually appear in the operational data, in pipeline order.
+  const stagesInData = useMemo(() => {
+    if (!properties || !stages) return [] as any[]
+    const present = new Set(properties.map((p: any) => p.stage_name).filter(Boolean))
+    return stages.filter((s: any) => present.has(s.name))
+  }, [properties, stages])
 
   const filtered = useMemo(() => {
-    if (!contacts) return []
-    let result = contacts.filter((c: any) => {
-      const q = search.toLowerCase()
-      const matchSearch = !q || (c.full_name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))
-      const matchSource = sourceFilter === 'all' || c.source === sourceFilter
-      const matchPayment = paymentFilter === 'all' || c.payment_method === paymentFilter
-      return matchSearch && matchSource && matchPayment
+    if (!properties) return []
+    const base = properties.filter((p: any) => {
+      const matchSearch = p.name?.toLowerCase().includes(search.toLowerCase()) ||
+        p.address?.toLowerCase().includes(search.toLowerCase())
+      const matchStatus = !statusFilter || statusFilter === 'all' || p.stage_name === statusFilter
+      return matchSearch && matchStatus
     })
 
-    result.sort((a: any, b: any) => {
-      let cmp = 0
-      if (sortKey === 'full_name') {
-        cmp = (a.full_name || '').localeCompare(b.full_name || '')
-      } else if (sortKey === 'company') {
-        cmp = (a.company || '').localeCompare(b.company || '')
-      } else if (sortKey === 'email') {
-        cmp = (a.email || '').localeCompare(b.email || '')
-      } else if (sortKey === 'phone') {
-        cmp = (a.phone || '').localeCompare(b.phone || '')
-      } else if (sortKey === 'source') {
-        cmp = (a.source || '').localeCompare(b.source || '')
-      } else if (sortKey === 'payment_method') {
-        cmp = (a.payment_method || '').localeCompare(b.payment_method || '')
-      } else if (sortKey === 'client_since') {
-        cmp = (a.client_since || '').localeCompare(b.client_since || '')
-      } else if (sortKey === 'properties') {
-        cmp = (a.properties?.length || 0) - (b.properties?.length || 0)
-      } else if (sortKey === 'tags') {
-        const aLen = (a.tags || []).length
-        const bLen = (b.tags || []).length
-        if (aLen !== bLen) cmp = aLen - bLen
-        else cmp = (a.tags?.[0] || '').localeCompare(b.tags?.[0] || '')
+    if (!sortKey) return base
+
+    return [...base].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+      const av = sortKey === 'stage_name' ? (a.stage_name ?? null) : a[sortKey]
+      const bv = sortKey === 'stage_name' ? (b.stage_name ?? null) : b[sortKey]
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir
       }
-      return sortDir === 'desc' ? -cmp : cmp
+      return (av - bv) * dir
     })
-
-    return result
-  }, [contacts, search, sourceFilter, paymentFilter, sortKey, sortDir])
+  }, [properties, search, statusFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
-  function openContact(id: string) {
-    setModalContactId(id)
-    setModalMode('view')
-    setModalOpen(true)
-  }
-
-  function openCreateContact() {
-    setModalContactId(null)
-    setModalMode('create')
-    setModalOpen(true)
-  }
-
   function exportCsv() {
-    const rows = filtered.map((c: any) => ({
-      Name: c.full_name || '',
-      Company: c.company || '',
-      Email: c.email || '',
-      Phone: c.phone || '',
-      Source: c.source || '',
-      'Payment Method': c.payment_method || '',
-      'Client Since': c.client_since || '',
-      Properties: c.properties?.length || 0,
-      Tags: (c.tags || []).join(', '),
+    const rows = filtered.map((p: any) => ({
+      'Property': p.name || '',
+      'Address': p.address || '',
+      'Bedrooms': p.bedrooms ?? '',
+      'Full Baths': p.full_baths ?? '',
+      'Max Guests': p.guest_count ?? '',
+      'Sq Ft': p.square_footage ?? '',
+      'Cleaner Pay': p.cleaner_pay ?? '',
+      'Status': p.stage_name || '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `contacts-${format(new Date(), 'yyyy-MM-dd')}.csv`
-    a.click()
+    a.href = url; a.download = 'property-list.csv'; a.click()
     URL.revokeObjectURL(url)
-    toast({ title: `Exported ${rows.length} contacts` })
   }
-
-  // Source report data
-  const sourceReportData = useMemo(() => {
-    if (!contacts) return []
-    const map: Record<string, { total: number; withProperties: number }> = {}
-    for (const c of contacts) {
-      const src = c.source || 'Unknown'
-      if (!map[src]) map[src] = { total: 0, withProperties: 0 }
-      map[src].total++
-      if (c.properties && c.properties.length > 0) map[src].withProperties++
-    }
-    return Object.entries(map)
-      .map(([source, data]) => ({ source, ...data, conversion: data.total > 0 ? Math.round((data.withProperties / data.total) * 100) : 0 }))
-      .sort((a, b) => b.total - a.total)
-  }, [contacts])
 
   return (
     <PageContainer width="full" className="h-full flex flex-col">
       <PageHeader
-        title="Clients"
+        title="Property List"
         subtitle={
           <span className="inline-flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-2xs font-semibold px-2.5 py-1 ring-1 ring-primary/20">
               <FlaskConical className="w-3 h-3" /> Redesign proposal
             </span>
-            Manage clients and relationships
+            Operational properties — onboarding, active &amp; offboarding
           </span>
         }
-        actions={<div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search name, company, email…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              data-testid="input-search-contacts"
-              className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
-            />
-            {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <Select value={sourceFilter} onValueChange={v => { setSourceFilter(v); setPage(1); try { localStorage.setItem('contacts_source_filter', v) } catch {} }}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="All Sources" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Sources</SelectItem>
-              {SOURCE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={paymentFilter} onValueChange={v => { setPaymentFilter(v); setPage(1); try { localStorage.setItem('contacts_payment_filter', v) } catch {} }}>
-            <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="All Payments" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Payments</SelectItem>
-              {PAYMENT_OPTIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setSourceReportOpen(true)}>
-                <BarChart3 className="w-3.5 h-3.5" /> Source Report
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>View breakdown of how clients were sourced</TooltipContent>
-          </Tooltip>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)} disabled={filtered.length === 0}>
-            <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
-          </Button>
-          <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
-            <Plus className="w-3.5 h-3.5" /> Add Client
-          </Button>
-        </div>}
+        actions={
+          <>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search properties…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                data-testid="input-search-properties"
+                className="pl-8 pr-7 h-8 w-56 text-sm"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
+              <SelectTrigger data-testid="select-status-filter" className="h-8 w-44 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Operational ({total})</SelectItem>
+                {stagesInData.map((s: any) => (
+                  <SelectItem key={s.id} value={s.name}>{s.name} ({countByStage(s.name)})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportCsv}
+              disabled={filtered.length === 0}
+              className="h-8 text-xs gap-1.5"
+              data-testid="button-export-csv"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </Button>
+          </>
+        }
       />
 
-      {/* Redesign: summary strip — at-a-glance client stats */}
-      {!isLoading && (contacts?.length ?? 0) > 0 && (() => {
-        const list = contacts || []
-        const total = list.length
-        const since = Date.now() - 30 * 24 * 60 * 60 * 1000
-        const new30 = list.filter((c: any) => c.created_at && new Date(c.created_at).getTime() >= since).length
-        const unassigned = list.filter((c: any) => !(c.properties && c.properties.length > 0)).length
-        const totalProps = list.reduce((s: number, c: any) => s + (c.properties?.length || 0), 0)
-        const avgProps = total ? (totalProps / total) : 0
-        return (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Users className="w-3.5 h-3.5" /> Total Clients</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+        <>
+          {/* Redesign: summary strip — at-a-glance operational stats */}
+          {isLoading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-8 w-12 mt-2" />
+                </div>
+              ))}
             </div>
-            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> New (30d)</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{new30}</p>
-            </div>
-            <div className={`rounded-2xl border shadow-sm p-4 ${unassigned > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertCircle className="w-3.5 h-3.5" /> Unassigned</div>
-              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${unassigned > 0 ? 'text-warning' : ''}`}>{unassigned}</p>
-            </div>
-            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Avg Properties</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{avgProps.toFixed(1)}</p>
-            </div>
-          </div>
-        )
-      })()}
-
-      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
-            <tr>
-              <SortHeader label="Name" sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Company" sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Email" sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Phone" sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Source" sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Payment" sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Client Since" sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Properties" sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Tags" sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              [...Array(8)].map((_, i) => (
-                <tr key={i} className="border-b border-border/50">
-                  {[...Array(9)].map((_, j) => (
-                    <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
-                  ))}
-                </tr>
-              ))
-            ) : paged.length === 0 ? (
-              <tr>
-                <td colSpan={9}>
-                  {contacts && contacts.length === 0 ? (
-                    <EmptyState
-                      icon={Users}
-                      title="No clients yet"
-                      description="Add your first client to start tracking properties against contacts."
-                    />
-                  ) : (
-                    <div className="text-center py-12 text-muted-foreground text-sm">No clients match your filters</div>
-                  )}
-                </td>
-              </tr>
-            ) : (
-              paged.map((c: any) => (
-                <tr
-                  key={c.id}
-                  onClick={() => openContact(c.id)}
-                  className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer"
-                  data-testid={`row-contact-${c.id}`}
-                >
-                  <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.company || '—'}</td>
-                  <td className="py-2 px-3 text-xs">
-                    {c.email ? (
-                      <a href={`mailto:${c.email}`} onClick={e => e.stopPropagation()} className="text-primary hover:underline">{c.email}</a>
-                    ) : '—'}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
-                  <td className="py-2 px-3 text-xs">
-                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="py-2 px-3 text-xs">
-                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">—</span>}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
-                  <td className="py-2 px-3 text-xs">
-                    {(c.properties?.length || 0) > 0
-                      ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
-                      : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">none</span>}
-                  </td>
-                  <td className="py-2 px-3 text-xs">
-                    {(c.tags || []).length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {c.tags.slice(0, 3).map((t: string) => (
-                          <span key={t} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{t}</span>
-                        ))}
-                        {c.tags.length > 3 && <span className="text-xs text-muted-foreground">+{c.tags.length - 3}</span>}
-                      </div>
-                    ) : '—'}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {!isLoading && filtered.length > 0 && (
-        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
-      )}
-
-      <ContactModal
-        contactId={modalContactId}
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        mode={modalMode}
-      />
-
-      {/* Source Report Modal */}
-      <Dialog open={sourceReportOpen} onOpenChange={setSourceReportOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Contact Source Report</DialogTitle>
-          </DialogHeader>
-          {sourceReportData.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No contacts to report on</p>
           ) : (
-            <div className="space-y-4">
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={sourceReportData} layout="vertical" margin={{ left: 80 }}>
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} width={75} />
-                    <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="total" name="Clients" radius={[0, 4, 4, 0]}>
-                      {sourceReportData.map((_, i) => (
-                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Total Properties</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
               </div>
-              <div className="overflow-auto rounded border border-border">
-                <table className="w-full text-xs">
-                  <thead className="bg-muted/60">
-                    <tr>
-                      <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Source</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Total</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">With Properties</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Conversion</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sourceReportData.map(row => (
-                      <tr key={row.source} className="border-t border-border/50">
-                        <td className="py-1.5 px-2">{row.source}</td>
-                        <td className="py-1.5 px-2 text-right tabular-nums">{row.total}</td>
-                        <td className="py-1.5 px-2 text-right tabular-nums">{row.withProperties}</td>
-                        <td className="py-1.5 px-2 text-right tabular-nums">{row.conversion}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><DoorOpen className="w-3.5 h-3.5" /> Onboarding</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{countByStage('Onboarding')}</p>
+              </div>
+              <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Active</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{countByStage('Active')}</p>
+              </div>
+              <div className={`rounded-2xl border shadow-sm p-4 ${countByStage('Offboarding') > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><LogOut className="w-3.5 h-3.5" /> Offboarding</div>
+                <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${countByStage('Offboarding') > 0 ? 'text-warning' : ''}`}>{countByStage('Offboarding')}</p>
               </div>
             </div>
           )}
-        </DialogContent>
-      </Dialog>
-      {/* Duplicate Detection Modal */}
-      <DuplicateDetectionModal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} contacts={contacts || []} />
-    </PageContainer>
-  )
-}
 
-// ── Duplicate Detection ──────────────────────────────────────────────────
-function levenshtein(a: string, b: string): number {
-  const an = a.length, bn = b.length
-  if (an === 0) return bn
-  if (bn === 0) return an
-  const matrix = Array.from({ length: bn + 1 }, (_, i) => [i])
-  for (let j = 0; j <= an; j++) matrix[0][j] = j
-  for (let i = 1; i <= bn; i++) {
-    for (let j = 1; j <= an; j++) {
-      matrix[i][j] = b[i - 1] === a[j - 1]
-        ? matrix[i - 1][j - 1]
-        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-    }
-  }
-  return matrix[bn][an]
-}
-
-function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: any[] }) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const { effectiveUser } = useAuth()
-  const [merging, setMerging] = useState(false)
-
-  const duplicates = useMemo(() => {
-    if (!contacts || contacts.length < 2) return []
-    const pairs: { primary: any; secondary: any; reason: string }[] = []
-    const seen = new Set<string>()
-    for (let i = 0; i < contacts.length; i++) {
-      for (let j = i + 1; j < contacts.length; j++) {
-        const a = contacts[i], b = contacts[j]
-        const key = [a.id, b.id].sort().join('_')
-        if (seen.has(key)) continue
-        // Check name similarity
-        const nameA = (a.full_name || '').toLowerCase()
-        const nameB = (b.full_name || '').toLowerCase()
-        if (nameA && nameB && levenshtein(nameA, nameB) <= 2) {
-          seen.add(key)
-          pairs.push({ primary: a, secondary: b, reason: 'Similar name' })
-          continue
-        }
-        // Check email match
-        if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) {
-          seen.add(key)
-          pairs.push({ primary: a, secondary: b, reason: 'Same email' })
-        }
-      }
-    }
-    return pairs
-  }, [contacts])
-
-  async function handleMerge(primary: any, secondary: any) {
-    if (!canEditView('contacts', effectiveUser)) {
-      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
-      return
-    }
-    setMerging(true)
-    try {
-      // Copy non-null fields from secondary to primary
-      const updates: Record<string, any> = {}
-      const fields = ['company', 'email', 'phone', 'secondary_phone', 'mailing_address', 'source', 'payment_method', 'client_since', 'notes']
-      for (const f of fields) {
-        if (!primary[f] && secondary[f]) updates[f] = secondary[f]
-      }
-      if (Object.keys(updates).length > 0) {
-        await supabase.from('contacts').update(updates).eq('id', primary.id)
-      }
-      // Reassign properties
-      await supabase.from('properties').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
-      // Reassign interactions
-      await supabase.from('contact_interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
-      // Delete secondary
-      await supabase.from('contacts').delete().eq('id', secondary.id)
-      logActivity({
-        entity_type: 'contact',
-        entity_id: primary.id,
-        entity_name: primary.full_name,
-        action: 'delete',
-        field_name: 'merge',
-        old_value: secondary.full_name,
-        new_value: primary.full_name,
-        metadata: { merged_from_id: secondary.id },
-      })
-      // Refresh the shared useContacts cache app-wide; fuzzy matching also
-      // covers this page's ['contacts', 'with-property-counts'] join query.
-      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      toast({ title: 'Clients merged successfully.' })
-    } catch (e: any) {
-      toast({ title: 'Merge failed', description: e?.message, variant: 'destructive' })
-    } finally {
-      setMerging(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Duplicate Review</DialogTitle></DialogHeader>
-        {duplicates.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No duplicates detected.</p>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">{duplicates.length} potential duplicate pair(s) found</p>
-            {duplicates.map(({ primary, secondary, reason }, i) => (
-              <div key={i} className="border border-border rounded-md p-3">
-                <p className="text-xs text-muted-foreground mb-2">{reason}</p>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <p className="font-medium">{primary.full_name}</p>
-                    <p className="text-muted-foreground">{primary.email || '—'}</p>
-                    <p className="text-muted-foreground">{primary.properties?.length || 0} properties</p>
-                  </div>
-                  <div>
-                    <p className="font-medium">{secondary.full_name}</p>
-                    <p className="text-muted-foreground">{secondary.email || '—'}</p>
-                    <p className="text-muted-foreground">{secondary.properties?.length || 0} properties</p>
-                  </div>
-                </div>
-                <Button size="sm" variant="outline" className="mt-2 text-xs w-full" disabled={merging} onClick={() => handleMerge(primary, secondary)}>
-                  Merge → Keep {primary.full_name}
-                </Button>
-              </div>
-            ))}
+          <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
+                <tr>
+                  <th
+                    className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap sticky left-0 top-0 z-30 bg-muted"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => toggleSort('name')}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
+                  >
+                    Property<SortIcon col="name" />
+                  </th>
+                  {([
+                    { col: 'address', label: 'Address' },
+                    { col: 'bedrooms', label: 'Beds' },
+                    { col: 'full_baths', label: 'Baths' },
+                    { col: 'guest_count', label: 'Guests' },
+                    { col: 'square_footage', label: 'Sq Ft' },
+                    { col: 'cleaner_pay', label: 'Cleaner Pay' },
+                    { col: 'stage_name', label: 'Status' },
+                  ] as { col: string; label: string }[]).map(({ col, label }) => (
+                    <th
+                      key={col}
+                      className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                      tabIndex={0}
+                      role="columnheader"
+                      aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      onClick={() => toggleSort(col)}
+                      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                    >
+                      {label}<SortIcon col={col} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  [...Array(8)].map((_, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      {[...Array(8)].map((_, j) => (
+                        <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
+                      ))}
+                    </tr>
+                  ))
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
+                    </td>
+                  </tr>
+                ) : (
+                  paged.map((p: any) => {
+                    const color = p.stage_color || '#6b7280'
+                    return (
+                      <tr
+                        key={p.id}
+                        data-testid={`row-property-${p.id}`}
+                        className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                      >
+                        <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                          <button onClick={() => openPropertyModal(p.id, 'property-list')} className="text-primary hover:underline text-left">{p.name}</button>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.guest_count ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage ? p.square_footage.toLocaleString() : '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.cleaner_pay ? `$${Number(p.cleaner_pay).toFixed(2)}` : '—'}</td>
+                        <td className="py-2 px-3">
+                          {p.stage_name && stages?.length ? (
+                            <StageBadgePopover
+                              propertyId={p.id}
+                              propertyName={p.name || ''}
+                              currentStageName={p.stage_name}
+                              stageColor={color}
+                              stages={stages}
+                            />
+                          ) : p.stage_name ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
+                              {p.stage_name}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+          {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+        </>
+      )}
+    </PageContainer>
   )
 }
