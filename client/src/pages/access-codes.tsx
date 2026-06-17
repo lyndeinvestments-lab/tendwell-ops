@@ -185,6 +185,23 @@ export default function AccessCodesPage() {
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
+  // Summary tiles — computed only from already-loaded rows (no new query).
+  // A row "has a code" if either door_code or other_codes is set (matches the
+  // row-level badge logic which uses door_code + other_codes).
+  const stats = useMemo(() => {
+    const rows = properties ?? []
+    const hasCode = (p: any) =>
+      (!!p.door_code && String(p.door_code).trim() !== '') ||
+      (!!p.other_codes && String(p.other_codes).trim() !== '')
+    const withCode = rows.filter(hasCode).length
+    return {
+      total: rows.length,
+      withCode,
+      missing: rows.length - withCode,
+      autoCode: rows.filter((p: any) => !!p.has_auto_code).length,
+    }
+  }, [properties])
+
   function handleSort(key: typeof sortKey) {
     if (sortKey === key) {
       setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
@@ -246,6 +263,36 @@ export default function AccessCodesPage() {
           </>
         }
       />
+
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-8 w-12 mt-2" />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><KeyRound className="w-3.5 h-3.5" /> Total Properties</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{stats.total}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Check className="w-3.5 h-3.5" /> Has Code</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{stats.withCode}</p>
+          </div>
+          <div className={`rounded-2xl border shadow-sm p-4 ${stats.missing > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><X className="w-3.5 h-3.5" /> Missing Code</div>
+            <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${stats.missing > 0 ? 'text-warning' : ''}`}>{stats.missing}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Eye className="w-3.5 h-3.5" /> Auto-Code</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{stats.autoCode}</p>
+          </div>
+        </div>
+      )}
 
       {isError ? (
         <ErrorState onRetry={() => refetch()} />

@@ -11,7 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Check, X, RefreshCw, ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, Link2, Search } from 'lucide-react'
+import { Check, X, RefreshCw, ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, Link2, Search, Clock, Inbox, CheckCircle2, XCircle } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { ErrorState } from '@/components/ErrorState'
@@ -146,6 +146,39 @@ export default function OnboardingQueuePage() {
           </Button>
         }
       />
+
+      {rows && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Pending · In this view</p>
+            </div>
+            <p className="text-3xl font-bold tabular-nums leading-none">{counts.pending}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Inbox className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Total · In this view</p>
+            </div>
+            <p className="text-3xl font-bold tabular-nums leading-none">{counts.total}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Converted · In this view</p>
+            </div>
+            <p className="text-3xl font-bold tabular-nums leading-none">{counts.converted}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
+            <div className="flex items-center gap-1.5 mb-2">
+              <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Rejected · In this view</p>
+            </div>
+            <p className="text-3xl font-bold tabular-nums leading-none">{counts.rejected}</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex gap-2 flex-wrap text-sm">
         {([

@@ -12,7 +12,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check, Sparkles } from 'lucide-react'
+import { Search, AlertTriangle, Copy, Download, Upload, X, ArrowUp, ArrowDown, ArrowUpDown, BedDouble, Check, Sparkles, CheckCircle2 } from 'lucide-react'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -212,6 +212,17 @@ export default function LinenTrackerPage() {
   const incompleteCount = useMemo(() => {
     if (!properties) return 0
     return properties.filter(hasIncompleteData).length
+  }, [properties])
+
+  // Summary-strip counts. Mirrors the page's own complete-vs-missing rule
+  // (hasIncompleteData): a row "needs setup" only when EVERY numeric linen
+  // field is zero/null; otherwise it's counted as set up. Display-only,
+  // computed from the already-loaded rows — no new query.
+  const summary = useMemo(() => {
+    if (!properties) return null
+    const total = properties.length
+    const needsSetup = properties.filter(hasIncompleteData).length
+    return { total, needsSetup, setupComplete: total - needsSetup }
   }, [properties])
 
   function toggleSort(key: string) {
@@ -426,6 +437,33 @@ export default function LinenTrackerPage() {
           </span>
         </div>
       )}
+
+      {/* Summary strip — at-a-glance linen-setup stats (display-only) */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-8 w-12 mt-2" />
+            </div>
+          ))}
+        </div>
+      ) : summary ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><BedDouble className="w-3.5 h-3.5" /> Total Properties</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Setup Complete</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{summary.setupComplete}</p>
+          </div>
+          <div className={`rounded-2xl border shadow-sm p-4 ${summary.needsSetup > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Setup</div>
+            <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.needsSetup > 0 ? 'text-warning' : ''}`}>{summary.needsSetup}</p>
+          </div>
+        </div>
+      ) : null}
 
       {isError ? (
         <ErrorState onRetry={() => refetch()} />
