@@ -14,6 +14,7 @@ export type NotificationEventType =
   | 'follow_up_due'
   | 'property_note_mention'
   | 'contact_note_mention'
+  | 'onboarding_intake_submitted'
 
 export const EVENT_LABELS: Record<NotificationEventType, string> = {
   task_assigned: 'Task assigned to me',
@@ -27,6 +28,7 @@ export const EVENT_LABELS: Record<NotificationEventType, string> = {
   follow_up_due: 'Follow-up due',
   property_note_mention: 'Mentioned in a property note',
   contact_note_mention: 'Mentioned in a contact note',
+  onboarding_intake_submitted: 'Onboarding intake submitted',
 }
 
 export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
@@ -41,6 +43,7 @@ export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
   contact_note_mention: 'contacts',
+  onboarding_intake_submitted: 'master-list',
 }
 
 export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
@@ -55,6 +58,7 @@ export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
   follow_up_due: 'notify_follow_up_due',
   property_note_mention: 'notify_property_note_mention',
   contact_note_mention: 'notify_contact_note_mention',
+  onboarding_intake_submitted: 'notify_onboarding_submitted',
 }
 
 interface NotifyOpts {

@@ -7,7 +7,7 @@ import {
 // POST /api/notify/public — for events triggered from unauthenticated pages (e.g. public onboarding form)
 // Only the following event types are allowed; payload is verified against DB before sending.
 // Body: { eventType: 'onboarding_submitted', token: string }
-const ALLOWED_EVENTS = new Set(['onboarding_submitted'])
+const ALLOWED_EVENTS = new Set(['onboarding_submitted', 'onboarding_intake_submitted'])
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
@@ -53,6 +53,51 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         subject, status: r.ok ? 'sent' : 'failed', error: r.error,
       })
       if (r.ok) sent++
+    }))
+
+    return res.json({ ok: true, sent })
+  }
+
+  if (eventType === 'onboarding_intake_submitted') {
+    const { address, client_name } = (req.body || {}) as any
+    const addr = typeof address === 'string' ? address.trim() : ''
+    const cli = typeof client_name === 'string' ? client_name.trim() : ''
+    if (!addr && !cli) return res.status(400).json({ error: 'address or client_name required' })
+    // Anti-spam: only notify if a matching submission was actually created in
+    // the last 5 minutes (the public intake form writes onboarding_submissions
+    // immediately before calling this). No token on the intake flow, so we
+    // verify by recent matching row instead.
+    const filter = addr
+      ? `address=eq.${encodeURIComponent(addr)}`
+      : `client_name=eq.${encodeURIComponent(cli)}`
+    const r = await fetch(`${sb.url}/rest/v1/onboarding_submissions?${filter}&select=address,client_name,submitted_at&order=submitted_at.desc&limit=1`, {
+      headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` },
+    })
+    if (!r.ok) return res.status(500).json({ error: 'Lookup failed' })
+    const rows = await r.json()
+    const sub = rows[0]
+    if (!sub) return res.status(404).json({ error: 'Submission not found' })
+    const submittedAt = sub.submitted_at ? new Date(sub.submitted_at).getTime() : 0
+    if (Date.now() - submittedAt > 5 * 60 * 1000) return res.status(403).json({ error: 'Submission too old' })
+
+    const subject = `New onboarding intake: ${sub.client_name || sub.address || 'New submission'}`
+    const bodyHtml = `<p style="font-size:14px;line-height:1.6;"><strong>${escapeHtml(sub.client_name || 'New client')}</strong></p>
+      ${sub.address ? `<p style="font-size:13px;color:#475569;">${escapeHtml(sub.address)}</p>` : ''}`
+
+    const [users, prefs] = await Promise.all([getAllUsersWithViews(sb), getAllPreferences(sb)])
+    const recipients = filterRecipients(users, prefs, eventType)
+    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: 'https://www.tendwellcleaning.com/#/master-list', ctaLabel: 'View in Master List' })
+
+    let sent = 0
+    await Promise.all(recipients.map(async u => {
+      const rr = await sendEmail({ to: u.google_email, subject, html })
+      await logNotification(sb, {
+        recipient_email: u.google_email,
+        recipient_user_id: u.id,
+        event_type: eventType,
+        subject, status: rr.ok ? 'sent' : 'failed', error: rr.error,
+      })
+      if (rr.ok) sent++
     }))
 
     return res.json({ ok: true, sent })

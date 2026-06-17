@@ -18,6 +18,9 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
   contact_note_mention: 'contacts',
+  // Public onboarding-intake form. Shares the master-list audience + the
+  // "Onboarding submitted" preference toggle (notify_onboarding_submitted).
+  onboarding_intake_submitted: 'master-list',
 }
 
 export const EVENT_PREF_FIELD: Record<string, string> = {
@@ -32,6 +35,7 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   follow_up_due: 'notify_follow_up_due',
   property_note_mention: 'notify_property_note_mention',
   contact_note_mention: 'notify_contact_note_mention',
+  onboarding_intake_submitted: 'notify_onboarding_submitted',
 }
 
 export interface SupabaseClient {
@@ -227,10 +231,14 @@ export function filterRecipients(
     if (!u.google_email) return false
     if (opts.onlyUserIds && !opts.onlyUserIds.has(u.id)) return false
     if (!u.allowedViews.includes(requiredView)) return false
-    // A user with no row is treated as the table defaults (NOT a blanket
-    // "send all") so opt-in events like follow_up_due / verification_due stay
-    // off until explicitly enabled. Matches the Settings UI's effective-defaults.
-    const prefs = prefsByUser.get(u.id) ?? { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
+    // Cleaning / cleaner roles default to NO email notifications. They only
+    // opt IN if they have an explicit preferences row with email_enabled=true.
+    const explicit = prefsByUser.get(u.id)
+    if (!explicit && (u.role === 'cleaning' || u.role === 'cleaner')) return false
+    // Any other user with no row is treated as the table defaults (NOT a
+    // blanket "send all") so opt-in events like follow_up_due / verification_due
+    // stay off until enabled. Matches the Settings UI's effective-defaults.
+    const prefs = explicit ?? { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
     if (!prefs.email_enabled) return false
     if (prefs.digest_frequency === 'off') return false
     if (!opts.includeDigestUsers && prefs.digest_frequency !== 'instant') return false
