@@ -1471,27 +1471,44 @@ function NotificationsSection() {
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {EVENT_DEFS.map(ev => {
-                      const hasAccess = allowedViews.includes(ev.view)
-                      const checked = !!prefs[ev.field]
-                      return (
-                        <label
-                          key={ev.field}
-                          className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded border ${hasAccess ? 'border-border' : 'border-border/50 opacity-50'}`}
-                          title={hasAccess ? '' : `Requires ${ev.view} access`}
-                        >
-                          <Checkbox
-                            checked={hasAccess && checked}
-                            disabled={!canEditThis || !hasAccess}
-                            onCheckedChange={(v) => savePref.mutate({ ...prefs, [ev.field]: !!v })}
-                          />
-                          <span className="flex-1">{ev.label}</span>
-                          {!hasAccess && <Lock className="w-3 h-3 text-muted-foreground" />}
-                        </label>
-                      )
-                    })}
-                  </div>
+                  {(() => {
+                    // When the master switch is off (email disabled or Frequency=Off)
+                    // nothing sends, so the per-event toggles render inactive
+                    // (unchecked + disabled + dimmed) — but their saved values are
+                    // preserved and reappear when email is re-enabled.
+                    const emailActive = !!prefs.email_enabled && prefs.digest_frequency !== 'off'
+                    return (
+                      <div className="space-y-2">
+                        {!emailActive && (
+                          <p className="text-2xs text-muted-foreground">
+                            {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} — these events won’t send. Your selections are kept for when you re-enable.
+                          </p>
+                        )}
+                        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>
+                          {EVENT_DEFS.map(ev => {
+                            const hasAccess = allowedViews.includes(ev.view)
+                            const checked = !!prefs[ev.field]
+                            const active = emailActive && hasAccess
+                            return (
+                              <label
+                                key={ev.field}
+                                className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded border ${active ? 'border-border' : 'border-border/50 opacity-60'}`}
+                                title={!hasAccess ? `Requires ${ev.view} access` : (!emailActive ? 'Enable email to use' : '')}
+                              >
+                                <Checkbox
+                                  checked={active && checked}
+                                  disabled={!canEditThis || !active}
+                                  onCheckedChange={(v) => savePref.mutate({ ...prefs, [ev.field]: !!v })}
+                                />
+                                <span className="flex-1">{ev.label}</span>
+                                {!hasAccess && <Lock className="w-3 h-3 text-muted-foreground" />}
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
