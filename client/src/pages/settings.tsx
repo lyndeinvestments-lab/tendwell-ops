@@ -1291,6 +1291,26 @@ function UsersSection() {
 
 // ─── Notifications Section ───────────────────────────────────────────────────
 
+// Effective defaults for a user with no notification_preferences row. Mirrors
+// the notification_preferences column defaults (and DEFAULT_NOTIF_PREFS in
+// api/notify/_lib.ts) so the UI shows exactly the state the server will apply
+// when no explicit row exists. verification_due / follow_up_due are opt-in.
+const DEFAULT_NOTIF_PREFS = {
+  email_enabled: true,
+  digest_frequency: 'instant',
+  notify_task_assigned: true,
+  notify_task_overdue: true,
+  notify_task_mention: true,
+  notify_watcher_update: true,
+  notify_list_added: true,
+  notify_issue_logged: true,
+  notify_verification_due: false,
+  notify_onboarding_submitted: true,
+  notify_follow_up_due: false,
+  notify_property_note_mention: true,
+  notify_contact_note_mention: true,
+}
+
 function NotificationsSection() {
   const { user } = useAuth()
   const { toast } = useToast()
@@ -1409,7 +1429,10 @@ function NotificationsSection() {
 
       <div className="space-y-3">
         {visibleUsers.map((u: any) => {
-          const prefs = prefsByUser.get(u.id) || { user_id: u.id, email_enabled: true, digest_frequency: 'instant' }
+          // prefsByUser is keyed by String(user_id); u.id is numeric — coerce
+          // so the lookup hits. Without this the row always fell back to
+          // defaults, so toggles never reflected or persisted ("won't turn off").
+          const prefs = prefsByUser.get(String(u.id)) || { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
           const allowedViews = allowedViewsFor(u)
           const isExpanded = editingUserId === u.id || visibleUsers.length === 1
           const canEditThis = isAdmin || u.id === user?.id

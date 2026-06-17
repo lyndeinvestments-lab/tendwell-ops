@@ -123,6 +123,8 @@ export interface NotifPrefs {
   notify_task_assigned: boolean
   notify_task_overdue: boolean
   notify_task_mention: boolean
+  notify_watcher_update: boolean
+  notify_list_added: boolean
   notify_issue_logged: boolean
   notify_verification_due: boolean
   notify_onboarding_submitted: boolean
@@ -130,6 +132,26 @@ export interface NotifPrefs {
   notify_property_note_mention: boolean
   notify_contact_note_mention: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
+}
+
+// Effective preferences for a user with no notification_preferences row.
+// MUST mirror the column defaults on the notification_preferences table so a
+// user is treated identically whether or not their row has been created yet.
+// verification_due / follow_up_due are opt-in events → default false.
+export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
+  email_enabled: true,
+  notify_task_assigned: true,
+  notify_task_overdue: true,
+  notify_task_mention: true,
+  notify_watcher_update: true,
+  notify_list_added: true,
+  notify_issue_logged: true,
+  notify_verification_due: false,
+  notify_onboarding_submitted: true,
+  notify_follow_up_due: false,
+  notify_property_note_mention: true,
+  notify_contact_note_mention: true,
+  digest_frequency: 'instant',
 }
 
 export async function getAllPreferences(sb: SupabaseClient): Promise<Map<number, NotifPrefs>> {
@@ -205,9 +227,10 @@ export function filterRecipients(
     if (!u.google_email) return false
     if (opts.onlyUserIds && !opts.onlyUserIds.has(u.id)) return false
     if (!u.allowedViews.includes(requiredView)) return false
-    const prefs = prefsByUser.get(u.id)
-    // Default behavior if no prefs row: send (matches table defaults)
-    if (!prefs) return true
+    // A user with no row is treated as the table defaults (NOT a blanket
+    // "send all") so opt-in events like follow_up_due / verification_due stay
+    // off until explicitly enabled. Matches the Settings UI's effective-defaults.
+    const prefs = prefsByUser.get(u.id) ?? { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
     if (!prefs.email_enabled) return false
     if (prefs.digest_frequency === 'off') return false
     if (!opts.includeDigestUsers && prefs.digest_frequency !== 'instant') return false
