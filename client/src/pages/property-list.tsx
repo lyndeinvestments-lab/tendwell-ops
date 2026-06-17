@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { TablePagination } from '@/components/TablePagination'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -13,8 +13,9 @@ import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
-import { Search, X, Download, Building2, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { Search, X, Download, Building2, DoorOpen, CheckCircle2, LogOut, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
@@ -61,7 +62,7 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
       <PopoverTrigger asChild>
         <button
           onClick={e => { e.stopPropagation(); setOpen(true) }}
-          className="text-xs px-1.5 py-0.5 rounded font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all duration-300"
+          className="text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all duration-300"
           style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
           title="Click to change stage"
         >
@@ -110,14 +111,14 @@ export default function PropertyListPage() {
   const [pageSize, setPageSize] = useState(50)
 
   const [statusFilter, setStatusFilter] = useState<string>(() => {
-    try { return localStorage.getItem('property-list-filter') || 'Active' } catch { return 'Active' }
+    try { return localStorage.getItem('property-list-filter') || 'all' } catch { return 'all' }
   })
 
   useEffect(() => {
     try { localStorage.setItem('property-list-filter', statusFilter) } catch { /* ignore */ }
   }, [statusFilter])
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/properties-list'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -129,6 +130,16 @@ export default function PropertyListPage() {
   })
 
   const { data: stages } = usePipelineStages()
+
+  const total = properties?.length ?? 0
+  const countByStage = (name: string) => properties?.filter((p: any) => p.stage_name === name).length ?? 0
+
+  // Only show stages that actually appear in the operational data, in pipeline order.
+  const stagesInData = useMemo(() => {
+    if (!properties || !stages) return [] as any[]
+    const present = new Set(properties.map((p: any) => p.stage_name).filter(Boolean))
+    return stages.filter((s: any) => present.has(s.name))
+  }, [properties, stages])
 
   const filtered = useMemo(() => {
     if (!properties) return []
@@ -184,7 +195,7 @@ export default function PropertyListPage() {
     <PageContainer width="full" className="h-full flex flex-col">
       <PageHeader
         title="Property List"
-        subtitle="Active operational properties"
+        subtitle="Operational properties — onboarding, active & offboarding"
         actions={
           <>
             <div className="relative">
@@ -208,13 +219,10 @@ export default function PropertyListPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses ({properties?.length ?? 0})</SelectItem>
-                {stages?.map((s: any) => {
-                  const count = properties?.filter((p: any) => p.stage_name === s.name).length ?? 0
-                  return (
-                    <SelectItem key={s.id} value={s.name}>{s.name} ({count})</SelectItem>
-                  )
-                })}
+                <SelectItem value="all">All Operational ({total})</SelectItem>
+                {stagesInData.map((s: any) => (
+                  <SelectItem key={s.id} value={s.name}>{s.name} ({countByStage(s.name)})</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Button
@@ -232,100 +240,137 @@ export default function PropertyListPage() {
         }
       />
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
-            <tr>
-              <th
-                className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap sticky left-0 top-0 z-30 bg-muted"
-                tabIndex={0}
-                role="columnheader"
-                aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                onClick={() => toggleSort('name')}
-                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
-              >
-                Property<SortIcon col="name" />
-              </th>
-              {([
-                { col: 'address', label: 'Address' },
-                { col: 'bedrooms', label: 'Beds' },
-                { col: 'full_baths', label: 'Baths' },
-                { col: 'guest_count', label: 'Guests' },
-                { col: 'square_footage', label: 'Sq Ft' },
-                { col: 'cleaner_pay', label: 'Cleaner Pay' },
-                { col: 'stage_name', label: 'Status' },
-              ] as { col: string; label: string }[]).map(({ col, label }) => (
-                <th
-                  key={col}
-                  className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
-                  tabIndex={0}
-                  role="columnheader"
-                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  onClick={() => toggleSort(col)}
-                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
-                >
-                  {label}<SortIcon col={col} />
-                </th>
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+        <>
+          {/* Summary strip — at-a-glance operational stats */}
+          {isLoading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-8 w-12 mt-2" />
+                </div>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              [...Array(8)].map((_, i) => (
-                <tr key={i} className="border-b border-border/50">
-                  {[...Array(8)].map((_, j) => (
-                    <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Total Properties</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
+              </div>
+              <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><DoorOpen className="w-3.5 h-3.5" /> Onboarding</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{countByStage('Onboarding')}</p>
+              </div>
+              <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Active</div>
+                <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{countByStage('Active')}</p>
+              </div>
+              <div className={`rounded-2xl border shadow-sm p-4 ${countByStage('Offboarding') > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><LogOut className="w-3.5 h-3.5" /> Offboarding</div>
+                <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${countByStage('Offboarding') > 0 ? 'text-warning' : ''}`}>{countByStage('Offboarding')}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
+                <tr>
+                  <th
+                    className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap sticky left-0 top-0 z-30 bg-muted"
+                    tabIndex={0}
+                    role="columnheader"
+                    aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => toggleSort('name')}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
+                  >
+                    Property<SortIcon col="name" />
+                  </th>
+                  {([
+                    { col: 'address', label: 'Address' },
+                    { col: 'bedrooms', label: 'Beds' },
+                    { col: 'full_baths', label: 'Baths' },
+                    { col: 'guest_count', label: 'Guests' },
+                    { col: 'square_footage', label: 'Sq Ft' },
+                    { col: 'cleaner_pay', label: 'Cleaner Pay' },
+                    { col: 'stage_name', label: 'Status' },
+                  ] as { col: string; label: string }[]).map(({ col, label }) => (
+                    <th
+                      key={col}
+                      className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                      tabIndex={0}
+                      role="columnheader"
+                      aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                      onClick={() => toggleSort(col)}
+                      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                    >
+                      {label}<SortIcon col={col} />
+                    </th>
                   ))}
                 </tr>
-              ))
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={8}>
-                  <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
-                </td>
-              </tr>
-            ) : (
-              paged.map((p: any) => {
-                const color = p.stage_color || '#6b7280'
-                return (
-                  <tr
-                    key={p.id}
-                    data-testid={`row-property-${p.id}`}
-                    className="border-b border-border/50 hover:bg-muted/30 transition-colors"
-                  >
-                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                      <button onClick={() => openPropertyModal(p.id, 'property-list')} className="text-primary hover:underline text-left">{p.name}</button>
-                    </td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.guest_count ?? '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage ? p.square_footage.toLocaleString() : '—'}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">{p.cleaner_pay ? `$${Number(p.cleaner_pay).toFixed(2)}` : '—'}</td>
-                    <td className="py-2 px-3">
-                      {p.stage_name && stages?.length ? (
-                        <StageBadgePopover
-                          propertyId={p.id}
-                          propertyName={p.name || ''}
-                          currentStageName={p.stage_name}
-                          stageColor={color}
-                          stages={stages}
-                        />
-                      ) : p.stage_name ? (
-                        <span className="text-xs px-1.5 py-0.5 rounded font-medium"
-                          style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
-                          {p.stage_name}
-                        </span>
-                      ) : '—'}
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  [...Array(8)].map((_, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      {[...Array(8)].map((_, j) => (
+                        <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
+                      ))}
+                    </tr>
+                  ))
+                ) : filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
                     </td>
                   </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-      {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+                ) : (
+                  paged.map((p: any) => {
+                    const color = p.stage_color || '#6b7280'
+                    return (
+                      <tr
+                        key={p.id}
+                        data-testid={`row-property-${p.id}`}
+                        className="border-b border-border/50 hover:bg-muted/20 transition-colors"
+                      >
+                        <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                          <button onClick={() => openPropertyModal(p.id, 'property-list')} className="text-primary hover:underline text-left">{p.name}</button>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">{p.address || '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.bedrooms ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.full_baths ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.guest_count ?? '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.square_footage ? p.square_footage.toLocaleString() : '—'}</td>
+                        <td className="py-2 px-3 text-xs tabular-nums">{p.cleaner_pay ? `$${Number(p.cleaner_pay).toFixed(2)}` : '—'}</td>
+                        <td className="py-2 px-3">
+                          {p.stage_name && stages?.length ? (
+                            <StageBadgePopover
+                              propertyId={p.id}
+                              propertyName={p.name || ''}
+                              currentStageName={p.stage_name}
+                              stageColor={color}
+                              stages={stages}
+                            />
+                          ) : p.stage_name ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                              style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
+                              {p.stage_name}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+        </>
+      )}
     </PageContainer>
   )
 }
