@@ -16,7 +16,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
 import {
   Search, X, ClipboardCheck, Check, AlertTriangle, ArrowUpDown, ArrowUp, ArrowDown, Download,
-  UserPlus, Calendar, CheckSquare, Square, Trash2,
+  UserPlus, Calendar, CheckSquare, Square, Trash2, ShieldCheck, CheckCircle2, Clock,
 } from 'lucide-react'
 import { format, differenceInDays, addMonths } from 'date-fns'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -153,6 +153,20 @@ export default function InspectionsPage() {
   const dueCount = useMemo(() => {
     if (!properties) return 0
     return properties.filter((p: any) => getStatus(p) !== 'verified').length
+  }, [properties, verificationMap])
+
+  // Summary-strip counts — computed from already-loaded rows only (no new query)
+  const summary = useMemo(() => {
+    if (!properties) return { total: 0, verified: 0, needs: 0, overdue: 0 }
+    const today = new Date().toISOString().slice(0, 10)
+    let verified = 0, needs = 0, overdue = 0
+    for (const p of properties as any[]) {
+      if (getStatus(p) === 'verified') verified++
+      else needs++
+      const dd = verificationMap[String(p.id)]?.due_date
+      if (dd && dd < today) overdue++
+    }
+    return { total: (properties as any[]).length, verified, needs, overdue }
   }, [properties, verificationMap])
 
   function toggleSort(key: SortKey) {
@@ -567,6 +581,27 @@ export default function InspectionsPage() {
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={bulkMarkVerified}><Check className="w-3 h-3" /> Mark verified</Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" onClick={bulkClear}><Trash2 className="w-3 h-3" /> Clear</Button>
           <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>Cancel</Button>
+        </div>
+      )}
+
+      {!isLoading && !isError && properties && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ShieldCheck className="w-3.5 h-3.5" /> Total Properties</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</p>
+          </div>
+          <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Verified</div>
+            <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{summary.verified}</p>
+          </div>
+          <div className={`rounded-2xl border shadow-sm p-4 ${summary.needs > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Verification</div>
+            <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.needs > 0 ? 'text-warning' : ''}`}>{summary.needs}</p>
+          </div>
+          <div className={`rounded-2xl border shadow-sm p-4 ${summary.overdue > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Overdue</div>
+            <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.overdue > 0 ? 'text-destructive' : ''}`}>{summary.overdue}</p>
+          </div>
         </div>
       )}
 

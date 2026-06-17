@@ -12,7 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
@@ -494,6 +494,20 @@ export default function ProFormaPage() {
 
   const asNeededCount = filtered?.filter((p: any) => p.cleaning_frequency === 'as_needed').length ?? 0
 
+  // Summary-strip KPIs — computed purely from already-loaded/filtered rows.
+  // No new queries; reuses the page's existing BREAK_EVEN_MARGIN threshold.
+  const summary = useMemo(() => {
+    const rows = filtered as any[]
+    const total = rows.length
+    const withPct = rows.filter(p => p.profit_percentage != null)
+    const avgMargin = withPct.length
+      ? withPct.reduce((s, p) => s + Number(p.profit_percentage), 0) / withPct.length
+      : null
+    const belowBreakEven = withPct.filter(p => Number(p.profit_percentage) < BREAK_EVEN_MARGIN * 100).length
+    const negativeProfit = rows.filter(p => (p.monthly_profit_estimate ?? 0) < 0).length
+    return { total, avgMargin, belowBreakEven, negativeProfit }
+  }, [filtered])
+
   // Feature 2: Scenario columns visibility
   const hasScenarios = Object.keys(scenarioOverrides).length > 0
 
@@ -684,6 +698,46 @@ export default function ProFormaPage() {
           </Button>
         )}
       </div>
+
+      {/* Summary KPI strip — computed from loaded/filtered rows (no new queries) */}
+      {!isLoading && filtered.length > 0 && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Building2 className="w-3.5 h-3.5" />
+              Total Properties
+            </div>
+            <div className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</div>
+          </div>
+          <div className="rounded-xl border border-card-border bg-card shadow-sm p-4">
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <TrendingUp className="w-3.5 h-3.5" />
+              Avg Est. Margin
+            </div>
+            <div className="mt-1 text-3xl font-bold tabular-nums leading-none">
+              {summary.avgMargin != null ? `${summary.avgMargin.toFixed(1)}%` : '—'}
+            </div>
+          </div>
+          <div className={`rounded-xl border shadow-sm p-4 ${summary.belowBreakEven > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Below Break-Even
+            </div>
+            <div className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.belowBreakEven > 0 ? 'text-warning' : ''}`}>
+              {summary.belowBreakEven}
+            </div>
+          </div>
+          <div className={`rounded-xl border shadow-sm p-4 ${summary.negativeProfit > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Negative Mo Profit
+            </div>
+            <div className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.negativeProfit > 0 ? 'text-warning' : ''}`}>
+              {summary.negativeProfit}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Feature 5: Duplicate warning banner */}
       {visibleDuplicatePairs.length > 0 && (
