@@ -1432,7 +1432,9 @@ function NotificationsSection() {
           // prefsByUser is keyed by String(user_id); u.id is numeric — coerce
           // so the lookup hits. Without this the row always fell back to
           // defaults, so toggles never reflected or persisted ("won't turn off").
-          const prefs = prefsByUser.get(String(u.id)) || { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
+          // Cleaning/cleaner roles default to email OFF (must opt in explicitly).
+          const isCleaningRole = u.role === 'cleaning' || u.role === 'cleaner'
+          const prefs = prefsByUser.get(String(u.id)) || { user_id: u.id, ...DEFAULT_NOTIF_PREFS, email_enabled: !isCleaningRole }
           const allowedViews = allowedViewsFor(u)
           const isExpanded = editingUserId === u.id || visibleUsers.length === 1
           const canEditThis = isAdmin || u.id === user?.id
