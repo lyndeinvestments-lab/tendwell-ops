@@ -12,8 +12,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2 } from 'lucide-react'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
@@ -98,6 +101,14 @@ function scoreColorClass(score: number | null): string {
   if (score >= 4) return 'bg-success/15 text-success'
   if (score >= 3) return 'bg-warning/15 text-warning'
   return 'bg-destructive/15 text-destructive'
+}
+
+// Text-only tone for the avg-score summary tile value.
+function scoreTextClass(score: number | null): string {
+  if (score == null) return ''
+  if (score >= 4) return 'text-success'
+  if (score >= 3) return 'text-warning'
+  return 'text-destructive'
 }
 
 const URGENCY_BADGE: Record<ReinspectUrgency, { label: string; cls: string }> = {
@@ -235,7 +246,7 @@ export default function InspectionsPage() {
   // only the current page is fetched, with { count: 'exact' } for the total.
   // The '/supabase/inspections-all' key prefix is kept so existing fuzzy
   // invalidations (delete here, InspectionFormSheet saves) still refresh us.
-  const { data: pageData, isLoading } = useQuery({
+  const { data: pageData, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/inspections-all', { page, pageSize, ...filters }],
     queryFn: async () => {
       const orClause = await buildSearchOrClause(filters.search)
@@ -269,6 +280,36 @@ export default function InspectionsPage() {
       const scores = (data ?? []).map((r: { overall_score: number | null }) => r.overall_score).filter((s): s is number => s != null)
       if (!scores.length) return null
       return scores.reduce((a, b) => a + b, 0) / scores.length
+    },
+  })
+
+  // Summary tile: re-inspections needing attention (high/critical urgency),
+  // respecting the active filters. Head-only count, no rows fetched.
+  const { data: needsReinspect } = useQuery({
+    queryKey: ['/supabase/inspections-all', 'needs-reinspect', filters],
+    queryFn: async () => {
+      const orClause = await buildSearchOrClause(filters.search)
+      let q = supabase.from('inspections').select('id', { count: 'exact', head: true }).in('reinspect_urgency', ['high', 'critical'])
+      q = applyInspectionFilters(q, filters, orClause)
+      const { count, error } = await q
+      if (error) throw error
+      return count ?? 0
+    },
+  })
+
+  // Summary tile: completed inspections in the last 7 days — a fixed
+  // recent-activity pulse, independent of the table filters.
+  const { data: last7dCount } = useQuery({
+    queryKey: ['/supabase/inspections-all', 'last-7d'],
+    queryFn: async () => {
+      const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const { count, error } = await supabase
+        .from('inspections')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'completed')
+        .gte('inspected_at', since)
+      if (error) throw error
+      return count ?? 0
     },
   })
 
@@ -327,50 +368,40 @@ export default function InspectionsPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col overflow-x-hidden">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Inspections</h1>
-          <p className="text-sm text-muted-foreground">
-            Cleaning-quality scores logged after each clean. Scores 1–5.
-            {avgScore != null && (
-              <span className="ml-2">
-                <span className="text-muted-foreground">· Avg overall:</span>{' '}
-                <span className={`font-medium px-1.5 py-0.5 rounded ${scoreColorClass(Math.round(avgScore))}`}>
-                  {avgScore.toFixed(1)}
-                </span>
-              </span>
+    <PageContainer width="full" className="h-full flex flex-col overflow-x-hidden">
+      <PageHeader
+        title="Inspections"
+        subtitle="Cleaning-quality scores logged after each clean · scores 1–5"
+        actions={
+          <>
+            {canEdit && (
+              <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                New Inspection
+              </Button>
             )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {canEdit && (
-            <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
-              <Plus className="w-3.5 h-3.5" />
-              New Inspection
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
+              <Download className="w-3.5 h-3.5" />
+              {exporting ? 'Exporting…' : 'Export CSV'}
             </Button>
-          )}
-          <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
-            <Download className="w-3.5 h-3.5" />
-            {exporting ? 'Exporting…' : 'Export CSV'}
-          </Button>
-          <div className="relative">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search property / cleaner / notes…"
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1) }}
-              className="pl-8 pr-7 h-8 w-64 text-sm"
-            />
-            {search && (
-              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search property / cleaner / notes…"
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                className="pl-8 pr-7 h-8 w-64 text-sm"
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </>
+        }
+      />
 
       <Tabs defaultValue="priority" className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start">
@@ -381,6 +412,26 @@ export default function InspectionsPage() {
           <InspectionPriorityDashboard />
         </TabsContent>
         <TabsContent value="history" className="flex-1 flex flex-col min-h-0 mt-3 space-y-4">
+      {/* Summary strip — at-a-glance quality stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ClipboardCheck className="w-3.5 h-3.5" /> Total Inspections</div>
+          <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{totalCount}</p>
+        </div>
+        <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Star className="w-3.5 h-3.5" /> Avg Overall Score</div>
+          <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${scoreTextClass(avgScore ?? null)}`}>{avgScore == null ? '—' : avgScore.toFixed(2)}</p>
+        </div>
+        <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CalendarDays className="w-3.5 h-3.5" /> Inspected (7d)</div>
+          <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{last7dCount ?? '—'}</p>
+        </div>
+        <div className={`rounded-2xl border shadow-sm p-4 ${(needsReinspect ?? 0) > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Re-inspection</div>
+          <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${(needsReinspect ?? 0) > 0 ? 'text-warning' : ''}`}>{needsReinspect ?? '—'}</p>
+        </div>
+      </div>
+
       <div className="flex items-center gap-2 flex-wrap text-xs">
         <label className="text-muted-foreground">Status</label>
         <Select value={statusFilter} onValueChange={v => { setStatusFilter(v as 'all' | InspectionStatus); setPage(1) }}>
@@ -418,180 +469,186 @@ export default function InspectionsPage() {
         <span className="text-muted-foreground ml-auto">{totalCount} record{totalCount === 1 ? '' : 's'}</span>
       </div>
 
-      {/* Mobile: cards (no horizontal scroll) */}
-      <div className="md:hidden flex-1 overflow-y-auto -mx-1 px-1 space-y-2">
-        {isLoading ? (
-          [...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-lg" />)
-        ) : paged.length === 0 ? (
-          <EmptyState
-            icon={ClipboardCheck}
-            title="No inspections"
-            description={
-              hasActiveFilters
-                ? 'No records match the current filters.'
-                : 'Tap + New Inspection to log or schedule one.'
-            }
-          />
-        ) : (
-          paged.map(i => (
-            <button
-              key={i.id}
-              type="button"
-              onClick={() => handleRowClick(i)}
-              className="w-full text-left rounded-lg border border-border bg-background p-3 active:bg-muted/40"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <StatusPill status={i.status} />
-                    {i.reinspect_urgency !== 'none' && (
-                      <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
-                        {URGENCY_BADGE[i.reinspect_urgency].label}
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+        <>
+          {/* Mobile: cards (no horizontal scroll) */}
+          <div className="md:hidden flex-1 overflow-y-auto -mx-1 px-1 space-y-2">
+            {isLoading ? (
+              [...Array(4)].map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-lg" />)
+            ) : paged.length === 0 ? (
+              <EmptyState
+                icon={ClipboardCheck}
+                title="No inspections"
+                description={
+                  hasActiveFilters
+                    ? 'No records match the current filters.'
+                    : 'Tap + New Inspection to log or schedule one.'
+                }
+              />
+            ) : (
+              paged.map(i => (
+                <button
+                  key={i.id}
+                  type="button"
+                  onClick={() => handleRowClick(i)}
+                  className="w-full text-left rounded-2xl border border-border bg-background p-3 shadow-sm active:bg-muted/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <StatusPill status={i.status} />
+                        {i.reinspect_urgency !== 'none' && (
+                          <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                            {URGENCY_BADGE[i.reinspect_urgency].label}
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-medium text-sm truncate">
+                        {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {(i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic text-muted-foreground/70">Cleaner not recorded</span>)}
+                        {' · '}
+                        {i.status === 'scheduled' && i.scheduled_for
+                          ? `→ ${format(parseISO(i.scheduled_for), 'MMM d')}`
+                          : i.inspected_at
+                            ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
+                            : '—'}
+                      </div>
+                    </div>
+                    {i.overall_score != null && (
+                      <span className={`shrink-0 inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
+                        <Star className="w-3 h-3 fill-current" /> {i.overall_score}
                       </span>
                     )}
                   </div>
-                  <div className="font-medium text-sm truncate">
-                    {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
-                  </div>
-                  <div className="text-xs text-muted-foreground truncate">
-                    {(i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic text-muted-foreground/70">Cleaner not recorded</span>)}
-                    {' · '}
-                    {i.status === 'scheduled' && i.scheduled_for
-                      ? `→ ${format(parseISO(i.scheduled_for), 'MMM d')}`
-                      : i.inspected_at
-                        ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
-                        : '—'}
-                  </div>
-                </div>
-                {i.overall_score != null && (
-                  <span className={`shrink-0 inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
-                    <Star className="w-3 h-3 fill-current" /> {i.overall_score}
-                  </span>
-                )}
-              </div>
-              {(i.cleanliness_score != null || i.linens_score != null || i.supplies_score != null || i.exterior_score != null) && (
-                <div className="flex flex-wrap gap-1 mt-2">
-                  <ScorePill label="Clean" score={i.cleanliness_score} />
-                  <ScorePill label="Linen" score={i.linens_score} />
-                  <ScorePill label="Supp" score={i.supplies_score} />
-                  <ScorePill label="Ext" score={i.exterior_score} />
-                </div>
-              )}
-              {((i.photos_url?.length ?? 0) > 0 || i.notes) && (
-                <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                  {(i.photos_url?.length ?? 0) > 0 && (
-                    <span className="inline-flex items-center gap-1 shrink-0">
-                      <Camera className="w-3 h-3" />
-                      {i.photos_url!.length}
-                    </span>
-                  )}
-                  {i.notes && <span className="truncate flex-1 min-w-0">{i.notes}</span>}
-                </div>
-              )}
-            </button>
-          ))
-        )}
-      </div>
-
-      {/* Desktop: full table */}
-      <div className="hidden md:block overflow-auto flex-1 rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
-            <tr>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[180px]">Property</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspector</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Inspected</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Overall</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sub-scores</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8"></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 max-w-[220px]">Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              [...Array(6)].map((_, i) => (
-                <tr key={i} className="border-b border-border/50">
-                  {[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
-                </tr>
-              ))
-            ) : paged.length === 0 ? (
-              <tr>
-                <td colSpan={8}>
-                  <EmptyState
-                    icon={ClipboardCheck}
-                    title="No inspections"
-                    description={
-                      hasActiveFilters
-                        ? 'No records match the current filters. Clear filters or widen the date range.'
-                        : 'Log an inspection from a property modal → Inspections tab. Records appear here.'
-                    }
-                  />
-                </td>
-              </tr>
-            ) : (
-              paged.map(i => (
-                <tr
-                  key={i.id}
-                  className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer"
-                  onClick={() => handleRowClick(i)}
-                >
-                  <td className="py-2 px-3 font-medium text-xs">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
-                      <StatusPill status={i.status} />
-                      {i.reinspect_urgency !== 'none' && (
-                        <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
-                          {URGENCY_BADGE[i.reinspect_urgency].label}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">
-                    {i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">
-                    {i.inspectors?.full_name ?? '—'}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
-                    {i.status === 'scheduled' && i.scheduled_for
-                      ? `→ ${format(parseISO(i.scheduled_for), 'MMM d, yyyy')}`
-                      : i.inspected_at
-                        ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
-                        : '—'}
-                  </td>
-                  <td className="py-2 px-3">
-                    {i.overall_score != null ? (
-                      <span className={`inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
-                        <Star className="w-3 h-3" /> {i.overall_score}
-                      </span>
-                    ) : <span className="text-muted-foreground text-xs">—</span>}
-                  </td>
-                  <td className="py-2 px-3">
-                    <div className="flex flex-wrap gap-1">
+                  {(i.cleanliness_score != null || i.linens_score != null || i.supplies_score != null || i.exterior_score != null) && (
+                    <div className="flex flex-wrap gap-1 mt-2">
                       <ScorePill label="Clean" score={i.cleanliness_score} />
                       <ScorePill label="Linen" score={i.linens_score} />
                       <ScorePill label="Supp" score={i.supplies_score} />
                       <ScorePill label="Ext" score={i.exterior_score} />
                     </div>
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">
-                    {i.photos_url && i.photos_url.length > 0 && (
-                      <span className="inline-flex items-center gap-0.5"><Camera className="w-3 h-3" />{i.photos_url.length}</span>
-                    )}
-                  </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[220px] truncate" title={i.notes ?? ''}>
-                    {i.notes || '—'}
-                  </td>
-                </tr>
+                  )}
+                  {((i.photos_url?.length ?? 0) > 0 || i.notes) && (
+                    <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
+                      {(i.photos_url?.length ?? 0) > 0 && (
+                        <span className="inline-flex items-center gap-1 shrink-0">
+                          <Camera className="w-3 h-3" />
+                          {i.photos_url!.length}
+                        </span>
+                      )}
+                      {i.notes && <span className="truncate flex-1 min-w-0">{i.notes}</span>}
+                    </div>
+                  )}
+                </button>
               ))
             )}
-          </tbody>
-        </table>
-      </div>
+          </div>
 
-      {!isLoading && totalCount > 0 && (
-        <TablePagination total={totalCount} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          {/* Desktop: full table */}
+          <div className="hidden md:block overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
+                <tr>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[180px]">Property</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspector</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Inspected</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Overall</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sub-scores</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8"></th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 max-w-[220px]">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  [...Array(6)].map((_, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      {[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                    </tr>
+                  ))
+                ) : paged.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <EmptyState
+                        icon={ClipboardCheck}
+                        title="No inspections"
+                        description={
+                          hasActiveFilters
+                            ? 'No records match the current filters. Clear filters or widen the date range.'
+                            : 'Log an inspection from a property modal → Inspections tab. Records appear here.'
+                        }
+                      />
+                    </td>
+                  </tr>
+                ) : (
+                  paged.map(i => (
+                    <tr
+                      key={i.id}
+                      className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer"
+                      onClick={() => handleRowClick(i)}
+                    >
+                      <td className="py-2 px-3 font-medium text-xs">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
+                          <StatusPill status={i.status} />
+                          {i.reinspect_urgency !== 'none' && (
+                            <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
+                              {URGENCY_BADGE[i.reinspect_urgency].label}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">
+                        {i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">
+                        {i.inspectors?.full_name ?? '—'}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {i.status === 'scheduled' && i.scheduled_for
+                          ? `→ ${format(parseISO(i.scheduled_for), 'MMM d, yyyy')}`
+                          : i.inspected_at
+                            ? format(parseISO(i.inspected_at), 'MMM d, yyyy')
+                            : '—'}
+                      </td>
+                      <td className="py-2 px-3">
+                        {i.overall_score != null ? (
+                          <span className={`inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
+                            <Star className="w-3 h-3" /> {i.overall_score}
+                          </span>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </td>
+                      <td className="py-2 px-3">
+                        <div className="flex flex-wrap gap-1">
+                          <ScorePill label="Clean" score={i.cleanliness_score} />
+                          <ScorePill label="Linen" score={i.linens_score} />
+                          <ScorePill label="Supp" score={i.supplies_score} />
+                          <ScorePill label="Ext" score={i.exterior_score} />
+                        </div>
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">
+                        {i.photos_url && i.photos_url.length > 0 && (
+                          <span className="inline-flex items-center gap-0.5"><Camera className="w-3 h-3" />{i.photos_url.length}</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground max-w-[220px] truncate" title={i.notes ?? ''}>
+                        {i.notes || '—'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {!isLoading && totalCount > 0 && (
+            <TablePagination total={totalCount} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+          )}
+        </>
       )}
         </TabsContent>
       </Tabs>
@@ -710,6 +767,6 @@ export default function InspectionsPage() {
           confirmDelete(insp.id, label)
         } : undefined}
       />
-    </div>
+    </PageContainer>
   )
 }
