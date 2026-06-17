@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
 import { ErrorState } from '@/components/ErrorState'
 import { TONE_SOFT } from '@/lib/status-colors'
-import { Building2, TrendingUp, DollarSign, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
+import { Building2, TrendingUp, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
@@ -454,6 +454,89 @@ export default function DashboardPage() {
         />
       )}
 
+      {/* Redesign: hero band — headline financial glance + active profit mix */}
+      <Card className="relative overflow-hidden rounded-2xl border-primary/20 shadow-md bg-gradient-to-br from-primary/10 via-card to-card">
+        <CardContent className="p-5 sm:p-6">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-6">
+            {canViewFinancials ? (
+              <div className="min-w-0">
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Monthly Revenue (active)</p>
+                <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
+                  <button
+                    onClick={() => navigate('/revenue-report')}
+                    className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+                  >
+                    ${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
+                  </button>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    ${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit
+                    <span className="mx-1.5 text-border">•</span>
+                    <span className={avgProfit < 15 ? 'text-destructive font-semibold' : 'text-success font-semibold'}>{avgProfit.toFixed(1)}% margin</span>
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Portfolio</p>
+                <div className="mt-1.5 flex items-baseline gap-3">
+                  <span className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent">{active}</span>
+                  <span className="text-sm font-medium text-muted-foreground">active of {total} properties</span>
+                </div>
+              </div>
+            )}
+
+            {/* Active profit mix — mini stacked bar from real distribution data */}
+            {canViewFinancials && financialProps.length > 0 && (
+              <div className="flex-1 min-w-[200px] lg:max-w-md">
+                <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
+                  <span className="uppercase tracking-wider font-semibold">Active profit mix</span>
+                  <span className="tabular-nums">{financialProps.length} props</span>
+                </div>
+                <div className="flex h-2.5 rounded-full overflow-hidden bg-muted ring-1 ring-border/50">
+                  {[
+                    { k: 'high', count: profitBuckets.high, color: PROFIT_COLOR_HEX.high },
+                    { k: 'mid', count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid },
+                    { k: 'low', count: profitBuckets.low, color: PROFIT_COLOR_HEX.low },
+                  ].filter(b => b.count > 0).map(b => (
+                    <div key={b.k} style={{ width: `${b.count / financialProps.length * 100}%`, backgroundColor: b.color }} />
+                  ))}
+                </div>
+                <div className="flex gap-3 mt-2 flex-wrap">
+                  {[
+                    { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high },
+                    { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid },
+                    { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low },
+                  ].map(b => (
+                    <span key={b.label} className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color }} />
+                      {b.label} <span className="tabular-nums font-semibold text-foreground">{b.count}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Portfolio chips */}
+            <div className="flex gap-2 flex-wrap lg:ml-auto">
+              {[
+                { label: 'Active', value: active, to: '/master-list?stage=Active' },
+                { label: 'Onboarding', value: onboarding, to: '/master-list?stage=Onboarding' },
+                { label: 'Total', value: total, to: '/master-list' },
+              ].map(s => (
+                <button
+                  key={s.label}
+                  onClick={() => navigate(s.to)}
+                  className="rounded-xl bg-background/70 ring-1 ring-border px-3.5 py-2 text-center hover:ring-primary/40 hover:bg-background transition-all"
+                >
+                  <p className="text-xl font-bold tabular-nums leading-none">{s.value}</p>
+                  <p className="text-2xs text-muted-foreground mt-1">{s.label}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Date Range Filter Bar */}
       <div className="flex flex-wrap items-center gap-2 -mt-1">
         {(['7d', '30d', '90d', 'custom'] as Preset[]).map((p) => (
@@ -492,74 +575,139 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Today's Actions — consolidated priority panel */}
+      {/* Redesign: priority row — Today's Actions + merged Needs Attention */}
       {!isLoading && (
-        <Card className="border-primary/30 bg-primary/5 shadow-xs">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <ClipboardCheck className="w-4 h-4 text-primary" />
-              <span className="text-sm font-semibold">Today's Actions</span>
-              {actionItems.length > 0 && (
-                <span className="ml-1 text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5 tabular-nums">{actionItems.length}</span>
-              )}
-            </div>
-            {actionItems.length === 0 ? (
-              <p className="text-xs text-muted-foreground">All caught up — nothing needs action today.</p>
-            ) : (
-              <div className="space-y-1 max-h-72 overflow-y-auto">
-                {actionItems.map((it) => (
-                  <div key={it.key} className="flex items-center justify-between text-xs gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {it.kind === 'follow-up'
-                        ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                        : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
-                      <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
-                      <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
-                        {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+        <div className={`grid gap-4 ${canViewFinancials ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+          {/* Today's Actions */}
+          <Card className="rounded-2xl border-primary/30 bg-primary/5 shadow-sm hover:shadow-md transition-shadow">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <ClipboardCheck className="w-4 h-4 text-primary" />
+                <span className="text-sm font-semibold">Today's Actions</span>
+                {actionItems.length > 0 && (
+                  <span className="ml-1 text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5 tabular-nums">{actionItems.length}</span>
+                )}
               </div>
-            )}
-            <button onClick={() => navigate('/alerts')} className="text-xs text-primary hover:underline mt-2 block">
-              View all alerts →
-            </button>
-          </CardContent>
-        </Card>
+              {actionItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground">All caught up — nothing needs action today.</p>
+              ) : (
+                <div className="space-y-1 max-h-72 overflow-y-auto">
+                  {actionItems.map((it) => (
+                    <div key={it.key} className="flex items-center justify-between text-xs gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {it.kind === 'follow-up'
+                          ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                          : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
+                        <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
+                        <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
+                          {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={() => navigate('/alerts')} className="text-xs text-primary hover:underline mt-2 block">
+                View all alerts →
+              </button>
+            </CardContent>
+          </Card>
+
+          {/* Needs Attention — merged negative-profit + missing-data with severity chips */}
+          {canViewFinancials && (
+            <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <AlertTriangle className="w-4 h-4 text-warning" />
+                  <span className="text-sm font-semibold">Needs Attention</span>
+                  {(negativeProfit.length + missingData.length) > 0 && (
+                    <span className="ml-1 text-xs font-medium text-warning bg-warning/10 rounded-full px-2 py-0.5 tabular-nums">{negativeProfit.length + missingData.length}</span>
+                  )}
+                </div>
+                {negativeProfit.length === 0 && missingData.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No data issues — all active properties look healthy.</p>
+                ) : (
+                  <div className="space-y-3 max-h-72 overflow-y-auto">
+                    {negativeProfit.length > 0 && (
+                      <div>
+                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-destructive bg-destructive/10 rounded-full px-2 py-0.5 mb-1.5">
+                          <AlertTriangle className="w-3 h-3" /> {negativeProfit.length} negative profit
+                        </span>
+                        <div className="space-y-1 mt-1.5">
+                          {negativeProfit.slice(0, 5).map((p: any) => (
+                            <div key={p.id} className="flex justify-between text-xs">
+                              <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/cost-tracking')}>{p.name}</span>
+                              <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${(p.estimated_profit || 0).toFixed(2)}</span>
+                            </div>
+                          ))}
+                          {negativeProfit.length > 5 && (
+                            <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline">View all {negativeProfit.length} →</button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {missingData.length > 0 && (
+                      <div>
+                        <button className="flex items-center gap-1.5 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
+                          <span className="inline-flex items-center gap-1 text-2xs font-semibold text-warning bg-warning/10 rounded-full px-2 py-0.5">
+                            <AlertCircle className="w-3 h-3" /> {missingData.length} missing data
+                          </span>
+                          <span className="ml-auto text-muted-foreground">
+                            {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+                          </span>
+                        </button>
+                        {!missingCollapsed && (
+                          <div className="space-y-1 mt-1.5">
+                            {missingData.slice(0, 5).map((p: any) => {
+                              const missingFields: string[] = []
+                              if (!p.ce_charged) missingFields.push('ce_charged')
+                              if (!p.cleaner_pay) missingFields.push('cleaner_pay')
+                              if (!p.square_footage) missingFields.push('square_footage')
+                              if (!p.bedrooms) missingFields.push('bedrooms')
+                              if (!p.address) missingFields.push('address')
+                              const missingLabels = missingFields.map(f => ({ ce_charged: 'CE', cleaner_pay: 'Pay', square_footage: 'SqFt', bedrooms: 'Beds', address: 'Address' }[f] ?? f))
+                              return (
+                                <div key={p.id} className="flex items-center justify-between text-xs gap-2">
+                                  <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <span className="text-warning">{missingLabels.join(', ')}</span>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-5 px-1.5 text-xs gap-1"
+                                      onClick={() => openPropertyModal(p.id, 'dashboard-missing', missingFields)}
+                                      data-testid={`button-fix-missing-${p.id}`}
+                                    >
+                                      <Wrench className="w-2.5 h-2.5" /> Fix
+                                    </Button>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            {missingData.length > 5 && (
+                              <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline">View all {missingData.length} →</button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Redesign: compact KPI strip — Revenue & Avg Profit % now live in the hero */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
         <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
         <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
         <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Offboarding')} />
-        {canViewFinancials && (
-          <KpiCard
-            title="Monthly Revenue"
-            value={`$${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}`}
-            subtitle={`$${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit`}
-            icon={DollarSign}
-            loading={isLoading}
-            hint="Includes all active properties × estimated cleans/month. See Revenue Report for actual CE charged totals."
-            onClick={() => navigate('/revenue-report')}
-          />
-        )}
-        {canViewFinancials && (
-          <KpiCard
-            title="Avg Profit %"
-            value={`${avgProfit.toFixed(1)}%`}
-            icon={TrendingUp}
-            loading={isLoading}
-            alert={avgProfit < 15}
-            hint="Average profit margin across active properties. Numbers may differ from Revenue Report which uses actual CE charged totals."
-            onClick={() => navigate('/revenue-report')}
-          />
-        )}
         <KpiCard
           title="Conversions"
           value={onboardingVelocity?.conversions ?? 0}
@@ -607,7 +755,7 @@ export default function DashboardPage() {
 
       {/* 30-Day Activity Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserCheck className="w-4 h-4 text-info" />
@@ -633,7 +781,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserMinus className="w-4 h-4 text-muted-foreground" />
@@ -665,86 +813,11 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Alerts Row */}
-      {canViewFinancials && !isLoading && (negativeProfit.length > 0 || missingData.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {negativeProfit.length > 0 && (
-            <Card className="border-destructive/30 bg-destructive/5 shadow-xs">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-destructive" />
-                  <span className="text-sm font-medium text-destructive">{negativeProfit.length} Negative Profit {negativeProfit.length === 1 ? 'Property' : 'Properties'}<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
-                </div>
-                <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {negativeProfit.slice(0, 8).map((p: any) => (
-                    <div key={p.id} className="flex justify-between text-xs">
-                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/cost-tracking')}>{p.name}</span>
-                      <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${(p.estimated_profit || 0).toFixed(2)}</span>
-                    </div>
-                  ))}
-                  {negativeProfit.length > 8 && (
-                    <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline mt-1">
-                      View all {negativeProfit.length} →
-                    </button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {missingData.length > 0 && (
-            <Card className="border-warning/30 bg-warning/5 shadow-xs">
-              <CardContent className="p-4">
-                <button className="flex items-center gap-2 mb-2 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
-                  <AlertCircle className="w-4 h-4 text-warning" />
-                  <span className="text-sm font-medium text-warning">{missingData.length} Properties Missing Data<span className="font-normal text-xs text-muted-foreground ml-1">(current)</span></span>
-                  <span className="ml-auto text-muted-foreground">
-                    {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                  </span>
-                </button>
-                {!missingCollapsed && <div className="space-y-1 max-h-32 overflow-y-auto">
-                  {missingData.slice(0, 8).map((p: any) => {
-                    const missingFields: string[] = []
-                    if (!p.ce_charged) missingFields.push('ce_charged')
-                    if (!p.cleaner_pay) missingFields.push('cleaner_pay')
-                    if (!p.square_footage) missingFields.push('square_footage')
-                    if (!p.bedrooms) missingFields.push('bedrooms')
-                    if (!p.address) missingFields.push('address')
-                    const missingLabels = missingFields.map(f => ({ ce_charged: 'CE', cleaner_pay: 'Pay', square_footage: 'SqFt', bedrooms: 'Beds', address: 'Address' }[f] ?? f))
-                    return (
-                      <div key={p.id} className="flex items-center justify-between text-xs gap-2">
-                        <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
-                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <span className="text-warning">{missingLabels.join(', ')}</span>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-5 px-1.5 text-xs gap-1"
-                            onClick={() => openPropertyModal(p.id, 'dashboard-missing', missingFields)}
-                            data-testid={`button-fix-missing-${p.id}`}
-                          >
-                            <Wrench className="w-2.5 h-2.5" />
-                            Fix
-                          </Button>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {missingData.length > 8 && (
-                    <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline mt-1">
-                      View all {missingData.length} →
-                    </button>
-                  )}
-                </div>}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
+      {/* Insights row — Profit Distribution + Properties by Stage + Recent Transitions */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Profit Distribution */}
         {canViewFinancials && (
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
@@ -754,19 +827,24 @@ export default function DashboardPage() {
             ) : financialProps.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">No active properties with financial data.</p>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-4">
                 {[
                   { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high, pct: (profitBuckets.high / financialProps.length * 100) },
                   { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid, pct: (profitBuckets.mid / financialProps.length * 100) },
                   { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low, pct: (profitBuckets.low / financialProps.length * 100) },
                 ].map(b => (
-                  <div key={b.label} className="cursor-pointer" onClick={() => navigate('/cost-tracking')}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">{b.label}</span>
-                      <span className="font-medium tabular-nums">{b.count}</span>
+                  <div key={b.label} className="cursor-pointer group" onClick={() => navigate('/cost-tracking')}>
+                    <div className="flex justify-between items-baseline mb-1.5">
+                      <span className="text-sm font-medium flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
+                        {b.label}
+                      </span>
+                      <span className="text-xs text-muted-foreground tabular-nums">
+                        <span className="text-sm font-bold text-foreground">{b.count}</span> · {b.pct.toFixed(0)}%
+                      </span>
                     </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500" style={{ width: `${b.pct}%`, backgroundColor: b.color }} />
+                    <div className="h-3 rounded-full bg-muted overflow-hidden ring-1 ring-border/50">
+                      <div className="h-full rounded-full transition-all duration-500 group-hover:brightness-110" style={{ width: `${b.pct}%`, backgroundColor: b.color }} />
                     </div>
                   </div>
                 ))}
@@ -777,7 +855,7 @@ export default function DashboardPage() {
         )}
 
         {/* Properties by Stage */}
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Properties by Stage<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
           </CardHeader>
@@ -785,26 +863,32 @@ export default function DashboardPage() {
             {isLoading ? (
               <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
             ) : (
-              <div className="space-y-2">
-                {stages?.map((stage: any) => {
-                  const count = properties?.filter((p: any) => p.stage_id === stage.id).length ?? 0
-                  return (
-                    <div key={stage.id} className="flex items-center justify-between py-1">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
-                        <span className="text-sm">{stage.name}</span>
+              <div className="space-y-2.5">
+                {(() => {
+                  const counts = stages?.map((stage: any) => ({ stage, count: properties?.filter((p: any) => p.stage_id === stage.id).length ?? 0 })) ?? []
+                  const maxCount = Math.max(1, ...counts.map((c: any) => c.count))
+                  return counts.map(({ stage, count }: any) => (
+                    <div key={stage.id} className="cursor-pointer group" onClick={() => navigate(`/master-list?stage=${encodeURIComponent(stage.name)}`)}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
+                          {stage.name}
+                        </span>
+                        <span data-testid={`stage-count-${stage.name}`} className="text-sm font-bold tabular-nums">{count}</span>
                       </div>
-                      <span data-testid={`stage-count-${stage.name}`} className="text-sm font-medium tabular-nums">{count}</span>
+                      <div className="h-2 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500 group-hover:brightness-110" style={{ width: `${count / maxCount * 100}%`, backgroundColor: stage.color }} />
+                      </div>
                     </div>
-                  )
-                })}
+                  ))
+                })()}
               </div>
             )}
           </CardContent>
         </Card>
 
         {/* Recent Stage Transitions */}
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium">Recent Transitions ({periodLabel})</CardTitle>
           </CardHeader>
@@ -855,7 +939,7 @@ export default function DashboardPage() {
 
       {/* Quality Leaderboard + Scheduled This Week */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <ClipboardCheck className="w-4 h-4 text-primary" /> Quality Leaderboard
@@ -924,7 +1008,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-card-border shadow-xs">
+        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div>
@@ -963,7 +1047,7 @@ export default function DashboardPage() {
       </div>
 
       {/* CRM Overview */}
-      <Card className="border-card-border shadow-xs">
+      <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Users className="w-4 h-4 text-primary" /> CRM Overview
