@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send } from 'lucide-react'
+import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send, Plus } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
@@ -101,6 +101,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   const [tagInput, setTagInput] = useState('')
   const [interactionType, setInteractionType] = useState('Note')
   const [interactionSummary, setInteractionSummary] = useState('')
+  const [assignPropId, setAssignPropId] = useState('')
 
   const isCreate = mode === 'create'
 
@@ -129,6 +130,50 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       return data || []
     },
     enabled: !!contactId && !isCreate,
+  })
+
+  // Unassigned properties (no client yet) — the assignable pool for the
+  // "assign a property to this client" picker on the Properties tab.
+  const { data: assignableProps } = useQuery({
+    queryKey: ['/supabase/assignable-properties'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, name, pipeline_stages!properties_stage_id_fkey(name)')
+        .is('contact_id', null)
+        .order('name')
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!contactId && !isCreate && open,
+  })
+
+  const { mutate: assignProperty, isPending: assigning } = useMutation({
+    mutationFn: async (propertyId: string) => {
+      const { error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', Number(propertyId))
+      if (error) throw error
+      return propertyId
+    },
+    onSuccess: (propertyId) => {
+      const prop = (assignableProps || []).find((p: any) => String(p.id) === String(propertyId))
+      logActivity({
+        entity_type: 'property',
+        entity_id: propertyId,
+        entity_name: prop?.name ?? null,
+        action: 'update',
+        field_name: 'contact_id',
+        old_value: null,
+        new_value: contact?.full_name ?? String(contactId),
+        changed_by: user?.label ?? null,
+      })
+      qc.invalidateQueries({ queryKey: ['/supabase/contact-properties', contactId] })
+      qc.invalidateQueries({ queryKey: ['/supabase/assignable-properties'] })
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-unassigned'] })
+      setAssignPropId('')
+      toast({ title: 'Property assigned' })
+    },
+    onError: (error: any) => toast({ title: 'Assign failed', description: error?.message, variant: 'destructive' }),
   })
 
   const { data: interactions } = useQuery({
@@ -416,7 +461,34 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
 
             {/* Properties Tab */}
             {!isCreate && (
-              <TabsContent value="properties" className="mt-3">
+              <TabsContent value="properties" className="mt-3 space-y-3">
+                {/* Assign an unassigned property to this client */}
+                <div className="flex items-center gap-2">
+                  <Select value={assignPropId} onValueChange={setAssignPropId}>
+                    <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-assign-property">
+                      <SelectValue placeholder="Assign an unassigned property…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(assignableProps || []).length === 0 ? (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No unassigned properties</div>
+                      ) : (assignableProps || []).map((p: any) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name}{p.pipeline_stages?.name ? ` · ${p.pipeline_stages.name}` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1"
+                    disabled={!assignPropId || assigning}
+                    onClick={() => assignProperty(assignPropId)}
+                    data-testid="button-assign-property"
+                  >
+                    {assigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Assign
+                  </Button>
+                </div>
+
                 {!linkedProperties || linkedProperties.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-6">No properties linked to this contact</p>
                 ) : (
