@@ -212,6 +212,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 
 ## Current State & Recent Work
 
+- **`/test` now hosts the Property List redesign proposal (2026-06-17, branch `claude/property-list-redesign`):** summary strip (Total/Onboarding/Active/Offboarding), default lands on all in-scope stages ("All Operational") instead of Active-only, stage filter trimmed to stages present in `operational_properties` (Onboarding/Active/Offboarding), modernized table shell (rounded-2xl, pill stage badges, ErrorState, tile skeletons). Data source unchanged. Pending apply to the real `/property-list` page. Spec + plan in `docs/superpowers/`.
 - **Design-system unification + perf pass (2026-06-09, branch `claude/full-redesign-20260609`):**
   - New semantic status tokens (`success`/`warning`/`info`) in index.css + Tailwind; real shadow scale (was all-zero); `text-2xs` utility
   - New shared components: `StatusBadge`, `StatCard`, `PageContainer`, `ErrorState` (+ existing `PageHeader`/`EmptyState` now used app-wide)
