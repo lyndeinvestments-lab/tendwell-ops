@@ -399,7 +399,7 @@ export default function QuoteSheetPage() {
     const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
     const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
     let profitPct: number | null
-    if (hasEdit && ce != null && ce > 0) {
+    if (ce != null && ce > 0) {
       const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0) + linenProgramCost
       profitPct = ((ce - totalCost) / ce) * 100
     } else {

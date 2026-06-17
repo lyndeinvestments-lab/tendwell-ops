@@ -596,7 +596,8 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
   const consumables = Number(property.est_consumables || 0)
   const inspection = Number(property.inspection_cost ?? 15)
   const trash = Number(property.trash_cost ?? 5)
-  const totalCost = pay + laundry + consumables + inspection + trash
+  const linenCost = property.linen_program ? (Number(property.number_of_beds || 0) * 300) / 12 / 4 : 0
+  const totalCost = pay + laundry + consumables + inspection + trash + linenCost
   const profit = ce - totalCost
   const profitPct = ce > 0 ? (profit / ce) * 100 : 0
   const fmt = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -608,6 +609,7 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
     { label: 'Consumables', value: fmt(consumables) },
     { label: 'Inspection', value: fmt(inspection) },
     { label: 'Trash', value: fmt(trash) },
+    ...(linenCost > 0 ? [{ label: 'Linen Program', value: fmt(linenCost) }] : []),
     { label: 'Total Cost', value: fmt(totalCost) },
     { label: 'Profit', value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
     { label: 'Profit %', value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
