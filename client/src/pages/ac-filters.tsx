@@ -13,9 +13,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
-import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3, Wind } from 'lucide-react'
+import { Search, AlertTriangle, CheckCircle2, Clock, CalendarCheck, X, ArrowUpDown, ArrowUp, ArrowDown, Upload, Edit3, Wind, Ruler } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
@@ -75,7 +76,7 @@ export default function AcFiltersPage() {
     setPage(1)
   }, [])
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/ac-filters'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -268,6 +269,7 @@ export default function AcFiltersPage() {
   // Summary stats from ALL properties (not filtered)
   const allOverdue = (properties || []).filter((p: any) => getDueStatus(p.next_filter_due, intervalDays)?.label === 'Overdue').length
   const allDueSoon = (properties || []).filter((p: any) => getDueStatus(p.next_filter_due, intervalDays)?.label === 'Due soon').length
+  const allMissingSize = (properties || []).filter((p: any) => !p.filter_size || String(p.filter_size).trim() === '').length
 
   return (
     <PageContainer width="full" className="h-full flex flex-col">
@@ -276,20 +278,6 @@ export default function AcFiltersPage() {
         subtitle="Track filter sizes and change schedules — click cells to edit"
         actions={
           <>
-            {(allOverdue > 0 || allDueSoon > 0) && (
-              <div className="flex items-center gap-2 text-xs">
-                {allOverdue > 0 && (
-                  <span className="flex items-center gap-1 text-destructive font-medium">
-                    <AlertTriangle className="w-3 h-3" /> {allOverdue} overdue
-                  </span>
-                )}
-                {allDueSoon > 0 && (
-                  <span className="flex items-center gap-1 text-warning font-medium">
-                    <Clock className="w-3 h-3" /> {allDueSoon} due soon
-                  </span>
-                )}
-              </div>
-            )}
             <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
               <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-status-filter">
                 <SelectValue />
@@ -334,6 +322,26 @@ export default function AcFiltersPage() {
         }
       />
 
+      {/* Summary strip — at-a-glance filter health */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Wind className="w-3.5 h-3.5" /> Total Tracked</div>
+          <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{properties?.length ?? 0}</p>
+        </div>
+        <div className={`rounded-2xl border shadow-sm p-4 ${allOverdue > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-card-border bg-card'}`}>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Overdue</div>
+          <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allOverdue > 0 ? 'text-destructive' : ''}`}>{allOverdue}</p>
+        </div>
+        <div className={`rounded-2xl border shadow-sm p-4 ${allDueSoon > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Due Soon (14d)</div>
+          <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allDueSoon > 0 ? 'text-warning' : ''}`}>{allDueSoon}</p>
+        </div>
+        <div className={`rounded-2xl border shadow-sm p-4 ${allMissingSize > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Ruler className="w-3.5 h-3.5" /> Missing Filter Size</div>
+          <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allMissingSize > 0 ? 'text-warning' : ''}`}>{allMissingSize}</p>
+        </div>
+      </div>
+
       {/* Bulk action bar */}
       {canEditView('ac-filters', effectiveUser) && bulkMode && bulkSelected.size > 0 && (
         <div className="flex items-center gap-3 p-2 bg-primary/5 border border-primary/20 rounded-lg text-xs">
@@ -355,7 +363,11 @@ export default function AcFiltersPage() {
         </div>
       )}
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+        <>
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -511,6 +523,8 @@ export default function AcFiltersPage() {
       </div>
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+        </>
       )}
 
       {/* CSV Import Dialog */}
