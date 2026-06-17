@@ -180,7 +180,7 @@ export default function CleanerMetricsPage() {
       )}
 
       {/* Per-cleaner table */}
-      <div className="overflow-auto rounded-lg border border-border">
+      <div className="overflow-auto rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted border-b border-border z-20">
             <tr>

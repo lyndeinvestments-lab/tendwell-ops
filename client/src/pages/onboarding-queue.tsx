@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Check, X, RefreshCw, ChevronDown, ChevronRight, ExternalLink, Image as ImageIcon, Link2, Search } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { ErrorState } from '@/components/ErrorState'
 
 interface OnboardingSubmission {
   id: string
@@ -79,7 +80,7 @@ export default function OnboardingQueuePage() {
   const [createFor, setCreateFor] = useState<OnboardingSubmission | null>(null)
   const [mergeReview, setMergeReview] = useState<{ sub: OnboardingSubmission; propertyId: number } | null>(null)
 
-  const { data: rows, isLoading, isRefetching, refetch } = useQuery<OnboardingSubmission[]>({
+  const { data: rows, isLoading, isError, isRefetching, refetch } = useQuery<OnboardingSubmission[]>({
     queryKey: ['/onboarding_submissions', tab],
     queryFn: async () => {
       let q = supabase.from('onboarding_submissions').select('*').order('submitted_at', { ascending: false }).limit(500)
@@ -163,7 +164,9 @@ export default function OnboardingQueuePage() {
         ))}
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : isLoading ? (
         <div className="space-y-2"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>
       ) : (rows?.length ?? 0) === 0 ? (
         <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No submissions in this view.</CardContent></Card>

@@ -26,7 +26,6 @@ const PROPERTY_QUERY_KEY_PREFIXES = [
   '/supabase/pro-forma',
   '/supabase/revenue',
   '/supabase/contact-properties',
-  '/supabase/previous-properties',
   // Cmd+K palette read-cache. Without this prefix, the palette could
   // serve a stale property list (renamed/moved/created elsewhere) for
   // up to its 30s staleTime after any property mutation.

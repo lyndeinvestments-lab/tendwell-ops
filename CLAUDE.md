@@ -94,7 +94,6 @@ tendwell-ops/
 | `/quote-sheet` | `quote-sheet.tsx` | admin |
 | `/master-list` | `master-list.tsx` | admin, viewer |
 | `/pro-forma` | `pro-forma.tsx` | admin, viewer |
-| `/previous-properties` | `previous-properties.tsx` | admin, viewer |
 | `/settings` | `settings.tsx` | admin |
 | `/revenue-report` | `revenue-report.tsx` | admin, viewer |
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
@@ -211,6 +210,8 @@ npm run db:push    # Push Drizzle schema to SQLite
 ---
 
 ## Current State & Recent Work
+
+- **Page-standard sweep + Previous Properties removed (2026-06-17):** modernized table/card containers to `rounded-2xl` + `shadow-sm` and added `ErrorState` on primary queries across the remaining pages (access-codes, linen-tracker, linen-inventory, property-verifications, cleaners, cleaner-metrics, lost-items, lost-item-detail, tasks, issues, activity, pro-forma, revenue-report, north-star, onboarding-queue, incoming-shipments). Deleted the `/previous-properties` page entirely — Master List (`/master-list`→cost-tracking.tsx) covers it via the **Offboarded** status filter; removed its route, sidebar nav, command-palette entry, `previous-properties` view definition + role-view refs, and repointed the dashboard offboarded links to `/master-list`.
 
 - **AC Filters redesign (2026-06-17, branch `claude/ac-filters-redesign`):** added a summary strip (Total Tracked · Overdue · Due Soon · Missing Filter Size), upgraded the table to `rounded-2xl` + `shadow-sm`, added an `ErrorState`, and folded the old header overdue/due-soon pills into the tiles. Tiles compute client-side (no new query); inline edits, bulk mode, Mark Changed Today, CSV import, search/status filter/sort all preserved. Built directly on the real page.
 - **Inspections redesign (2026-06-17, branch `claude/inspections-redesign`):** migrated to the shared `PageContainer`/`PageHeader` shell, added a summary strip (Total · Avg Overall Score · Inspected 7d · Needs Re-inspection), `rounded-2xl` + `shadow-sm` table/cards, and an `ErrorState` on query failure. Two new head-only `count` queries for the tiles; all existing behavior (two tabs, server-side pagination, 5 filters, detail + Log slide-overs, mobile cards, CSV, delete) preserved. Built directly on the real page (no `/test` proposal step).

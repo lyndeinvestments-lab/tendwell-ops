@@ -57,7 +57,6 @@ const LostItemDetailPage = lazyRetry(() => import("@/pages/lost-item-detail"));
 const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"));
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
-const PreviousPropertiesPage = lazyRetry(() => import("@/pages/previous-properties"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
 const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
@@ -251,7 +250,6 @@ function AppRoutes() {
         <Route path="/pro-forma">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/forecaster">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
-        <Route path="/previous-properties">{() => <GuardedRoute viewId="previous-properties" component={PreviousPropertiesPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
         <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>

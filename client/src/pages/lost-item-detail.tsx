@@ -304,7 +304,7 @@ function ActivityFeed({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
       <h3 className="flex items-center gap-2 text-base font-semibold">
         <MessageSquare className="h-4 w-4" />
         Comments &amp; activity
@@ -459,7 +459,7 @@ function DetailsCard({
 
   if (!editing) {
     return (
-      <div className="rounded-lg border border-border bg-card p-5">
+      <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-base font-semibold">Case details</h3>
           {canEdit ? (
@@ -491,7 +491,7 @@ function DetailsCard({
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card p-5">
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
       <h3 className="text-base font-semibold">Edit case</h3>
       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         <FieldRow label="Item description"><Input value={draft.item_description} onChange={e => setDraft({ ...draft, item_description: e.target.value })} /></FieldRow>
@@ -533,7 +533,7 @@ function DetailsCard({
 
 function SidePanel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-2xl border border-border bg-card shadow-sm p-4">
       <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</div>
       <div className="mt-2 flex flex-col gap-2">{children}</div>
     </div>

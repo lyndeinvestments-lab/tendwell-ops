@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Archive, Sun, Moon, Settings,
+  BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
   BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -77,7 +77,6 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       // in a single page. Either historical permission shows the entry.
       { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
       { title: 'Financial Dashboard', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
-      { title: 'Previous Properties', href: '/previous-properties', view: 'previous-properties', icon: Archive },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
       { title: 'Executive Summary', href: '/report', view: 'report', icon: TrendingUp },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },

@@ -397,7 +397,7 @@ function ListView({
     )
   }
   return (
-    <div className="rounded-lg border border-border overflow-auto">
+    <div className="rounded-2xl border border-border shadow-sm overflow-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
           <tr>

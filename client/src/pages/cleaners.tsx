@@ -21,6 +21,7 @@ import {
 } from '@dnd-kit/core'
 import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2 } from 'lucide-react'
 import { sendInviteEmail } from '@/lib/notify'
+import { roleBadgeClasses } from '@/lib/role-colors'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
 
 type ViewMode = 'list' | 'calendar' | 'reconciliation'
@@ -421,7 +422,7 @@ export default function CleanersPage() {
 
       {/* Roster View */}
       {viewMode === 'list' && (
-        <div className="overflow-auto flex-1 rounded-lg border border-border">
+        <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
               <tr>
@@ -454,7 +455,7 @@ export default function CleanersPage() {
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
                       <td className="py-2 px-3">
                         {c.app_role ? (
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.app_role === 'inspector' ? 'text-info bg-info/10 border-info/25' : 'text-primary bg-primary/10 border-primary/25'}`}>
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${roleBadgeClasses(c.app_role === 'inspector' ? 'inspector' : 'cleaner')}`}>
                             {c.app_role === 'inspector' ? 'Inspector' : 'Cleaner'}
                           </span>
                         ) : <span className="text-xs text-muted-foreground">—</span>}
@@ -521,7 +522,7 @@ export default function CleanersPage() {
           </div>
 
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            <div className="border border-border rounded-lg overflow-auto">
+            <div className="border border-border rounded-2xl shadow-sm overflow-auto">
               <div className="grid" style={{ gridTemplateColumns: '150px repeat(7, 1fr)', minWidth: '900px' }}>
                 <div className="bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-muted-foreground sticky left-0 z-20">Cleaner</div>
                 {weekDays.map(d => (
@@ -597,7 +598,7 @@ export default function CleanersPage() {
               </Button>
             </div>
           )}
-          <div className="overflow-auto flex-1 rounded-lg border border-border">
+          <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
                 <tr>
