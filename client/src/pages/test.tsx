@@ -1,697 +1,291 @@
-import { useState, useMemo, useRef } from 'react'
-import { TablePagination } from '@/components/TablePagination'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { supabase, logActivity } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
-import { supabase, STAGE_COLORS } from '@/lib/supabase'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useToast } from '@/hooks/use-toast'
-import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { usePropertyModal } from '@/hooks/use-property-modal'
-import { usePipelineStages } from '@/hooks/use-pipeline-stages'
-import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FlaskConical, FileText, TrendingUp, Clock } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { ContactModal } from '@/components/ContactModal'
+import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { TablePagination } from '@/components/TablePagination'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
-import { AddressAutocomplete } from '@/components/AddressAutocomplete'
-import { profitColorClass } from '@/lib/profit-colors'
-import { useAppSettings } from '@/hooks/use-app-settings'
-import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
-import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
+import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge, FlaskConical, UserPlus, Building2, AlertCircle } from 'lucide-react'
+import Papa from 'papaparse'
+import { format } from 'date-fns'
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
 
-// ── Cost estimate formulas ────────────────────────────────────────────────────
+const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
+const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
+const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6']
 
-// Laundry: number of beds × wash/dry cost per set
-function calcLaundry(numberOfBeds: number): number {
-  return numberOfBeds * 11.5 * 0.69
-}
+type SortKey = 'full_name' | 'company' | 'email' | 'phone' | 'source' | 'payment_method' | 'client_since' | 'properties' | 'tags'
+type SortDir = 'asc' | 'desc'
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-function fmt(n: number | null | undefined) {
-  if (n == null) return '—'
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-type NewProp = {
-  name: string
-  ce_charged: string
-  cleaner_pay: string
-  bedrooms: string
-  number_of_beds: string
-  king_beds: string
-  queen_beds: string
-  full_beds: string
-  twin_beds: string
-  full_baths: string
-  half_baths: string
-  number_of_kitchens: string
-  hot_tub: boolean
-  linen_program: boolean
-  sq_ft: string
-  address: string
-  contact_id: string
-}
-
-const EMPTY_PROP: NewProp = {
-  name: '',
-  ce_charged: '',
-  cleaner_pay: '',
-  bedrooms: '',
-  number_of_beds: '',
-  king_beds: '',
-  queen_beds: '',
-  full_beds: '',
-  twin_beds: '',
-  full_baths: '',
-  half_baths: '',
-  number_of_kitchens: '',
-  hot_tub: false,
-  linen_program: false,
-  sq_ft: '',
-  address: '',
-  contact_id: '',
+function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
+  label: string; sortKey: SortKey; currentSort: SortKey; currentDir: SortDir; onSort: (k: SortKey) => void
+}) {
+  const active = currentSort === sortKey
+  return (
+    <th
+      className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+      onClick={() => onSort(sortKey)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(sortKey) } }}
+      tabIndex={0}
+      role="columnheader"
+      aria-sort={active ? (currentDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+    >
+      <span className="flex items-center gap-1">
+        {label}
+        {active ? (
+          currentDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
+        ) : (
+          <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" />
+        )}
+      </span>
+    </th>
+  )
 }
 
 export default function TestPage() {
   const { toast } = useToast()
-  const qc = useQueryClient()
-  const { effectiveUser } = useAuth()
-  usePageTitle('Quote Sheet — Redesign Preview')
-  const { openPropertyModal } = usePropertyModal()
-  const { getNumber } = useAppSettings()
-  const INSPECTION_COST = getNumber('cost_inspection', 15)
-  const TRASH_COST = getNumber('cost_trash', 5)
-  const amenityCosts: AmenityCosts = {
-    bathroom: getNumber(AMENITY_SETTINGS_KEYS.bathroom, DEFAULT_AMENITY_COSTS.bathroom),
-    toiletPaper: getNumber(AMENITY_SETTINGS_KEYS.toiletPaper, DEFAULT_AMENITY_COSTS.toiletPaper),
-    kitchen: getNumber(AMENITY_SETTINGS_KEYS.kitchen, DEFAULT_AMENITY_COSTS.kitchen),
-    trashBag: getNumber(AMENITY_SETTINGS_KEYS.trashBag, DEFAULT_AMENITY_COSTS.trashBag),
-    hotTub: getNumber(AMENITY_SETTINGS_KEYS.hotTub, DEFAULT_AMENITY_COSTS.hotTub),
-  }
-  const [addOpen, setAddOpen] = useState(false)
-  const [converting, setConverting] = useState<any>(null)
-  const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
-  // Inline "create a client from this quote" flow — small dialog over the
-  // Add Quote dialog. On success we invalidate the contacts query and
-  // auto-select the newly created client on the Quote form.
-  const [newClientOpen, setNewClientOpen] = useState(false)
-  const [newClient, setNewClient] = useState({ full_name: '', email: '', phone: '' })
+  usePageTitle('Clients — Redesign Preview')
   const [search, setSearch] = useState('')
-  // Quote-sheet negative path: hide quotes that didn't pan out, with a
-  // required note. Default view is active-only; operators can flip to
-  // 'archived' to see + restore them, or 'all' to audit both at once.
-  const [viewMode, setViewMode] = useState<'active' | 'archived' | 'all'>('active')
-  const [archivingTarget, setArchivingTarget] = useState<any>(null)
-  const [archiveReason, setArchiveReason] = useState('')
-  const [sortKey, setSortKey] = useState<string | null>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [sourceFilter, setSourceFilter] = useState(() => {
+    try { return localStorage.getItem('contacts_source_filter') || 'all' } catch { return 'all' }
+  })
+  const [paymentFilter, setPaymentFilter] = useState(() => {
+    try { return localStorage.getItem('contacts_payment_filter') || 'all' } catch { return 'all' }
+  })
+  const [sortKey, setSortKey] = useState<SortKey>(() => {
+    try { return (localStorage.getItem('contacts_sort_key') as SortKey) || 'full_name' } catch { return 'full_name' }
+  })
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    try { return (localStorage.getItem('contacts_sort_dir') as SortDir) || 'asc' } catch { return 'asc' }
+  })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  // Google-sheet-style live edits: per-row field overrides that merge with the
-  // server row during render so derived columns recompute while the user types.
-  const [edits, setEdits] = useState<Record<number, Record<string, any>>>({})
-  const canEdit = canEditView('quote-sheet', effectiveUser)
+  const [modalContactId, setModalContactId] = useState<string | null>(null)
+  const [modalMode, setModalMode] = useState<'view' | 'create'>('view')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [sourceReportOpen, setSourceReportOpen] = useState(false)
+  const [duplicateOpen, setDuplicateOpen] = useState(false)
 
-  function merged(p: any): any {
-    const e = edits[p.id]
-    return e ? { ...p, ...e } : p
-  }
-
-  function toggleSort(key: string) {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-  }
-
-  function SortIcon({ col }: { col: string }) {
-    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
-    return sortDir === 'asc'
-      ? <ArrowUp className="inline w-3 h-3 ml-1" />
-      : <ArrowDown className="inline w-3 h-3 ml-1" />
-  }
-
-  const { data: stages } = usePipelineStages()
-
-  const { data: contacts } = useContacts()
-
-  const quoteStage = stages?.find((s: any) => s.name === 'Quote')
-  const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
-  const activeStage = stages?.find((s: any) => s.name === 'Active')
-
-  const { data: properties, isLoading } = useQuery({
-    queryKey: ['/supabase/quote-sheet'],
+  // Nested under the shared CONTACTS_QUERY_KEY prefix so any mutation that
+  // invalidates ['contacts'] (ContactModal create/update, merges, etc.) also
+  // refreshes this page's join query via TanStack's fuzzy key matching.
+  const { data: contacts, isLoading } = useQuery({
+    queryKey: [...CONTACTS_QUERY_KEY, 'with-property-counts'],
     queryFn: async () => {
-      if (!quoteStage) return []
       const { data, error } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('stage_id', quoteStage.id)
+        .from('contacts')
+        .select('*, properties(id)')
       if (error) throw error
       return data || []
     },
-    enabled: !!quoteStage,
   })
 
-  // Quotes converted in the last 30 days — properties moved from Quote
-  // into Onboarding or Active (counted from stage_transitions).
-  const { data: convertedCount30 } = useQuery({
-    queryKey: ['/supabase/quote-conversions-30d', quoteStage?.id, onboardingStage?.id, activeStage?.id],
-    enabled: !!quoteStage && !!onboardingStage && !!activeStage,
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      const { count, error } = await supabase
-        .from('stage_transitions')
-        .select('*', { count: 'exact', head: true })
-        .eq('from_stage_id', quoteStage!.id)
-        .in('to_stage_id', [onboardingStage!.id, activeStage!.id])
-        .gte('created_at', since)
-      if (error) return 0
-      return count ?? 0
-    },
-  })
-
-  const contactById = useMemo(
-    () => new Map((contacts || []).map((c: any) => [String(c.id), c.full_name as string])),
-    [contacts],
-  )
+  function handleSort(key: SortKey) {
+    const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc'
+    setSortKey(key)
+    setSortDir(newDir)
+    try {
+      localStorage.setItem('contacts_sort_key', key)
+      localStorage.setItem('contacts_sort_dir', newDir)
+    } catch {}
+  }
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const allRows = (properties || []) as any[]
-    // Apply the active/archived/all toggle BEFORE search so the search
-    // operates over the chosen subset only.
-    const scoped = viewMode === 'active'
-      ? allRows.filter(p => !p.archived_at)
-      : viewMode === 'archived'
-        ? allRows.filter(p => p.archived_at)
-        : allRows
-    const base = q
-      ? scoped.filter((p: any) => {
-          const contactName = p.contact_id ? contactById.get(String(p.contact_id)) : null
-          return [p.name, contactName, p.address, p.archived_reason].some((v: any) => v && String(v).toLowerCase().includes(q))
-        })
-      : scoped
-
-    if (!sortKey) return base
-
-    return [...base].sort((a: any, b: any) => {
-      const dir = sortDir === 'asc' ? 1 : -1
-
-      // Columns that use computed laundry/consumables values
-      if (sortKey === 'est_laundry' || sortKey === 'est_consumables') {
-        const getVal = (p: any) => {
-          const beds = p.number_of_beds || 0
-          if (sortKey === 'est_laundry') return p.est_laundry ?? calcLaundry(beds)
-          return p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
-        }
-        const av = getVal(a)
-        const bv = getVal(b)
-        if (av == null && bv == null) return 0
-        if (av == null) return 1
-        if (bv == null) return -1
-        return (av - bv) * dir
-      }
-
-      // Hardcoded numeric columns
-      if (sortKey === 'inspection_cost') return 0
-      if (sortKey === 'trash_cost') return 0
-
-      // Client column sorts by the looked-up contact name (not contact_id)
-      if (sortKey === 'client') {
-        const av = a.contact_id ? contactById.get(String(a.contact_id)) ?? '' : ''
-        const bv = b.contact_id ? contactById.get(String(b.contact_id)) ?? '' : ''
-        if (!av && !bv) return 0
-        if (!av) return 1
-        if (!bv) return -1
-        return av.localeCompare(bv) * dir
-      }
-
-      const av = a[sortKey]
-      const bv = b[sortKey]
-
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-
-      if (typeof av === 'string' && typeof bv === 'string') {
-        return av.localeCompare(bv) * dir
-      }
-      return (av - bv) * dir
+    if (!contacts) return []
+    let result = contacts.filter((c: any) => {
+      const q = search.toLowerCase()
+      const matchSearch = !q || (c.full_name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))
+      const matchSource = sourceFilter === 'all' || c.source === sourceFilter
+      const matchPayment = paymentFilter === 'all' || c.payment_method === paymentFilter
+      return matchSearch && matchSource && matchPayment
     })
-  }, [properties, contacts, contactById, search, sortKey, sortDir, viewMode])
+
+    result.sort((a: any, b: any) => {
+      let cmp = 0
+      if (sortKey === 'full_name') {
+        cmp = (a.full_name || '').localeCompare(b.full_name || '')
+      } else if (sortKey === 'company') {
+        cmp = (a.company || '').localeCompare(b.company || '')
+      } else if (sortKey === 'email') {
+        cmp = (a.email || '').localeCompare(b.email || '')
+      } else if (sortKey === 'phone') {
+        cmp = (a.phone || '').localeCompare(b.phone || '')
+      } else if (sortKey === 'source') {
+        cmp = (a.source || '').localeCompare(b.source || '')
+      } else if (sortKey === 'payment_method') {
+        cmp = (a.payment_method || '').localeCompare(b.payment_method || '')
+      } else if (sortKey === 'client_since') {
+        cmp = (a.client_since || '').localeCompare(b.client_since || '')
+      } else if (sortKey === 'properties') {
+        cmp = (a.properties?.length || 0) - (b.properties?.length || 0)
+      } else if (sortKey === 'tags') {
+        const aLen = (a.tags || []).length
+        const bLen = (b.tags || []).length
+        if (aLen !== bLen) cmp = aLen - bLen
+        else cmp = (a.tags?.[0] || '').localeCompare(b.tags?.[0] || '')
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+
+    return result
+  }, [contacts, search, sourceFilter, paymentFilter, sortKey, sortDir])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
-  const { mutate: addProperty, isPending: addPending } = useGuardedMutation('quote-sheet', {
-    mutationFn: async () => {
-      if (!quoteStage) throw new Error('No Quote stage')
-      const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
-      const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
-      const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
-      const estLaundry = calcLaundry(beds)
-      const estConsumables = calcConsumablesFromCosts(amenityCosts, {
-        full_baths: fullBaths,
-        half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
-        kitchens,
-        number_of_beds: beds,
-        hot_tub: newProp.hot_tub,
-      })
-      const { error } = await supabase.from('properties').insert({
-        name: newProp.name,
-        contact_id: newProp.contact_id || null,
-        ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
-        cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
-        bedrooms: newProp.bedrooms ? parseInt(newProp.bedrooms) : null,
-        number_of_beds: beds || null,
-        king_beds: newProp.king_beds ? parseInt(newProp.king_beds) : null,
-        queen_beds: newProp.queen_beds ? parseInt(newProp.queen_beds) : null,
-        full_beds: newProp.full_beds ? parseInt(newProp.full_beds) : null,
-        twin_beds: newProp.twin_beds ? parseInt(newProp.twin_beds) : null,
-        full_baths: fullBaths || null,
-        half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : null,
-        kitchens,
-        hot_tub: newProp.hot_tub,
-        linen_program: newProp.linen_program,
-        square_footage: newProp.sq_ft ? parseFloat(newProp.sq_ft) : null,
-        address: newProp.address || null,
-        est_laundry: estLaundry || null,
-        est_consumables: estConsumables || null,
-        stage_id: quoteStage.id,
-      })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      toast({ title: 'Property added to Quote stage' })
-      setAddOpen(false)
-      setNewProp(EMPTY_PROP)
-    },
-    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed'), variant: 'destructive' }),
-  })
-
-  // Inline client-create from the Add Quote dialog: insert into contacts,
-  // refresh the dropdown, and auto-link the new client on the current quote.
-  const { mutate: createClient, isPending: createClientPending } = useMutation({
-    mutationFn: async () => {
-      const full_name = newClient.full_name.trim()
-      if (!full_name) throw new Error('Name is required')
-      const { data, error } = await supabase
-        .from('contacts')
-        .insert({
-          full_name,
-          email: newClient.email.trim() || null,
-          phone: newClient.phone.trim() || null,
-        })
-        .select('id, full_name, email')
-        .single()
-      if (error) throw error
-      return data
-    },
-    onSuccess: (created: any) => {
-      if (!created?.id) return
-      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      setNewProp(prev => ({ ...prev, contact_id: String(created.id) }))
-      toast({ title: 'Client created', description: created.full_name })
-      setNewClient({ full_name: '', email: '', phone: '' })
-      setNewClientOpen(false)
-    },
-    onError: (e: any) => toast({ title: 'Could not create client', description: e?.message ?? 'Unknown error', variant: 'destructive' }),
-  })
-
-  const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
-    mutationFn: async (prop: any) => {
-      if (!onboardingStage) throw new Error('No Onboarding stage')
-      if (!quoteStage) throw new Error('No Quote stage')
-      const { executeStageTransition } = await import('@/lib/stage-transition')
-      const result = await executeStageTransition({
-        propertyId: Number(prop.id),
-        propertyName: prop.name || '',
-        fromStageId: Number(quoteStage.id),
-        fromStageName: quoteStage.name,
-        toStageId: Number(onboardingStage.id),
-        toStageName: onboardingStage.name,
-        changedBy: effectiveUser?.label || 'unknown',
-      })
-      if (!result.ok) throw new Error(result.error)
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Moved to Onboarding' })
-      setConverting(null)
-    },
-    onError: (error: any) => toast({ title: 'Failed', description: error?.message, variant: 'destructive' }),
-  })
-
-  function handleDuplicate(prop: any) {
-    setNewProp({
-      name: '',
-      ce_charged: prop.ce_charged != null ? String(prop.ce_charged) : '',
-      cleaner_pay: prop.cleaner_pay != null ? String(prop.cleaner_pay) : '',
-      bedrooms: prop.bedrooms != null ? String(prop.bedrooms) : '',
-      number_of_beds: prop.number_of_beds != null ? String(prop.number_of_beds) : '',
-      king_beds: prop.king_beds != null ? String(prop.king_beds) : '',
-      queen_beds: prop.queen_beds != null ? String(prop.queen_beds) : '',
-      full_beds: prop.full_beds != null ? String(prop.full_beds) : '',
-      twin_beds: prop.twin_beds != null ? String(prop.twin_beds) : '',
-      full_baths: prop.full_baths != null ? String(prop.full_baths) : '',
-      half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
-      number_of_kitchens: prop.kitchens != null ? String(prop.kitchens) : '',
-      hot_tub: prop.hot_tub || false,
-      linen_program: prop.linen_program || false,
-      sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
-      address: '',
-      contact_id: '',
-    })
-    setAddOpen(true)
+  function openContact(id: string) {
+    setModalContactId(id)
+    setModalMode('view')
+    setModalOpen(true)
   }
 
-  function handleConvert(prop: any) {
-    const reqFields = onboardingStage?.requires_fields || []
-    const missing = reqFields.filter((f: string) => !prop[f])
-    setConverting({ prop, missing })
-  }
-
-  // Compute estimates for display. When a row has local edits, always recompute
-  // laundry/consumables/profit from the merged values rather than stale DB rows,
-  // so numbers update live as the user types.
-  function getEstimates(p: any) {
-    const hasEdit = !!edits[p.id]
-    const beds = Number(p.number_of_beds) || 0
-    const laundry = hasEdit ? calcLaundry(beds) : (p.est_laundry ?? calcLaundry(beds))
-    const consumables = hasEdit
-      ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
-      : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens }))
-    const linenProgramCost = p.linen_program ? (beds * 300) / 12 / 4 : 0
-    const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
-    const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
-    let profitPct: number | null
-    if (hasEdit && ce != null && ce > 0) {
-      const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0) + linenProgramCost
-      profitPct = ((ce - totalCost) / ce) * 100
-    } else {
-      profitPct = p.profit_percentage != null ? Number(p.profit_percentage) : null
-    }
-    return { laundry, consumables, linenProgramCost, profitPct }
-  }
-
-  // Persist a single field change to Supabase. Fires on blur/Enter of inline cells.
-  const { mutate: persistField } = useMutation({
-    mutationFn: async ({ id, field, value }: { id: number; field: string; value: any }) => {
-      const numFields = ['ce_charged', 'cleaner_pay', 'bedrooms', 'number_of_beds', 'full_baths', 'half_baths', 'square_footage']
-      const intFields = ['bedrooms', 'number_of_beds', 'square_footage']
-      let dbValue: any = value
-      if (value === '' || value == null) {
-        dbValue = null
-      } else if (numFields.includes(field)) {
-        dbValue = intFields.includes(field) ? parseInt(String(value), 10) : parseFloat(String(value))
-        if (Number.isNaN(dbValue)) dbValue = null
-      }
-      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: (_data, vars) => {
-      // Clear the local edit for this field now that it's persisted; keep other
-      // edits on the same row (server-side profit_percentage may still be stale
-      // so derived values re-use the merged value until refetch completes).
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      setEdits(prev => {
-        const row = prev[vars.id]
-        if (!row) return prev
-        const { [vars.field]: _removed, ...rest } = row
-        const next = { ...prev }
-        if (Object.keys(rest).length === 0) delete next[vars.id]
-        else next[vars.id] = rest
-        return next
-      })
-    },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
-  })
-
-  // Archive a quote with a required reason. Stores who/when/why on the
-  // properties row directly so the archive history is auditable on the
-  // record itself (not in a separate audit table).
-  const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
-    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
-      const { error } = await supabase
-        .from('properties')
-        .update({
-          archived_at: new Date().toISOString(),
-          archived_reason: reason,
-          archived_by: effectiveUser?.label ?? null,
-        })
-        .eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      toast({ title: 'Quote archived' })
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      setArchivingTarget(null)
-      setArchiveReason('')
-    },
-    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
-  })
-
-  const { mutate: restoreQuote } = useGuardedMutation('quote-sheet', {
-    mutationFn: async (id: number) => {
-      const { error } = await supabase
-        .from('properties')
-        .update({ archived_at: null, archived_reason: null, archived_by: null })
-        .eq('id', id)
-      if (error) throw error
-    },
-    onSuccess: () => {
-      toast({ title: 'Quote restored' })
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-    },
-    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
-  })
-
-  function EditableNumberCell({
-    p, field, step = '1', prefix = '', className = '',
-  }: { p: any; field: string; step?: string; prefix?: string; className?: string }) {
-    const m = merged(p)
-    const [editing, setEditing] = useState(false)
-    const [draft, setDraft] = useState<string>(() => {
-      const v = m[field]
-      return v == null ? '' : String(v)
-    })
-    // Set when the user presses Escape so the trailing blur from unmount
-    // doesn't commit the typed draft (April 2026 audit P0 fix).
-    const cancelRef = useRef(false)
-
-    function commit() {
-      setEditing(false)
-      if (cancelRef.current) {
-        cancelRef.current = false
-        return
-      }
-      const current = p[field]
-      const nextVal = draft === '' ? null : Number(draft)
-      const isSame = String(current ?? '') === String(nextVal ?? '')
-      if (!isSame) {
-        persistField({ id: p.id, field, value: draft })
-      } else {
-        // No-op commit: drop any lingering edit override
-        setEdits(prev => {
-          const row = prev[p.id]
-          if (!row) return prev
-          const { [field]: _removed, ...rest } = row
-          const next = { ...prev }
-          if (Object.keys(rest).length === 0) delete next[p.id]
-          else next[p.id] = rest
-          return next
-        })
-      }
-    }
-
-    if (!canEdit) {
-      const v = m[field]
-      return <span className="tabular-nums">{v == null || v === '' ? '—' : (prefix ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}` : (typeof v === 'number' ? v.toLocaleString() : v))}</span>
-    }
-
-    if (editing) {
-      return (
-        <input
-          autoFocus
-          type="number"
-          step={step}
-          value={draft}
-          onChange={e => {
-            setDraft(e.target.value)
-            setEdits(prev => ({ ...prev, [p.id]: { ...(prev[p.id] || {}), [field]: e.target.value === '' ? null : Number(e.target.value) } }))
-          }}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
-            if (e.key === 'Escape') {
-              cancelRef.current = true
-              setEdits(prev => {
-                const row = prev[p.id]
-                if (!row) return prev
-                const { [field]: _removed, ...rest } = row
-                const next = { ...prev }
-                if (Object.keys(rest).length === 0) delete next[p.id]
-                else next[p.id] = rest
-                return next
-              })
-              const v = p[field]
-              setDraft(v == null ? '' : String(v))
-              setEditing(false)
-            }
-          }}
-          className={`h-6 w-20 rounded border border-input bg-background px-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
-          data-testid={`qs-cell-${field}-${p.id}`}
-        />
-      )
-    }
-
-    const v = m[field]
-    const display = v == null || v === '' ? '—'
-      : prefix
-        ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}`
-        : (typeof v === 'number' ? v.toLocaleString() : String(v))
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(v == null ? '' : String(v))
-          setEditing(true)
-        }}
-        className={`tabular-nums text-left w-full hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
-        data-testid={`qs-cell-${field}-${p.id}`}
-      >
-        {display}
-      </button>
-    )
+  function openCreateContact() {
+    setModalContactId(null)
+    setModalMode('create')
+    setModalOpen(true)
   }
 
   function exportCsv() {
-    if (!filtered || filtered.length === 0) return
-    const headers = ['Name', 'Client', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
-    const rows = filtered.map((p: any) => {
-      const { laundry, consumables } = getEstimates(p)
-      return [
-        p.name || '',
-        p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : '',
-        p.ce_charged ?? '',
-        p.cleaner_pay ?? '',
-        p.bedrooms ?? '',
-        p.number_of_beds ?? '',
-        p.full_baths ?? '',
-        p.half_baths ?? '',
-        p.square_footage ?? '',
-        laundry?.toFixed(2) ?? '',
-        consumables?.toFixed(2) ?? '',
-        INSPECTION_COST.toFixed(2),
-        TRASH_COST.toFixed(2),
-        p.profit_percentage != null ? p.profit_percentage.toFixed(1) : '',
-      ]
-    })
-    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
+    const rows = filtered.map((c: any) => ({
+      Name: c.full_name || '',
+      Company: c.company || '',
+      Email: c.email || '',
+      Phone: c.phone || '',
+      Source: c.source || '',
+      'Payment Method': c.payment_method || '',
+      'Client Since': c.client_since || '',
+      Properties: c.properties?.length || 0,
+      Tags: (c.tags || []).join(', '),
+    }))
+    const csv = Papa.unparse(rows)
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `quote-sheet-${new Date().toISOString().split('T')[0]}.csv`
+    a.download = `contacts-${format(new Date(), 'yyyy-MM-dd')}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    toast({ title: `Exported ${rows.length} contacts` })
   }
+
+  // Source report data
+  const sourceReportData = useMemo(() => {
+    if (!contacts) return []
+    const map: Record<string, { total: number; withProperties: number }> = {}
+    for (const c of contacts) {
+      const src = c.source || 'Unknown'
+      if (!map[src]) map[src] = { total: 0, withProperties: 0 }
+      map[src].total++
+      if (c.properties && c.properties.length > 0) map[src].withProperties++
+    }
+    return Object.entries(map)
+      .map(([source, data]) => ({ source, ...data, conversion: data.total > 0 ? Math.round((data.withProperties / data.total) * 100) : 0 }))
+      .sort((a, b) => b.total - a.total)
+  }, [contacts])
 
   return (
     <PageContainer width="full" className="h-full flex flex-col">
       <PageHeader
-        title="Quote Sheet"
+        title="Clients"
         subtitle={
           <span className="inline-flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-2xs font-semibold px-2.5 py-1 ring-1 ring-primary/20">
               <FlaskConical className="w-3 h-3" /> Redesign proposal
             </span>
-            Properties currently in Quote stage
+            Manage clients and relationships
           </span>
         }
-        actions={<div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 no-print" data-testid="button-print-quote">
-            <Printer className="w-3.5 h-3.5" />
-            Print
-          </Button>
-          <div className="relative no-print">
+        actions={<div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search…"
+              placeholder="Search name, company, email…"
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
+              data-testid="input-search-contacts"
               className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+              <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          {/* Active / Archived / All filter — defaults to Active so the
-              negative path doesn't clutter the daily view. */}
-          <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden h-8 no-print" data-testid="quote-view-mode">
-            {(['active', 'archived', 'all'] as const).map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setViewMode(m); setPage(1) }}
-                className={`px-2.5 h-full text-xs capitalize ${viewMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'} ${m !== 'active' ? 'border-l border-border' : ''}`}
-                data-testid={`view-mode-${m}`}
-              >
-                {m}
-                {m === 'archived' ? <span className="ml-1 text-2xs opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
-              </button>
-            ))}
-          </div>
-          <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
-            <Plus className="w-3.5 h-3.5" />
-            New Quote
+          <Select value={sourceFilter} onValueChange={v => { setSourceFilter(v); setPage(1); try { localStorage.setItem('contacts_source_filter', v) } catch {} }}>
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue placeholder="All Sources" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Sources</SelectItem>
+              {SOURCE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={paymentFilter} onValueChange={v => { setPaymentFilter(v); setPage(1); try { localStorage.setItem('contacts_payment_filter', v) } catch {} }}>
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue placeholder="All Payments" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Payments</SelectItem>
+              {PAYMENT_OPTIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setSourceReportOpen(true)}>
+                <BarChart3 className="w-3.5 h-3.5" /> Source Report
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>View breakdown of how clients were sourced</TooltipContent>
+          </Tooltip>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)} disabled={filtered.length === 0}>
+            <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
+          </Button>
+          <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
+            <Plus className="w-3.5 h-3.5" /> Add Client
           </Button>
         </div>}
       />
 
-      {/* Redesign: summary strip — at-a-glance quote stats */}
-      {!isLoading && filtered.length > 0 && (() => {
-        const rows = filtered.map(merged)
-        const profits = rows.map((p: any) => getEstimates(p).profitPct).filter((x: any): x is number => x != null)
-        const avgProfit = profits.length ? profits.reduce((s: number, v: number) => s + v, 0) / profits.length : null
-        const staleCount = filtered.filter((p: any) => !p.archived_at && p.created_at && Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000) > 90).length
+      {/* Redesign: summary strip — at-a-glance client stats */}
+      {!isLoading && (contacts?.length ?? 0) > 0 && (() => {
+        const list = contacts || []
+        const total = list.length
+        const since = Date.now() - 30 * 24 * 60 * 60 * 1000
+        const new30 = list.filter((c: any) => c.created_at && new Date(c.created_at).getTime() >= since).length
+        const unassigned = list.filter((c: any) => !(c.properties && c.properties.length > 0)).length
+        const totalProps = list.reduce((s: number, c: any) => s + (c.properties?.length || 0), 0)
+        const avgProps = total ? (totalProps / total) : 0
         return (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 no-print">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="w-3.5 h-3.5" /> Open Quotes</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{filtered.length}</p>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Users className="w-3.5 h-3.5" /> Total Clients</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5" /> Avg Profit</div>
-              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${avgProfit != null ? profitColorClass(avgProfit) : ''}`}>{avgProfit != null ? `${avgProfit.toFixed(1)}%` : '—'}</p>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> New (30d)</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{new30}</p>
+            </div>
+            <div className={`rounded-2xl border shadow-sm p-4 ${unassigned > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertCircle className="w-3.5 h-3.5" /> Unassigned</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${unassigned > 0 ? 'text-warning' : ''}`}>{unassigned}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /> Converted (30d)</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{convertedCount30 ?? 0}</p>
-            </div>
-            <div className={`rounded-2xl border shadow-sm p-4 ${staleCount > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Stale (&gt;90d)</div>
-              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${staleCount > 0 ? 'text-warning' : ''}`}>{staleCount}</p>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Avg Properties</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{avgProps.toFixed(1)}</p>
             </div>
           </div>
         )
@@ -701,613 +295,277 @@ export default function TestPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
-              {([
-                { col: 'name', label: 'Name' },
-                { col: 'client', label: 'Client' },
-                { col: 'created_at', label: 'Quote Date' },
-                { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
-                { col: 'cleaner_pay', label: 'Cleaner Pay' },
-                { col: 'bedrooms', label: 'Bedrooms' },
-                { col: 'number_of_beds', label: 'Beds' },
-                { col: 'full_baths', label: 'Full Baths' },
-                { col: 'half_baths', label: 'Half Baths' },
-                { col: 'square_footage', label: 'Sq Ft' },
-                { col: 'est_laundry', label: 'Est Laundry', title: 'Estimated Laundry Cost' },
-                { col: 'est_consumables', label: 'Est Consumables', title: 'Estimated Consumables Cost' },
-                { col: 'inspection_cost', label: 'Inspection' },
-                { col: 'trash_cost', label: 'Trash' },
-                { col: 'profit_percentage', label: 'Profit %' },
-              ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
-                <th
-                  key={col}
-                  className={`text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap${col === 'name' ? ' sticky left-0 z-20 bg-muted/80' : ''}`}
-                  title={title}
-                  tabIndex={0}
-                  role="columnheader"
-                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  onClick={() => toggleSort(col)}
-                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
-                >
-                  {label}<SortIcon col={col} />
-                </th>
-              ))}
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3"></th>
+              <SortHeader label="Name" sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Company" sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Email" sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Phone" sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Source" sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Payment" sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Client Since" sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Properties" sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label="Tags" sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              [...Array(4)].map((_, i) => (
+              [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(16)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(9)].map((_, j) => (
+                    <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
+                  ))}
                 </tr>
               ))
-            ) : !properties || properties.length === 0 ? (
+            ) : paged.length === 0 ? (
               <tr>
-                <td colSpan={16}>
-                  <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td colSpan={16}>
-                  <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
+                <td colSpan={9}>
+                  {contacts && contacts.length === 0 ? (
+                    <EmptyState
+                      icon={Users}
+                      title="No clients yet"
+                      description="Add your first client to start tracking properties against contacts."
+                    />
+                  ) : (
+                    <div className="text-center py-12 text-muted-foreground text-sm">No clients match your filters</div>
+                  )}
                 </td>
               </tr>
             ) : (
-              paged.map((rawP: any) => {
-                const p = merged(rawP)
-                const { laundry, consumables, profitPct } = getEstimates(p)
-                return (
-                  <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                      <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
-                    </td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground truncate max-w-[14rem]" title={p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : ''}>
-                      {p.contact_id ? contactById.get(String(p.contact_id)) ?? '—' : '—'}
-                    </td>
-                    <td className="py-2 px-3 text-xs whitespace-nowrap">
-                      {p.created_at ? (() => {
-                        const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
-                        const stale = !p.archived_at && days > 90
-                        return (
-                          <span
-                            className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap"
-                            title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
-                          >
-                            {new Date(p.created_at).toLocaleDateString()}
-                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{days}d</span>
-                          </span>
-                        )
-                      })() : '—'}
-                    </td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="bedrooms" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="number_of_beds" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" step="0.5" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" step="0.5" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" /></td>
-                    <td className="py-2 px-3 text-xs tabular-nums">
-                      <LaundryFormulaTooltip numberOfBeds={p.number_of_beds} override={p.est_laundry}>
-                        <span>{fmt(laundry)}</span>
-                      </LaundryFormulaTooltip>
-                    </td>
-                    <td className="py-2 px-3 text-xs tabular-nums">
-                      <ConsumablesFormulaTooltip
-                        fullBaths={p.full_baths}
-                        halfBaths={p.half_baths}
-                        kitchens={p.kitchens}
-                        numberOfBeds={p.number_of_beds}
-                        hotTub={p.hot_tub}
-                        costs={amenityCosts}
-                        override={p.est_consumables}
-                      >
-                        <span>{fmt(consumables)}</span>
-                      </ConsumablesFormulaTooltip>
-                    </td>
-                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">
-                      {profitPct != null ? (
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-current/30 ${profitColorClass(profitPct)}`}>
-                          {profitPct.toFixed(1)}%
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="py-2 px-3">
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-6 text-xs gap-1 hover:text-primary px-2"
-                          onClick={() => handleDuplicate(p)}
-                          data-testid={`button-duplicate-${p.id}`}
-                          title="Duplicate quote"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </Button>
-                        {p.archived_at ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-xs gap-1 hover:text-primary px-2"
-                            onClick={(e) => { e.stopPropagation(); restoreQuote(p.id) }}
-                            data-testid={`button-restore-${p.id}`}
-                            title={`Archived ${p.archived_by ? 'by ' + p.archived_by : ''}: ${p.archived_reason ?? ''}`}
-                          >
-                            Restore
-                          </Button>
-                        ) : (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 text-xs gap-1 hover:text-primary px-2"
-                              onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
-                              data-testid={`button-convert-${p.id}`}
-                            >
-                              <ArrowRight className="w-3 h-3" /> Onboard
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
-                              onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
-                              data-testid={`button-archive-${p.id}`}
-                              title="Archive — quote didn't pan out"
-                            >
-                              Archive
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                      {p.archived_at && viewMode !== 'active' ? (
-                        <div className="mt-1 text-2xs text-muted-foreground italic">
-                          Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
-                          {p.archived_reason ? <> — {p.archived_reason}</> : null}
-                        </div>
-                      ) : null}
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-            {filtered.length > 0 && (() => {
-              const mergedRows = filtered.map(merged)
-              const sum = (pick: (p: any) => number | null | undefined) =>
-                mergedRows.reduce((s, p) => s + (Number(pick(p)) || 0), 0)
-              const validProfit = mergedRows
-                .map(p => getEstimates(p).profitPct)
-                .filter((x): x is number => x != null)
-              const avgProfit = validProfit.length > 0
-                ? validProfit.reduce((s, v) => s + v, 0) / validProfit.length
-                : null
-              return (
-                <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                  <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
-                  <td className="py-2 px-3 text-xs"></td>
-                  <td className="py-2 px-3 text-xs"></td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.cleaner_pay))}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).laundry || 0), 0))}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).consumables || 0), 0))}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * INSPECTION_COST)}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
-                  <td className="py-2 px-3 text-xs tabular-nums">
-                    {avgProfit == null ? '—' : (
-                      <span className={`font-medium ${profitColorClass(avgProfit)}`} title="Average profit %">
-                        {avgProfit.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span>
-                      </span>
-                    )}
+              paged.map((c: any) => (
+                <tr
+                  key={c.id}
+                  onClick={() => openContact(c.id)}
+                  className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer"
+                  data-testid={`row-contact-${c.id}`}
+                >
+                  <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.company || '—'}</td>
+                  <td className="py-2 px-3 text-xs">
+                    {c.email ? (
+                      <a href={`mailto:${c.email}`} onClick={e => e.stopPropagation()} className="text-primary hover:underline">{c.email}</a>
+                    ) : '—'}
                   </td>
-                  <td></td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
+                  <td className="py-2 px-3 text-xs">
+                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs">
+                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
+                  <td className="py-2 px-3 text-xs">
+                    {(c.properties?.length || 0) > 0
+                      ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
+                      : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">none</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs">
+                    {(c.tags || []).length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {c.tags.slice(0, 3).map((t: string) => (
+                          <span key={t} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{t}</span>
+                        ))}
+                        {c.tags.length > 3 && <span className="text-xs text-muted-foreground">+{c.tags.length - 3}</span>}
+                      </div>
+                    ) : '—'}
+                  </td>
                 </tr>
-              )
-            })()}
+              ))
+            )}
           </tbody>
         </table>
       </div>
-      {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
 
-      {/* Add Quote Dialog */}
-      <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
-        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-base">Add New Quote</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            {/* Property info */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Property Name *</Label>
-              <Input value={newProp.name} onChange={e => setNewProp(prev => ({ ...prev, name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-name" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Address</Label>
-              {/* Google Places-backed autocomplete; falls back to a plain
-                  text input when VITE_GOOGLE_MAPS_API_KEY isn't configured,
-                  so manual entry never breaks. */}
-              <AddressAutocomplete
-                value={newProp.address}
-                onChange={next => setNewProp(prev => ({ ...prev, address: next }))}
-                placeholder="Start typing an address…"
-                className="h-8 text-sm"
-                testId="input-new-address"
-              />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Client</Label>
-                <button
-                  type="button"
-                  onClick={() => setNewClientOpen(true)}
-                  className="text-2xs uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
-                  data-testid="button-new-client-from-quote"
-                >
-                  <Plus className="w-2.5 h-2.5" /> New
-                </button>
-              </div>
-              <select
-                value={newProp.contact_id}
-                onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
-                className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
-              >
-                <option value="">No client linked</option>
-                {(contacts || []).map((c: any) => (
-                  <option key={c.id} value={c.id}>{c.full_name}{c.email ? ` (${c.email})` : ''}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Property details grid */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Bedrooms</Label>
-                <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Number of Beds</Label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const total =
-                        (parseInt(newProp.king_beds) || 0) +
-                        (parseInt(newProp.queen_beds) || 0) +
-                        (parseInt(newProp.full_beds) || 0) +
-                        (parseInt(newProp.twin_beds) || 0)
-                      setNewProp(prev => ({ ...prev, number_of_beds: total > 0 ? String(total) : '' }))
-                    }}
-                    title="Sum king + queen + full + twin"
-                    className="text-[9px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60"
-                  >
-                    Auto
-                  </button>
-                </div>
-                <Input type="number" value={newProp.number_of_beds} onChange={e => setNewProp(prev => ({ ...prev, number_of_beds: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_beds" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Full Baths</Label>
-                <Input type="number" value={newProp.full_baths} onChange={e => setNewProp(prev => ({ ...prev, full_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-full_baths" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Half Baths</Label>
-                <Input type="number" value={newProp.half_baths} onChange={e => setNewProp(prev => ({ ...prev, half_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-half_baths" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Kitchens</Label>
-                <Input type="number" value={newProp.number_of_kitchens} onChange={e => setNewProp(prev => ({ ...prev, number_of_kitchens: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_kitchens" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Square Footage</Label>
-                <Input
-                  type="number"
-                  value={newProp.sq_ft}
-                  onChange={e => {
-                    const sqft = e.target.value
-                    const updates: Partial<NewProp> = { sq_ft: sqft }
-                    // Auto-suggest CE at $0.14/sqft and cleaner pay at 50% of CE
-                    if (sqft && parseFloat(sqft) > 0) {
-                      const suggestedCe = (parseFloat(sqft) * 0.14).toFixed(2)
-                      const suggestedPay = (parseFloat(suggestedCe) * 0.5).toFixed(2)
-                      // Only auto-fill if user hasn't manually entered values
-                      if (!newProp.ce_charged || newProp.ce_charged === ((parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2))) {
-                        updates.ce_charged = suggestedCe
-                        updates.cleaner_pay = suggestedPay
-                      }
-                    }
-                    setNewProp(prev => ({ ...prev, ...updates }))
-                  }}
-                  className="h-8 text-sm"
-                  data-testid="input-new-sq_ft"
-                />
-              </div>
-            </div>
-
-            {/* Bed sizes — optional. When filled in, the "Auto" button on
-                Number of Beds derives the total from these. */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Bed Sizes (optional)</Label>
-              <div className="grid grid-cols-4 gap-2">
-                <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder="King" data-testid="input-new-king_beds" />
-                <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder="Queen" data-testid="input-new-queen_beds" />
-                <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder="Full" data-testid="input-new-full_beds" />
-                <Input type="number" value={newProp.twin_beds} onChange={e => setNewProp(prev => ({ ...prev, twin_beds: e.target.value }))} className="h-8 text-sm" placeholder="Twin" data-testid="input-new-twin_beds" />
-              </div>
-            </div>
-
-            {/* Hot Tub toggle */}
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Hot Tub</Label>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setNewProp(prev => ({ ...prev, hot_tub: false }))}
-                  data-testid="input-new-hot_tub-no"
-                  className={`flex-1 h-8 rounded-md border text-sm transition-colors ${
-                    !newProp.hot_tub
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  No
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setNewProp(prev => ({ ...prev, hot_tub: true }))}
-                  data-testid="input-new-hot_tub-yes"
-                  className={`flex-1 h-8 rounded-md border text-sm transition-colors ${
-                    newProp.hot_tub
-                      ? 'bg-primary text-primary-foreground border-primary'
-                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  Yes
-                </button>
-              </div>
-            </div>
-
-            {/* Linen Program toggle — adds (beds × 300)/12/4 per clean */}
-            <label className="flex items-start gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={newProp.linen_program}
-                onChange={e => setNewProp(prev => ({ ...prev, linen_program: e.target.checked }))}
-                className="mt-0.5 h-4 w-4 rounded border-input"
-                data-testid="input-new-linen_program"
-              />
-              <div className="text-xs">
-                <div className="font-medium">Linen Program</div>
-                <div className="text-muted-foreground">
-                  Adds {newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0'}/clean
-                  {newProp.number_of_beds ? ` (${newProp.number_of_beds} beds × $300 / 12 / 4)` : ''}
-                </div>
-              </div>
-            </label>
-
-            {/* CE Charged and Cleaner Pay — with auto-suggestions */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Client Charged ($)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={newProp.ce_charged}
-                  onChange={e => {
-                    const ce = e.target.value
-                    const updates: Partial<NewProp> = { ce_charged: ce }
-                    // Auto-suggest cleaner pay at 50% of CE
-                    if (ce && parseFloat(ce) > 0) {
-                      updates.cleaner_pay = (parseFloat(ce) * 0.5).toFixed(2)
-                    }
-                    setNewProp(prev => ({ ...prev, ...updates }))
-                  }}
-                  className="h-8 text-sm"
-                  data-testid="input-new-ce_charged"
-                  placeholder={newProp.sq_ft ? `Suggested: $${(parseFloat(newProp.sq_ft) * 0.14).toFixed(2)}` : ''}
-                />
-                {newProp.sq_ft && !newProp.ce_charged && (
-                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2)} ($0.14/sqft)</p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Cleaner Pay ($)</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={newProp.cleaner_pay}
-                  onChange={e => setNewProp(prev => ({ ...prev, cleaner_pay: e.target.value }))}
-                  className="h-8 text-sm"
-                  data-testid="input-new-cleaner_pay"
-                  placeholder={newProp.ce_charged ? `Suggested: $${(parseFloat(newProp.ce_charged) * 0.5).toFixed(2)}` : ''}
-                />
-                {newProp.ce_charged && !newProp.cleaner_pay && (
-                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)} (50% of CE)</p>
-                )}
-              </div>
-            </div>
-
-            {/* Live estimate + profit % preview */}
-            {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
-              <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-card px-4 py-3 space-y-1 text-xs shadow-sm">
-                <p className="font-semibold text-foreground mb-1.5 uppercase tracking-wide text-2xs text-muted-foreground">Estimated Costs</p>
-                {(() => {
-                  const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
-                  const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
-                  const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
-                  const laundry = calcLaundry(beds)
-                  const consumables = calcConsumablesFromCosts(amenityCosts, {
-                    full_baths: fullBaths,
-                    half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
-                    kitchens,
-                    number_of_beds: beds,
-                    hot_tub: newProp.hot_tub,
-                  })
-                  const linenProgramCost = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
-                  const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + linenProgramCost
-                  const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
-                  const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
-                  const totalWithPay = totalCost + (pay || 0)
-                  const profitPct = ce && ce > 0 ? ((ce - totalWithPay) / ce) * 100 : null
-                  return (
-                    <>
-                      {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">Cleaner Pay</span><span className="tabular-nums">{fmt(pay)}</span></div>}
-                      <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
-                      {newProp.linen_program && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Linen Program</span><span className="tabular-nums">{fmt(linenProgramCost)}</span></div>
-                      )}
-                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
-                      {ce != null && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
-                      )}
-                      {profitPct !== null && (
-                        <div className="flex items-center justify-between border-t border-border mt-1.5 pt-2.5">
-                          <span className="text-sm font-semibold">Profit Margin</span>
-                          <span className={`text-2xl font-bold tabular-nums leading-none ${profitColorClass(profitPct)}`}>
-                            {profitPct.toFixed(1)}%
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={() => addProperty()} disabled={!newProp.name || addPending} data-testid="button-save-quote">
-              {addPending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Saving…</> : 'Add Quote'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {converting && (
-        <StageTransitionModal
-          open={true}
-          onClose={() => setConverting(null)}
-          onConfirm={() => convertToOnboarding(converting.prop)}
-          propertyName={converting.prop.name}
-          targetStage="Onboarding"
-          missingFields={converting.missing}
-          isPending={convertPending}
-        />
+      {!isLoading && filtered.length > 0 && (
+        <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      <Dialog open={!!archivingTarget} onOpenChange={v => !v && !archivePending && setArchivingTarget(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base">Archive quote</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <p>
-              Archive <span className="font-medium">{archivingTarget?.name ?? '—'}</span>?
-              The property stays in the database; the quote sheet hides it by default
-              and you can restore it any time.
-            </p>
-            <div>
-              <Label htmlFor="archive-reason" className="text-xs">
-                Reason <span className="text-destructive">*</span>
-              </Label>
-              <textarea
-                id="archive-reason"
-                value={archiveReason}
-                onChange={e => setArchiveReason(e.target.value)}
-                placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up…"
-                rows={3}
-                className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-                data-testid="input-archive-reason"
-                autoFocus
-              />
-              <p className="text-2xs text-muted-foreground mt-1">
-                Required. Visible in the archived view so you can audit why a quote didn't onboard.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setArchivingTarget(null)} disabled={archivePending}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => archivingTarget && archiveReason.trim() && archiveQuote({ id: archivingTarget.id, reason: archiveReason.trim() })}
-              disabled={archivePending || !archiveReason.trim()}
-              data-testid="button-confirm-archive"
-            >
-              {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Archiving…</> : 'Archive quote'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ContactModal
+        contactId={modalContactId}
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        mode={modalMode}
+      />
 
-      {/* New-client mini dialog (opens over the Add Quote dialog). Fields
-          mirror the contacts table minimum: name required, email + phone
-          optional. On success, contacts query refreshes and the new client
-          is auto-selected on the current Quote form. */}
-      <Dialog open={newClientOpen} onOpenChange={v => { if (!v) { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) } }}>
-        <DialogContent className="max-w-sm">
+      {/* Source Report Modal */}
+      <Dialog open={sourceReportOpen} onOpenChange={setSourceReportOpen}>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-base">New Client</DialogTitle>
+            <DialogTitle>Contact Source Report</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Full name *</Label>
-              <Input
-                autoFocus
-                value={newClient.full_name}
-                onChange={e => setNewClient(prev => ({ ...prev, full_name: e.target.value }))}
-                placeholder="Jane Doe"
-                className="h-8 text-sm"
-                data-testid="input-new-client-name"
-              />
+          {sourceReportData.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No contacts to report on</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={sourceReportData} layout="vertical" margin={{ left: 80 }}>
+                    <XAxis type="number" tick={{ fontSize: 11 }} />
+                    <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} width={75} />
+                    <RechartsTooltip contentStyle={{ fontSize: 12 }} />
+                    <Bar dataKey="total" name="Clients" radius={[0, 4, 4, 0]}>
+                      {sourceReportData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="overflow-auto rounded border border-border">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/60">
+                    <tr>
+                      <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Source</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Total</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">With Properties</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Conversion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sourceReportData.map(row => (
+                      <tr key={row.source} className="border-t border-border/50">
+                        <td className="py-1.5 px-2">{row.source}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{row.total}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{row.withProperties}</td>
+                        <td className="py-1.5 px-2 text-right tabular-nums">{row.conversion}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Email</Label>
-              <Input
-                type="email"
-                value={newClient.email}
-                onChange={e => setNewClient(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="jane@example.com"
-                className="h-8 text-sm"
-                data-testid="input-new-client-email"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Phone</Label>
-              <Input
-                type="tel"
-                value={newClient.phone}
-                onChange={e => setNewClient(prev => ({ ...prev, phone: e.target.value }))}
-                placeholder="(555) 555-1212"
-                className="h-8 text-sm"
-                data-testid="input-new-client-phone"
-              />
-            </div>
-            <p className="text-2xs text-muted-foreground">
-              You can fill in company, address, payment method, and more later from the Clients page.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) }} disabled={createClientPending}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => createClient()}
-              disabled={createClientPending || !newClient.full_name.trim()}
-              data-testid="button-save-new-client"
-            >
-              {createClientPending
-                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving…</>
-                : 'Create client'}
-            </Button>
-          </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
+      {/* Duplicate Detection Modal */}
+      <DuplicateDetectionModal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} contacts={contacts || []} />
     </PageContainer>
+  )
+}
+
+// ── Duplicate Detection ──────────────────────────────────────────────────
+function levenshtein(a: string, b: string): number {
+  const an = a.length, bn = b.length
+  if (an === 0) return bn
+  if (bn === 0) return an
+  const matrix = Array.from({ length: bn + 1 }, (_, i) => [i])
+  for (let j = 0; j <= an; j++) matrix[0][j] = j
+  for (let i = 1; i <= bn; i++) {
+    for (let j = 1; j <= an; j++) {
+      matrix[i][j] = b[i - 1] === a[j - 1]
+        ? matrix[i - 1][j - 1]
+        : Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+    }
+  }
+  return matrix[bn][an]
+}
+
+function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: any[] }) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { effectiveUser } = useAuth()
+  const [merging, setMerging] = useState(false)
+
+  const duplicates = useMemo(() => {
+    if (!contacts || contacts.length < 2) return []
+    const pairs: { primary: any; secondary: any; reason: string }[] = []
+    const seen = new Set<string>()
+    for (let i = 0; i < contacts.length; i++) {
+      for (let j = i + 1; j < contacts.length; j++) {
+        const a = contacts[i], b = contacts[j]
+        const key = [a.id, b.id].sort().join('_')
+        if (seen.has(key)) continue
+        // Check name similarity
+        const nameA = (a.full_name || '').toLowerCase()
+        const nameB = (b.full_name || '').toLowerCase()
+        if (nameA && nameB && levenshtein(nameA, nameB) <= 2) {
+          seen.add(key)
+          pairs.push({ primary: a, secondary: b, reason: 'Similar name' })
+          continue
+        }
+        // Check email match
+        if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) {
+          seen.add(key)
+          pairs.push({ primary: a, secondary: b, reason: 'Same email' })
+        }
+      }
+    }
+    return pairs
+  }, [contacts])
+
+  async function handleMerge(primary: any, secondary: any) {
+    if (!canEditView('contacts', effectiveUser)) {
+      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      return
+    }
+    setMerging(true)
+    try {
+      // Copy non-null fields from secondary to primary
+      const updates: Record<string, any> = {}
+      const fields = ['company', 'email', 'phone', 'secondary_phone', 'mailing_address', 'source', 'payment_method', 'client_since', 'notes']
+      for (const f of fields) {
+        if (!primary[f] && secondary[f]) updates[f] = secondary[f]
+      }
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('contacts').update(updates).eq('id', primary.id)
+      }
+      // Reassign properties
+      await supabase.from('properties').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
+      // Reassign interactions
+      await supabase.from('contact_interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
+      // Delete secondary
+      await supabase.from('contacts').delete().eq('id', secondary.id)
+      logActivity({
+        entity_type: 'contact',
+        entity_id: primary.id,
+        entity_name: primary.full_name,
+        action: 'delete',
+        field_name: 'merge',
+        old_value: secondary.full_name,
+        new_value: primary.full_name,
+        metadata: { merged_from_id: secondary.id },
+      })
+      // Refresh the shared useContacts cache app-wide; fuzzy matching also
+      // covers this page's ['contacts', 'with-property-counts'] join query.
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      toast({ title: 'Clients merged successfully.' })
+    } catch (e: any) {
+      toast({ title: 'Merge failed', description: e?.message, variant: 'destructive' })
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Duplicate Review</DialogTitle></DialogHeader>
+        {duplicates.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-6">No duplicates detected.</p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">{duplicates.length} potential duplicate pair(s) found</p>
+            {duplicates.map(({ primary, secondary, reason }, i) => (
+              <div key={i} className="border border-border rounded-md p-3">
+                <p className="text-xs text-muted-foreground mb-2">{reason}</p>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <p className="font-medium">{primary.full_name}</p>
+                    <p className="text-muted-foreground">{primary.email || '—'}</p>
+                    <p className="text-muted-foreground">{primary.properties?.length || 0} properties</p>
+                  </div>
+                  <div>
+                    <p className="font-medium">{secondary.full_name}</p>
+                    <p className="text-muted-foreground">{secondary.email || '—'}</p>
+                    <p className="text-muted-foreground">{secondary.properties?.length || 0} properties</p>
+                  </div>
+                </div>
+                <Button size="sm" variant="outline" className="mt-2 text-xs w-full" disabled={merging} onClick={() => handleMerge(primary, secondary)}>
+                  Merge → Keep {primary.full_name}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
