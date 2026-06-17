@@ -14,7 +14,9 @@ import { EmptyState } from '@/components/EmptyState'
 import { ContactModal } from '@/components/ContactModal'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge } from 'lucide-react'
+import { PageContainer } from '@/components/PageContainer'
+import { PageHeader } from '@/components/PageHeader'
+import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, ArrowDown, Import, GitMerge, UserPlus, Building2, AlertCircle } from 'lucide-react'
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
@@ -192,13 +194,11 @@ export default function ContactsPage() {
   }, [contacts])
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 h-full flex flex-col">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Clients</h1>
-          <p className="text-sm text-muted-foreground">Manage clients and relationships</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
+    <PageContainer width="full" className="h-full flex flex-col">
+      <PageHeader
+        title="Clients"
+        subtitle="Manage clients and relationships"
+        actions={<div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
@@ -250,10 +250,41 @@ export default function ContactsPage() {
           <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
             <Plus className="w-3.5 h-3.5" /> Add Client
           </Button>
-        </div>
-      </div>
+        </div>}
+      />
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {/* Redesign: summary strip — at-a-glance client stats */}
+      {!isLoading && (contacts?.length ?? 0) > 0 && (() => {
+        const list = contacts || []
+        const total = list.length
+        const since = Date.now() - 30 * 24 * 60 * 60 * 1000
+        const new30 = list.filter((c: any) => c.created_at && new Date(c.created_at).getTime() >= since).length
+        const unassigned = list.filter((c: any) => !(c.properties && c.properties.length > 0)).length
+        const totalProps = list.reduce((s: number, c: any) => s + (c.properties?.length || 0), 0)
+        const avgProps = total ? (totalProps / total) : 0
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Users className="w-3.5 h-3.5" /> Total Clients</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> New (30d)</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{new30}</p>
+            </div>
+            <div className={`rounded-2xl border shadow-sm p-4 ${unassigned > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertCircle className="w-3.5 h-3.5" /> Unassigned</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${unassigned > 0 ? 'text-warning' : ''}`}>{unassigned}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Avg Properties</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{avgProps.toFixed(1)}</p>
+            </div>
+          </div>
+        )
+      })()}
+
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -307,10 +338,18 @@ export default function ContactsPage() {
                     ) : '—'}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.source || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.payment_method || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.properties?.length || 0}</td>
+                  <td className="py-2 px-3 text-xs">
+                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs">
+                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">—</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
+                  <td className="py-2 px-3 text-xs">
+                    {(c.properties?.length || 0) > 0
+                      ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
+                      : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">none</span>}
+                  </td>
                   <td className="py-2 px-3 text-xs">
                     {(c.tags || []).length > 0 ? (
                       <div className="flex flex-wrap gap-1">
@@ -391,7 +430,7 @@ export default function ContactsPage() {
       </Dialog>
       {/* Duplicate Detection Modal */}
       <DuplicateDetectionModal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} contacts={contacts || []} />
-    </div>
+    </PageContainer>
   )
 }
 
