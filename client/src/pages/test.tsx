@@ -146,6 +146,7 @@ export default function TestPage() {
 
   const quoteStage = stages?.find((s: any) => s.name === 'Quote')
   const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
+  const activeStage = stages?.find((s: any) => s.name === 'Active')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/quote-sheet'],
@@ -159,6 +160,25 @@ export default function TestPage() {
       return data || []
     },
     enabled: !!quoteStage,
+  })
+
+  // Quotes converted in the last 30 days — properties moved from Quote
+  // into Onboarding or Active (counted from stage_transitions).
+  const { data: convertedCount30 } = useQuery({
+    queryKey: ['/supabase/quote-conversions-30d', quoteStage?.id, onboardingStage?.id, activeStage?.id],
+    enabled: !!quoteStage && !!onboardingStage && !!activeStage,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { count, error } = await supabase
+        .from('stage_transitions')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_stage_id', quoteStage!.id)
+        .in('to_stage_id', [onboardingStage!.id, activeStage!.id])
+        .gte('created_at', since)
+      if (error) return 0
+      return count ?? 0
+    },
   })
 
   const contactById = useMemo(
@@ -652,7 +672,6 @@ export default function TestPage() {
       {/* Redesign: summary strip — at-a-glance quote stats */}
       {!isLoading && filtered.length > 0 && (() => {
         const rows = filtered.map(merged)
-        const totalCE = rows.reduce((s: number, p: any) => s + (Number(p.ce_charged) || 0), 0)
         const profits = rows.map((p: any) => getEstimates(p).profitPct).filter((x: any): x is number => x != null)
         const avgProfit = profits.length ? profits.reduce((s: number, v: number) => s + v, 0) / profits.length : null
         const staleCount = filtered.filter((p: any) => !p.archived_at && p.created_at && Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000) > 90).length
@@ -667,8 +686,8 @@ export default function TestPage() {
               <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${avgProfit != null ? profitColorClass(avgProfit) : ''}`}>{avgProfit != null ? `${avgProfit.toFixed(1)}%` : '—'}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Download className="w-3.5 h-3.5" /> Total Client Charged</div>
-              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{fmt(totalCE)}</p>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /> Converted (30d)</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{convertedCount30 ?? 0}</p>
             </div>
             <div className={`rounded-2xl border shadow-sm p-4 ${staleCount > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
               <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Stale (&gt;90d)</div>
