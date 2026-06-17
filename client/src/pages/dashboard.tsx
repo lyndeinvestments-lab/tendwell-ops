@@ -799,12 +799,12 @@ export default function DashboardPage() {
                 <div className="space-y-0.5 max-h-28 overflow-y-auto">
                   {offboarded30Deduped.map((t: any) => (
                     <div key={t.property_id} className="flex justify-between text-xs">
-                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/previous-properties')}>{t.properties?.name}</span>
+                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/master-list')}>{t.properties?.name}</span>
                       <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
                     </div>
                   ))}
                 </div>
-                <button onClick={() => navigate('/previous-properties')} className="text-xs text-primary hover:underline mt-2 block">
+                <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline mt-2 block">
                   View All →
                 </button>
               </>

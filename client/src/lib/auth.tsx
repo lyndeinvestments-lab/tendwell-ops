@@ -37,7 +37,6 @@ export const VIEW_DEFINITIONS = [
   { id: 'pro-forma',           label: 'Pro Forma',           group: 'Admin' },
   { id: 'forecaster',          label: 'Forecaster',          group: 'Admin' },
   { id: 'financial-dashboard', label: 'Financial Dashboard', group: 'Admin' },
-  { id: 'previous-properties', label: 'Previous Properties', group: 'Admin' },
   { id: 'north-star',          label: 'North Star',          group: 'Admin' },
   { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
   { id: 'settings',            label: 'Settings',            group: 'Admin' },
@@ -80,7 +79,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
   admin: [
     'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
     'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
-    'master-list', 'pro-forma', 'forecaster', 'previous-properties', 'settings',
+    'master-list', 'pro-forma', 'forecaster', 'settings',
     'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
     'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue',
@@ -90,7 +89,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'forecaster',
-    'previous-properties', 'revenue-report', 'property-verifications', 'inspections', 'alerts',
+    'revenue-report', 'property-verifications', 'inspections', 'alerts',
     'activity', 'financial-dashboard', 'lost-items',
   ],
 }

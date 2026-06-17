@@ -414,7 +414,7 @@ export default function ActivityFeedPage() {
                     {group.label}
                   </h3>
                 </div>
-                <div className="space-y-0 border border-border rounded-lg overflow-hidden">
+                <div className="space-y-0 border border-border rounded-2xl shadow-sm overflow-hidden">
                   {group.entries.map((entry: any, idx: number) => {
                     const entityLabel = formatEntityLabel(entry)
                     const entityType = entry.entity_type ?? 'property'

@@ -1163,7 +1163,7 @@ export default function TasksPage() {
       {/* ═══ LIST VIEW ═══ */}
       {isError && <ErrorState onRetry={() => refetch()} />}
       {!isError && viewMode === 'list' && (
-        <div className="overflow-auto flex-1 rounded-lg border border-border">
+        <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>

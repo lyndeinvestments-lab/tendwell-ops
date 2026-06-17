@@ -20,6 +20,7 @@ import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { TablePagination } from '@/components/TablePagination'
+import { ErrorState } from '@/components/ErrorState'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 
 const FREQ_OPTIONS = [
@@ -296,7 +297,7 @@ export default function ProFormaPage() {
     },
   })
 
-  const { data: rawProperties, isLoading } = useQuery({
+  const { data: rawProperties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/pro-forma'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -730,11 +731,13 @@ export default function ProFormaPage() {
         </div>
       )}
 
+      {isError && <ErrorState onRetry={() => refetch()} />}
+
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
 
-      <div className={`overflow-auto flex-1 rounded-lg border border-border ${selected.size > 0 ? 'pb-16' : ''}`}>
+      <div className={`overflow-auto flex-1 rounded-2xl border border-border shadow-sm ${selected.size > 0 ? 'pb-16' : ''}`}>
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>

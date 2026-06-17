@@ -299,7 +299,7 @@ export default function NorthStarPage() {
       ) : sections.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground text-sm">No metrics configured. Click "Add Metric" to start.</div>
       ) : (
-        <div className="overflow-auto rounded-lg border border-border">
+        <div className="overflow-auto rounded-2xl border border-border shadow-sm">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>

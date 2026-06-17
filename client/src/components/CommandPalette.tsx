@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
-  DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Archive, Settings,
+  DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Settings,
   ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle, CheckSquare, Star,
 } from 'lucide-react'
 
@@ -28,7 +28,6 @@ const PAGE_ROUTES = [
   // Deep link straight into the Live tab. Either permission works since the
   // route now hosts a unified Pro Forma wrapper.
   { name: 'Live Pro Forma', path: '/forecaster', viewId: 'pro-forma', keywords: ['forecaster', 'live', 'pro forma', 'proforma', 'variance', 'forecast'], icon: TrendingUp },
-  { name: 'Previous Properties', path: '/previous-properties', viewId: 'previous-properties', keywords: ['previous', 'offboarded', 'archive'], icon: Archive },
   { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
   { name: 'Revenue Report', path: '/revenue-report', viewId: 'revenue-report', keywords: ['revenue', 'report', 'income', 'monthly', 'trend'], icon: TrendingUp },
   { name: 'Property Verifications', path: '/property-verifications', viewId: 'property-verifications', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'property verifications'], icon: ClipboardCheck },

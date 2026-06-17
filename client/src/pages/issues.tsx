@@ -466,7 +466,7 @@ export default function IssuesPage() {
       {isError ? (
         <ErrorState onRetry={() => refetch()} />
       ) : (
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>

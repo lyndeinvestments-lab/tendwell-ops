@@ -15,6 +15,7 @@ import { useAppSettings } from '@/hooks/use-app-settings'
 import { Search, Copy, Check, Download, X, ArrowUp, ArrowDown, ArrowUpDown, Eye, EyeOff, KeyRound } from 'lucide-react'
 import { TablePagination } from '@/components/TablePagination'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 
@@ -142,7 +143,7 @@ export default function AccessCodesPage() {
   const { get: getSetting } = useAppSettings()
   const autoCodeValue = getSetting('auto_code', '')
 
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/access-codes'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -246,7 +247,10 @@ export default function AccessCodesPage() {
         }
       />
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -387,6 +391,7 @@ export default function AccessCodesPage() {
           </tbody>
         </table>
       </div>
+      )}
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}

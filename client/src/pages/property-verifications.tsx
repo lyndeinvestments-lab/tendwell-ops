@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
@@ -92,7 +93,7 @@ export default function InspectionsPage() {
   const [bulkDueDate, setBulkDueDate] = useState('')
 
   // Fetch active + onboarding properties with all verifiable fields
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/property-verification-list'],
     queryFn: async () => {
       const fields = ['id', 'name', 'stage_id', ...ALL_VERIFY_FIELDS.map(f => f.key)].join(', ')
@@ -569,7 +570,10 @@ export default function InspectionsPage() {
         </div>
       )}
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {isError ? (
+        <ErrorState onRetry={() => refetch()} />
+      ) : (
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -647,6 +651,7 @@ export default function InspectionsPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />

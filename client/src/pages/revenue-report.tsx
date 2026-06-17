@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ArrowUpDown, Download, DollarSign, TrendingUp, ChevronDown, ChevronRight } from 'lucide-react'
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts'
 import { EmptyState } from '@/components/EmptyState'
+import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
@@ -74,7 +75,7 @@ export default function RevenueReportPage() {
   const [occupancyScenario, setOccupancyScenario] = useState<'custom' | 'best' | 'worst'>('custom')
 
   // Fetch all properties with cost data
-  const { data: properties, isLoading } = useQuery({
+  const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/revenue-report-properties'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -431,6 +432,8 @@ export default function RevenueReportPage() {
         <StatCard title="Avg Gross Margin %" value={isLoading ? '—' : `${totals.avgPct.toFixed(1)}%`} loading={isLoading} icon={TrendingUp} />
       </div>
 
+      {isError && <ErrorState onRetry={() => refetch()} />}
+
       {/* 12-Month Chart */}
       <Card>
         <CardContent className="p-4">
@@ -505,7 +508,7 @@ export default function RevenueReportPage() {
           </Card>
 
           {/* Forecast table */}
-          <div className="overflow-auto rounded-lg border border-border">
+          <div className="overflow-auto rounded-2xl border border-border shadow-sm">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
                 <tr>
@@ -580,7 +583,7 @@ export default function RevenueReportPage() {
       )}
 
       {/* Property/Client Table */}
-      {viewMode !== 'forecast' && <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {viewMode !== 'forecast' && <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
