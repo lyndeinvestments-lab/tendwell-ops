@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { configureProfitThresholds } from '@/lib/profit-colors'
 
 type SettingsMap = Record<string, string>
 
@@ -25,6 +27,15 @@ export function useAppSettings() {
     gcTime: FOUR_HOURS_MS,
     refetchOnWindowFocus: false,
   })
+
+  // Keep the shared profit-tier thresholds in sync with the admin-configured
+  // values so the green/yellow/red badges across the app reflect Settings.
+  useEffect(() => {
+    if (!data) return
+    const high = parseFloat(data['profit_tier_high'])
+    const mid = parseFloat(data['profit_tier_mid'])
+    configureProfitThresholds(Number.isNaN(high) ? undefined : high, Number.isNaN(mid) ? undefined : mid)
+  }, [data])
 
   const qc = useQueryClient()
 
