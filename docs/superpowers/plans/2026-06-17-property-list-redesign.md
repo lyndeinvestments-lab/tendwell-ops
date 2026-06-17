@@ -1,3 +1,31 @@
+# Property List Redesign Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rebuild the `/test` route as a Property List redesign proposal — a full-functionality clone of `/property-list` with a manager-focused summary strip, an all-operational default view, a trimmed stage filter, and the modernized table shell.
+
+**Architecture:** Single self-contained page component at `client/src/pages/test.tsx`, reading the existing `operational_properties` view (Onboarding/Active/Offboarding, ~192 rows) with no data-layer change. Reuses shared shell components (`PageContainer`, `PageHeader`, `EmptyState`, `ErrorState`) and the existing inline stage-change popover. A later, separate change applies this to the real `property-list.tsx` minus the proposal badge.
+
+**Tech Stack:** React 18 + TypeScript, Wouter routing, TanStack Query, Tailwind + Shadcn, Supabase client, papaparse. No automated test suite (per CLAUDE.md) — verification is `npm run check` + manual `npm run dev`.
+
+---
+
+### Task 1: Replace `/test` with the Property List redesign proposal
+
+**Files:**
+- Modify (full replace): `client/src/pages/test.tsx`
+
+Notes on decisions baked into the code below:
+- Data source unchanged: `operational_properties`, same `select` columns as `property-list.tsx`.
+- `statusFilter` defaults to `'all'` and persists under an **isolated** key `property-list-test-filter` (so previewing `/test` never overwrites the real page's `property-list-filter`).
+- Stage filter dropdown lists only stages present in the loaded data, ordered by `usePipelineStages()` order, plus an "All Operational (N)" entry.
+- Summary tiles reuse the exact classes shipped in the Clients redesign (`contacts.tsx`).
+- Table shell upgraded to `rounded-2xl … shadow-sm`; stage badge becomes a `rounded-full` pill but keeps data-driven `stage_color` and the inline stage-change popover.
+- Adds `ErrorState` on query failure and tile skeletons on load.
+
+- [ ] **Step 1: Replace the file contents**
+
+```tsx
 import { useState, useMemo, useEffect } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -377,3 +405,51 @@ export default function TestPage() {
     </PageContainer>
   )
 }
+```
+
+- [ ] **Step 2: Type-check**
+
+Run: `npm run check`
+Expected: PASS (no TypeScript errors). `useMutation` is intentionally not imported (the page only uses `useQuery`/`useQueryClient`); the popover uses `useGuardedMutation`.
+
+- [ ] **Step 3: Manual verification**
+
+Run: `npm run dev`, sign in as admin, visit `/test`.
+Expected:
+- Header shows "Property List" + "⚗ Redesign proposal" badge.
+- Summary tiles show Total / Onboarding / Active / Offboarding counts (Total ≈ 192).
+- Page lands on "All Operational" (all in-scope rows), not Active-only.
+- Stage dropdown lists only Onboarding / Active / Offboarding + All Operational.
+- Search, column sort, Export CSV, pagination work.
+- Clicking a property name opens the property modal; clicking the Status pill opens the stage-change popover and changing stage updates the row + tile counts.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add client/src/pages/test.tsx
+git commit -m "Repurpose /test as Property List redesign proposal"
+```
+
+---
+
+### Task 2: Update project docs
+
+**Files:**
+- Modify: `CLAUDE.md` ("Current State & Recent Work")
+
+- [ ] **Step 1: Add a one-line note** under "Current State & Recent Work" recording that `/test` now hosts the Property List redesign proposal (summary strip, all-operational default, trimmed stage filter), pending apply to the real page.
+
+- [ ] **Step 2: Commit**
+
+```bash
+git add CLAUDE.md
+git commit -m "Docs: note /test now hosts Property List redesign proposal"
+```
+
+---
+
+## Self-Review
+
+- **Spec coverage:** summary strip ✓ (Task 1 tiles), all-operational default ✓ (`statusFilter` default `'all'`), trimmed dropdown ✓ (`stagesInData`), modernized table ✓ (`rounded-2xl`/`shadow-sm`/pill badge), unchanged data source/columns/functions ✓, proposal badge ✓, ErrorState ✓, tile + row skeletons ✓. `/test` admin-only route is unchanged in `App.tsx` (no routing edit needed).
+- **Placeholder scan:** none — full file content provided.
+- **Type consistency:** `statusFilter` key `property-list-test-filter` used in both the initializer and the persist effect; `countByStage`/`total`/`stagesInData` defined before use; imports match usages (`useMutation` intentionally dropped; `DoorOpen`/`CheckCircle2`/`LogOut`/`FlaskConical`/`ErrorState` added).

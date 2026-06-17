@@ -20,3 +20,4 @@ tests/.auth/
 
 # Local backups (kept on device, never in repo)
 _backups/
+.superpowers/
