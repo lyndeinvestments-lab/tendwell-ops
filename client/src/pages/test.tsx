@@ -1,1121 +1,1294 @@
-import { useState, useMemo, useEffect } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { useLocation, Link } from 'wouter'
-import { usePageTitle } from '@/hooks/use-page-title'
-import { supabase } from '@/lib/supabase'
-import { useAuth, canAccessView } from '@/lib/auth'
-import { usePropertyModal } from '@/hooks/use-property-modal'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
+import { useState, useMemo, useRef } from 'react'
+import { TablePagination } from '@/components/TablePagination'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useAuth, canEditView } from '@/lib/auth'
+import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { useToast } from '@/hooks/use-toast'
+import { StageTransitionModal } from '@/components/StageTransitionModal'
+import { usePageTitle } from '@/hooks/use-page-title'
+import { usePropertyModal } from '@/hooks/use-property-modal'
+import { usePipelineStages } from '@/hooks/use-pipeline-stages'
+import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FlaskConical, FileText, TrendingUp, Clock } from 'lucide-react'
+import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
-import { StatCard } from '@/components/StatCard'
-import { ErrorState } from '@/components/ErrorState'
-import { TONE_SOFT } from '@/lib/status-colors'
-import { Building2, TrendingUp, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp, FlaskConical } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
-import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
-import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
-import { usePipelineStages } from '@/hooks/use-pipeline-stages'
-import { useContacts } from '@/hooks/use-contacts'
-import { useAlerts } from '@/pages/alerts'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
+import { profitColorClass } from '@/lib/profit-colors'
+import { useAppSettings } from '@/hooks/use-app-settings'
+import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
+import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
 
-/**
- * Thin adapter over the shared StatCard — preserves this page's
- * `data-testid="kpi-…"` contract on the value and the `hint` tooltip.
- */
-function KpiCard({ title, value, subtitle, icon, loading, alert, onClick, hint }: {
-  title: string; value: string | number; subtitle?: string
-  icon: React.ComponentType<{ className?: string }>; loading: boolean; alert?: boolean
-  onClick?: () => void; hint?: string
-}) {
-  return (
-    <div title={hint} className="h-full">
-      <StatCard
-        title={title}
-        value={
-          <span
-            data-testid={`kpi-${title.toLowerCase().replace(/\s+/g,'-')}`}
-            className={alert ? 'text-destructive' : undefined}
-          >
-            {value}
-          </span>
-        }
-        subtitle={subtitle}
-        icon={icon}
-        loading={loading}
-        tone={alert ? 'destructive' : 'primary'}
-        onClick={onClick}
-        className="h-full"
-      />
-    </div>
-  )
+// ── Cost estimate formulas ────────────────────────────────────────────────────
+
+// Laundry: number of beds × wash/dry cost per set
+function calcLaundry(numberOfBeds: number): number {
+  return numberOfBeds * 11.5 * 0.69
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function fmt(n: number | null | undefined) {
+  if (n == null) return '—'
+  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+type NewProp = {
+  name: string
+  ce_charged: string
+  cleaner_pay: string
+  bedrooms: string
+  number_of_beds: string
+  king_beds: string
+  queen_beds: string
+  full_beds: string
+  twin_beds: string
+  full_baths: string
+  half_baths: string
+  number_of_kitchens: string
+  hot_tub: boolean
+  linen_program: boolean
+  sq_ft: string
+  address: string
+  contact_id: string
+}
+
+const EMPTY_PROP: NewProp = {
+  name: '',
+  ce_charged: '',
+  cleaner_pay: '',
+  bedrooms: '',
+  number_of_beds: '',
+  king_beds: '',
+  queen_beds: '',
+  full_beds: '',
+  twin_beds: '',
+  full_baths: '',
+  half_baths: '',
+  number_of_kitchens: '',
+  hot_tub: false,
+  linen_program: false,
+  sq_ft: '',
+  address: '',
+  contact_id: '',
 }
 
 export default function TestPage() {
-  const [, navigate] = useLocation()
-  const { openPropertyModal } = usePropertyModal()
-  usePageTitle('Dashboard — Redesign Preview')
+  const { toast } = useToast()
+  const qc = useQueryClient()
   const { effectiveUser } = useAuth()
-  const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
+  usePageTitle('Quote Sheet — Redesign Preview')
+  const { openPropertyModal } = usePropertyModal()
+  const { getNumber } = useAppSettings()
+  const INSPECTION_COST = getNumber('cost_inspection', 15)
+  const TRASH_COST = getNumber('cost_trash', 5)
+  const amenityCosts: AmenityCosts = {
+    bathroom: getNumber(AMENITY_SETTINGS_KEYS.bathroom, DEFAULT_AMENITY_COSTS.bathroom),
+    toiletPaper: getNumber(AMENITY_SETTINGS_KEYS.toiletPaper, DEFAULT_AMENITY_COSTS.toiletPaper),
+    kitchen: getNumber(AMENITY_SETTINGS_KEYS.kitchen, DEFAULT_AMENITY_COSTS.kitchen),
+    trashBag: getNumber(AMENITY_SETTINGS_KEYS.trashBag, DEFAULT_AMENITY_COSTS.trashBag),
+    hotTub: getNumber(AMENITY_SETTINGS_KEYS.hotTub, DEFAULT_AMENITY_COSTS.hotTub),
+  }
+  const [addOpen, setAddOpen] = useState(false)
+  const [converting, setConverting] = useState<any>(null)
+  const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
+  // Inline "create a client from this quote" flow — small dialog over the
+  // Add Quote dialog. On success we invalidate the contacts query and
+  // auto-select the newly created client on the Quote form.
+  const [newClientOpen, setNewClientOpen] = useState(false)
+  const [newClient, setNewClient] = useState({ full_name: '', email: '', phone: '' })
+  const [search, setSearch] = useState('')
+  // Quote-sheet negative path: hide quotes that didn't pan out, with a
+  // required note. Default view is active-only; operators can flip to
+  // 'archived' to see + restore them, or 'all' to audit both at once.
+  const [viewMode, setViewMode] = useState<'active' | 'archived' | 'all'>('active')
+  const [archivingTarget, setArchivingTarget] = useState<any>(null)
+  const [archiveReason, setArchiveReason] = useState('')
+  const [sortKey, setSortKey] = useState<string | null>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  // Google-sheet-style live edits: per-row field overrides that merge with the
+  // server row during render so derived columns recompute while the user types.
+  const [edits, setEdits] = useState<Record<number, Record<string, any>>>({})
+  const canEdit = canEditView('quote-sheet', effectiveUser)
 
-  const { data: trellisTasks, isLoading: trellisLoading, error: trellisError } = useTrellisTasksToday()
+  function merged(p: any): any {
+    const e = edits[p.id]
+    return e ? { ...p, ...e } : p
+  }
 
-  type Preset = '7d' | '30d' | '90d' | 'custom'
-  const [preset, setPreset] = useState<Preset>(() => {
-    try { return (localStorage.getItem('tendwell-dash-preset') as Preset) || '30d' } catch { return '30d' }
-  })
-  const [customFrom, setCustomFrom] = useState(() => {
-    try { return localStorage.getItem('tendwell-dash-from') || '' } catch { return '' }
-  })
-  const [customTo, setCustomTo] = useState(() => {
-    try { return localStorage.getItem('tendwell-dash-to') || '' } catch { return '' }
-  })
-
-  const [missingCollapsed, setMissingCollapsed] = useState(false)
-
-  // Persist filter selection
-  useEffect(() => {
-    try {
-      localStorage.setItem('tendwell-dash-preset', preset)
-      localStorage.setItem('tendwell-dash-from', customFrom)
-      localStorage.setItem('tendwell-dash-to', customTo)
-    } catch { /* ignore */ }
-  }, [preset, customFrom, customTo])
-
-  const { sinceDate, untilDate, periodLabel } = useMemo(() => {
-    if (preset === 'custom') {
-      const since = customFrom
-        ? new Date(customFrom).toISOString()
-        : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-      const until = customTo
-        ? new Date(new Date(customTo).getTime() + 24 * 60 * 60 * 1000 - 1).toISOString()
-        : new Date().toISOString()
-      const label =
-        customFrom && customTo
-          ? `${format(new Date(customFrom), 'MMM d')}–${format(new Date(customTo), 'MMM d')}`
-          : '30 days'
-      return { sinceDate: since, untilDate: until, periodLabel: label }
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
     }
-    const days = preset === '7d' ? 7 : preset === '90d' ? 90 : 30
-    const label = preset === '7d' ? '7 days' : preset === '90d' ? '90 days' : '30 days'
-    return {
-      sinceDate: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
-      untilDate: new Date().toISOString(),
-      periodLabel: label,
-    }
-  }, [preset, customFrom, customTo])
+  }
 
-  const { data: properties, isLoading, isError, refetch } = useQuery({
-    queryKey: ['/supabase/dashboard-stats'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('id, name, stage_id, ce_charged, cleaner_pay, monthly_revenue_estimate, monthly_profit_estimate, profit_percentage, estimated_profit, bedrooms, full_baths, square_footage, address, cleaning_frequency, exclude_from_financials')
-      if (error) throw error
-      return data || []
-    },
-  })
+  function SortIcon({ col }: { col: string }) {
+    if (sortKey !== col) return <ArrowUpDown className="inline w-3 h-3 ml-1 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="inline w-3 h-3 ml-1" />
+      : <ArrowDown className="inline w-3 h-3 ml-1" />
+  }
 
   const { data: stages } = usePipelineStages()
-  const { activeAlerts } = useAlerts()
 
-  const { data: transitions, isLoading: transLoading } = useQuery({
-    queryKey: ['/supabase/stage_transitions_recent', sinceDate, untilDate],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('stage_transitions')
-        .select('id, property_id, from_stage_id, to_stage_id, created_at, properties!stage_transitions_property_id_fkey(name)')
-        .gte('created_at', sinceDate)
-        .lte('created_at', untilDate)
-        .order('created_at', { ascending: false })
-        .limit(10)
-      if (error) throw error
-      return data || []
-    },
-  })
+  const { data: contacts } = useContacts()
 
-  const { data: transitions30, isLoading: trans30Loading } = useQuery({
-    queryKey: ['/supabase/transitions-period', sinceDate, untilDate],
-    // 500-row aggregate over a date range — used for period-level counts
-    // and trends, not "what changed in the last minute". The 60s global
-    // default forces a refetch on every back-to-dashboard navigation;
-    // 5 min skips that without making the trend perceptibly stale.
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('stage_transitions')
-        .select('property_id, to_stage_id, created_at, properties!stage_transitions_property_id_fkey(name), pipeline_stages!stage_transitions_to_stage_id_fkey(name)')
-        .gte('created_at', sinceDate)
-        .lte('created_at', untilDate)
-        .order('created_at', { ascending: false })
-        .limit(500)
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  // Inspections data for Quality widgets
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
-  const { data: recentInspections } = useQuery({
-    queryKey: ['/supabase/dashboard-inspections'],
-    // 90-day inspection feed consumed as an aggregate (avg score, count).
-    // Inspections are logged a handful per day, so a 2 min window is
-    // imperceptibly stale for the Quality widgets while skipping refetch
-    // on rapid navigation. NOTE: today's Inspections page only invalidates
-    // the `inspections-all` key, not this one — so the dashboard already
-    // shows stale data after a new log until window-focus refetch fires;
-    // bumping from 60s → 2 min extends that window. See PR for the
-    // accompanying invalidation registration that closes the gap.
-    staleTime: 2 * 60 * 1000,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('inspections')
-        .select('property_id, overall_score, inspected_at, properties!inspections_property_id_fkey(name)')
-        .gte('inspected_at', ninetyDaysAgo)
-        .order('inspected_at', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  // Scheduled this week
-  const weekStart = new Date()
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
-  const weekEnd = new Date(weekStart)
-  weekEnd.setDate(weekEnd.getDate() + 6)
-  const { data: scheduledThisWeek } = useQuery({
-    queryKey: ['/supabase/dashboard-scheduled-week'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('clean_assignments')
-        .select('id')
-        .gte('scheduled_date', weekStart.toISOString().split('T')[0])
-        .lte('scheduled_date', weekEnd.toISOString().split('T')[0])
-        .eq('status', 'scheduled')
-      if (error) return []
-      return data || []
-    },
-  })
-
-  const { data: followUps } = useQuery({
-    queryKey: ['/supabase/dashboard-followups'],
-    queryFn: async () => {
-      const today = new Date().toISOString().split('T')[0]
-      const { data, error } = await supabase
-        .from('properties')
-        .select('id, name, follow_up_date, pipeline_stages!properties_stage_id_fkey(name)')
-        .not('pipeline_stages.name', 'in', '("Offboarded")')
-        .lte('follow_up_date', today)
-        .order('follow_up_date', { ascending: true })
-      if (error) throw error
-      return data || []
-    },
-  })
-
-  const { data: onboardingVelocity } = useQuery({
-    queryKey: ['/supabase/dashboard-velocity', sinceDate, untilDate],
-    // Multi-query rollup over a date range (avg onboarding days, current
-    // active count, conversion count). Pure aggregate — a 5 min cache
-    // window is invisible at the user-facing precision (days→weeks) but
-    // skips the most expensive query block on this page when navigating
-    // back to the dashboard. The shared property-invalidation registry
-    // already covers this key on any property mutation.
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const activeStageId = stages?.find((s: any) => s.name === 'Active')?.id
-      const onboardingStageId = stages?.find((s: any) => s.name === 'Onboarding')?.id
-
-      // The `enabled: !!stages` gate doesn't tell TS that the Active/Onboarding
-      // stages exist within the loaded list. Explicit early return both
-      // satisfies the typed Supabase client and preserves today's behavior
-      // (no metrics shown if a stage is missing).
-      if (activeStageId == null || onboardingStageId == null) {
-        return { avgDays: null, conversions: 0, currentAvgDays: null, currentCount: 0 }
-      }
-
-      // 1. Onboarding → Active conversions in the period
-      const { data: toActive, error: e1 } = await supabase
-        .from('stage_transitions')
-        .select('property_id, created_at')
-        .eq('to_stage_id', activeStageId)
-        .gte('created_at', sinceDate)
-        .lte('created_at', untilDate)
-      if (e1) throw e1
-
-      let conversionAvg: number | null = null
-      const conversionCount = (toActive || []).length
-      const convertedPropIds = (toActive || [])
-        .map(t => t.property_id)
-        .filter((id): id is number => id != null)
-      if (convertedPropIds.length > 0) {
-        const { data: toOnboardingForConverted, error: e2 } = await supabase
-          .from('stage_transitions')
-          .select('property_id, created_at')
-          .in('property_id', convertedPropIds)
-          .eq('to_stage_id', onboardingStageId)
-        if (e2) throw e2
-        const onboardMap: Record<string, string> = {}
-        for (const t of (toOnboardingForConverted || [])) {
-          if (t.property_id == null || t.created_at == null) continue
-          const key = String(t.property_id)
-          if (!onboardMap[key] || t.created_at > onboardMap[key]) {
-            onboardMap[key] = t.created_at
-          }
-        }
-        let totalDays = 0, count = 0
-        for (const t of (toActive || [])) {
-          if (t.property_id == null || t.created_at == null) continue
-          const start = onboardMap[String(t.property_id)]
-          if (start) {
-            const days = (new Date(t.created_at).getTime() - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
-            if (days >= 0) { totalDays += days; count++ }
-          }
-        }
-        if (count > 0) conversionAvg = Math.round(totalDays / count)
-      }
-
-      // 2. Fallback: average time properties CURRENTLY in Onboarding have been there.
-      // Answers "how long is onboarding taking right now?" when no conversions
-      // happened in the selected period — otherwise the tile just says "No data".
-      let currentAvg: number | null = null
-      let currentCount = 0
-      // Anchor on stage_transitions when available, fall back to
-      // properties.created_at. Production has 35 Onboarding properties with
-      // 0 matching transition rows, so without this fallback the metric
-      // always returns null (April 2026 audit P0 finding).
-      const { data: currentOnboarding } = await supabase
-        .from('properties')
-        .select('id, created_at')
-        .eq('stage_id', onboardingStageId)
-      const current = currentOnboarding || []
-      if (current.length > 0) {
-        const ids = current.map(p => p.id).filter((id): id is number => id != null)
-        const { data: lastTransitions } = await supabase
-          .from('stage_transitions')
-          .select('property_id, created_at')
-          .in('property_id', ids)
-          .eq('to_stage_id', onboardingStageId)
-        const latestByProp: Record<string, string> = {}
-        for (const t of (lastTransitions || [])) {
-          if (t.property_id == null || t.created_at == null) continue
-          const key = String(t.property_id)
-          if (!latestByProp[key] || t.created_at > latestByProp[key]) {
-            latestByProp[key] = t.created_at
-          }
-        }
-        const now = Date.now()
-        let total = 0, n = 0
-        for (const p of current) {
-          if (p.id == null) continue
-          const start = latestByProp[String(p.id)] ?? p.created_at
-          if (!start) continue
-          const days = (now - new Date(start).getTime()) / (1000 * 60 * 60 * 24)
-          if (days >= 0) { total += days; n++ }
-        }
-        if (n > 0) { currentAvg = Math.round(total / n); currentCount = n }
-      }
-
-      return {
-        avgDays: conversionAvg,
-        conversions: conversionCount,
-        currentAvgDays: currentAvg,
-        currentCount,
-      }
-    },
-    enabled: !!stages,
-  })
-
-  // CRM data — shared via useContacts (single cache across the app)
-  const { data: crmContacts } = useContacts()
-
-  const { data: unassignedCount } = useQuery({
-    queryKey: ['/supabase/dashboard-unassigned'],
-    // Single COUNT(*) — slow-moving operational figure. 5 min staleness
-    // is invisible at the displayed precision. Already in the property
-    // invalidation registry, so any property mutation refreshes it.
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const { count, error } = await supabase.from('properties').select('*', { count: 'exact', head: true }).is('contact_id', null)
-      if (error) return 0
-      return count ?? 0
-    },
-  })
-
-  const crmStats = useMemo(() => {
-    if (!crmContacts) return { total: 0, new30: 0, paymentBreakdown: [] as { method: string; count: number }[] }
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
-    const new30 = crmContacts.filter(c => c.created_at != null && c.created_at >= thirtyDaysAgo).length
-    const payMap: Record<string, number> = {}
-    for (const c of crmContacts) {
-      const m = c.payment_method || 'Unknown'
-      payMap[m] = (payMap[m] || 0) + 1
-    }
-    const paymentBreakdown = Object.entries(payMap).map(([method, count]) => ({ method, count })).sort((a, b) => b.count - a.count)
-    return { total: crmContacts.length, new30, paymentBreakdown }
-  }, [crmContacts])
-
-  const stageMap = stages?.reduce((acc: Record<number, any>, s: any) => ({ ...acc, [s.id]: s }), {}) || {}
-
-  const total = properties?.length ?? 0
-  const activeStage = stages?.find((s: any) => s.name === 'Active')
+  const quoteStage = stages?.find((s: any) => s.name === 'Quote')
   const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
-  const offboardingStage = stages?.find((s: any) => s.name === 'Offboarding')
 
-  const activeProps = properties?.filter((p: any) => p.stage_id === activeStage?.id) || []
-  const active = activeProps.length
-  const onboarding = properties?.filter((p: any) => p.stage_id === onboardingStage?.id).length ?? 0
-  const offboarding = properties?.filter((p: any) => p.stage_id === offboardingStage?.id).length ?? 0
+  const { data: properties, isLoading } = useQuery({
+    queryKey: ['/supabase/quote-sheet'],
+    queryFn: async () => {
+      if (!quoteStage) return []
+      const { data, error } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('stage_id', quoteStage.id)
+      if (error) throw error
+      return data || []
+    },
+    enabled: !!quoteStage,
+  })
 
-  // Today's Actions — one prioritized panel combining past-due follow-ups and
-  // stalled onboardings. Stalled onboardings reuse the shared useAlerts() logic
-  // so this panel, the Alerts page, and the bell never diverge.
-  const todayStr = new Date().toISOString().split('T')[0]
-  const stalledOnboardings = activeAlerts.filter((a: any) => a.category === 'Onboarding')
-  const actionItems = [
-    ...((followUps as any[]) || []).map((p: any) => {
-      const overdue = p.follow_up_date < todayStr
-      return {
-        key: `fu_${p.id}`, kind: 'follow-up' as const, name: p.name,
-        detail: overdue ? 'Follow-up overdue' : 'Follow-up due today',
-        overdue, propertyId: String(p.id),
+  const contactById = useMemo(
+    () => new Map((contacts || []).map((c: any) => [String(c.id), c.full_name as string])),
+    [contacts],
+  )
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    const allRows = (properties || []) as any[]
+    // Apply the active/archived/all toggle BEFORE search so the search
+    // operates over the chosen subset only.
+    const scoped = viewMode === 'active'
+      ? allRows.filter(p => !p.archived_at)
+      : viewMode === 'archived'
+        ? allRows.filter(p => p.archived_at)
+        : allRows
+    const base = q
+      ? scoped.filter((p: any) => {
+          const contactName = p.contact_id ? contactById.get(String(p.contact_id)) : null
+          return [p.name, contactName, p.address, p.archived_reason].some((v: any) => v && String(v).toLowerCase().includes(q))
+        })
+      : scoped
+
+    if (!sortKey) return base
+
+    return [...base].sort((a: any, b: any) => {
+      const dir = sortDir === 'asc' ? 1 : -1
+
+      // Columns that use computed laundry/consumables values
+      if (sortKey === 'est_laundry' || sortKey === 'est_consumables') {
+        const getVal = (p: any) => {
+          const beds = p.number_of_beds || 0
+          if (sortKey === 'est_laundry') return p.est_laundry ?? calcLaundry(beds)
+          return p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
+        }
+        const av = getVal(a)
+        const bv = getVal(b)
+        if (av == null && bv == null) return 0
+        if (av == null) return 1
+        if (bv == null) return -1
+        return (av - bv) * dir
       }
-    }),
-    ...stalledOnboardings.map((a: any) => ({
-      key: a.id, kind: 'onboarding' as const,
-      name: (a.title || '').replace(/^Onboarding Stalled:\s*/, ''),
-      detail: a.description, overdue: false, propertyId: a.propertyId,
-    })),
-  ].sort((x, y) => {
-    const rank = (it: any) => (it.kind === 'follow-up' ? (it.overdue ? 0 : 1) : 2)
-    return rank(x) - rank(y)
-  })
 
-  const financialProps = activeProps.filter((p: any) => !p.exclude_from_financials)
-  const totalRevenue = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_revenue_estimate || 0), 0)
-  const totalProfit = financialProps.reduce((sum: number, p: any) => sum + (p.monthly_profit_estimate || 0), 0)
-  const avgProfit = financialProps.length
-    ? financialProps.reduce((sum: number, p: any) => sum + (p.profit_percentage || 0), 0) / financialProps.length
-    : 0
+      // Hardcoded numeric columns
+      if (sortKey === 'inspection_cost') return 0
+      if (sortKey === 'trash_cost') return 0
 
-  // Negative profit properties — exclude $0 CE (those are missing data, not truly negative) and excluded props
-  const negativeProfit = financialProps.filter((p: any) => (p.estimated_profit || 0) < 0 && (p.ce_charged || 0) > 0)
+      // Client column sorts by the looked-up contact name (not contact_id)
+      if (sortKey === 'client') {
+        const av = a.contact_id ? contactById.get(String(a.contact_id)) ?? '' : ''
+        const bv = b.contact_id ? contactById.get(String(b.contact_id)) ?? '' : ''
+        if (!av && !bv) return 0
+        if (!av) return 1
+        if (!bv) return -1
+        return av.localeCompare(bv) * dir
+      }
 
-  // Missing data detection — exclude Lead, Quote, Offboarded
-  const missingData = properties?.filter((p: any) => {
-    const stg = stageMap[p.stage_id]
-    if (!stg || stg.name === 'Offboarded' || stg.name === 'Lead' || stg.name === 'Quote' || stg.name === 'Offboarding') return false
-    return !p.ce_charged || !p.cleaner_pay || !p.square_footage || !p.bedrooms || !p.address
-  }) || []
+      const av = a[sortKey]
+      const bv = b[sortKey]
 
-  // Profit distribution buckets (exclude SCounty/excluded properties)
-  const profitBuckets = { high: 0, mid: 0, low: 0 }
-  financialProps.forEach((p: any) => {
-    const t = profitTier(p.profit_percentage ?? 0)
-    if (t) profitBuckets[t]++
-  })
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
 
-  // 30-day activity metrics
-  const onboardingStageId = onboardingStage?.id
-  const activeStageId = activeStage?.id
-  const offboardingStageIdVal = offboardingStage?.id
-  const offboardedStage = stages?.find((s: any) => s.name === 'Offboarded')
-  const offboardedStageId = offboardedStage?.id
-
-  const newProperties30 = transitions30?.filter((t: any) =>
-    t.to_stage_id === onboardingStageId || t.to_stage_id === activeStageId
-  ) || []
-  const offboarded30 = transitions30?.filter((t: any) =>
-    t.to_stage_id === offboardedStageId
-  ) || []
-
-  // De-duplicate by property (take most recent per property)
-  const dedup = (arr: any[]) => {
-    const seen = new Set()
-    return arr.filter((t: any) => {
-      if (seen.has(t.property_id)) return false
-      seen.add(t.property_id)
-      return true
+      if (typeof av === 'string' && typeof bv === 'string') {
+        return av.localeCompare(bv) * dir
+      }
+      return (av - bv) * dir
     })
+  }, [properties, contacts, contactById, search, sortKey, sortDir, viewMode])
+
+  const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  const { mutate: addProperty, isPending: addPending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async () => {
+      if (!quoteStage) throw new Error('No Quote stage')
+      const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
+      const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
+      const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
+      const estLaundry = calcLaundry(beds)
+      const estConsumables = calcConsumablesFromCosts(amenityCosts, {
+        full_baths: fullBaths,
+        half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
+        kitchens,
+        number_of_beds: beds,
+        hot_tub: newProp.hot_tub,
+      })
+      const { error } = await supabase.from('properties').insert({
+        name: newProp.name,
+        contact_id: newProp.contact_id || null,
+        ce_charged: newProp.ce_charged ? parseFloat(newProp.ce_charged) : null,
+        cleaner_pay: newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null,
+        bedrooms: newProp.bedrooms ? parseInt(newProp.bedrooms) : null,
+        number_of_beds: beds || null,
+        king_beds: newProp.king_beds ? parseInt(newProp.king_beds) : null,
+        queen_beds: newProp.queen_beds ? parseInt(newProp.queen_beds) : null,
+        full_beds: newProp.full_beds ? parseInt(newProp.full_beds) : null,
+        twin_beds: newProp.twin_beds ? parseInt(newProp.twin_beds) : null,
+        full_baths: fullBaths || null,
+        half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : null,
+        kitchens,
+        hot_tub: newProp.hot_tub,
+        linen_program: newProp.linen_program,
+        square_footage: newProp.sq_ft ? parseFloat(newProp.sq_ft) : null,
+        address: newProp.address || null,
+        est_laundry: estLaundry || null,
+        est_consumables: estConsumables || null,
+        stage_id: quoteStage.id,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      toast({ title: 'Property added to Quote stage' })
+      setAddOpen(false)
+      setNewProp(EMPTY_PROP)
+    },
+    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed'), variant: 'destructive' }),
+  })
+
+  // Inline client-create from the Add Quote dialog: insert into contacts,
+  // refresh the dropdown, and auto-link the new client on the current quote.
+  const { mutate: createClient, isPending: createClientPending } = useMutation({
+    mutationFn: async () => {
+      const full_name = newClient.full_name.trim()
+      if (!full_name) throw new Error('Name is required')
+      const { data, error } = await supabase
+        .from('contacts')
+        .insert({
+          full_name,
+          email: newClient.email.trim() || null,
+          phone: newClient.phone.trim() || null,
+        })
+        .select('id, full_name, email')
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: (created: any) => {
+      if (!created?.id) return
+      qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      setNewProp(prev => ({ ...prev, contact_id: String(created.id) }))
+      toast({ title: 'Client created', description: created.full_name })
+      setNewClient({ full_name: '', email: '', phone: '' })
+      setNewClientOpen(false)
+    },
+    onError: (e: any) => toast({ title: 'Could not create client', description: e?.message ?? 'Unknown error', variant: 'destructive' }),
+  })
+
+  const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async (prop: any) => {
+      if (!onboardingStage) throw new Error('No Onboarding stage')
+      if (!quoteStage) throw new Error('No Quote stage')
+      const { executeStageTransition } = await import('@/lib/stage-transition')
+      const result = await executeStageTransition({
+        propertyId: Number(prop.id),
+        propertyName: prop.name || '',
+        fromStageId: Number(quoteStage.id),
+        fromStageName: quoteStage.name,
+        toStageId: Number(onboardingStage.id),
+        toStageName: onboardingStage.name,
+        changedBy: effectiveUser?.label || 'unknown',
+      })
+      if (!result.ok) throw new Error(result.error)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
+      toast({ title: 'Moved to Onboarding' })
+      setConverting(null)
+    },
+    onError: (error: any) => toast({ title: 'Failed', description: error?.message, variant: 'destructive' }),
+  })
+
+  function handleDuplicate(prop: any) {
+    setNewProp({
+      name: '',
+      ce_charged: prop.ce_charged != null ? String(prop.ce_charged) : '',
+      cleaner_pay: prop.cleaner_pay != null ? String(prop.cleaner_pay) : '',
+      bedrooms: prop.bedrooms != null ? String(prop.bedrooms) : '',
+      number_of_beds: prop.number_of_beds != null ? String(prop.number_of_beds) : '',
+      king_beds: prop.king_beds != null ? String(prop.king_beds) : '',
+      queen_beds: prop.queen_beds != null ? String(prop.queen_beds) : '',
+      full_beds: prop.full_beds != null ? String(prop.full_beds) : '',
+      twin_beds: prop.twin_beds != null ? String(prop.twin_beds) : '',
+      full_baths: prop.full_baths != null ? String(prop.full_baths) : '',
+      half_baths: prop.half_baths != null ? String(prop.half_baths) : '',
+      number_of_kitchens: prop.kitchens != null ? String(prop.kitchens) : '',
+      hot_tub: prop.hot_tub || false,
+      linen_program: prop.linen_program || false,
+      sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
+      address: '',
+      contact_id: '',
+    })
+    setAddOpen(true)
   }
-  const newProps30Deduped = dedup(newProperties30)
-  const offboarded30Deduped = dedup(offboarded30)
+
+  function handleConvert(prop: any) {
+    const reqFields = onboardingStage?.requires_fields || []
+    const missing = reqFields.filter((f: string) => !prop[f])
+    setConverting({ prop, missing })
+  }
+
+  // Compute estimates for display. When a row has local edits, always recompute
+  // laundry/consumables/profit from the merged values rather than stale DB rows,
+  // so numbers update live as the user types.
+  function getEstimates(p: any) {
+    const hasEdit = !!edits[p.id]
+    const beds = Number(p.number_of_beds) || 0
+    const laundry = hasEdit ? calcLaundry(beds) : (p.est_laundry ?? calcLaundry(beds))
+    const consumables = hasEdit
+      ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
+      : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens }))
+    const linenProgramCost = p.linen_program ? (beds * 300) / 12 / 4 : 0
+    const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
+    const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
+    let profitPct: number | null
+    if (hasEdit && ce != null && ce > 0) {
+      const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + (pay || 0) + linenProgramCost
+      profitPct = ((ce - totalCost) / ce) * 100
+    } else {
+      profitPct = p.profit_percentage != null ? Number(p.profit_percentage) : null
+    }
+    return { laundry, consumables, linenProgramCost, profitPct }
+  }
+
+  // Persist a single field change to Supabase. Fires on blur/Enter of inline cells.
+  const { mutate: persistField } = useMutation({
+    mutationFn: async ({ id, field, value }: { id: number; field: string; value: any }) => {
+      const numFields = ['ce_charged', 'cleaner_pay', 'bedrooms', 'number_of_beds', 'full_baths', 'half_baths', 'square_footage']
+      const intFields = ['bedrooms', 'number_of_beds', 'square_footage']
+      let dbValue: any = value
+      if (value === '' || value == null) {
+        dbValue = null
+      } else if (numFields.includes(field)) {
+        dbValue = intFields.includes(field) ? parseInt(String(value), 10) : parseFloat(String(value))
+        if (Number.isNaN(dbValue)) dbValue = null
+      }
+      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_data, vars) => {
+      // Clear the local edit for this field now that it's persisted; keep other
+      // edits on the same row (server-side profit_percentage may still be stale
+      // so derived values re-use the merged value until refetch completes).
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      setEdits(prev => {
+        const row = prev[vars.id]
+        if (!row) return prev
+        const { [vars.field]: _removed, ...rest } = row
+        const next = { ...prev }
+        if (Object.keys(rest).length === 0) delete next[vars.id]
+        else next[vars.id] = rest
+        return next
+      })
+    },
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+  })
+
+  // Archive a quote with a required reason. Stores who/when/why on the
+  // properties row directly so the archive history is auditable on the
+  // record itself (not in a separate audit table).
+  const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async ({ id, reason }: { id: number; reason: string }) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_reason: reason,
+          archived_by: effectiveUser?.label ?? null,
+        })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote archived' })
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      setArchivingTarget(null)
+      setArchiveReason('')
+    },
+    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: restoreQuote } = useGuardedMutation('quote-sheet', {
+    mutationFn: async (id: number) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ archived_at: null, archived_reason: null, archived_by: null })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote restored' })
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+    },
+    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
+  })
+
+  function EditableNumberCell({
+    p, field, step = '1', prefix = '', className = '',
+  }: { p: any; field: string; step?: string; prefix?: string; className?: string }) {
+    const m = merged(p)
+    const [editing, setEditing] = useState(false)
+    const [draft, setDraft] = useState<string>(() => {
+      const v = m[field]
+      return v == null ? '' : String(v)
+    })
+    // Set when the user presses Escape so the trailing blur from unmount
+    // doesn't commit the typed draft (April 2026 audit P0 fix).
+    const cancelRef = useRef(false)
+
+    function commit() {
+      setEditing(false)
+      if (cancelRef.current) {
+        cancelRef.current = false
+        return
+      }
+      const current = p[field]
+      const nextVal = draft === '' ? null : Number(draft)
+      const isSame = String(current ?? '') === String(nextVal ?? '')
+      if (!isSame) {
+        persistField({ id: p.id, field, value: draft })
+      } else {
+        // No-op commit: drop any lingering edit override
+        setEdits(prev => {
+          const row = prev[p.id]
+          if (!row) return prev
+          const { [field]: _removed, ...rest } = row
+          const next = { ...prev }
+          if (Object.keys(rest).length === 0) delete next[p.id]
+          else next[p.id] = rest
+          return next
+        })
+      }
+    }
+
+    if (!canEdit) {
+      const v = m[field]
+      return <span className="tabular-nums">{v == null || v === '' ? '—' : (prefix ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}` : (typeof v === 'number' ? v.toLocaleString() : v))}</span>
+    }
+
+    if (editing) {
+      return (
+        <input
+          autoFocus
+          type="number"
+          step={step}
+          value={draft}
+          onChange={e => {
+            setDraft(e.target.value)
+            setEdits(prev => ({ ...prev, [p.id]: { ...(prev[p.id] || {}), [field]: e.target.value === '' ? null : Number(e.target.value) } }))
+          }}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
+            if (e.key === 'Escape') {
+              cancelRef.current = true
+              setEdits(prev => {
+                const row = prev[p.id]
+                if (!row) return prev
+                const { [field]: _removed, ...rest } = row
+                const next = { ...prev }
+                if (Object.keys(rest).length === 0) delete next[p.id]
+                else next[p.id] = rest
+                return next
+              })
+              const v = p[field]
+              setDraft(v == null ? '' : String(v))
+              setEditing(false)
+            }
+          }}
+          className={`h-6 w-20 rounded border border-input bg-background px-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
+          data-testid={`qs-cell-${field}-${p.id}`}
+        />
+      )
+    }
+
+    const v = m[field]
+    const display = v == null || v === '' ? '—'
+      : prefix
+        ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}`
+        : (typeof v === 'number' ? v.toLocaleString() : String(v))
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setDraft(v == null ? '' : String(v))
+          setEditing(true)
+        }}
+        className={`tabular-nums text-left w-full hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
+        data-testid={`qs-cell-${field}-${p.id}`}
+      >
+        {display}
+      </button>
+    )
+  }
+
+  function exportCsv() {
+    if (!filtered || filtered.length === 0) return
+    const headers = ['Name', 'Client', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
+    const rows = filtered.map((p: any) => {
+      const { laundry, consumables } = getEstimates(p)
+      return [
+        p.name || '',
+        p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : '',
+        p.ce_charged ?? '',
+        p.cleaner_pay ?? '',
+        p.bedrooms ?? '',
+        p.number_of_beds ?? '',
+        p.full_baths ?? '',
+        p.half_baths ?? '',
+        p.square_footage ?? '',
+        laundry?.toFixed(2) ?? '',
+        consumables?.toFixed(2) ?? '',
+        INSPECTION_COST.toFixed(2),
+        TRASH_COST.toFixed(2),
+        p.profit_percentage != null ? p.profit_percentage.toFixed(1) : '',
+      ]
+    })
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `quote-sheet-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
-    <PageContainer className="space-y-5">
+    <PageContainer width="full" className="h-full flex flex-col">
       <PageHeader
-        title="Dashboard"
+        title="Quote Sheet"
         subtitle={
           <span className="inline-flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-2xs font-semibold px-2.5 py-1 ring-1 ring-primary/20">
               <FlaskConical className="w-3 h-3" /> Redesign proposal
             </span>
-            Operations overview
+            Properties currently in Quote stage
           </span>
         }
+        actions={<div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
+            <Download className="w-3.5 h-3.5" /> Export CSV
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 no-print" data-testid="button-print-quote">
+            <Printer className="w-3.5 h-3.5" />
+            Print
+          </Button>
+          <div className="relative no-print">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search…"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1) }}
+              className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          {/* Active / Archived / All filter — defaults to Active so the
+              negative path doesn't clutter the daily view. */}
+          <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden h-8 no-print" data-testid="quote-view-mode">
+            {(['active', 'archived', 'all'] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => { setViewMode(m); setPage(1) }}
+                className={`px-2.5 h-full text-xs capitalize ${viewMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'} ${m !== 'active' ? 'border-l border-border' : ''}`}
+                data-testid={`view-mode-${m}`}
+              >
+                {m}
+                {m === 'archived' ? <span className="ml-1 text-2xs opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
+              </button>
+            ))}
+          </div>
+          <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
+            <Plus className="w-3.5 h-3.5" />
+            New Quote
+          </Button>
+        </div>}
       />
 
-      {isError && (
-        <ErrorState
-          title="Failed to load dashboard data"
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {/* Redesign: hero band — headline financial glance + active profit mix */}
-      <Card className="relative overflow-hidden rounded-2xl border-primary/20 shadow-md bg-gradient-to-br from-primary/10 via-card to-card">
-        <CardContent className="p-5 sm:p-6">
-          <div className="flex flex-col lg:flex-row lg:items-end gap-6">
-            {canViewFinancials ? (
-              <div className="min-w-0">
-                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Monthly Revenue (active)</p>
-                <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
-                  <button
-                    onClick={() => navigate('/revenue-report')}
-                    className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent hover:opacity-80 transition-opacity"
-                  >
-                    ${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
-                  </button>
-                  <span className="text-sm font-medium text-muted-foreground">
-                    ${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit
-                    <span className="mx-1.5 text-border">•</span>
-                    <span className={avgProfit < 15 ? 'text-destructive font-semibold' : 'text-success font-semibold'}>{avgProfit.toFixed(1)}% margin</span>
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Portfolio</p>
-                <div className="mt-1.5 flex items-baseline gap-3">
-                  <span className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent">{active}</span>
-                  <span className="text-sm font-medium text-muted-foreground">active of {total} properties</span>
-                </div>
-              </div>
-            )}
-
-            {/* Active profit mix — mini stacked bar from real distribution data */}
-            {canViewFinancials && financialProps.length > 0 && (
-              <div className="flex-1 min-w-[200px] lg:max-w-md">
-                <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
-                  <span className="uppercase tracking-wider font-semibold">Active profit mix</span>
-                  <span className="tabular-nums">{financialProps.length} props</span>
-                </div>
-                <div className="flex h-2.5 rounded-full overflow-hidden bg-muted ring-1 ring-border/50">
-                  {[
-                    { k: 'high', count: profitBuckets.high, color: PROFIT_COLOR_HEX.high },
-                    { k: 'mid', count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid },
-                    { k: 'low', count: profitBuckets.low, color: PROFIT_COLOR_HEX.low },
-                  ].filter(b => b.count > 0).map(b => (
-                    <div key={b.k} style={{ width: `${b.count / financialProps.length * 100}%`, backgroundColor: b.color }} />
-                  ))}
-                </div>
-                <div className="flex gap-3 mt-2 flex-wrap">
-                  {[
-                    { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high },
-                    { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid },
-                    { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low },
-                  ].map(b => (
-                    <span key={b.label} className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: b.color }} />
-                      {b.label} <span className="tabular-nums font-semibold text-foreground">{b.count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Portfolio chips */}
-            <div className="flex gap-2 flex-wrap lg:ml-auto">
-              {[
-                { label: 'Active', value: active, to: '/master-list?stage=Active' },
-                { label: 'Onboarding', value: onboarding, to: '/master-list?stage=Onboarding' },
-                { label: 'Total', value: total, to: '/master-list' },
-              ].map(s => (
-                <button
-                  key={s.label}
-                  onClick={() => navigate(s.to)}
-                  className="rounded-xl bg-background/70 ring-1 ring-border px-3.5 py-2 text-center hover:ring-primary/40 hover:bg-background transition-all"
-                >
-                  <p className="text-xl font-bold tabular-nums leading-none">{s.value}</p>
-                  <p className="text-2xs text-muted-foreground mt-1">{s.label}</p>
-                </button>
-              ))}
+      {/* Redesign: summary strip — at-a-glance quote stats */}
+      {!isLoading && filtered.length > 0 && (() => {
+        const rows = filtered.map(merged)
+        const totalCE = rows.reduce((s: number, p: any) => s + (Number(p.ce_charged) || 0), 0)
+        const profits = rows.map((p: any) => getEstimates(p).profitPct).filter((x: any): x is number => x != null)
+        const avgProfit = profits.length ? profits.reduce((s: number, v: number) => s + v, 0) / profits.length : null
+        const staleCount = filtered.filter((p: any) => !p.archived_at && p.created_at && Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000) > 90).length
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 no-print">
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="w-3.5 h-3.5" /> Open Quotes</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{filtered.length}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5" /> Avg Profit</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${avgProfit != null ? profitColorClass(avgProfit) : ''}`}>{avgProfit != null ? `${avgProfit.toFixed(1)}%` : '—'}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Download className="w-3.5 h-3.5" /> Total Client Charged</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{fmt(totalCE)}</p>
+            </div>
+            <div className={`rounded-2xl border shadow-sm p-4 ${staleCount > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Stale (&gt;90d)</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${staleCount > 0 ? 'text-warning' : ''}`}>{staleCount}</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        )
+      })()}
 
-      {/* Date Range Filter Bar */}
-      <div className="flex flex-wrap items-center gap-2 -mt-1">
-        {(['7d', '30d', '90d', 'custom'] as Preset[]).map((p) => (
-          <Button
-            key={p}
-            variant={preset === p ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setPreset(p)}
-          >
-            {p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : p === '90d' ? '90 Days' : 'Custom'}
-          </Button>
-        ))}
-        {preset === 'custom' && (
-          <>
-            <Input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="w-auto"
-              aria-label="From date"
-            />
-            <span className="text-sm text-muted-foreground">to</span>
-            <Input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="w-auto"
-              aria-label="To date"
-            />
-          </>
-        )}
-        {preset === 'custom' && customFrom && customTo && (
-          <span className="text-xs text-primary font-medium">
-            Showing {format(new Date(customFrom), 'MMM d')}–{format(new Date(customTo), 'MMM d, yyyy')}
-          </span>
-        )}
-      </div>
-
-      {/* Redesign: priority row — Today's Actions + merged Needs Attention */}
-      {!isLoading && (
-        <div className={`grid gap-4 ${canViewFinancials ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
-          {/* Today's Actions */}
-          <Card className="rounded-2xl border-primary/30 bg-primary/5 shadow-sm hover:shadow-md transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <ClipboardCheck className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold">Today's Actions</span>
-                {actionItems.length > 0 && (
-                  <span className="ml-1 text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5 tabular-nums">{actionItems.length}</span>
-                )}
-              </div>
-              {actionItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground">All caught up — nothing needs action today.</p>
-              ) : (
-                <div className="space-y-1 max-h-72 overflow-y-auto">
-                  {actionItems.map((it) => (
-                    <div key={it.key} className="flex items-center justify-between text-xs gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {it.kind === 'follow-up'
-                          ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                          : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
-                        <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
-                        <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
-                          {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <button onClick={() => navigate('/alerts')} className="text-xs text-primary hover:underline mt-2 block">
-                View all alerts →
-              </button>
-            </CardContent>
-          </Card>
-
-          {/* Needs Attention — merged negative-profit + missing-data with severity chips */}
-          {canViewFinancials && (
-            <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <AlertTriangle className="w-4 h-4 text-warning" />
-                  <span className="text-sm font-semibold">Needs Attention</span>
-                  {(negativeProfit.length + missingData.length) > 0 && (
-                    <span className="ml-1 text-xs font-medium text-warning bg-warning/10 rounded-full px-2 py-0.5 tabular-nums">{negativeProfit.length + missingData.length}</span>
-                  )}
-                </div>
-                {negativeProfit.length === 0 && missingData.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No data issues — all active properties look healthy.</p>
-                ) : (
-                  <div className="space-y-3 max-h-72 overflow-y-auto">
-                    {negativeProfit.length > 0 && (
-                      <div>
-                        <span className="inline-flex items-center gap-1 text-2xs font-semibold text-destructive bg-destructive/10 rounded-full px-2 py-0.5 mb-1.5">
-                          <AlertTriangle className="w-3 h-3" /> {negativeProfit.length} negative profit
-                        </span>
-                        <div className="space-y-1 mt-1.5">
-                          {negativeProfit.slice(0, 5).map((p: any) => (
-                            <div key={p.id} className="flex justify-between text-xs">
-                              <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/cost-tracking')}>{p.name}</span>
-                              <span className="text-destructive font-medium tabular-nums whitespace-nowrap">${(p.estimated_profit || 0).toFixed(2)}</span>
-                            </div>
-                          ))}
-                          {negativeProfit.length > 5 && (
-                            <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline">View all {negativeProfit.length} →</button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {missingData.length > 0 && (
-                      <div>
-                        <button className="flex items-center gap-1.5 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
-                          <span className="inline-flex items-center gap-1 text-2xs font-semibold text-warning bg-warning/10 rounded-full px-2 py-0.5">
-                            <AlertCircle className="w-3 h-3" /> {missingData.length} missing data
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
+            <tr>
+              {([
+                { col: 'name', label: 'Name' },
+                { col: 'client', label: 'Client' },
+                { col: 'created_at', label: 'Quote Date' },
+                { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
+                { col: 'cleaner_pay', label: 'Cleaner Pay' },
+                { col: 'bedrooms', label: 'Bedrooms' },
+                { col: 'number_of_beds', label: 'Beds' },
+                { col: 'full_baths', label: 'Full Baths' },
+                { col: 'half_baths', label: 'Half Baths' },
+                { col: 'square_footage', label: 'Sq Ft' },
+                { col: 'est_laundry', label: 'Est Laundry', title: 'Estimated Laundry Cost' },
+                { col: 'est_consumables', label: 'Est Consumables', title: 'Estimated Consumables Cost' },
+                { col: 'inspection_cost', label: 'Inspection' },
+                { col: 'trash_cost', label: 'Trash' },
+                { col: 'profit_percentage', label: 'Profit %' },
+              ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
+                <th
+                  key={col}
+                  className={`text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap${col === 'name' ? ' sticky left-0 z-20 bg-muted/80' : ''}`}
+                  title={title}
+                  tabIndex={0}
+                  role="columnheader"
+                  aria-sort={sortKey === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  onClick={() => toggleSort(col)}
+                  onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort(col)}
+                >
+                  {label}<SortIcon col={col} />
+                </th>
+              ))}
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              [...Array(4)].map((_, i) => (
+                <tr key={i} className="border-b border-border/50">
+                  {[...Array(16)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                </tr>
+              ))
+            ) : !properties || properties.length === 0 ? (
+              <tr>
+                <td colSpan={16}>
+                  <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td colSpan={16}>
+                  <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
+                </td>
+              </tr>
+            ) : (
+              paged.map((rawP: any) => {
+                const p = merged(rawP)
+                const { laundry, consumables, profitPct } = getEstimates(p)
+                return (
+                  <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
+                      <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
+                    </td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground truncate max-w-[14rem]" title={p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : ''}>
+                      {p.contact_id ? contactById.get(String(p.contact_id)) ?? '—' : '—'}
+                    </td>
+                    <td className="py-2 px-3 text-xs whitespace-nowrap">
+                      {p.created_at ? (() => {
+                        const days = Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000)
+                        const stale = !p.archived_at && days > 90
+                        return (
+                          <span
+                            className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap"
+                            title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
+                          >
+                            {new Date(p.created_at).toLocaleDateString()}
+                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{days}d</span>
                           </span>
-                          <span className="ml-auto text-muted-foreground">
-                            {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-                          </span>
-                        </button>
-                        {!missingCollapsed && (
-                          <div className="space-y-1 mt-1.5">
-                            {missingData.slice(0, 5).map((p: any) => {
-                              const missingFields: string[] = []
-                              if (!p.ce_charged) missingFields.push('ce_charged')
-                              if (!p.cleaner_pay) missingFields.push('cleaner_pay')
-                              if (!p.square_footage) missingFields.push('square_footage')
-                              if (!p.bedrooms) missingFields.push('bedrooms')
-                              if (!p.address) missingFields.push('address')
-                              const missingLabels = missingFields.map(f => ({ ce_charged: 'CE', cleaner_pay: 'Pay', square_footage: 'SqFt', bedrooms: 'Beds', address: 'Address' }[f] ?? f))
-                              return (
-                                <div key={p.id} className="flex items-center justify-between text-xs gap-2">
-                                  <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
-                                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    <span className="text-warning">{missingLabels.join(', ')}</span>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-5 px-1.5 text-xs gap-1"
-                                      onClick={() => openPropertyModal(p.id, 'dashboard-missing', missingFields)}
-                                      data-testid={`button-fix-missing-${p.id}`}
-                                    >
-                                      <Wrench className="w-2.5 h-2.5" /> Fix
-                                    </Button>
-                                  </div>
-                                </div>
-                              )
-                            })}
-                            {missingData.length > 5 && (
-                              <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline">View all {missingData.length} →</button>
-                            )}
-                          </div>
+                        )
+                      })() : '—'}
+                    </td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="bedrooms" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="number_of_beds" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" /></td>
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <LaundryFormulaTooltip numberOfBeds={p.number_of_beds} override={p.est_laundry}>
+                        <span>{fmt(laundry)}</span>
+                      </LaundryFormulaTooltip>
+                    </td>
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      <ConsumablesFormulaTooltip
+                        fullBaths={p.full_baths}
+                        halfBaths={p.half_baths}
+                        kitchens={p.kitchens}
+                        numberOfBeds={p.number_of_beds}
+                        hotTub={p.hot_tub}
+                        costs={amenityCosts}
+                        override={p.est_consumables}
+                      >
+                        <span>{fmt(consumables)}</span>
+                      </ConsumablesFormulaTooltip>
+                    </td>
+                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums">
+                      {profitPct != null ? (
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-current/30 ${profitColorClass(profitPct)}`}>
+                          {profitPct.toFixed(1)}%
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="py-2 px-3">
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-xs gap-1 hover:text-primary px-2"
+                          onClick={() => handleDuplicate(p)}
+                          data-testid={`button-duplicate-${p.id}`}
+                          title="Duplicate quote"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                        {p.archived_at ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1 hover:text-primary px-2"
+                            onClick={(e) => { e.stopPropagation(); restoreQuote(p.id) }}
+                            data-testid={`button-restore-${p.id}`}
+                            title={`Archived ${p.archived_by ? 'by ' + p.archived_by : ''}: ${p.archived_reason ?? ''}`}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs gap-1 hover:text-primary px-2"
+                              onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
+                              data-testid={`button-convert-${p.id}`}
+                            >
+                              <ArrowRight className="w-3 h-3" /> Onboard
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
+                              onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
+                              data-testid={`button-archive-${p.id}`}
+                              title="Archive — quote didn't pan out"
+                            >
+                              Archive
+                            </Button>
+                          </>
                         )}
                       </div>
+                      {p.archived_at && viewMode !== 'active' ? (
+                        <div className="mt-1 text-2xs text-muted-foreground italic">
+                          Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
+                          {p.archived_reason ? <> — {p.archived_reason}</> : null}
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+            {filtered.length > 0 && (() => {
+              const mergedRows = filtered.map(merged)
+              const sum = (pick: (p: any) => number | null | undefined) =>
+                mergedRows.reduce((s, p) => s + (Number(pick(p)) || 0), 0)
+              const validProfit = mergedRows
+                .map(p => getEstimates(p).profitPct)
+                .filter((x): x is number => x != null)
+              const avgProfit = validProfit.length > 0
+                ? validProfit.reduce((s, v) => s + v, 0) / validProfit.length
+                : null
+              return (
+                <tr className="bg-muted/60 border-t-2 border-border font-semibold">
+                  <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
+                  <td className="py-2 px-3 text-xs"></td>
+                  <td className="py-2 px-3 text-xs"></td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.cleaner_pay))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums" colSpan={5}></td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).laundry || 0), 0))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(mergedRows.reduce((s, p) => s + (getEstimates(p).consumables || 0), 0))}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * INSPECTION_COST)}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
+                  <td className="py-2 px-3 text-xs tabular-nums">
+                    {avgProfit == null ? '—' : (
+                      <span className={`font-medium ${profitColorClass(avgProfit)}`} title="Average profit %">
+                        {avgProfit.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span>
+                      </span>
                     )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      )}
-
-      {/* Redesign: compact KPI strip — Revenue & Avg Profit % now live in the hero */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
-        <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
-        <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
-        <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Offboarding')} />
-        <KpiCard
-          title="Conversions"
-          value={onboardingVelocity?.conversions ?? 0}
-          subtitle={`in ${periodLabel}`}
-          icon={UserCheck}
-          loading={isLoading || !onboardingVelocity}
-          hint="Properties that moved to Active stage during this period"
-          onClick={() => navigate('/pipeline')}
-        />
-        <KpiCard
-          title="Avg Onboarding"
-          value={
-            onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d`
-            : onboardingVelocity?.currentAvgDays != null ? `${onboardingVelocity.currentAvgDays}d`
-            : 'No data'
-          }
-          subtitle={
-            onboardingVelocity?.avgDays != null ? 'days to active (this period)'
-            : onboardingVelocity?.currentAvgDays != null ? `days in progress (${onboardingVelocity.currentCount} open)`
-            : 'no transitions yet'
-          }
-          icon={Activity}
-          loading={isLoading || !onboardingVelocity}
-          hint={
-            onboardingVelocity?.avgDays != null
-              ? "Average days from Onboarding to Active stage for conversions in the selected period."
-              : onboardingVelocity?.currentAvgDays != null
-                ? "No conversions in the selected period — showing how long properties currently in Onboarding have been there."
-                : "No onboarding activity recorded. A property needs at least one stage_transitions row to appear here."
-          }
-        />
-        <KpiCard
-          title="Trellis Tasks Today"
-          value={trellisError ? '—' : (trellisTasks?.count ?? 0)}
-          subtitle={trellisError ? 'Not configured' : `due ${trellisTasks?.date ?? 'today'}`}
-          icon={ClipboardCheck}
-          loading={trellisLoading}
-          hint={
-            trellisError
-              ? `Couldn't reach Trellis: ${trellisError instanceof Error ? trellisError.message : String(trellisError)}`
-              : 'Open Trellis tasks with a due date of today (America/Chicago). Pulled live from api.trellistech.com via the server-side proxy.'
-          }
-        />
+                  </td>
+                  <td></td>
+                </tr>
+              )
+            })()}
+          </tbody>
+        </table>
       </div>
+      {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
 
-      {/* 30-Day Activity Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <UserCheck className="w-4 h-4 text-info" />
-              <span className="text-sm font-medium">New Properties ({periodLabel})</span>
-              {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
-                <span className="ml-auto text-sm font-semibold tabular-nums text-info">{newProps30Deduped.length}</span>
-              )}
+      {/* Add Quote Dialog */}
+      <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-base">Add New Quote</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {/* Property info */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Property Name *</Label>
+              <Input value={newProp.name} onChange={e => setNewProp(prev => ({ ...prev, name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-name" />
             </div>
-            {trans30Loading ? (
-              <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
-            ) : newProps30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No new properties in this period</p>
-            ) : (
-              <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                {newProps30Deduped.map((t: any) => (
-                  <div key={t.property_id} className="flex justify-between text-xs">
-                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</span>
-                    <span className="text-muted-foreground whitespace-nowrap">{t.pipeline_stages?.name}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <UserMinus className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Offboarded ({periodLabel})</span>
-              {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
-                <span className="ml-auto text-sm font-semibold tabular-nums text-muted-foreground">{offboarded30Deduped.length}</span>
-              )}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Address</Label>
+              {/* Google Places-backed autocomplete; falls back to a plain
+                  text input when VITE_GOOGLE_MAPS_API_KEY isn't configured,
+                  so manual entry never breaks. */}
+              <AddressAutocomplete
+                value={newProp.address}
+                onChange={next => setNewProp(prev => ({ ...prev, address: next }))}
+                placeholder="Start typing an address…"
+                className="h-8 text-sm"
+                testId="input-new-address"
+              />
             </div>
-            {trans30Loading ? (
-              <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
-            ) : offboarded30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No offboarded properties in this period</p>
-            ) : (
-              <>
-                <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                  {offboarded30Deduped.map((t: any) => (
-                    <div key={t.property_id} className="flex justify-between text-xs">
-                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/previous-properties')}>{t.properties?.name}</span>
-                      <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={() => navigate('/previous-properties')} className="text-xs text-primary hover:underline mt-2 block">
-                  View All →
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Client</Label>
+                <button
+                  type="button"
+                  onClick={() => setNewClientOpen(true)}
+                  className="text-2xs uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
+                  data-testid="button-new-client-from-quote"
+                >
+                  <Plus className="w-2.5 h-2.5" /> New
                 </button>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Insights row — Profit Distribution + Properties by Stage + Recent Transitions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {/* Profit Distribution */}
-        {canViewFinancials && (
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {isLoading || !stages ? (
-              <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
-            ) : financialProps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No active properties with financial data.</p>
-            ) : (
-              <div className="space-y-4">
-                {[
-                  { label: PROFIT_TIER_LABELS.high, count: profitBuckets.high, color: PROFIT_COLOR_HEX.high, pct: (profitBuckets.high / financialProps.length * 100) },
-                  { label: PROFIT_TIER_LABELS.mid, count: profitBuckets.mid, color: PROFIT_COLOR_HEX.mid, pct: (profitBuckets.mid / financialProps.length * 100) },
-                  { label: PROFIT_TIER_LABELS.low, count: profitBuckets.low, color: PROFIT_COLOR_HEX.low, pct: (profitBuckets.low / financialProps.length * 100) },
-                ].map(b => (
-                  <div key={b.label} className="cursor-pointer group" onClick={() => navigate('/cost-tracking')}>
-                    <div className="flex justify-between items-baseline mb-1.5">
-                      <span className="text-sm font-medium flex items-center gap-1.5">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: b.color }} />
-                        {b.label}
-                      </span>
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        <span className="text-sm font-bold text-foreground">{b.count}</span> · {b.pct.toFixed(0)}%
-                      </span>
-                    </div>
-                    <div className="h-3 rounded-full bg-muted overflow-hidden ring-1 ring-border/50">
-                      <div className="h-full rounded-full transition-all duration-500 group-hover:brightness-110" style={{ width: `${b.pct}%`, backgroundColor: b.color }} />
-                    </div>
-                  </div>
-                ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
-        )}
+              <select
+                value={newProp.contact_id}
+                onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
+                className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
+              >
+                <option value="">No client linked</option>
+                {(contacts || []).map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.full_name}{c.email ? ` (${c.email})` : ''}</option>
+                ))}
+              </select>
+            </div>
 
-        {/* Properties by Stage */}
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Properties by Stage<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {isLoading ? (
-              <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
-            ) : (
-              <div className="space-y-2.5">
+            {/* Property details grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Bedrooms</Label>
+                <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">Number of Beds</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const total =
+                        (parseInt(newProp.king_beds) || 0) +
+                        (parseInt(newProp.queen_beds) || 0) +
+                        (parseInt(newProp.full_beds) || 0) +
+                        (parseInt(newProp.twin_beds) || 0)
+                      setNewProp(prev => ({ ...prev, number_of_beds: total > 0 ? String(total) : '' }))
+                    }}
+                    title="Sum king + queen + full + twin"
+                    className="text-[9px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60"
+                  >
+                    Auto
+                  </button>
+                </div>
+                <Input type="number" value={newProp.number_of_beds} onChange={e => setNewProp(prev => ({ ...prev, number_of_beds: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_beds" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Full Baths</Label>
+                <Input type="number" value={newProp.full_baths} onChange={e => setNewProp(prev => ({ ...prev, full_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-full_baths" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Half Baths</Label>
+                <Input type="number" value={newProp.half_baths} onChange={e => setNewProp(prev => ({ ...prev, half_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-half_baths" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Kitchens</Label>
+                <Input type="number" value={newProp.number_of_kitchens} onChange={e => setNewProp(prev => ({ ...prev, number_of_kitchens: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_kitchens" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Square Footage</Label>
+                <Input
+                  type="number"
+                  value={newProp.sq_ft}
+                  onChange={e => {
+                    const sqft = e.target.value
+                    const updates: Partial<NewProp> = { sq_ft: sqft }
+                    // Auto-suggest CE at $0.14/sqft and cleaner pay at 50% of CE
+                    if (sqft && parseFloat(sqft) > 0) {
+                      const suggestedCe = (parseFloat(sqft) * 0.14).toFixed(2)
+                      const suggestedPay = (parseFloat(suggestedCe) * 0.5).toFixed(2)
+                      // Only auto-fill if user hasn't manually entered values
+                      if (!newProp.ce_charged || newProp.ce_charged === ((parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2))) {
+                        updates.ce_charged = suggestedCe
+                        updates.cleaner_pay = suggestedPay
+                      }
+                    }
+                    setNewProp(prev => ({ ...prev, ...updates }))
+                  }}
+                  className="h-8 text-sm"
+                  data-testid="input-new-sq_ft"
+                />
+              </div>
+            </div>
+
+            {/* Bed sizes — optional. When filled in, the "Auto" button on
+                Number of Beds derives the total from these. */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Bed Sizes (optional)</Label>
+              <div className="grid grid-cols-4 gap-2">
+                <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder="King" data-testid="input-new-king_beds" />
+                <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder="Queen" data-testid="input-new-queen_beds" />
+                <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder="Full" data-testid="input-new-full_beds" />
+                <Input type="number" value={newProp.twin_beds} onChange={e => setNewProp(prev => ({ ...prev, twin_beds: e.target.value }))} className="h-8 text-sm" placeholder="Twin" data-testid="input-new-twin_beds" />
+              </div>
+            </div>
+
+            {/* Hot Tub toggle */}
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Hot Tub</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNewProp(prev => ({ ...prev, hot_tub: false }))}
+                  data-testid="input-new-hot_tub-no"
+                  className={`flex-1 h-8 rounded-md border text-sm transition-colors ${
+                    !newProp.hot_tub
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  No
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewProp(prev => ({ ...prev, hot_tub: true }))}
+                  data-testid="input-new-hot_tub-yes"
+                  className={`flex-1 h-8 rounded-md border text-sm transition-colors ${
+                    newProp.hot_tub
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Yes
+                </button>
+              </div>
+            </div>
+
+            {/* Linen Program toggle — adds (beds × 300)/12/4 per clean */}
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={newProp.linen_program}
+                onChange={e => setNewProp(prev => ({ ...prev, linen_program: e.target.checked }))}
+                className="mt-0.5 h-4 w-4 rounded border-input"
+                data-testid="input-new-linen_program"
+              />
+              <div className="text-xs">
+                <div className="font-medium">Linen Program</div>
+                <div className="text-muted-foreground">
+                  Adds {newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0'}/clean
+                  {newProp.number_of_beds ? ` (${newProp.number_of_beds} beds × $300 / 12 / 4)` : ''}
+                </div>
+              </div>
+            </label>
+
+            {/* CE Charged and Cleaner Pay — with auto-suggestions */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Client Charged ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newProp.ce_charged}
+                  onChange={e => {
+                    const ce = e.target.value
+                    const updates: Partial<NewProp> = { ce_charged: ce }
+                    // Auto-suggest cleaner pay at 50% of CE
+                    if (ce && parseFloat(ce) > 0) {
+                      updates.cleaner_pay = (parseFloat(ce) * 0.5).toFixed(2)
+                    }
+                    setNewProp(prev => ({ ...prev, ...updates }))
+                  }}
+                  className="h-8 text-sm"
+                  data-testid="input-new-ce_charged"
+                  placeholder={newProp.sq_ft ? `Suggested: $${(parseFloat(newProp.sq_ft) * 0.14).toFixed(2)}` : ''}
+                />
+                {newProp.sq_ft && !newProp.ce_charged && (
+                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2)} ($0.14/sqft)</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Cleaner Pay ($)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={newProp.cleaner_pay}
+                  onChange={e => setNewProp(prev => ({ ...prev, cleaner_pay: e.target.value }))}
+                  className="h-8 text-sm"
+                  data-testid="input-new-cleaner_pay"
+                  placeholder={newProp.ce_charged ? `Suggested: $${(parseFloat(newProp.ce_charged) * 0.5).toFixed(2)}` : ''}
+                />
+                {newProp.ce_charged && !newProp.cleaner_pay && (
+                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)} (50% of CE)</p>
+                )}
+              </div>
+            </div>
+
+            {/* Live estimate + profit % preview */}
+            {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
+              <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-card px-4 py-3 space-y-1 text-xs shadow-sm">
+                <p className="font-semibold text-foreground mb-1.5 uppercase tracking-wide text-2xs text-muted-foreground">Estimated Costs</p>
                 {(() => {
-                  const counts = stages?.map((stage: any) => ({ stage, count: properties?.filter((p: any) => p.stage_id === stage.id).length ?? 0 })) ?? []
-                  const maxCount = Math.max(1, ...counts.map((c: any) => c.count))
-                  return counts.map(({ stage, count }: any) => (
-                    <div key={stage.id} className="cursor-pointer group" onClick={() => navigate(`/master-list?stage=${encodeURIComponent(stage.name)}`)}>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
-                          {stage.name}
-                        </span>
-                        <span data-testid={`stage-count-${stage.name}`} className="text-sm font-bold tabular-nums">{count}</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500 group-hover:brightness-110" style={{ width: `${count / maxCount * 100}%`, backgroundColor: stage.color }} />
-                      </div>
-                    </div>
-                  ))
+                  const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
+                  const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
+                  const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
+                  const laundry = calcLaundry(beds)
+                  const consumables = calcConsumablesFromCosts(amenityCosts, {
+                    full_baths: fullBaths,
+                    half_baths: newProp.half_baths ? parseFloat(newProp.half_baths) : 0,
+                    kitchens,
+                    number_of_beds: beds,
+                    hot_tub: newProp.hot_tub,
+                  })
+                  const linenProgramCost = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
+                  const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + linenProgramCost
+                  const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
+                  const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
+                  const totalWithPay = totalCost + (pay || 0)
+                  const profitPct = ce && ce > 0 ? ((ce - totalWithPay) / ce) * 100 : null
+                  return (
+                    <>
+                      {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">Cleaner Pay</span><span className="tabular-nums">{fmt(pay)}</span></div>}
+                      <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
+                      {newProp.linen_program && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Linen Program</span><span className="tabular-nums">{fmt(linenProgramCost)}</span></div>
+                      )}
+                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
+                      {ce != null && (
+                        <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
+                      )}
+                      {profitPct !== null && (
+                        <div className="flex items-center justify-between border-t border-border mt-1.5 pt-2.5">
+                          <span className="text-sm font-semibold">Profit Margin</span>
+                          <span className={`text-2xl font-bold tabular-nums leading-none ${profitColorClass(profitPct)}`}>
+                            {profitPct.toFixed(1)}%
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )
                 })()}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => addProperty()} disabled={!newProp.name || addPending} data-testid="button-save-quote">
+              {addPending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Saving…</> : 'Add Quote'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-        {/* Recent Stage Transitions */}
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Recent Transitions ({periodLabel})</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {transLoading ? (
-              <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-            ) : transitions && transitions.length > 0 ? (
-              <div className="space-y-2">
-                {transitions.map((t: any) => {
-                  const fromStage = stageMap[t.from_stage_id]
-                  const toStage = stageMap[t.to_stage_id]
-                  return (
-                    <div key={t.id} className="flex items-start justify-between gap-2 py-1 border-b border-border/40 last:border-0">
-                      <div>
-                        <p
-                          className="text-sm font-medium leading-none cursor-pointer hover:underline"
-                          onClick={() => t.property_id && openPropertyModal(t.property_id)}
-                          data-testid={`link-transition-${t.id}`}
-                        >
-                          {t.properties?.name}
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {fromStage?.name ?? 'New'} → {toStage?.name ?? '—'}
-                        </p>
-                      </div>
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDistanceToNow(new Date(t.created_at), { addSuffix: true })}
-                      </span>
-                    </div>
-                  )
-                })}
-                <Link
-                  href="/master-list?stageChangeLast30=true"
-                  className="block text-xs text-primary hover:underline text-right mt-1 pt-1 border-t border-border/40"
-                >
-                  View All Transitions →
-                </Link>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Activity className="w-8 h-8 text-muted-foreground/40 mb-2" />
-                <p className="text-sm text-muted-foreground">No transitions in this period</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+      {converting && (
+        <StageTransitionModal
+          open={true}
+          onClose={() => setConverting(null)}
+          onConfirm={() => convertToOnboarding(converting.prop)}
+          propertyName={converting.prop.name}
+          targetStage="Onboarding"
+          missingFields={converting.missing}
+          isPending={convertPending}
+        />
+      )}
 
-      {/* Quality Leaderboard + Scheduled This Week */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ClipboardCheck className="w-4 h-4 text-primary" /> Quality Leaderboard
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-4">
-            {(() => {
-              if (!recentInspections || recentInspections.length < 3) {
-                return (
-                  <div className="flex flex-col items-center justify-center py-6 text-center">
-                    <ClipboardCheck className="w-8 h-8 text-muted-foreground/40 mb-2" />
-                    <p className="text-sm text-muted-foreground">No inspections logged yet</p>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Log at least 3 inspections to see your top and bottom performing properties ranked by score.</p>
-                    <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => navigate('/inspections')}>
-                      Log First Inspection
-                    </Button>
-                  </div>
-                )
-              }
-              // Compute averages per property
-              const avgByProp: Record<string, { name: string; sum: number; count: number; propId: string }> = {}
-              for (const i of recentInspections) {
-                const pid = String(i.property_id)
-                if (!avgByProp[pid]) avgByProp[pid] = { name: (i.properties as any)?.name || '—', sum: 0, count: 0, propId: pid }
-                avgByProp[pid].sum += i.overall_score || 0
-                avgByProp[pid].count++
-              }
-              const sorted = Object.values(avgByProp).map(p => ({ ...p, avg: p.sum / p.count })).sort((a, b) => b.avg - a.avg)
-              const top = sorted.slice(0, 3)
-              const bottom = sorted.slice(-3).reverse()
-
-              function ScorePill({ avg }: { avg: number }) {
-                const tone = avg >= 8 ? 'success' : avg >= 6 ? 'warning' : 'destructive'
-                return <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${TONE_SOFT[tone]}`}>{avg.toFixed(1)}</span>
-              }
-
-              return (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">Top Performers</p>
-                    {top.map(p => (
-                      <div key={p.propId} className="flex items-center justify-between text-xs py-1">
-                        <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
-                        <div className="flex items-center gap-1">
-                          <ScorePill avg={p.avg} />
-                          <span className="text-muted-foreground text-xs">({p.count})</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">Needs Attention</p>
-                    {bottom.map(p => (
-                      <div key={p.propId} className="flex items-center justify-between text-xs py-1">
-                        <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
-                        <div className="flex items-center gap-1">
-                          <ScorePill avg={p.avg} />
-                          <span className="text-muted-foreground text-xs">({p.count})</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            })()}
-          </CardContent>
-        </Card>
-
-        <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-          <CardContent className="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Scheduled This Week</p>
-                <p className="text-xl font-semibold mt-1">{scheduledThisWeek?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">cleaning assignments</p>
-                {(scheduledThisWeek?.length ?? 0) === 0 && active > 0 && (
-                  <p className="text-xs text-warning mt-1 flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    <button onClick={() => navigate('/cleaners')} className="hover:underline">Set up assignments →</button>
-                  </p>
-                )}
-              </div>
-              <div className="w-8 h-8 rounded-md bg-primary/10 flex items-center justify-center">
-                <CalendarDays className="w-4 h-4 text-primary" />
-              </div>
-            </div>
-            {/* Quality Alerts - properties with recent low scores */}
-            {recentInspections && recentInspections.filter((i: any) => (i.overall_score || 10) < 7).length > 0 && (
-              <div className="mt-4 pt-3 border-t border-border/40">
-                <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-destructive" /> Quality Alerts
-                </p>
-                {recentInspections.filter((i: any) => (i.overall_score || 10) < 7).slice(0, 3).map((i: any) => (
-                  <div key={i.property_id + i.inspected_at} className="flex items-center justify-between text-xs py-0.5">
-                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(i.property_id)}>
-                      {(i.properties as any)?.name}
-                    </span>
-                    <span className="text-destructive font-medium">{i.overall_score}/10</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* CRM Overview */}
-      <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
-        <CardHeader className="pb-2 pt-4 px-4">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Users className="w-4 h-4 text-primary" /> CRM Overview
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+      <Dialog open={!!archivingTarget} onOpenChange={v => !v && !archivePending && setArchivingTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">Archive quote</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              Archive <span className="font-medium">{archivingTarget?.name ?? '—'}</span>?
+              The property stays in the database; the quote sheet hides it by default
+              and you can restore it any time.
+            </p>
             <div>
-              <p className="text-xs text-muted-foreground">Total Clients</p>
-              <p className="text-lg font-semibold tabular-nums">{crmStats.total}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">New (30 days)</p>
-              <p className="text-lg font-semibold tabular-nums">
-                {crmStats.new30}
-                {crmStats.new30 > 0 && <span className="text-xs font-normal text-success ml-1">+{crmStats.new30}</span>}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Unassigned Properties</p>
-              <p
-                className="text-lg font-semibold tabular-nums cursor-pointer hover:text-primary transition-colors"
-                onClick={() => navigate('/property-list')}
-              >
-                {unassignedCount ?? 0}
+              <Label htmlFor="archive-reason" className="text-xs">
+                Reason <span className="text-destructive">*</span>
+              </Label>
+              <textarea
+                id="archive-reason"
+                value={archiveReason}
+                onChange={e => setArchiveReason(e.target.value)}
+                placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up…"
+                rows={3}
+                className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+                data-testid="input-archive-reason"
+                autoFocus
+              />
+              <p className="text-2xs text-muted-foreground mt-1">
+                Required. Visible in the archived view so you can audit why a quote didn't onboard.
               </p>
             </div>
           </div>
-          {crmStats.total === 0 && (
-            <p className="text-xs text-muted-foreground">
-              No clients yet.{' '}
-              <button onClick={() => navigate('/contacts')} className="text-primary hover:underline">Import from Properties →</button>
-            </p>
-          )}
-          {crmStats.paymentBreakdown.length > 0 && (
-            <div>
-              <p className="text-xs text-muted-foreground mb-2">Payment Methods</p>
-              <div className="space-y-1.5">
-                {crmStats.paymentBreakdown.map((pm, i) => {
-                  const pct = crmStats.total > 0 ? (pm.count / crmStats.total * 100) : 0
-                  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280']
-                  return (
-                    <div key={pm.method}>
-                      <div className="flex justify-between text-xs mb-0.5">
-                        <span className="text-muted-foreground">{pm.method}</span>
-                        <span className="font-medium tabular-nums">{pm.count}</span>
-                      </div>
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: colors[i % colors.length] }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setArchivingTarget(null)} disabled={archivePending}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => archivingTarget && archiveReason.trim() && archiveQuote({ id: archivingTarget.id, reason: archiveReason.trim() })}
+              disabled={archivePending || !archiveReason.trim()}
+              data-testid="button-confirm-archive"
+            >
+              {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Archiving…</> : 'Archive quote'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New-client mini dialog (opens over the Add Quote dialog). Fields
+          mirror the contacts table minimum: name required, email + phone
+          optional. On success, contacts query refreshes and the new client
+          is auto-selected on the current Quote form. */}
+      <Dialog open={newClientOpen} onOpenChange={v => { if (!v) { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base">New Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Full name *</Label>
+              <Input
+                autoFocus
+                value={newClient.full_name}
+                onChange={e => setNewClient(prev => ({ ...prev, full_name: e.target.value }))}
+                placeholder="Jane Doe"
+                className="h-8 text-sm"
+                data-testid="input-new-client-name"
+              />
             </div>
-          )}
-        </CardContent>
-      </Card>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Email</Label>
+              <Input
+                type="email"
+                value={newClient.email}
+                onChange={e => setNewClient(prev => ({ ...prev, email: e.target.value }))}
+                placeholder="jane@example.com"
+                className="h-8 text-sm"
+                data-testid="input-new-client-email"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Phone</Label>
+              <Input
+                type="tel"
+                value={newClient.phone}
+                onChange={e => setNewClient(prev => ({ ...prev, phone: e.target.value }))}
+                placeholder="(555) 555-1212"
+                className="h-8 text-sm"
+                data-testid="input-new-client-phone"
+              />
+            </div>
+            <p className="text-2xs text-muted-foreground">
+              You can fill in company, address, payment method, and more later from the Clients page.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) }} disabled={createClientPending}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => createClient()}
+              disabled={createClientPending || !newClient.full_name.trim()}
+              data-testid="button-save-new-client"
+            >
+              {createClientPending
+                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving…</>
+                : 'Create client'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   )
 }
