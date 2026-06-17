@@ -15,7 +15,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FileText, TrendingUp, Clock } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
@@ -146,6 +146,7 @@ export default function QuoteSheetPage() {
 
   const quoteStage = stages?.find((s: any) => s.name === 'Quote')
   const onboardingStage = stages?.find((s: any) => s.name === 'Onboarding')
+  const activeStage = stages?.find((s: any) => s.name === 'Active')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['/supabase/quote-sheet'],
@@ -159,6 +160,25 @@ export default function QuoteSheetPage() {
       return data || []
     },
     enabled: !!quoteStage,
+  })
+
+  // Quotes converted in the last 30 days — properties moved from Quote
+  // into Onboarding or Active (counted from stage_transitions).
+  const { data: convertedCount30 } = useQuery({
+    queryKey: ['/supabase/quote-conversions-30d', quoteStage?.id, onboardingStage?.id, activeStage?.id],
+    enabled: !!quoteStage && !!onboardingStage && !!activeStage,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { count, error } = await supabase
+        .from('stage_transitions')
+        .select('*', { count: 'exact', head: true })
+        .eq('from_stage_id', quoteStage!.id)
+        .in('to_stage_id', [onboardingStage!.id, activeStage!.id])
+        .gte('created_at', since)
+      if (error) return 0
+      return count ?? 0
+    },
   })
 
   const contactById = useMemo(
@@ -642,7 +662,35 @@ export default function QuoteSheetPage() {
         </div>}
       />
 
-      <div className="overflow-auto flex-1 rounded-lg border border-border">
+      {/* Redesign: summary strip — at-a-glance quote stats */}
+      {!isLoading && filtered.length > 0 && (() => {
+        const rows = filtered.map(merged)
+        const profits = rows.map((p: any) => getEstimates(p).profitPct).filter((x: any): x is number => x != null)
+        const avgProfit = profits.length ? profits.reduce((s: number, v: number) => s + v, 0) / profits.length : null
+        const staleCount = filtered.filter((p: any) => !p.archived_at && p.created_at && Math.floor((Date.now() - new Date(p.created_at).getTime()) / 86400000) > 90).length
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 no-print">
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="w-3.5 h-3.5" /> Open Quotes</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{filtered.length}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5" /> Avg Profit</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${avgProfit != null ? profitColorClass(avgProfit) : ''}`}>{avgProfit != null ? `${avgProfit.toFixed(1)}%` : '—'}</p>
+            </div>
+            <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /> Converted (30d)</div>
+              <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{convertedCount30 ?? 0}</p>
+            </div>
+            <div className={`rounded-2xl border shadow-sm p-4 ${staleCount > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Stale (&gt;90d)</div>
+              <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${staleCount > 0 ? 'text-warning' : ''}`}>{staleCount}</p>
+            </div>
+          </div>
+        )
+      })()}
+
+      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
@@ -716,11 +764,11 @@ export default function QuoteSheetPage() {
                         const stale = !p.archived_at && days > 90
                         return (
                           <span
-                            className={stale ? 'text-warning font-medium' : 'text-muted-foreground'}
+                            className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap"
                             title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
                           >
                             {new Date(p.created_at).toLocaleDateString()}
-                            <span className="ml-1 opacity-70">({days}d)</span>
+                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{days}d</span>
                           </span>
                         )
                       })() : '—'}
@@ -754,7 +802,7 @@ export default function QuoteSheetPage() {
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">
                       {profitPct != null ? (
-                        <span className={`font-medium ${profitColorClass(profitPct)}`}>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-current/30 ${profitColorClass(profitPct)}`}>
                           {profitPct.toFixed(1)}%
                         </span>
                       ) : '—'}
@@ -1074,8 +1122,8 @@ export default function QuoteSheetPage() {
 
             {/* Live estimate + profit % preview */}
             {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
-              <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1 text-xs">
-                <p className="font-medium text-foreground mb-1">Estimated Costs</p>
+              <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-card px-4 py-3 space-y-1 text-xs shadow-sm">
+                <p className="font-semibold text-foreground mb-1.5 uppercase tracking-wide text-2xs text-muted-foreground">Estimated Costs</p>
                 {(() => {
                   const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
                   const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
@@ -1109,9 +1157,9 @@ export default function QuoteSheetPage() {
                         <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
                       )}
                       {profitPct !== null && (
-                        <div className="flex justify-between border-t border-border pt-1 font-semibold">
-                          <span>Profit %</span>
-                          <span className={`tabular-nums ${profitColorClass(profitPct)}`}>
+                        <div className="flex items-center justify-between border-t border-border mt-1.5 pt-2.5">
+                          <span className="text-sm font-semibold">Profit Margin</span>
+                          <span className={`text-2xl font-bold tabular-nums leading-none ${profitColorClass(profitPct)}`}>
                             {profitPct.toFixed(1)}%
                           </span>
                         </div>
