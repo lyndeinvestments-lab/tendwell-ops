@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useAppSettings } from '@/hooks/use-app-settings'
 import { supabase } from '@/lib/supabase'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -31,7 +32,9 @@ const FREQ_OPTIONS = [
   { value: 'custom', label: 'Custom', cleans: null },
 ]
 
-const BREAK_EVEN_MARGIN = 0.20
+// Break-even target margin default; the live value is read per-component from
+// the break_even_target_margin app setting (see useAppSettings).
+const BREAK_EVEN_MARGIN_DEFAULT = 0.20
 
 function fmt(n: number | null | undefined, prefix = '$') {
   if (n == null) return '—'
@@ -129,7 +132,9 @@ function WhatIfPopover({
   const previewCost = field === 'total_estimated_cost' ? (isValid ? parsed : totalCost) : totalCost
   const profitPerClean = previewCe != null && previewCost != null ? previewCe - previewCost : null
   const moProfitPreview = profitPerClean != null && cpm != null ? profitPerClean * cpm : null
-  const breakEvenCe = previewCost != null ? previewCost / (1 - BREAK_EVEN_MARGIN) : null
+  const { getNumber } = useAppSettings()
+  const breakEvenMargin = getNumber('break_even_target_margin', BREAK_EVEN_MARGIN_DEFAULT)
+  const breakEvenCe = previewCost != null ? previewCost / (1 - breakEvenMargin) : null
 
   const { mutate, isPending } = useGuardedMutation('pro-forma', {
     mutationFn: async () => {
@@ -214,6 +219,8 @@ export default function ProFormaPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   usePageTitle(inWrapper ? 'Pro Forma — Per-Property' : 'Pro Forma')
+  const { getNumber } = useAppSettings()
+  const breakEvenMargin = getNumber('break_even_target_margin', BREAK_EVEN_MARGIN_DEFAULT)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkFreq, setBulkFreq] = useState('')
@@ -495,7 +502,7 @@ export default function ProFormaPage() {
   const asNeededCount = filtered?.filter((p: any) => p.cleaning_frequency === 'as_needed').length ?? 0
 
   // Summary-strip KPIs — computed purely from already-loaded/filtered rows.
-  // No new queries; reuses the page's existing BREAK_EVEN_MARGIN threshold.
+  // No new queries; uses the break_even_target_margin app setting (breakEvenMargin).
   const summary = useMemo(() => {
     const rows = filtered as any[]
     const total = rows.length
@@ -503,7 +510,7 @@ export default function ProFormaPage() {
     const avgMargin = withPct.length
       ? withPct.reduce((s, p) => s + Number(p.profit_percentage), 0) / withPct.length
       : null
-    const belowBreakEven = withPct.filter(p => Number(p.profit_percentage) < BREAK_EVEN_MARGIN * 100).length
+    const belowBreakEven = withPct.filter(p => Number(p.profit_percentage) < breakEvenMargin * 100).length
     const negativeProfit = rows.filter(p => (p.monthly_profit_estimate ?? 0) < 0).length
     return { total, avgMargin, belowBreakEven, negativeProfit }
   }, [filtered])
@@ -907,7 +914,7 @@ export default function ProFormaPage() {
                 role="columnheader"
                 aria-sort={sortKey === 'total_estimated_cost' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors group"
-                title={`CE needed to break even at ${BREAK_EVEN_MARGIN * 100}% margin`}
+                title={`CE needed to break even at ${breakEvenMargin * 100}% margin`}
                 onClick={() => toggleSort('total_estimated_cost')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
@@ -1010,7 +1017,7 @@ export default function ProFormaPage() {
                     <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${profitNeg ? 'text-destructive' : 'text-primary'}`}>{fmt(p.monthly_profit_estimate)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground italic">
                       {p.total_estimated_cost != null
-                        ? fmt(p.total_estimated_cost / (1 - BREAK_EVEN_MARGIN))
+                        ? fmt(p.total_estimated_cost / (1 - breakEvenMargin))
                         : '—'}
                     </td>
                     {/* Feature 2: Scenario toggle button */}
