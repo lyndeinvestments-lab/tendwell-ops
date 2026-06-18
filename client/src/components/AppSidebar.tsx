@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus
+  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -80,6 +80,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
       { title: 'Executive Summary', href: '/report', view: 'report', icon: TrendingUp },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
+      { title: 'Trellis Sync', href: '/trellis-sync', view: 'trellis-sync', icon: Plug },
     ],
   },
 ]
