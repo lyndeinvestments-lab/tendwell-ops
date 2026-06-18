@@ -342,6 +342,13 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       clean_assignments: {
@@ -415,12 +422,20 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "clean_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       cleaner_coaching_flags: {
         Row: {
           cleaner_id: string
           created_at: string
+          flagged_by: string | null
           id: string
           issue_count: number | null
           issue_rate: number | null
@@ -434,6 +449,7 @@ export type Database = {
         Insert: {
           cleaner_id: string
           created_at?: string
+          flagged_by?: string | null
           id?: string
           issue_count?: number | null
           issue_rate?: number | null
@@ -447,6 +463,7 @@ export type Database = {
         Update: {
           cleaner_id?: string
           created_at?: string
+          flagged_by?: string | null
           id?: string
           issue_count?: number | null
           issue_rate?: number | null
@@ -567,6 +584,13 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cleaning_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       cleaning_issues: {
@@ -675,7 +699,116 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
+      }
+      cleaning_issues_deleted_backup_20260610: {
+        Row: {
+          assessment: string | null
+          category: string | null
+          completed_at: string | null
+          coverage: string | null
+          created_at: string | null
+          created_by: string | null
+          details: string | null
+          id: string | null
+          issue_type: string | null
+          last_touch: string | null
+          priority: string | null
+          property_id: number | null
+          property_name: string | null
+          reference: string | null
+          remarks: string | null
+          report_date: string | null
+          resolution: string | null
+          share_token: string | null
+          slack_link: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assessment?: string | null
+          category?: string | null
+          completed_at?: string | null
+          coverage?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          details?: string | null
+          id?: string | null
+          issue_type?: string | null
+          last_touch?: string | null
+          priority?: string | null
+          property_id?: number | null
+          property_name?: string | null
+          reference?: string | null
+          remarks?: string | null
+          report_date?: string | null
+          resolution?: string | null
+          share_token?: string | null
+          slack_link?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assessment?: string | null
+          category?: string | null
+          completed_at?: string | null
+          coverage?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          details?: string | null
+          id?: string | null
+          issue_type?: string | null
+          last_touch?: string | null
+          priority?: string | null
+          property_id?: number | null
+          property_name?: string | null
+          reference?: string | null
+          remarks?: string | null
+          report_date?: string | null
+          resolution?: string | null
+          share_token?: string | null
+          slack_link?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      cleaning_issues_status_backup_20260610: {
+        Row: {
+          id: string | null
+          status: string | null
+        }
+        Insert: {
+          id?: string | null
+          status?: string | null
+        }
+        Update: {
+          id?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      cleaning_issues_type_backup_20260609: {
+        Row: {
+          id: string | null
+          issue_type: string | null
+        }
+        Insert: {
+          id?: string | null
+          issue_type?: string | null
+        }
+        Update: {
+          id?: string | null
+          issue_type?: string | null
+        }
+        Relationships: []
       }
       cleaning_logs: {
         Row: {
@@ -743,6 +876,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_logs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -1121,6 +1261,13 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "inspections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       intel_feed_items: {
@@ -1161,6 +1308,82 @@ export type Database = {
           url?: string | null
         }
         Relationships: []
+      }
+      issue_comments: {
+        Row: {
+          author_name: string | null
+          author_type: string
+          content: string
+          created_at: string
+          id: string
+          issue_id: string
+        }
+        Insert: {
+          author_name?: string | null
+          author_type?: string
+          content: string
+          created_at?: string
+          id?: string
+          issue_id: string
+        }
+        Update: {
+          author_name?: string | null
+          author_type?: string
+          content?: string
+          created_at?: string
+          id?: string
+          issue_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_comments_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_issues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      issue_photos: {
+        Row: {
+          author_type: string
+          created_at: string
+          id: string
+          issue_id: string
+          phase: string
+          photo_path: string | null
+          photo_url: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          author_type?: string
+          created_at?: string
+          id?: string
+          issue_id: string
+          phase?: string
+          photo_path?: string | null
+          photo_url: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          author_type?: string
+          created_at?: string
+          id?: string
+          issue_id?: string
+          phase?: string
+          photo_path?: string | null
+          photo_url?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_photos_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_issues"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       laundry_weigh_ins: {
         Row: {
@@ -1226,6 +1449,7 @@ export type Database = {
           counted_at: string
           counted_by: string | null
           created_at: string
+          full_encasements: number | null
           full_fitted_extras: number | null
           full_flat_extras: number | null
           full_pillowcase_extras: number | null
@@ -1233,18 +1457,24 @@ export type Database = {
           full_top_sheets: number | null
           hand_towels: number | null
           id: string
+          king_encasements: number | null
           king_fitted_extras: number | null
           king_flat_extras: number | null
           king_pillowcase_extras: number | null
+          king_pillows: number | null
           king_rolls: number | null
           king_top_sheets: number | null
+          kitchen_towels: number | null
           notes: string | null
           pool_towels: number | null
+          queen_encasements: number | null
           queen_fitted_extras: number | null
           queen_flat_extras: number | null
           queen_pillowcase_extras: number | null
           queen_rolls: number | null
           queen_top_sheets: number | null
+          standard_pillows: number | null
+          twin_encasements: number | null
           twin_fitted_extras: number | null
           twin_flat_extras: number | null
           twin_pillowcase_extras: number | null
@@ -1258,6 +1488,7 @@ export type Database = {
           counted_at?: string
           counted_by?: string | null
           created_at?: string
+          full_encasements?: number | null
           full_fitted_extras?: number | null
           full_flat_extras?: number | null
           full_pillowcase_extras?: number | null
@@ -1265,18 +1496,24 @@ export type Database = {
           full_top_sheets?: number | null
           hand_towels?: number | null
           id?: string
+          king_encasements?: number | null
           king_fitted_extras?: number | null
           king_flat_extras?: number | null
           king_pillowcase_extras?: number | null
+          king_pillows?: number | null
           king_rolls?: number | null
           king_top_sheets?: number | null
+          kitchen_towels?: number | null
           notes?: string | null
           pool_towels?: number | null
+          queen_encasements?: number | null
           queen_fitted_extras?: number | null
           queen_flat_extras?: number | null
           queen_pillowcase_extras?: number | null
           queen_rolls?: number | null
           queen_top_sheets?: number | null
+          standard_pillows?: number | null
+          twin_encasements?: number | null
           twin_fitted_extras?: number | null
           twin_flat_extras?: number | null
           twin_pillowcase_extras?: number | null
@@ -1290,6 +1527,7 @@ export type Database = {
           counted_at?: string
           counted_by?: string | null
           created_at?: string
+          full_encasements?: number | null
           full_fitted_extras?: number | null
           full_flat_extras?: number | null
           full_pillowcase_extras?: number | null
@@ -1297,18 +1535,144 @@ export type Database = {
           full_top_sheets?: number | null
           hand_towels?: number | null
           id?: string
+          king_encasements?: number | null
           king_fitted_extras?: number | null
           king_flat_extras?: number | null
           king_pillowcase_extras?: number | null
+          king_pillows?: number | null
           king_rolls?: number | null
           king_top_sheets?: number | null
+          kitchen_towels?: number | null
           notes?: string | null
           pool_towels?: number | null
+          queen_encasements?: number | null
           queen_fitted_extras?: number | null
           queen_flat_extras?: number | null
           queen_pillowcase_extras?: number | null
           queen_rolls?: number | null
           queen_top_sheets?: number | null
+          standard_pillows?: number | null
+          twin_encasements?: number | null
+          twin_fitted_extras?: number | null
+          twin_flat_extras?: number | null
+          twin_pillowcase_extras?: number | null
+          twin_rolls?: number | null
+          twin_top_sheets?: number | null
+          washcloths?: number | null
+        }
+        Relationships: []
+      }
+      linen_inventory_counts_backup_20260609: {
+        Row: {
+          bath_towels: number | null
+          bathmats: number | null
+          counted_at: string | null
+          counted_by: string | null
+          created_at: string | null
+          full_encasements: number | null
+          full_fitted_extras: number | null
+          full_flat_extras: number | null
+          full_pillowcase_extras: number | null
+          full_rolls: number | null
+          full_top_sheets: number | null
+          hand_towels: number | null
+          id: string | null
+          king_encasements: number | null
+          king_fitted_extras: number | null
+          king_flat_extras: number | null
+          king_pillowcase_extras: number | null
+          king_pillows: number | null
+          king_rolls: number | null
+          king_top_sheets: number | null
+          kitchen_towels: number | null
+          notes: string | null
+          pool_towels: number | null
+          queen_encasements: number | null
+          queen_fitted_extras: number | null
+          queen_flat_extras: number | null
+          queen_pillowcase_extras: number | null
+          queen_rolls: number | null
+          queen_top_sheets: number | null
+          standard_pillows: number | null
+          twin_encasements: number | null
+          twin_fitted_extras: number | null
+          twin_flat_extras: number | null
+          twin_pillowcase_extras: number | null
+          twin_rolls: number | null
+          twin_top_sheets: number | null
+          washcloths: number | null
+        }
+        Insert: {
+          bath_towels?: number | null
+          bathmats?: number | null
+          counted_at?: string | null
+          counted_by?: string | null
+          created_at?: string | null
+          full_encasements?: number | null
+          full_fitted_extras?: number | null
+          full_flat_extras?: number | null
+          full_pillowcase_extras?: number | null
+          full_rolls?: number | null
+          full_top_sheets?: number | null
+          hand_towels?: number | null
+          id?: string | null
+          king_encasements?: number | null
+          king_fitted_extras?: number | null
+          king_flat_extras?: number | null
+          king_pillowcase_extras?: number | null
+          king_pillows?: number | null
+          king_rolls?: number | null
+          king_top_sheets?: number | null
+          kitchen_towels?: number | null
+          notes?: string | null
+          pool_towels?: number | null
+          queen_encasements?: number | null
+          queen_fitted_extras?: number | null
+          queen_flat_extras?: number | null
+          queen_pillowcase_extras?: number | null
+          queen_rolls?: number | null
+          queen_top_sheets?: number | null
+          standard_pillows?: number | null
+          twin_encasements?: number | null
+          twin_fitted_extras?: number | null
+          twin_flat_extras?: number | null
+          twin_pillowcase_extras?: number | null
+          twin_rolls?: number | null
+          twin_top_sheets?: number | null
+          washcloths?: number | null
+        }
+        Update: {
+          bath_towels?: number | null
+          bathmats?: number | null
+          counted_at?: string | null
+          counted_by?: string | null
+          created_at?: string | null
+          full_encasements?: number | null
+          full_fitted_extras?: number | null
+          full_flat_extras?: number | null
+          full_pillowcase_extras?: number | null
+          full_rolls?: number | null
+          full_top_sheets?: number | null
+          hand_towels?: number | null
+          id?: string | null
+          king_encasements?: number | null
+          king_fitted_extras?: number | null
+          king_flat_extras?: number | null
+          king_pillowcase_extras?: number | null
+          king_pillows?: number | null
+          king_rolls?: number | null
+          king_top_sheets?: number | null
+          kitchen_towels?: number | null
+          notes?: string | null
+          pool_towels?: number | null
+          queen_encasements?: number | null
+          queen_fitted_extras?: number | null
+          queen_flat_extras?: number | null
+          queen_pillowcase_extras?: number | null
+          queen_rolls?: number | null
+          queen_top_sheets?: number | null
+          standard_pillows?: number | null
+          twin_encasements?: number | null
           twin_fitted_extras?: number | null
           twin_flat_extras?: number | null
           twin_pillowcase_extras?: number | null
@@ -1639,77 +2003,174 @@ export type Database = {
       onboarding_submissions: {
         Row: {
           address: string | null
+          api_client_id: string | null
+          api_key: string | null
+          approved_at: string | null
+          approved_by: string | null
           auto_code: string | null
+          bed_sizes: string | null
           bedrooms: number | null
+          check_in_time: string | null
+          check_out_time: string | null
           client_name: string | null
+          contact_email: string | null
+          contact_phone: string | null
           created_at: string | null
           door_code: string | null
+          filter_size: string | null
           full_baths: number | null
           guest_count: number | null
           half_baths: number | null
           hot_tub: boolean | null
+          ical_url: string | null
           id: string
+          invoice_email: string | null
           kitchens: number | null
+          linen_program: boolean | null
           notes: string | null
           number_of_beds: number | null
+          onboarding_deep_clean: boolean | null
           other_codes: string | null
           pet_friendly: string | null
+          photos: string[]
+          pool: boolean | null
+          property_id: number | null
           property_name: string | null
+          source: string
           square_footage: number | null
           status: string | null
           submitted_at: string | null
-          token: string
+          token: string | null
           wifi_info: string | null
         }
         Insert: {
           address?: string | null
+          api_client_id?: string | null
+          api_key?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           auto_code?: string | null
+          bed_sizes?: string | null
           bedrooms?: number | null
+          check_in_time?: string | null
+          check_out_time?: string | null
           client_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string | null
           door_code?: string | null
+          filter_size?: string | null
           full_baths?: number | null
           guest_count?: number | null
           half_baths?: number | null
           hot_tub?: boolean | null
+          ical_url?: string | null
           id?: string
+          invoice_email?: string | null
           kitchens?: number | null
+          linen_program?: boolean | null
           notes?: string | null
           number_of_beds?: number | null
+          onboarding_deep_clean?: boolean | null
           other_codes?: string | null
           pet_friendly?: string | null
+          photos?: string[]
+          pool?: boolean | null
+          property_id?: number | null
           property_name?: string | null
+          source?: string
           square_footage?: number | null
           status?: string | null
           submitted_at?: string | null
-          token: string
+          token?: string | null
           wifi_info?: string | null
         }
         Update: {
           address?: string | null
+          api_client_id?: string | null
+          api_key?: string | null
+          approved_at?: string | null
+          approved_by?: string | null
           auto_code?: string | null
+          bed_sizes?: string | null
           bedrooms?: number | null
+          check_in_time?: string | null
+          check_out_time?: string | null
           client_name?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
           created_at?: string | null
           door_code?: string | null
+          filter_size?: string | null
           full_baths?: number | null
           guest_count?: number | null
           half_baths?: number | null
           hot_tub?: boolean | null
+          ical_url?: string | null
           id?: string
+          invoice_email?: string | null
           kitchens?: number | null
+          linen_program?: boolean | null
           notes?: string | null
           number_of_beds?: number | null
+          onboarding_deep_clean?: boolean | null
           other_codes?: string | null
           pet_friendly?: string | null
+          photos?: string[]
+          pool?: boolean | null
+          property_id?: number | null
           property_name?: string | null
+          source?: string
           square_footage?: number | null
           status?: string | null
           submitted_at?: string | null
-          token?: string
+          token?: string | null
           wifi_info?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
       }
       onboarding_task_templates: {
         Row: {
@@ -1798,6 +2259,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -1906,7 +2374,6 @@ export type Database = {
       properties: {
         Row: {
           address: string | null
-          has_auto_code: boolean
           archived_at: string | null
           archived_by: string | null
           archived_reason: string | null
@@ -1934,6 +2401,7 @@ export type Database = {
           estimated_deep_clean_cost: number | null
           estimated_profit: number | null
           exclude_from_financials: boolean | null
+          exempt_from_inspections: boolean
           filter_size: string | null
           first_clean_date: string | null
           follow_up_date: string | null
@@ -1942,6 +2410,7 @@ export type Database = {
           guest_count: number | null
           half_baths: number | null
           hand_towels: number | null
+          has_auto_code: boolean
           hot_tub: boolean | null
           id: number
           inspection_cost: number | null
@@ -1986,7 +2455,6 @@ export type Database = {
           archived_by?: string | null
           archived_reason?: string | null
           auto_code?: string | null
-          has_auto_code?: boolean
           avg_cleans_per_month?: number | null
           bath_towels?: number | null
           bathmats?: number | null
@@ -2010,6 +2478,7 @@ export type Database = {
           estimated_deep_clean_cost?: number | null
           estimated_profit?: number | null
           exclude_from_financials?: boolean | null
+          exempt_from_inspections?: boolean
           filter_size?: string | null
           first_clean_date?: string | null
           follow_up_date?: string | null
@@ -2018,6 +2487,7 @@ export type Database = {
           guest_count?: number | null
           half_baths?: number | null
           hand_towels?: number | null
+          has_auto_code?: boolean
           hot_tub?: boolean | null
           id?: number
           inspection_cost?: number | null
@@ -2062,7 +2532,6 @@ export type Database = {
           archived_by?: string | null
           archived_reason?: string | null
           auto_code?: string | null
-          has_auto_code?: boolean
           avg_cleans_per_month?: number | null
           bath_towels?: number | null
           bathmats?: number | null
@@ -2086,6 +2555,7 @@ export type Database = {
           estimated_deep_clean_cost?: number | null
           estimated_profit?: number | null
           exclude_from_financials?: boolean | null
+          exempt_from_inspections?: boolean
           filter_size?: string | null
           first_clean_date?: string | null
           follow_up_date?: string | null
@@ -2094,6 +2564,7 @@ export type Database = {
           guest_count?: number | null
           half_baths?: number | null
           hand_towels?: number | null
+          has_auto_code?: boolean
           hot_tub?: boolean | null
           id?: number
           inspection_cost?: number | null
@@ -2213,6 +2684,13 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "property_edit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       property_notes: {
@@ -2286,6 +2764,13 @@ export type Database = {
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
         ]
       }
       property_photos: {
@@ -2345,6 +2830,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_photos_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -2408,6 +2900,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_supplies_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -2477,6 +2976,13 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_verifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -2597,6 +3103,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "stage_transitions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
             foreignKeyName: "stage_transitions_to_stage_id_fkey"
             columns: ["to_stage_id"]
             isOneToOne: false
@@ -2692,6 +3205,33 @@ export type Database = {
           },
         ]
       }
+      task_assignees_backup_20260609: {
+        Row: {
+          added_at: string | null
+          id: string | null
+          role: string | null
+          sort_order: number | null
+          task_id: string | null
+          user_id: number | null
+        }
+        Insert: {
+          added_at?: string | null
+          id?: string | null
+          role?: string | null
+          sort_order?: number | null
+          task_id?: string | null
+          user_id?: number | null
+        }
+        Update: {
+          added_at?: string | null
+          id?: string | null
+          role?: string | null
+          sort_order?: number | null
+          task_id?: string | null
+          user_id?: number | null
+        }
+        Relationships: []
+      }
       task_comments: {
         Row: {
           author: string | null
@@ -2723,6 +3263,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      task_comments_backup_20260609: {
+        Row: {
+          author: string | null
+          content: string | null
+          created_at: string | null
+          id: string | null
+          task_id: string | null
+        }
+        Insert: {
+          author?: string | null
+          content?: string | null
+          created_at?: string | null
+          id?: string | null
+          task_id?: string | null
+        }
+        Update: {
+          author?: string | null
+          content?: string | null
+          created_at?: string | null
+          id?: string | null
+          task_id?: string | null
+        }
+        Relationships: []
       }
       task_list_members: {
         Row: {
@@ -2959,6 +3523,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
             foreignKeyName: "tasks_verification_property_id_fkey"
             columns: ["verification_property_id"]
             isOneToOne: false
@@ -2994,6 +3565,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "tasks_verification_property_id_fkey"
+            columns: ["verification_property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
             foreignKeyName: "tasks_workflow_template_id_fkey"
             columns: ["workflow_template_id"]
             isOneToOne: false
@@ -3001,6 +3579,267 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      tasks_backup_20260609: {
+        Row: {
+          assignee_id: string | null
+          assignee_name: string | null
+          category: string | null
+          completed_at: string | null
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          due_date: string | null
+          id: string | null
+          list_id: string | null
+          parent_task_id: string | null
+          priority: string | null
+          property_id: number | null
+          property_name: string | null
+          status: string | null
+          title: string | null
+          updated_at: string | null
+          verification_property_id: number | null
+          workflow_template_id: string | null
+        }
+        Insert: {
+          assignee_id?: string | null
+          assignee_name?: string | null
+          category?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string | null
+          list_id?: string | null
+          parent_task_id?: string | null
+          priority?: string | null
+          property_id?: number | null
+          property_name?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          verification_property_id?: number | null
+          workflow_template_id?: string | null
+        }
+        Update: {
+          assignee_id?: string | null
+          assignee_name?: string | null
+          category?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string | null
+          list_id?: string | null
+          parent_task_id?: string | null
+          priority?: string | null
+          property_id?: number | null
+          property_name?: string | null
+          status?: string | null
+          title?: string | null
+          updated_at?: string | null
+          verification_property_id?: number | null
+          workflow_template_id?: string | null
+        }
+        Relationships: []
+      }
+      trellis_property_snapshot: {
+        Row: {
+          city: string | null
+          name: string
+          status: string | null
+          synced_at: string
+          trellis_id: string
+          workspace: string
+        }
+        Insert: {
+          city?: string | null
+          name: string
+          status?: string | null
+          synced_at?: string
+          trellis_id: string
+          workspace: string
+        }
+        Update: {
+          city?: string | null
+          name?: string
+          status?: string | null
+          synced_at?: string
+          trellis_id?: string
+          workspace?: string
+        }
+        Relationships: []
+      }
+      trellis_roster: {
+        Row: {
+          departments: string[]
+          email: string | null
+          is_active: boolean
+          member_id: string | null
+          name: string | null
+          role: string | null
+          synced_at: string
+          user_id: string
+          workspace: string
+        }
+        Insert: {
+          departments?: string[]
+          email?: string | null
+          is_active?: boolean
+          member_id?: string | null
+          name?: string | null
+          role?: string | null
+          synced_at?: string
+          user_id: string
+          workspace?: string
+        }
+        Update: {
+          departments?: string[]
+          email?: string | null
+          is_active?: boolean
+          member_id?: string | null
+          name?: string | null
+          role?: string | null
+          synced_at?: string
+          user_id?: string
+          workspace?: string
+        }
+        Relationships: []
+      }
+      trellis_sync_log: {
+        Row: {
+          counts: Json | null
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          requested_by: string | null
+          started_at: string | null
+          status: string
+          trigger: string
+        }
+        Insert: {
+          counts?: Json | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          requested_by?: string | null
+          started_at?: string | null
+          status: string
+          trigger?: string
+        }
+        Update: {
+          counts?: Json | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          requested_by?: string | null
+          started_at?: string | null
+          status?: string
+          trigger?: string
+        }
+        Relationships: []
+      }
+      trellis_task_snapshot: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          completed_at: string | null
+          department_name: string | null
+          priority: string | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          synced_at: string
+          title: string | null
+          trellis_property_id: string | null
+          trellis_task_id: string
+          workspace: string
+        }
+        Insert: {
+          assigned_to_id?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          department_name?: string | null
+          priority?: string | null
+          property_name?: string | null
+          scheduled_date?: string | null
+          status?: string | null
+          synced_at?: string
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_task_id: string
+          workspace: string
+        }
+        Update: {
+          assigned_to_id?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          department_name?: string | null
+          priority?: string | null
+          property_name?: string | null
+          scheduled_date?: string | null
+          status?: string | null
+          synced_at?: string
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_task_id?: string
+          workspace?: string
+        }
+        Relationships: []
+      }
+      van_build_questionnaire: {
+        Row: {
+          annual_miles: string | null
+          chassis_preference: string | null
+          created_at: string
+          email: string | null
+          height_inches: number | null
+          id: string
+          must_haves: Json | null
+          name: string | null
+          notes: string | null
+          offgrid_duration: string | null
+          primary_use: string | null
+          priorities: Json | null
+          standing_room: string | null
+        }
+        Insert: {
+          annual_miles?: string | null
+          chassis_preference?: string | null
+          created_at?: string
+          email?: string | null
+          height_inches?: number | null
+          id?: string
+          must_haves?: Json | null
+          name?: string | null
+          notes?: string | null
+          offgrid_duration?: string | null
+          primary_use?: string | null
+          priorities?: Json | null
+          standing_room?: string | null
+        }
+        Update: {
+          annual_miles?: string | null
+          chassis_preference?: string | null
+          created_at?: string
+          email?: string | null
+          height_inches?: number | null
+          id?: string
+          must_haves?: Json | null
+          name?: string | null
+          notes?: string | null
+          offgrid_duration?: string | null
+          primary_use?: string | null
+          priorities?: Json | null
+          standing_room?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {
@@ -3042,7 +3881,6 @@ export type Database = {
       operational_properties: {
         Row: {
           address: string | null
-          has_auto_code: boolean | null
           auto_code: string | null
           avg_cleans_per_month: number | null
           bath_towels: number | null
@@ -3069,6 +3907,7 @@ export type Database = {
           guest_count: number | null
           half_baths: number | null
           hand_towels: number | null
+          has_auto_code: boolean | null
           hot_tub: boolean | null
           id: number | null
           inspection_cost: number | null
@@ -3227,6 +4066,96 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_exceptions: {
+        Row: {
+          name: string | null
+          status: string | null
+          tendwell_task_count: number | null
+          trellis_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_property_enriched: {
+        Row: {
+          city: string | null
+          is_tendwell_property: boolean | null
+          name: string | null
+          status: string | null
+          synced_at: string | null
+          tendwell_task_count: number | null
+          trellis_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_reconciliation: {
+        Row: {
+          is_tendwell_property: boolean | null
+          linked_trellis_id: string | null
+          linked_trellis_name: string | null
+          linked_workspace: string | null
+          match_status: string | null
+          ops_name: string | null
+          ops_property_id: number | null
+          suggested_trellis_id: string | null
+          suggested_trellis_name: string | null
+          suggested_workspace: string | null
+          tendwell_task_count: number | null
+        }
+        Relationships: []
+      }
+      trellis_task_attributed: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          completed_at: string | null
+          department_name: string | null
+          is_tendwell: boolean | null
+          priority: string | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          synced_at: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_task_id: string | null
+          workspace: string | null
+        }
+        Insert: {
+          assigned_to_id?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          department_name?: string | null
+          is_tendwell?: never
+          priority?: string | null
+          property_name?: string | null
+          scheduled_date?: string | null
+          status?: string | null
+          synced_at?: string | null
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_task_id?: string | null
+          workspace?: string | null
+        }
+        Update: {
+          assigned_to_id?: string | null
+          assigned_to_name?: string | null
+          completed_at?: string | null
+          department_name?: string | null
+          is_tendwell?: never
+          priority?: string | null
+          property_name?: string | null
+          scheduled_date?: string | null
+          status?: string | null
+          synced_at?: string | null
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_task_id?: string | null
+          workspace?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_cleaner_app_user: {
@@ -3265,6 +4194,7 @@ export type Database = {
           estimated_deep_clean_cost: number | null
           estimated_profit: number | null
           exclude_from_financials: boolean | null
+          exempt_from_inspections: boolean
           filter_size: string | null
           first_clean_date: string | null
           follow_up_date: string | null
@@ -3273,6 +4203,7 @@ export type Database = {
           guest_count: number | null
           half_baths: number | null
           hand_towels: number | null
+          has_auto_code: boolean
           hot_tub: boolean | null
           id: number
           inspection_cost: number | null
@@ -3319,6 +4250,7 @@ export type Database = {
         }
       }
       admin_restore_property: { Args: { p_id: number }; Returns: undefined }
+      archive_stale_quotes: { Args: { max_age_days?: number }; Returns: number }
       compute_monthly_estimate: {
         Args: { target_month: string }
         Returns: {
@@ -3390,6 +4322,7 @@ export type Database = {
           month: string
         }[]
       }
+      tendwell_normalize_name: { Args: { p: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never
@@ -3522,3 +4455,4 @@ export const Constants = {
     Enums: {},
   },
 } as const
+
