@@ -408,10 +408,10 @@ export default function InspectionsPage() {
           <TabsTrigger value="priority" data-testid="tab-priority">Priority Dashboard</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
         </TabsList>
-        <TabsContent value="priority" className="flex-1 flex flex-col min-h-0 mt-3">
+        <TabsContent value="priority" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
           <InspectionPriorityDashboard />
         </TabsContent>
-        <TabsContent value="history" className="flex-1 flex flex-col min-h-0 mt-3 space-y-4">
+        <TabsContent value="history" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
       {/* Summary strip — at-a-glance quality stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
