@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
@@ -8,9 +8,10 @@ import { EmptyState } from '@/components/EmptyState'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
+import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
 import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2 } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTrellisSync, fetchTasks, type TaskRow } from '@/hooks/use-trellis-sync'
 
 function workspaceBadge(ws: 'A' | 'B' | null) {
@@ -37,17 +38,21 @@ function ReconciliationTab({ recon, exceptions, linkMatch }: {
   linkMatch: ReturnType<typeof useTrellisSync>['linkMatch']
 }) {
   const { toast } = useToast()
+  const [pendingId, setPendingId] = useState<number | null>(null)
   if (recon.error) return <ErrorState onRetry={() => recon.refetch()} />
 
   const rows = recon.data ?? []
   const exRows = exceptions.data ?? []
 
-  const confirm = async (opsId: number, opsName: string, trellisId: string | null) => {
+  const applyLink = async (opsId: number, opsName: string, trellisId: string | null) => {
+    setPendingId(opsId)
     try {
       await linkMatch.mutateAsync({ opsId, opsName, trellisId })
       toast({ title: trellisId ? 'Match linked' : 'Match cleared', description: opsName })
     } catch (e) {
       toast({ title: 'Update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingId(null)
     }
   }
 
@@ -59,7 +64,9 @@ function ReconciliationTab({ recon, exceptions, linkMatch }: {
           <AlertTriangle className="w-4 h-4 text-destructive" />
           <h2 className="text-sm font-semibold">In Trellis, not in Ops ({exRows.length})</h2>
         </div>
-        {exceptions.isLoading ? (
+        {exceptions.error ? (
+          <p className="text-xs text-destructive">Failed to load exceptions — <button className="underline" onClick={() => exceptions.refetch()}>retry</button>.</p>
+        ) : exceptions.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : exRows.length === 0 ? (
           <p className="text-xs text-muted-foreground">Nothing unaccounted for. Every Tendwell-serviced Trellis property maps to an Ops property.</p>
@@ -120,12 +127,12 @@ function ReconciliationTab({ recon, exceptions, linkMatch }: {
                   </td>
                   <td className="py-1.5 px-3 text-right">
                     {r.match_status === 'suggested' && (
-                      <Button size="sm" variant="outline" onClick={() => confirm(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={linkMatch.isPending}>
+                      <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
                         Confirm
                       </Button>
                     )}
                     {r.match_status === 'stale' && (
-                      <Button size="sm" variant="ghost" onClick={() => confirm(r.ops_property_id, r.ops_name, null)} disabled={linkMatch.isPending}>
+                      <Button size="sm" variant="ghost" onClick={() => applyLink(r.ops_property_id, r.ops_name, null)} disabled={pendingId === r.ops_property_id}>
                         Clear link
                       </Button>
                     )}
@@ -157,7 +164,7 @@ function WorkflowsTab() {
   const [active, setActive] = useState(WORKFLOWS[0].id)
   const wf = WORKFLOWS.find(w => w.id === active)!
   const q = useQuery({
-    queryKey: ['/supabase/trellis-sync', 'workflow', active],
+    queryKey: ['/supabase/trellis-sync', 'workflow', active, todayISO()],
     queryFn: wf.run,
     refetchOnWindowFocus: false,
   })
@@ -239,9 +246,23 @@ function RosterTab({ roster }: { roster: ReturnType<typeof useTrellisSync>['rost
 }
 
 export default function TrellisSyncPage() {
+  usePageTitle('Trellis Sync')
   const { user } = useAuth()
   const { toast } = useToast()
+  const qc = useQueryClient()
   const { recon, exceptions, roster, lastSync, linkMatch, requestSync } = useTrellisSync()
+
+  // When a sync finishes, the snapshot data has changed — refresh the
+  // reconciliation/exceptions/roster queries so the tiles + tables stop
+  // showing pre-sync counts without requiring a manual page reload.
+  const syncStatus = lastSync.data?.status
+  useEffect(() => {
+    if (syncStatus === 'done') {
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'recon'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'exceptions'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'roster'] })
+    }
+  }, [syncStatus, qc])
 
   const tiles = useMemo(() => {
     const rows = recon.data ?? []
