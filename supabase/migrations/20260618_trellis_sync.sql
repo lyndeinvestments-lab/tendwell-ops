@@ -70,10 +70,11 @@ $$;
 create or replace view public.trellis_task_attributed
 with (security_invoker = true) as
 select t.*,
-  (t.workspace = 'A'
-   or t.assigned_to_name = 'Tendwell Cleaning Co.'
-   or t.assigned_to_id in (select user_id from public.trellis_roster))
-   as is_tendwell
+  coalesce(
+    t.workspace = 'A'
+    or t.assigned_to_name = 'Tendwell Cleaning Co.'
+    or t.assigned_to_id in (select user_id from public.trellis_roster),
+    false) as is_tendwell
 from public.trellis_task_snapshot t;
 
 -- ── Property enrichment: task counts + Tendwell flags ───────────────────────
@@ -111,7 +112,8 @@ select
     else 'unmatched'
   end as match_status
 from public.properties pr
-left join public.trellis_property_enriched ts on ts.trellis_id = pr.trellis_id
+-- properties.trellis_id is TEXT; snapshot trellis_id is uuid — cast to compare.
+left join public.trellis_property_enriched ts on ts.trellis_id::text = pr.trellis_id
 left join lateral (
   select e.* from public.trellis_property_enriched e
   where pr.trellis_id is null
@@ -126,7 +128,7 @@ with (security_invoker = true) as
 select e.trellis_id, e.name, e.workspace, e.status, e.tendwell_task_count
 from public.trellis_property_enriched e
 where e.is_tendwell_property
-  and not exists (select 1 from public.properties pr where pr.trellis_id = e.trellis_id)
+  and not exists (select 1 from public.properties pr where pr.trellis_id = e.trellis_id::text)
   and not exists (
     select 1 from public.properties pr
     where pr.trellis_id is null
