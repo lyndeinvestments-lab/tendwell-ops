@@ -87,7 +87,7 @@ create index if not exists trellis_task_snapshot_sched_idx on public.trellis_tas
 create table if not exists public.trellis_roster (
   user_id     uuid primary key,
   member_id   uuid,
-  workspace   text not null default 'A',
+  workspace   text not null default 'A' check (workspace in ('A','B')),
   name        text,
   email       text,
   role        text,
