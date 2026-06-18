@@ -90,11 +90,15 @@ Supabase snapshot tables  ◄── the page only ever reads these + live `prope
 ```
 
 - **No per-view agent billing**, fast page loads, data is "as of last sync" (timestamp shown).
-- **Sync cadence: nightly.** Implementation options for the runner (to confirm during
-  planning): a scheduled Claude Code cloud agent, or a cron on Jordan's M1 Mac running
-  Claude Code headless. Risk to verify: whether the `trellis-workspace-a/b` MCP servers
-  authenticate in a headless/scheduled context. Manual on-demand sync is the fallback and
-  the dev path.
+- **Sync runner: a local cron on this device** (the Mac running Claude Code, which has the
+  `trellis-workspace-a/b` MCP connections authenticated). Runs **nightly** as the scheduled
+  baseline.
+- **On-demand refresh:** because the deployed Vercel site cannot reach the MCP gateway, the
+  page's "Refresh" button does not run the sync directly — it **enqueues a sync request**
+  (a row in `trellis_sync_log` with `status = 'requested'`). The local runner polls for
+  requested syncs (short interval, e.g. every 1–2 min) and executes them, so the button is
+  functional end-to-end with a small delay. The page reflects request → running → done via
+  the sync-log row.
 
 ### 4.1 New Supabase tables
 
@@ -124,8 +128,8 @@ service-role sync job).
 - **Route/access:** `/trellis-sync`, **admin only** (add to `VIEW_ACCESS` in `auth.tsx`,
   `GuardedRoute`, `App.tsx` router, `AppSidebar.tsx` nav). Uses the shared `PageContainer` /
   `PageHeader` / `StatCard` / `StatusBadge` / `ErrorState` shell.
-- **Header:** "Last synced" timestamp + manual "Refresh" affordance (later wired to trigger a
-  sync; for v1 may just show staleness).
+- **Header:** "Last synced" timestamp + working **"Refresh"** button that enqueues an
+  on-demand sync request (picked up by the local runner; see §4). Shows request/running/done state.
 
 ### Tab 1 — Reconciliation (default)
 
@@ -145,7 +149,7 @@ service-role sync job).
 ### Tab 2 — Workflows
 
 A list of named Trellis data-pulls, each with a run/refresh affordance and last-result
-display. Initial set (extensible; confirm during spec review):
+display. Confirmed initial set (extensible):
 - **Today's Tendwell cleans** — A tasks today + B tasks today where `is_tendwell`.
 - **Upcoming (next 7 days)** — scheduled Tendwell cleans/inspections.
 - **Cleaner self-inspections due** — `Cleaner Self-Inspection` tasks, open/scheduled.
@@ -182,11 +186,11 @@ task-attribution rule. Highlights the ~19 active cleaners + "Tendwell Cleaning C
 
 ---
 
-## 8. Open questions for reviewer
+## 8. Decisions (resolved 2026-06-18)
 
-1. **Sync runner environment** — scheduled cloud agent vs M1 cron; need to confirm MCP auth
-   works headless. (Affects only *how* nightly runs, not the page.)
-2. **Workflows set** — is the initial five the right starting list, or are there specific
-   pulls you check daily that should be first-class?
-3. **Manual refresh** — should the page's "Refresh" button actually trigger an on-demand
-   sync in v1, or just display staleness until the nightly job matures?
+1. **Sync runner:** local cron on this device (the Mac with the Trellis MCP connections),
+   running nightly. To verify during implementation: the exact headless Claude Code
+   invocation and that both MCP servers authenticate in that context.
+2. **Workflows set:** ship the five listed in §5 Tab 2 as the starting set.
+3. **Manual refresh:** the "Refresh" button works — it enqueues an on-demand sync request
+   that the local runner executes (see §4).
