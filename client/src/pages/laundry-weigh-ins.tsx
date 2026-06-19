@@ -37,6 +37,10 @@ type WeighIn = {
 type TypeFilter = 'all' | 'clean' | 'dirty'
 type RangeFilter = '7d' | '30d' | '90d' | 'all'
 
+// Page the table so we never mount hundreds of rows (and their lazy <img>
+// nodes) at once — large all-time ranges can return up to 1,000 submissions.
+const PAGE_SIZE = 50
+
 const RANGE_DAYS: Record<RangeFilter, number | null> = {
   '7d': 7,
   '30d': 30,
@@ -56,6 +60,7 @@ export default function LaundryWeighInsPage() {
   const [rangeFilter, setRangeFilter] = useState<RangeFilter>('30d')
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  const [page, setPage] = useState(1)
 
   const FORM_URL = 'https://www.tendwellcleaning.com/#/weigh-in'
 
@@ -126,6 +131,15 @@ export default function LaundryWeighInsPage() {
     return { total, cleanLbs, dirtyLbs, cleaners }
   }, [filtered])
 
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const paged = useMemo(
+    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filtered, safePage],
+  )
+  const firstShown = filtered.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1
+  const lastShown = Math.min(safePage * PAGE_SIZE, filtered.length)
+
   function handleExport() {
     const csv = Papa.unparse(filtered.map(r => ({
       submitted_at: r.submitted_at,
@@ -182,12 +196,12 @@ export default function LaundryWeighInsPage() {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1) }}
             placeholder="Search cleaner name…"
             className="pl-9 h-9"
           />
         </div>
-        <Select value={typeFilter} onValueChange={v => setTypeFilter(v as TypeFilter)}>
+        <Select value={typeFilter} onValueChange={v => { setTypeFilter(v as TypeFilter); setPage(1) }}>
           <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All types</SelectItem>
@@ -195,7 +209,7 @@ export default function LaundryWeighInsPage() {
             <SelectItem value="dirty">Dirty</SelectItem>
           </SelectContent>
         </Select>
-        <Select value={rangeFilter} onValueChange={v => setRangeFilter(v as RangeFilter)}>
+        <Select value={rangeFilter} onValueChange={v => { setRangeFilter(v as RangeFilter); setPage(1) }}>
           <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="7d">Last 7 days</SelectItem>
@@ -236,7 +250,7 @@ export default function LaundryWeighInsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(row => (
+                  {paged.map(row => (
                     <tr key={row.id} className="border-t border-border/60 hover:bg-muted/30">
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
                         {format(parseISO(row.submitted_at), 'MMM d, yyyy h:mm a')}
@@ -256,7 +270,7 @@ export default function LaundryWeighInsPage() {
                             className="group relative w-12 h-12 rounded-md overflow-hidden border border-border hover:border-primary"
                             aria-label="View photo"
                           >
-                            <img src={thumbUrl(row.photo_url, { width: 96 })} alt="Weigh-in" className="w-full h-full object-cover" loading="lazy" />
+                            <img src={thumbUrl(row.photo_url, { width: 96 })} alt="Weigh-in" className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           </button>
                         ) : (
                           <span className="inline-flex items-center text-xs text-muted-foreground">
@@ -286,6 +300,34 @@ export default function LaundryWeighInsPage() {
                 </tbody>
               </table>
             </div>
+            {pageCount > 1 && (
+              <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">
+                  Showing {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of {filtered.length.toLocaleString()}
+                </span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                    disabled={safePage <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    Page {safePage} of {pageCount}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => Math.min(pageCount, p + 1))}
+                    disabled={safePage >= pageCount}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
