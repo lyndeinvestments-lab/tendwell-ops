@@ -78,6 +78,7 @@ const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"))
 const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
 const IssueSharePage = lazyRetry(() => import("@/pages/issue-share"));
 const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
+const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -264,6 +265,7 @@ function AppRoutes() {
         <Route path="/report">{() => <GuardedRoute viewId="report" component={ReportPage} />}</Route>
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
+        <Route path="/trellis-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />

@@ -97,6 +97,7 @@ tendwell-ops/
 | `/settings` | `settings.tsx` | admin |
 | `/revenue-report` | `revenue-report.tsx` | admin, viewer |
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
+| `/trellis-sync` | `trellis-sync.tsx` | **admin only** (`AdminRoute`) |
 | `/cleaners` | `cleaners.tsx` | admin, operations |
 | `/alerts` | `alerts.tsx` | admin, operations, viewer |
 | `/activity` | `activity.tsx` | admin, viewer |
@@ -210,6 +211,8 @@ npm run db:push    # Push Drizzle schema to SQLite
 ---
 
 ## Current State & Recent Work
+
+- **Trellis Sync & Reconciliation (2026-06-18, branch `claude/trellis-sync-reconciliation`):** new admin-only `/trellis-sync` page maps Ops `properties` to Trellis across two workspaces (A = Tendwell's own Trellis / direct clients; B = Haven's Trellis, where most Tendwell cleaning happens), flags exceptions (Tendwell work in Trellis with no Ops home), and hosts a Workflows tab + Tendwell roster tab. Data lives in snapshot tables refreshed by a **local nightly cron** (`scripts/trellis-sync.sh` runs Claude Code headless with the `trellis-sync` skill — the only context with the Trellis MCP connections) + an on-demand poller (`scripts/trellis-sync-poller.mjs`) triggered by the page's Refresh button. New tables: `trellis_property_snapshot`, `trellis_task_snapshot`, `trellis_roster`, `trellis_sync_log` (all admin-only RLS). Tendwell-attribution + reconciliation logic lives in SQL views (`trellis_task_attributed`, `trellis_property_enriched`, `trellis_reconciliation`, `trellis_exceptions`). **Note:** `properties.trellis_id` is TEXT while Trellis ids are uuid — views cast `::text` to join. A task is Tendwell's if workspace='A' OR `assigned_to_name='Tendwell Cleaning Co.'` OR `assigned_to_id` ∈ workspace-A roster (shared `user_id`). Migration: `20260618_trellis_sync.sql`. Runner setup + ops in `docs/trellis-sync-cron.md`.
 
 - **Page-standard sweep + Previous Properties removed (2026-06-17):** modernized table/card containers to `rounded-2xl` + `shadow-sm` and added `ErrorState` on primary queries across the remaining pages (access-codes, linen-tracker, linen-inventory, property-verifications, cleaners, cleaner-metrics, lost-items, lost-item-detail, tasks, issues, activity, pro-forma, revenue-report, north-star, onboarding-queue, incoming-shipments). Deleted the `/previous-properties` page entirely — Master List (`/master-list`→cost-tracking.tsx) covers it via the **Offboarded** status filter; removed its route, sidebar nav, command-palette entry, `previous-properties` view definition + role-view refs, and repointed the dashboard offboarded links to `/master-list`.
 

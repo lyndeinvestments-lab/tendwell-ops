@@ -40,6 +40,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'north-star',          label: 'North Star',          group: 'Admin' },
   { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
   { id: 'settings',            label: 'Settings',            group: 'Admin' },
+  { id: 'trellis-sync',        label: 'Trellis Sync',        group: 'Admin' },
 ] as const
 
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
@@ -82,7 +83,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'master-list', 'pro-forma', 'forecaster', 'settings',
     'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
-    'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue',
+    'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue', 'trellis-sync',
   ],
   operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
