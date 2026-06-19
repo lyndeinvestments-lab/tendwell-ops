@@ -55,6 +55,12 @@ export interface SyncLogRow {
   created_at: string
 }
 
+export interface TrellisPropOption {
+  trellis_id: string
+  name: string
+  workspace: 'A' | 'B'
+}
+
 export function useTrellisSync() {
   const qc = useQueryClient()
 
@@ -105,6 +111,19 @@ export function useTrellisSync() {
     refetchOnWindowFocus: false,
   })
 
+  // Every Trellis snapshot property — the option list for manually picking a
+  // match on any row (matched / unmatched / suggested / stale).
+  const trellisProps = useQuery({
+    queryKey: [...KEY, 'trellisProps'],
+    queryFn: async (): Promise<TrellisPropOption[]> => {
+      const { data, error } = await supabase
+        .from('trellis_property_snapshot').select('trellis_id, name, workspace').order('name')
+      if (error) throw error
+      return (data ?? []) as TrellisPropOption[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
   // Link an Ops property to a Trellis property (confirm a suggested/changed match).
   const linkMatch = useMutation({
     mutationFn: async ({ opsId, opsName, trellisId }: { opsId: number; opsName: string; trellisId: string | null }) => {
@@ -127,7 +146,7 @@ export function useTrellisSync() {
     onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'lastSync'] }),
   })
 
-  return { recon, exceptions, roster, lastSync, linkMatch, requestSync }
+  return { recon, exceptions, roster, lastSync, trellisProps, linkMatch, requestSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).
