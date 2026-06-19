@@ -10,9 +10,11 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
-import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2 } from 'lucide-react'
+import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption } from '@/hooks/use-trellis-sync'
 
 function workspaceBadge(ws: 'A' | 'B' | null) {
   if (!ws) return null
@@ -32,9 +34,62 @@ function timeAgo(iso: string | null): string {
 const todayISO = () => new Date().toISOString().slice(0, 10)
 const plusDaysISO = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
 
-function ReconciliationTab({ recon, exceptions, linkMatch }: {
+// Searchable Trellis-property picker — lets an admin set, change, or clear the
+// match on ANY row (matched / unmatched / suggested / stale), not just confirm
+// a suggestion. Writes via the same linkMatch mutation.
+function MatchPicker({ opsId, opsName, currentTrellisId, options, disabled, onApply }: {
+  opsId: number
+  opsName: string
+  currentTrellisId: string | null
+  options: TrellisPropOption[]
+  disabled: boolean
+  onApply: (opsId: number, opsName: string, trellisId: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost" disabled={disabled} data-testid={`edit-match-${opsId}`}>
+          <Pencil className="w-3.5 h-3.5 mr-1.5" />
+          {currentTrellisId ? 'Change' : 'Set match'}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search Trellis properties…" />
+          <CommandList>
+            <CommandEmpty>No Trellis property found.</CommandEmpty>
+            {currentTrellisId && (
+              <CommandGroup>
+                <CommandItem value="__clear__ clear remove unlink" onSelect={() => { onApply(opsId, opsName, null); setOpen(false) }}>
+                  <Unlink className="w-3.5 h-3.5 mr-2 text-warning" /> Clear match
+                </CommandItem>
+              </CommandGroup>
+            )}
+            <CommandGroup heading="Trellis properties">
+              {options.map(o => (
+                <CommandItem
+                  key={o.trellis_id}
+                  value={`${o.name} ${o.workspace === 'A' ? 'Tendwell' : 'Haven'} ${o.trellis_id}`}
+                  onSelect={() => { onApply(opsId, opsName, o.trellis_id); setOpen(false) }}
+                >
+                  <Check className={`w-3.5 h-3.5 mr-2 ${o.trellis_id === currentTrellisId ? 'opacity-100' : 'opacity-0'}`} />
+                  <span className="flex-1 truncate">{o.name}</span>
+                  <span className="ml-2 shrink-0">{workspaceBadge(o.workspace)}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
+  trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
   linkMatch: ReturnType<typeof useTrellisSync>['linkMatch']
 }) {
   const { toast } = useToast()
@@ -43,6 +98,7 @@ function ReconciliationTab({ recon, exceptions, linkMatch }: {
 
   const rows = recon.data ?? []
   const exRows = exceptions.data ?? []
+  const options = trellisProps.data ?? []
 
   const applyLink = async (opsId: number, opsName: string, trellisId: string | null) => {
     setPendingId(opsId)
@@ -126,16 +182,21 @@ function ReconciliationTab({ recon, exceptions, linkMatch }: {
                     </StatusBadge>
                   </td>
                   <td className="py-1.5 px-3 text-right">
-                    {r.match_status === 'suggested' && (
-                      <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
-                        Confirm
-                      </Button>
-                    )}
-                    {r.match_status === 'stale' && (
-                      <Button size="sm" variant="ghost" onClick={() => applyLink(r.ops_property_id, r.ops_name, null)} disabled={pendingId === r.ops_property_id}>
-                        Clear link
-                      </Button>
-                    )}
+                    <div className="flex items-center justify-end gap-1.5">
+                      {r.match_status === 'suggested' && (
+                        <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
+                          Confirm
+                        </Button>
+                      )}
+                      <MatchPicker
+                        opsId={r.ops_property_id}
+                        opsName={r.ops_name}
+                        currentTrellisId={r.linked_trellis_id}
+                        options={options}
+                        disabled={pendingId === r.ops_property_id}
+                        onApply={applyLink}
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -250,7 +311,7 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, linkMatch, requestSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, trellisProps, linkMatch, requestSync } = useTrellisSync()
 
   // When a sync finishes, the snapshot data has changed — refresh the
   // reconciliation/exceptions/roster queries so the tiles + tables stop
@@ -321,7 +382,7 @@ export default function TrellisSyncPage() {
         </TabsList>
 
         <TabsContent value="reconciliation" className="space-y-5">
-          <ReconciliationTab recon={recon} exceptions={exceptions} linkMatch={linkMatch} />
+          <ReconciliationTab recon={recon} exceptions={exceptions} trellisProps={trellisProps} linkMatch={linkMatch} />
         </TabsContent>
         <TabsContent value="workflows">
           <WorkflowsTab />
