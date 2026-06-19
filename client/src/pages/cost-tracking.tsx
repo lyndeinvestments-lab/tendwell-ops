@@ -849,7 +849,7 @@ export default function CostTrackingPage() {
       const linen = updated.linen_program
         ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
         : 0
-      const totalCost = pay + laundry + consumables + inspectionCost + trashCost + linen
+      const totalCost = pay + laundry + consumables + (Number(updated.inspection_cost ?? inspectionCost)) + trashCost + linen
       updated.total_estimated_cost = Math.round(totalCost * 100) / 100
       updated.linen_program_cost = Math.round(linen * 100) / 100
       const ce = Number(updated.ce_charged) || 0
@@ -884,7 +884,7 @@ export default function CostTrackingPage() {
           const linen = updated.linen_program
             ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
             : 0
-          const totalCost = pay + laundry + consumables + inspectionCost + trashCost + linen
+          const totalCost = pay + laundry + consumables + (Number(updated.inspection_cost ?? inspectionCost)) + trashCost + linen
           updated.total_estimated_cost = Math.round(totalCost * 100) / 100
           updated.linen_program_cost = Math.round(linen * 100) / 100
           const ce = Number(updated.ce_charged) || 0
@@ -1514,7 +1514,7 @@ export default function CostTrackingPage() {
                       testId={`inline-consumables-${p.id}`}
                     />
                   </td>
-                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(inspectionCost)}</td>
+                  <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(Number(p.inspection_cost ?? inspectionCost))}</td>
                   <td className="py-2 px-3 tabular-nums text-xs text-muted-foreground">{fmt(trashCost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.total_estimated_cost)}</td>
                   <td className="py-2 px-3 tabular-nums text-xs font-medium">{fmt(p.estimated_profit)}</td>
@@ -1814,7 +1814,7 @@ export default function CostTrackingPage() {
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.consumablesTotal)}</td>
-                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * inspectionCost)}</td>
+                <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered ?? []).reduce((s: number, p: any) => s + Number(p.inspection_cost ?? inspectionCost), 0))}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt((filtered?.length ?? 0) * trashCost)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.costTotal)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.profitTotal)}</td>
