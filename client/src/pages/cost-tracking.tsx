@@ -1273,6 +1273,17 @@ export default function CostTrackingPage() {
                           >
                             <ExternalLink className="w-3 h-3" />
                           </button>
+                          {p.stage_name === 'Offboarded' && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setConfirmArchiveId(p.id) }}
+                              className="text-destructive/60 hover:text-destructive transition-colors flex-shrink-0 p-0.5 rounded hover:bg-destructive/10"
+                              title="Archive property"
+                              aria-label="Archive property"
+                              data-testid={`row-archive-${p.id}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
                         </>
                       ) : (
                         <button
