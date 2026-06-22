@@ -557,6 +557,24 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
   )
 }
 
+// Cleaner minimum pay by bedroom count. Reference figures only — surfaced
+// next to Cleaner Pay in the Financials tab so editors can sanity-check the
+// pay against the floor for that property size. Intentionally NOT wired into
+// any cost/profit formula yet (display-only).
+const CLEANER_MIN_BY_BEDROOMS: Record<number, number> = {
+  1: 80,
+  2: 100,
+  3: 130,
+  4: 160,
+  5: 200,
+  6: 240,
+}
+
+function cleanerMinForBedrooms(bedrooms: number | null | undefined): number | null {
+  if (bedrooms == null || Number.isNaN(bedrooms)) return null
+  return CLEANER_MIN_BY_BEDROOMS[bedrooms] ?? null
+}
+
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
   const { data: editHistory } = useQuery({
@@ -1585,6 +1603,33 @@ export function PropertyDetailModal() {
                               ? `— · target $${row.target.toFixed(2)}/sqft`
                               : `target $${row.target.toFixed(2)}/sqft (set sqft)`}
                         </p>
+                        {row.field === 'cleaner_pay' && (() => {
+                          // Cleaner minimum reference, keyed off the live bedroom
+                          // count (the in-progress edit value when editing the
+                          // property, otherwise the saved value). Display-only —
+                          // does not feed any cost/profit formula.
+                          const liveBedrooms = isEditing && form.bedrooms !== '' && form.bedrooms != null
+                            ? Number(form.bedrooms)
+                            : (property.bedrooms != null ? Number(property.bedrooms) : null)
+                          const min = cleanerMinForBedrooms(liveBedrooms)
+                          if (min == null) {
+                            return (
+                              <p className="text-[11px] mt-0.5 text-muted-foreground" data-testid="modal-cleaner-min">
+                                {liveBedrooms == null ? 'Min pay: set bedrooms' : `Min pay: no reference for ${liveBedrooms} bdr`}
+                              </p>
+                            )
+                          }
+                          const belowMin = liveValue != null && !Number.isNaN(liveValue) && liveValue < min
+                          return (
+                            <p
+                              className={`text-[11px] mt-0.5 ${belowMin ? 'text-destructive font-medium' : 'text-muted-foreground'}`}
+                              data-testid="modal-cleaner-min"
+                            >
+                              Min pay ({liveBedrooms} bdr): ${min.toFixed(2)}
+                              {belowMin ? ' · below min' : ''}
+                            </p>
+                          )
+                        })()}
                       </div>
                     )
                   })}

@@ -110,6 +110,17 @@ function MarginMeter({ pct }: { pct: number | null | undefined }) {
   )
 }
 
+// Label/value cell for the mobile property cards. Keeps the stacked layout
+// consistent and lets cost fields stay inline-editable on a phone.
+function MobileField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <span className="text-2xs uppercase tracking-wide text-muted-foreground block">{label}</span>
+      <span className="text-sm">{children}</span>
+    </div>
+  )
+}
+
 // Hero KPI tile for the redesign band.
 function Kpi({
   icon: Icon, label, value, sub, accent = 'primary', children,
@@ -1057,7 +1068,7 @@ export default function CostTrackingPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Master List · Cost Tracking"
         subtitle="Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates)."
@@ -1191,7 +1202,102 @@ export default function CostTrackingPage() {
         </div>
       ) : null}
 
-      <div className="overflow-auto flex-1 rounded-2xl border border-border/60 bg-card shadow-sm">
+      {/* ── Mobile card list ───────────────────────────────────────────
+          The 17-column table is unusable on a phone (the old nested
+          overflow pane trapped touch scroll). On <md we render stacked
+          cards that scroll with the page; cost fields stay inline-editable. */}
+      <div className="md:hidden space-y-3" data-testid="mobile-cost-cards">
+        {isLoading ? (
+          [...Array(6)].map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)
+        ) : filtered.length === 0 ? (
+          <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
+        ) : (
+          paged.map((p: any) => {
+            const { label: clientLabel, paymentMethod } = resolveClient(p)
+            const alert = alertByPropertyId[String(p.id)]
+            return (
+              <div
+                key={p.id}
+                data-testid={`mobile-card-${p.id}`}
+                className={`rounded-2xl border bg-card shadow-sm p-4 ${alert?.severity === 'critical' ? 'border-destructive/40' : alert?.severity === 'warning' ? 'border-warning/40' : 'border-border/60'}`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <button
+                    onClick={() => openPropertyModal(p.id)}
+                    className="text-left min-w-0 flex-1"
+                    data-testid={`mobile-open-${p.id}`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {alert && (
+                        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${alert.severity === 'critical' ? 'bg-destructive' : 'bg-warning'}`} title={alert.title} />
+                      )}
+                      <span className="font-semibold text-sm truncate">{p.name}</span>
+                      <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    </span>
+                    {clientLabel && <span className="text-xs text-muted-foreground truncate block mt-0.5">{clientLabel}</span>}
+                    {p.address && <span className="text-2xs text-muted-foreground truncate block">{p.address}</span>}
+                  </button>
+                  <div className="flex-shrink-0"><StageBadge stage={p.stage_name} /></div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+                  <MobileField label="Client Charged">
+                    <InlineEdit
+                      value={p.ce_charged}
+                      type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'ce_charged', v)}
+                      onSave={v => updateProperty({ id: p.id, field: 'ce_charged', value: v ? parseFloat(v) : null })}
+                      testId={`mobile-ce-${p.id}`}
+                    />
+                  </MobileField>
+                  <MobileField label="Cleaner Pay">
+                    <InlineEdit
+                      value={p.cleaner_pay}
+                      type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'cleaner_pay', v)}
+                      onSave={v => updateProperty({ id: p.id, field: 'cleaner_pay', value: v ? parseFloat(v) : null })}
+                      testId={`mobile-pay-${p.id}`}
+                    />
+                  </MobileField>
+                  <MobileField label="Laundry">
+                    <InlineEdit
+                      value={p.est_laundry}
+                      type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'est_laundry', v)}
+                      onSave={v => updateProperty({ id: p.id, field: 'est_laundry', value: v ? parseFloat(v) : null })}
+                      testId={`mobile-laundry-${p.id}`}
+                    />
+                  </MobileField>
+                  <MobileField label="Consumables">
+                    <InlineEdit
+                      value={p.est_consumables}
+                      type="number"
+                      onDraftChange={v => previewCostChange(p.id, 'est_consumables', v)}
+                      onSave={v => updateProperty({ id: p.id, field: 'est_consumables', value: v ? parseFloat(v) : null })}
+                      testId={`mobile-consumables-${p.id}`}
+                    />
+                  </MobileField>
+                  <MobileField label="Total Cost">
+                    <span className="tabular-nums font-medium">{fmt(p.total_estimated_cost)}</span>
+                  </MobileField>
+                  <MobileField label="Profit">
+                    <span className={`tabular-nums font-medium ${(p.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>{fmt(p.estimated_profit)}</span>
+                  </MobileField>
+                </div>
+
+                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-3">
+                  <MarginMeter pct={p.profit_percentage} />
+                  {paymentMethod && (
+                    <span className="text-2xs px-1.5 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">{paymentMethod}</span>
+                  )}
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      <div className="hidden md:block overflow-auto md:flex-1 rounded-2xl border border-border/60 bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>

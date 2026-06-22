@@ -586,7 +586,7 @@ export default function ProFormaPage() {
   const totalColCount = baseColCount + scenarioColCount
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       {!inWrapper && (
         <PageHeader
           title="Pro Forma"

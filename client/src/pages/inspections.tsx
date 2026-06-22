@@ -368,7 +368,7 @@ export default function InspectionsPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col overflow-x-hidden">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col overflow-x-hidden">
       <PageHeader
         title="Inspections"
         subtitle="Cleaning-quality scores logged after each clean · scores 1–5"

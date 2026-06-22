@@ -1996,7 +1996,7 @@ export default function SettingsPage() {
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
 
   return (
-    <PageContainer width="lg" className="space-y-6 h-full flex flex-col">
+    <PageContainer width="lg" className="space-y-6 md:h-full md:flex md:flex-col">
       <PageHeader
         title="Settings"
         subtitle="Manage users, permissions, integrations, and application settings"

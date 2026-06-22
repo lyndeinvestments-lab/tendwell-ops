@@ -194,7 +194,7 @@ export default function ContactsPage() {
   }, [contacts])
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Clients"
         subtitle="Manage clients and relationships"

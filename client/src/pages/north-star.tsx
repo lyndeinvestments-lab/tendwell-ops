@@ -268,7 +268,7 @@ export default function NorthStarPage() {
   const inputCls = 'h-7 text-xs text-center border border-transparent hover:border-input focus:border-input rounded px-1 bg-transparent focus:bg-background w-16 tabular-nums'
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col overflow-auto">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col md:overflow-auto">
       <PageHeader
         title="North Star"
         subtitle={`KPI scorecard — ${monthLabel}`}

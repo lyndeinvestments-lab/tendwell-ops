@@ -368,7 +368,7 @@ export default function IssuesPage() {
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
 
   return (
-    <PageContainer className="h-full flex flex-col">
+    <PageContainer className="md:h-full md:flex md:flex-col">
       {/* Header */}
       <PageHeader
         title="Issues Tracker"

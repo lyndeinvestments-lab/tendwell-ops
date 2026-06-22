@@ -192,7 +192,7 @@ export default function PropertyListPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Property List"
         subtitle="Operational properties — onboarding, active & offboarding"

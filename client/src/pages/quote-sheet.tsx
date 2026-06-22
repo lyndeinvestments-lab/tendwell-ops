@@ -612,7 +612,7 @@ export default function QuoteSheetPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Quote Sheet"
         subtitle="Properties currently in Quote stage"

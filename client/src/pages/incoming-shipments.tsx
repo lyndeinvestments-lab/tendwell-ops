@@ -178,7 +178,7 @@ export default function IncomingShipmentsPage() {
 
   // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Incoming Shipments"
         subtitle="Submissions from the public report form · auto-refreshes every 30s"

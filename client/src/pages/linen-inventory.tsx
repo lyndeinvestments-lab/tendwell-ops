@@ -257,7 +257,7 @@ export default function LinenInventoryPage() {
   const isLoading = reqLoading || countLoading
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Linen Inventory"
         subtitle={

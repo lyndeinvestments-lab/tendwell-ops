@@ -513,7 +513,7 @@ export default function ForecasterPage() {
   )
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       {!inWrapper ? (
         <PageHeader
           title="Forecaster"

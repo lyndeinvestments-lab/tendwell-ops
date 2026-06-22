@@ -52,7 +52,7 @@ export default function ProFormaWrapperPage() {
 
   return (
     <ProFormaWrapperContext.Provider value={{ inWrapper: true }}>
-      <div className="h-full flex flex-col">
+      <div className="md:h-full md:flex md:flex-col">
         <div className="px-5 pt-4 pb-2 border-b border-border/40 bg-background sticky top-0 z-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>

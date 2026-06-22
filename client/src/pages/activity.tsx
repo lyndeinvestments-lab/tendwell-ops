@@ -323,7 +323,7 @@ export default function ActivityFeedPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Activity Feed"
         subtitle="Audit log of all changes across the app"

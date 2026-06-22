@@ -272,7 +272,7 @@ export default function AcFiltersPage() {
   const allMissingSize = (properties || []).filter((p: any) => !p.filter_size || String(p.filter_size).trim() === '').length
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="AC Filters"
         subtitle="Track filter sizes and change schedules — click cells to edit"

@@ -234,7 +234,7 @@ export default function AccessCodesPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Access Codes"
         subtitle="Click any field to edit — use copy icon for clipboard"

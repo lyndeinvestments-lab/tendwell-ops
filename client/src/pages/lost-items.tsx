@@ -117,7 +117,7 @@ export default function LostItemsPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Lost Items"
         subtitle="Live data from Haven-OS · auto-refreshes every 30s"
