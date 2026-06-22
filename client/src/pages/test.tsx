@@ -10,7 +10,7 @@ import { FlaskConical } from 'lucide-react'
 export default function TestPage() {
   usePageTitle('Test')
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Test"
         subtitle="Admin-only sandbox for staging redesign proposals"

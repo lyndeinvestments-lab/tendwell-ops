@@ -385,7 +385,7 @@ export default function CleanersPage() {
   const activeCleaners = (cleaners || []).filter((c: any) => c.is_active)
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Cleaners"
         subtitle="Roster, assignments, and cost reconciliation"

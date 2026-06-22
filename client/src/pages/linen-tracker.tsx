@@ -355,7 +355,7 @@ export default function LinenTrackerPage() {
   }
 
   return (
-    <PageContainer className="h-full flex flex-col">
+    <PageContainer className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Linen Requirements"
         subtitle="Active & onboarding properties — required quantities for one full set"

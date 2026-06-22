@@ -378,7 +378,7 @@ export default function RevenueReportPage() {
   }
 
   return (
-    <PageContainer width="full" className="h-full flex flex-col">
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Revenue Report"
         subtitle="Monthly financial overview across all operational properties"
