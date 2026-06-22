@@ -4,6 +4,7 @@ import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supa
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
+import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
@@ -557,23 +558,8 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
   )
 }
 
-// Cleaner minimum pay by bedroom count. Reference figures only — surfaced
-// next to Cleaner Pay in the Financials tab so editors can sanity-check the
-// pay against the floor for that property size. Intentionally NOT wired into
-// any cost/profit formula yet (display-only).
-const CLEANER_MIN_BY_BEDROOMS: Record<number, number> = {
-  1: 80,
-  2: 100,
-  3: 130,
-  4: 160,
-  5: 200,
-  6: 240,
-}
-
-function cleanerMinForBedrooms(bedrooms: number | null | undefined): number | null {
-  if (bedrooms == null || Number.isNaN(bedrooms)) return null
-  return CLEANER_MIN_BY_BEDROOMS[bedrooms] ?? null
-}
+// Cleaner minimum pay by bedroom count lives in a shared util so the property
+// modal and quote sheet stay in sync. Display-only — not wired into formulas.
 
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
