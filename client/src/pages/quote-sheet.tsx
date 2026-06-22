@@ -21,6 +21,7 @@ import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { profitColorClass } from '@/lib/profit-colors'
+import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
 import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
@@ -1117,6 +1118,23 @@ export default function QuoteSheetPage() {
                 {newProp.ce_charged && !newProp.cleaner_pay && (
                   <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)} (50% of CE)</p>
                 )}
+                {(() => {
+                  // Cleaner minimum reference keyed off bedroom count. Display-only;
+                  // does not feed the suggestion or any cost/profit formula.
+                  const bdr = newProp.bedrooms ? parseInt(newProp.bedrooms) : null
+                  const min = cleanerMinForBedrooms(bdr)
+                  if (min == null) return null
+                  const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
+                  const belowMin = pay != null && !Number.isNaN(pay) && pay < min
+                  return (
+                    <p
+                      className={`text-xs ${belowMin ? 'text-destructive font-medium' : 'text-muted-foreground'}`}
+                      data-testid="quote-cleaner-min"
+                    >
+                      Min pay ({bdr} bdr): ${min.toFixed(2)}{belowMin ? ' · below min' : ''}
+                    </p>
+                  )
+                })()}
               </div>
             </div>
 
