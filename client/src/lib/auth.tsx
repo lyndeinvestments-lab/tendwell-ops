@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
-import { supabase } from '@/lib/supabase'
+import { supabase, clearCachedIdentity } from '@/lib/supabase'
 
 const SESSION_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000 // 7 days of inactivity
 
@@ -313,14 +313,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     resolveUserFromEmail(sessionEmail)
-      .then(appUser => {
+      .then(async appUser => {
         if (appUser) {
           setUser(appUser)
           setAuthError(null)
         } else {
-          supabase.auth.signOut()
           setAuthError('Your Google account is not authorized. Contact an admin.')
           setUser(null)
+          clearCachedIdentity()
+          // Await the sign-out so the session token is actually invalidated
+          // before we move on (it was fire-and-forget, leaving a live session).
+          await supabase.auth.signOut()
         }
       })
       .catch(() => {
@@ -346,6 +349,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     setViewAsState(null)
+    // Bust the cached identity so a subsequent login within the TTL isn't
+    // attributed to the previous user in the audit log.
+    clearCachedIdentity()
     await supabase.auth.signOut()
     setUser(null)
   }, [])

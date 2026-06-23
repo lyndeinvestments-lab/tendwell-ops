@@ -300,7 +300,15 @@ export default function ActivityFeedPage() {
 
     setReverting(entry.id)
     try {
-      const revertValue = isNaN(Number(oldValue)) ? oldValue : Number(oldValue)
+      // Coerce the stored text old_value back to its real type: '' → null,
+      // 'true'/'false' → boolean, numeric → number, otherwise leave as string.
+      // The old `isNaN(Number)` check wrote booleans as the strings "true"/
+      // "false" and cleared fields as 0 instead of null.
+      let revertValue: any = oldValue
+      if (oldValue === '') revertValue = null
+      else if (oldValue === 'true') revertValue = true
+      else if (oldValue === 'false') revertValue = false
+      else if (!isNaN(Number(oldValue))) revertValue = Number(oldValue)
       const { error } = await supabase
         .from('properties')
         .update({ [fieldName]: revertValue })
