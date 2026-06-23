@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { thumbUrl } from '@/lib/image'
@@ -90,6 +90,27 @@ function VerificationHistory({ propertyId, enabled = true }: { propertyId: strin
   )
 }
 
+// Pure presentational helpers — defined at module scope so they are not
+// recreated on every InspectionsTab render. (When defined inline, React saw a
+// new component type each render and remounted the range input, dropping
+// pointer capture mid-drag.)
+function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted-foreground w-20">{label}</span>
+      <input type="range" min={1} max={10} value={value} onChange={e => onChange(parseInt(e.target.value))} className="flex-1 h-1.5 accent-primary" />
+      <span className={`text-xs font-medium w-6 text-center ${value >= 8 ? 'text-green-600' : value >= 6 ? 'text-amber-600' : 'text-red-600'}`}>{value}</span>
+    </div>
+  )
+}
+
+function ScoreBadge({ score }: { score: number }) {
+  const cls = score >= 8 ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' :
+              score >= 6 ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800' :
+              'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800'
+  return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{score}/10</span>
+}
+
 function InspectionsTab({ propertyId }: { propertyId: string }) {
   const qc = useQueryClient()
   const { toast } = useToast()
@@ -156,23 +177,6 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       toast({ title: 'Failed to log inspection', description: error?.message, variant: 'destructive' })
     },
   })
-
-  function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground w-20">{label}</span>
-        <input type="range" min={1} max={10} value={value} onChange={e => onChange(parseInt(e.target.value))} className="flex-1 h-1.5 accent-primary" />
-        <span className={`text-xs font-medium w-6 text-center ${value >= 8 ? 'text-green-600' : value >= 6 ? 'text-amber-600' : 'text-red-600'}`}>{value}</span>
-      </div>
-    )
-  }
-
-  function ScoreBadge({ score }: { score: number }) {
-    const cls = score >= 8 ? 'text-green-700 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-900/20 dark:border-green-800' :
-                score >= 6 ? 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800' :
-                'text-red-700 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-900/20 dark:border-red-800'
-    return <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${cls}`}>{score}/10</span>
-  }
 
   if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
 
@@ -432,16 +436,22 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
         .eq('property_id', Number(propertyId))
         .order('item_name')
       if (error) throw error
-      // Auto-seed defaults if empty
-      if (data && data.length === 0) {
-        const rows = DEFAULT_SUPPLIES.map(name => ({ property_id: Number(propertyId), item_name: name, par_level: 2, current_qty: 2 }))
-        await supabase.from('property_supplies').insert(rows)
-        const { data: seeded } = await supabase.from('property_supplies').select('*').eq('property_id', Number(propertyId)).order('item_name')
-        return seeded || []
-      }
       return data || []
     },
   })
+
+  // Seed default supplies once when a property has none — kept OUT of the
+  // queryFn (a query must be side-effect-free; otherwise a refetch/retry could
+  // re-insert). Ref-guarded so it fires at most once per mounted property.
+  const seededRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (isLoading || !supplies || supplies.length > 0 || seededRef.current === propertyId) return
+    seededRef.current = propertyId
+    const rows = DEFAULT_SUPPLIES.map(name => ({ property_id: Number(propertyId), item_name: name, par_level: 2, current_qty: 2 }))
+    supabase.from('property_supplies').insert(rows).then(({ error }) => {
+      if (!error) qc.invalidateQueries({ queryKey: ['/supabase/property-supplies', propertyId] })
+    })
+  }, [isLoading, supplies, propertyId, qc])
 
   const { mutate: updateQty } = useMutation({
     mutationFn: async ({ id, current_qty }: { id: string; current_qty: number }) => {
