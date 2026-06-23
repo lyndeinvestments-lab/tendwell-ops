@@ -283,8 +283,9 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
 async function resolveOwnerFromEmail(email: string): Promise<AuthUser | null> {
   const { data, error } = await supabase
     .from('property_owners')
-    .select('id, name, email')
+    .select('id, name, email, active')
     .eq('email', email.toLowerCase())
+    .eq('active', true)
     .maybeSingle()
   if (error || !data) return null
   return {

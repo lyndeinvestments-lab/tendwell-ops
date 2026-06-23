@@ -3811,6 +3811,7 @@ export type Database = {
           email: string
           name: string | null
           phone: string | null
+          active: boolean
           created_at: string
         }
         Insert: {
@@ -3818,6 +3819,7 @@ export type Database = {
           email: string
           name?: string | null
           phone?: string | null
+          active?: boolean
           created_at?: string
         }
         Update: {
@@ -3825,6 +3827,7 @@ export type Database = {
           email?: string
           name?: string | null
           phone?: string | null
+          active?: boolean
           created_at?: string
         }
         Relationships: []
