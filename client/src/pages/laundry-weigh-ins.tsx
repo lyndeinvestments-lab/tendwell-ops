@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { thumbUrl } from '@/lib/image'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
@@ -251,7 +252,7 @@ export default function LaundryWeighInsPage() {
                             className="group relative w-12 h-12 rounded-md overflow-hidden border border-border hover:border-primary"
                             aria-label="View photo"
                           >
-                            <img src={row.photo_url} alt="Weigh-in" className="w-full h-full object-cover" loading="lazy" />
+                            <img src={thumbUrl(row.photo_url, { width: 96 })} alt="Weigh-in" className="w-full h-full object-cover" loading="lazy" />
                           </button>
                         ) : (
                           <span className="inline-flex items-center text-xs text-muted-foreground">

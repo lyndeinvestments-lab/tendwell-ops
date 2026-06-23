@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
+import { thumbUrl } from '@/lib/image'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
@@ -239,7 +240,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
               <div className="flex gap-1 mt-1">
                 {insp.photos_url.map((url: string, i: number) => (
                   <button key={i} onClick={() => setLightboxUrl(url)} className="w-12 h-12 rounded border border-border overflow-hidden hover:opacity-80">
-                    <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    <img src={thumbUrl(url, { width: 96 })} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -376,7 +377,7 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
         <div className="grid grid-cols-3 gap-2">
           {photos.map((p: any) => (
             <div key={p.id} className="relative group aspect-square">
-              <img src={p.photo_url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-md border border-border" />
+              <img src={thumbUrl(p.photo_url, { width: 300 })} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover rounded-md border border-border" />
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-md flex items-center justify-center gap-2">
                 <button
                   onClick={() => window.open(p.photo_url, '_blank')}
