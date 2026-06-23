@@ -504,6 +504,9 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
       await supabase.from('properties').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
       // Reassign interactions
       await supabase.from('contact_interactions').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
+      // Reassign notes — without this the secondary's contact_notes are lost
+      // (or block the merge) when the secondary contact is deleted below.
+      await supabase.from('contact_notes').update({ contact_id: primary.id }).eq('contact_id', secondary.id)
       // Delete secondary
       await supabase.from('contacts').delete().eq('id', secondary.id)
       logActivity({

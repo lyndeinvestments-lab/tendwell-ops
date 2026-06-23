@@ -28,6 +28,7 @@ type WeighIn = {
   laundry_type: 'clean' | 'dirty'
   photo_url: string | null
   photo_path: string | null
+  special_linen_photo_path: string | null
   language: string | null
   submitted_at: string
   created_at: string
@@ -74,7 +75,7 @@ export default function LaundryWeighInsPage() {
     queryFn: async (): Promise<WeighIn[]> => {
       let query = supabase
         .from('laundry_weigh_ins')
-        .select('id, cleaner_name, pounds, laundry_type, photo_url, photo_path, language, submitted_at, created_at')
+        .select('id, cleaner_name, pounds, laundry_type, photo_url, photo_path, special_linen_photo_path, language, submitted_at, created_at')
         .order('submitted_at', { ascending: false })
         .limit(1000)
       const days = RANGE_DAYS[rangeFilter]
@@ -89,8 +90,11 @@ export default function LaundryWeighInsPage() {
 
   const deleteMut = useMutation({
     mutationFn: async (row: WeighIn) => {
-      if (row.photo_path) {
-        await supabase.storage.from('laundry-weigh-ins').remove([row.photo_path])
+      // Remove both the main weigh-in photo and any special-linen photo,
+      // otherwise the special-linen file is orphaned in the bucket.
+      const paths = [row.photo_path, row.special_linen_photo_path].filter(Boolean) as string[]
+      if (paths.length) {
+        await supabase.storage.from('laundry-weigh-ins').remove(paths)
       }
       const { error } = await supabase.from('laundry_weigh_ins').delete().eq('id', row.id)
       if (error) throw error

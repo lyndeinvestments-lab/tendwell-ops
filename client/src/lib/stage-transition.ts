@@ -55,7 +55,10 @@ export async function executeStageTransition(params: TransitionParams): Promise<
     entity_type: 'pipeline',
     entity_id: String(propertyId),
     entity_name: propertyName,
-    action: 'update',
+    // Activity Feed keys its stage-move icon/styling off action==='stage_change'
+    // (activity.tsx); logging 'update' made every transition render as a
+    // generic field edit.
+    action: 'stage_change',
     field_name: 'stage',
     old_value: fromStageName,
     new_value: toStageName,

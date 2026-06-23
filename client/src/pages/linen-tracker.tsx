@@ -618,17 +618,20 @@ export default function LinenTrackerPage() {
                       toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
                       return
                     }
-                    const updates = NUMERIC_KEYS.map(k =>
-                      supabase.from('properties').update({ [k]: s[k] ?? null }).eq('id', copyTarget.id)
-                    )
-                    Promise.all(updates).then(() => {
-                      // Copy-from-property writes every numeric linen field
-                      // on the target properties row.
+                    // One atomic update of every numeric linen field — the
+                    // old per-field fan-out (10 round-trips) could partially
+                    // apply and leave the target row half-copied on failure.
+                    // (.catch never fired either: supabase resolves with
+                    // { error } rather than rejecting.)
+                    const patch = Object.fromEntries(NUMERIC_KEYS.map(k => [k, s[k] ?? null]))
+                    supabase.from('properties').update(patch).eq('id', copyTarget.id).then(({ error }) => {
+                      if (error) {
+                        toast({ title: 'Copy failed', description: error.message, variant: 'destructive' })
+                        return
+                      }
                       invalidateAllPropertyQueries(qc)
                       toast({ title: 'Linen data copied', description: `Copied from ${s.name} to ${copyTarget.name}` })
                       setCopyTarget(null)
-                    }).catch(() => {
-                      toast({ title: 'Copy failed', variant: 'destructive' })
                     })
                   }}
                 >

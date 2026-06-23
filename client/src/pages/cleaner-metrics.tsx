@@ -118,10 +118,13 @@ export default function CleanerMetricsPage() {
       const payRate = Number(cleaner.pay_rate) || 0
       const totalPay = totalCleans * payRate
 
-      // Issues attributed to this cleaner (by last_touch name match)
+      // Issues attributed to this cleaner (by last_touch name match).
+      // Use exact (trimmed) match — substring matching mis-attributed issues
+      // to any cleaner whose name is a substring of another (e.g. "Ali" in
+      // "Malik"), inflating issue counts and tripping false coaching flags.
       const myIssues = issues.filter((i: any) =>
         i.last_touch && cleaner.full_name &&
-        i.last_touch.toLowerCase().includes(cleaner.full_name.toLowerCase())
+        i.last_touch.trim().toLowerCase() === cleaner.full_name.trim().toLowerCase()
       )
       const issueCount = myIssues.length
       const issueRate = totalCleans > 0 ? ((issueCount / totalCleans) * 100) : 0
