@@ -98,6 +98,8 @@ tendwell-ops/
 | `/revenue-report` | `revenue-report.tsx` | admin, viewer |
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
 | `/trellis-sync` | `trellis-sync.tsx` | **admin only** (`AdminRoute`) |
+| `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal) |
+| `/reset-password` | `reset-password.tsx` | Public (password-recovery link target) |
 | `/cleaners` | `cleaners.tsx` | admin, operations |
 | `/alerts` | `alerts.tsx` | admin, operations, viewer |
 | `/activity` | `activity.tsx` | admin, viewer |
@@ -106,10 +108,12 @@ tendwell-ops/
 
 ## Auth & Roles
 
-- **Login**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`)
-- **Authorization**: After Google sign-in, user's email is looked up in `app_users.google_email`. If not found → signed out with "not authorized" error.
+- **Login (staff)**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`)
+- **Login (owners)**: Email/password via Supabase Auth (`signInWithPassword`). Forgot-password uses `resetPasswordForEmail` → email link → `/reset-password` → `supabase.auth.updateUser({ password })`. The `PASSWORD_RECOVERY` auth event gates the app behind the reset screen.
+- **Authorization**: After sign-in, email is looked up first in `app_users.google_email` (staff). If not found, it's looked up in `property_owners.email` (owner role). If neither → signed out with "not authorized" error.
 - **Session**: Supabase Auth handles session persistence (localStorage key `tendwell-sb-auth`). 7-day inactivity timeout (`SESSION_TIMEOUT_MS` in `client/src/lib/auth.tsx`).
-- **Roles**: `admin` | `operations` | `cleaning` | `viewer`
+- **Roles**: `admin` | `operations` | `cleaning` | `viewer` | `owner`
+- **Owner portal**: users with role `owner` are routed (by role, in `App.tsx`) to a dedicated sidebar-free portal (`owner-portal.tsx`) and never see staff routes. RLS restricts them to their assigned properties only.
 - Role definitions and view access map: `client/src/lib/auth.tsx`
 - **User management**: Settings page (`/settings`, admin only) — add users by Google email, set role, inline role editing, remove users. No password needed.
 
@@ -128,6 +132,10 @@ Key tables:
 - `app_users` — login users (role, label, password_hash)
 - `app_settings` — KV config store (inspection cost, profit tiers, AC filter interval, etc.)
 - `operational_properties` — DB view for cost tracking
+- `property_owners` — owner portal login identities (email/password owners; separate from staff `app_users`)
+- `owner_properties` — join table linking owners → properties (access scope for the owner portal)
+
+Owner-editable property columns (added `20260623_owner_portal.sql`): `owner_contact_name`, `owner_contact_email`, `owner_contact_phone`, `preferred_payment_method` (plus existing `address`, `bed_sizes_text`, `number_of_beds`, `square_footage`, `door_code`, `auto_code`, `other_codes`, `wifi_info`). A BEFORE-UPDATE guard trigger (`properties_owner_update_guard`) ensures an owner UPDATE can only ever change these whitelisted columns. RPC `get_owner_property_tasks(p_property_id)` (SECURITY DEFINER) returns the combined inspections + Trellis task feed for an owned property.
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
@@ -212,6 +220,8 @@ npm run db:push    # Push Drizzle schema to SQLite
 
 ## Current State & Recent Work
 
+- **Owner Portal (2026-06-23, branch `claude/owner-portal-*`):** new owner-facing portal. Adds email/password login + forgot-password (Supabase Auth `signInWithPassword` / `resetPasswordForEmail` / `updateUser`) alongside the existing staff Google OAuth. New `owner` role: users in the new `property_owners` table (keyed by auth email) are routed by role in `App.tsx` to a sidebar-free `owner-portal.tsx` where they can (1) see only their assigned properties, (2) edit a whitelisted field set (bed sizes, codes, Wi-Fi, other codes, bed count, square footage, address, owner contact info, preferred payment method), and (3) view scheduled tasks (title + date) sourced from internal inspections + the Trellis snapshot. Access is enforced in Postgres: `properties` RLS rewritten to staff-full + owner-scoped (`owner_owns_property(id)`), a guard trigger restricts owner column writes, and tasks are read via the SECURITY DEFINER RPC `get_owner_property_tasks` (owners can't read the admin-only `trellis_task_snapshot` directly). Migration: `20260623_owner_portal.sql`. New pages: `owner-portal.tsx`, `reset-password.tsx`. **Trellis hookup:** tasks reuse the existing `trellis_task_snapshot` (refreshed by the Trellis sync cron) matched by `trellis_id`/name — no separate Trello call. **Setup TODO:** create owners via Supabase Auth + insert into `property_owners` + `owner_properties` (no admin UI yet).
+
 - **Mobile web optimization (2026-06-22, branch `claude/mobile-web-optimization-8ilwv8`):** fixed the "impossible to scroll on mobile" bug. Root cause: every full-page view wrapped content in `<PageContainer className="h-full flex flex-col">`, locking the page to viewport height with the wide table in a nested `overflow-auto flex-1` pane — on a phone that nested both-axis scroll pane trapped touch. Fix: the height-lock + inner-scroll now applies only at `md:`+ (`md:h-full md:flex md:flex-col`) across all ~22 table/list pages, so on mobile the page grows and scrolls naturally via the `main` scroll container while tables scroll horizontally only. **Pattern going forward:** use `md:h-full md:flex md:flex-col` (not `h-full flex flex-col`) on `PageContainer` for fixed-height table pages. Master List (`cost-tracking.tsx`, the explicit complaint — 17 columns) additionally gets a dedicated mobile card view (`md:hidden` stacked cards with inline-editable cost fields + MarginMeter; desktop table is now `hidden md:block`). Desktop layout is unchanged (the new classes are identical at `md:`+).
 
 - **Trellis Sync & Reconciliation (2026-06-18, branch `claude/trellis-sync-reconciliation`):** new admin-only `/trellis-sync` page maps Ops `properties` to Trellis across two workspaces (A = Tendwell's own Trellis / direct clients; B = Haven's Trellis, where most Tendwell cleaning happens), flags exceptions (Tendwell work in Trellis with no Ops home), and hosts a Workflows tab + Tendwell roster tab. Data lives in snapshot tables refreshed by a **local nightly cron** (`scripts/trellis-sync.sh` runs Claude Code headless with the `trellis-sync` skill — the only context with the Trellis MCP connections) + an on-demand poller (`scripts/trellis-sync-poller.mjs`) triggered by the page's Refresh button. New tables: `trellis_property_snapshot`, `trellis_task_snapshot`, `trellis_roster`, `trellis_sync_log` (all admin-only RLS). Tendwell-attribution + reconciliation logic lives in SQL views (`trellis_task_attributed`, `trellis_property_enriched`, `trellis_reconciliation`, `trellis_exceptions`). **Note:** `properties.trellis_id` is TEXT while Trellis ids are uuid — views cast `::text` to join. A task is Tendwell's if workspace='A' OR `assigned_to_name='Tendwell Cleaning Co.'` OR `assigned_to_id` ∈ workspace-A roster (shared `user_id`). Migration: `20260618_trellis_sync.sql`. Runner setup + ops in `docs/trellis-sync-cron.md`.
@@ -285,6 +295,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 - `20260402_alert_dismissals.sql` — creates `alert_dismissals` table for persistent dismissal/snooze state
 - `20260402_inspections_cleaner.sql` — adds `cleaner_id` FK to `inspections` for quality attribution
 - `20260616_fix_zero_laundry_consumables.sql` — fixes 30+ properties stuck at $0 laundry/consumables (a 2026-06-09 bulk import wrote literal `0`s, which the recalc trigger only auto-fills when `NULL`). Adds an INSERT-time guard treating an explicit `0` as "unset" (UPDATE still preserves a deliberate `0`), and backfills affected rows via null-and-recompute.
+- `20260623_owner_portal.sql` — owner portal: `property_owners` + `owner_properties` tables, owner contact/payment columns on `properties`, identity helpers (`current_auth_email`, `is_staff`, `current_owner_id`, `owner_owns_property`), rewritten `properties` RLS (staff-full + owner-scoped), owner-column guard trigger, and the `get_owner_property_tasks` RPC.
 
 ---
 
