@@ -38,7 +38,7 @@ export function thumbUrl(url: string | null | undefined, opts: ThumbOptions): st
   const rendered = url.replace(PUBLIC_MARKER, RENDER_MARKER)
   const params = new URLSearchParams()
   params.set('width', String(opts.width))
-  if (opts.height) params.set('height', String(opts.height))
+  if (opts.height != null) params.set('height', String(opts.height))
   params.set('quality', String(opts.quality ?? 60))
   params.set('resize', opts.resize ?? 'cover')
   return `${rendered}?${params.toString()}`

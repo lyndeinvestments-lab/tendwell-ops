@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
 
 export interface TrellisTask {
   id: string
@@ -21,7 +22,10 @@ export function useTrellisTasksToday() {
   return useQuery<TasksTodayResponse>({
     queryKey: ['/api/trellis/tasks-today'],
     queryFn: async () => {
-      const res = await fetch('/api/trellis/tasks-today')
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/trellis/tasks-today', {
+        headers: session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+      })
       const data = await res.json()
       if (!res.ok) {
         // Surface hint from the proxy so the dashboard can explain why the tile
