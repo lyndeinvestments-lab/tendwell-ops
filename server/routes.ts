@@ -10,6 +10,9 @@ export async function registerRoutes(
 ): Promise<Server> {
 
   // CORS configuration
+  if (process.env.NODE_ENV === "production" && !process.env.CORS_ORIGIN) {
+    console.warn("[cors] CORS_ORIGIN is not set in production — cross-origin API requests will be blocked (origin: false).")
+  }
   app.use(cors({
     origin: process.env.NODE_ENV === "production"
       ? process.env.CORS_ORIGIN || false

@@ -91,11 +91,11 @@ async function resolveUser(supabase: SupabaseClient, token: string): Promise<Res
   }
 }
 
-// Pulls the bearer token from query (?token=...) or Authorization header.
-// Mirrors the convention used by the chatbot endpoint.
+// Pulls the bearer token from the Authorization header only. The token used
+// to also be accepted via ?token=, but query params leak into server/CDN
+// access logs and browser history; the only caller (authFetch) sends the
+// Authorization header.
 function readToken(req: VercelRequest): string | null {
-  const fromQuery = typeof req.query.token === 'string' ? req.query.token : null
-  if (fromQuery) return fromQuery
   const auth = req.headers.authorization
   if (auth && auth.startsWith('Bearer ')) return auth.slice(7)
   return null
