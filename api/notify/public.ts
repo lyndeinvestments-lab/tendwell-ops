@@ -67,10 +67,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // the last 5 minutes (the public intake form writes onboarding_submissions
     // immediately before calling this). No token on the intake flow, so we
     // verify by recent matching row instead.
-    const filter = addr
-      ? `address=eq.${encodeURIComponent(addr)}`
-      : `client_name=eq.${encodeURIComponent(cli)}`
-    const r = await fetch(`${sb.url}/rest/v1/onboarding_submissions?${filter}&select=address,client_name,submitted_at&order=submitted_at.desc&limit=1`, {
+    // Build the filter via URLSearchParams so the user-supplied value is fully
+    // encoded and can't break out of the `eq.` operator into another PostgREST
+    // filter (e.g. injecting `not`/`gte` to bypass the freshness check).
+    const params = new URLSearchParams()
+    params.set(addr ? 'address' : 'client_name', `eq.${addr || cli}`)
+    params.set('select', 'address,client_name,submitted_at')
+    params.set('order', 'submitted_at.desc')
+    params.set('limit', '1')
+    const r = await fetch(`${sb.url}/rest/v1/onboarding_submissions?${params.toString()}`, {
       headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` },
     })
     if (!r.ok) return res.status(500).json({ error: 'Lookup failed' })
