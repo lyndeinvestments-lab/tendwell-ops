@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { resizeImageFile } from '@/lib/resize-image'
 import { useToast } from '@/hooks/use-toast'
 import { useCleaners } from '@/hooks/use-cleaners'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -253,7 +254,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
       if (photos.length > 0 || (isEditing && existingPhotoUrls.length !== (existing!.photos_url ?? []).length)) {
         const newUrls: string[] = []
         for (let i = 0; i < photos.length; i++) {
-          const file = photos[i].file
+          const file = await resizeImageFile(photos[i].file)
           const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
           const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg'
           const rand = (crypto?.randomUUID?.() || `${Date.now()}-${i}`)

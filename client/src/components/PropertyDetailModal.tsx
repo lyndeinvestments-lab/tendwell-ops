@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supabase'
 import { thumbUrl } from '@/lib/image'
+import { resizeImageFile } from '@/lib/resize-image'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
@@ -116,7 +117,8 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       let photoUrls: string[] = []
       if (photos.length > 0) {
         setUploading(true)
-        for (const file of photos.slice(0, 5)) {
+        for (const original of photos.slice(0, 5)) {
+          const file = await resizeImageFile(original)
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
           const path = `inspections/${propertyId}/${Date.now()}_${safeName}`
           const { error: uploadError } = await supabase.storage.from('inspections').upload(path, file)
