@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdminBearer } from './_lib.js'
 
 // QBO API proxy — fetches P&L and balance data
 // Tokens are stored in app_settings, refreshed automatically
@@ -45,19 +46,13 @@ async function refreshTokens(supabase: any, tokens: any): Promise<any> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Auth: verify Supabase session
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
+  // Auth: admin only — exposes company-wide P&L / financial data.
+  const admin = await requireAdminBearer(req, res)
+  if (!admin) return // requireAdminBearer already wrote the 401/403 response
 
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: 'Server config error' })
-
-  const token = authHeader.slice(7)
-  const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: { Authorization: `Bearer ${token}`, apikey: supabaseKey },
-  })
-  if (!userRes.ok) return res.status(401).json({ error: 'Invalid session' })
 
   const supabase = createClient(supabaseUrl, supabaseKey)
   const env = process.env.QBO_ENVIRONMENT || 'sandbox'

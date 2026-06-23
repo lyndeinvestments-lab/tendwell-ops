@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { requireAdminBearer } from '../qbo/_lib.js'
 
 // Ramp API proxy — server-side only, secrets never exposed to client
 const RAMP_API_BASE = 'https://api.ramp.com/developer/v1'
@@ -32,19 +33,9 @@ async function getRampToken(): Promise<string> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
 
-  // Auth: verify Supabase session
-  const authHeader = req.headers.authorization
-  if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' })
-
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!supabaseUrl || !supabaseKey) return res.status(500).json({ error: 'Server config error' })
-
-  const token = authHeader.slice(7)
-  const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: { Authorization: `Bearer ${token}`, apikey: supabaseKey },
-  })
-  if (!userRes.ok) return res.status(401).json({ error: 'Invalid session' })
+  // Auth: admin only — exposes company card spend / transaction data.
+  const admin = await requireAdminBearer(req, res)
+  if (!admin) return // requireAdminBearer already wrote the 401/403 response
 
   try {
     const rampToken = await getRampToken()
