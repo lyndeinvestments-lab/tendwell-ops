@@ -108,7 +108,7 @@ tendwell-ops/
 
 - **Login**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`)
 - **Authorization**: After Google sign-in, user's email is looked up in `app_users.google_email`. If not found → signed out with "not authorized" error.
-- **Session**: Supabase Auth handles session persistence (localStorage key `tendwell-sb-auth`). 30-min inactivity timeout.
+- **Session**: Supabase Auth handles session persistence (localStorage key `tendwell-sb-auth`). 7-day inactivity timeout (`SESSION_TIMEOUT_MS` in `client/src/lib/auth.tsx`).
 - **Roles**: `admin` | `operations` | `cleaning` | `viewer`
 - Role definitions and view access map: `client/src/lib/auth.tsx`
 - **User management**: Settings page (`/settings`, admin only) — add users by Google email, set role, inline role editing, remove users. No password needed.
