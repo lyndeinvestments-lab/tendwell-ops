@@ -197,10 +197,11 @@ export default function CleanersPage() {
   const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
       // NOTE: `pay_amount` is collected from the UI but isn't a column on
-      // clean_assignments — the typed Supabase client surfaced this on day 14.
-      // Until a migration adds the column, the value is dropped here rather
-      // than silently swallowed by PostgREST. The Cleaner Metrics "Total Pay"
-      // tile has always computed to $0 as a result.
+      // clean_assignments, so the per-assignment override is dropped here
+      // rather than silently swallowed by PostgREST. Reconciliation "Total Pay"
+      // is derived from the property's standard cleaner_pay instead (see
+      // cleanerStats); add a column + persist this value if per-assignment
+      // overrides are ever needed.
       const { error } = await supabase.from('clean_assignments').insert({
         cleaner_id: assignCleanerId,
         property_id: Number(assignPropertyId),
@@ -295,8 +296,9 @@ export default function CleanersPage() {
   //
   // totalPay always evaluates to 0 because clean_assignments.pay_amount
   // doesn't exist in the schema (typed-supabase codegen surfaced this).
-  // Keeping the field on the shape so consumers aren't broken, but the
-  // accumulation is intentionally omitted until the column is added.
+  // Pay is derived from each assignment's property cleaner_pay (joined in the
+  // query) × the number of cleans — clean_assignments has no per-assignment
+  // pay column, so this is the standard per-clean rate for the property.
   const cleanerStats = useMemo(() => {
     const map: Record<string, { total: number; totalPay: number }> = {}
     for (const a of (assignments || [])) {
@@ -304,6 +306,7 @@ export default function CleanersPage() {
       const cid = a.cleaner_id
       if (!map[cid]) map[cid] = { total: 0, totalPay: 0 }
       map[cid].total++
+      map[cid].totalPay += Number((a as any).properties?.cleaner_pay) || 0
     }
     return map
   }, [assignments])
