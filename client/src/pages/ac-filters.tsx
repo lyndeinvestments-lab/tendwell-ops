@@ -65,16 +65,16 @@ export default function AcFiltersPage() {
   const csvInputRef = useRef<HTMLInputElement>(null)
 
   const toggleSort = useCallback((key: SortKey) => {
-    setSortKey(prev => {
-      if (prev === key) {
-        setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-        return key
-      }
+    // Don't mutate one piece of state from inside another's updater — React
+    // may double-invoke updaters (Strict Mode) and the writes can race.
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
       setSortDir('asc')
-      return key
-    })
+    }
     setPage(1)
-  }, [])
+  }, [sortKey])
 
   const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/ac-filters'],

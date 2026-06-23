@@ -102,6 +102,11 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
       setSubmitting(false)
       return
     }
+    // Re-initializing for a (possibly different) inspection — revoke any
+    // in-progress new-photo previews so their object URLs don't leak when the
+    // sheet is reused for another row without closing first.
+    photos.forEach(p => URL.revokeObjectURL(p.preview))
+    setPhotos([])
     if (existing) {
       setMode(existing.status === 'scheduled' ? 'schedule' : 'log')
       setPropertyId(existing.property_id)

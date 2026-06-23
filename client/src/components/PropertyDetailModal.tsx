@@ -149,7 +149,12 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
       setInspForm({ overall: 5, cleanliness: 5, linens: 5, supplies: 5, exterior: 5, notes: '' })
       setPhotos([])
     },
-    onError: (error: any) => toast({ title: 'Failed to log inspection', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => {
+      // A thrown upload rejection skips the in-loop setUploading(false), which
+      // would leave the Save button permanently disabled — reset here too.
+      setUploading(false)
+      toast({ title: 'Failed to log inspection', description: error?.message, variant: 'destructive' })
+    },
   })
 
   function ScoreSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
