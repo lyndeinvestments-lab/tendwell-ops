@@ -2448,6 +2448,10 @@ export type Database = {
           updated_at: string | null
           washcloths: number | null
           wifi_info: string | null
+          owner_contact_name: string | null
+          owner_contact_email: string | null
+          owner_contact_phone: string | null
+          preferred_payment_method: string | null
         }
         Insert: {
           address?: string | null
@@ -2525,6 +2529,10 @@ export type Database = {
           updated_at?: string | null
           washcloths?: number | null
           wifi_info?: string | null
+          owner_contact_name?: string | null
+          owner_contact_email?: string | null
+          owner_contact_phone?: string | null
+          preferred_payment_method?: string | null
         }
         Update: {
           address?: string | null
@@ -2602,6 +2610,10 @@ export type Database = {
           updated_at?: string | null
           washcloths?: number | null
           wifi_info?: string | null
+          owner_contact_name?: string | null
+          owner_contact_email?: string | null
+          owner_contact_phone?: string | null
+          preferred_payment_method?: string | null
         }
         Relationships: [
           {
@@ -3793,6 +3805,102 @@ export type Database = {
         }
         Relationships: []
       }
+      property_owners: {
+        Row: {
+          id: string
+          email: string
+          name: string | null
+          phone: string | null
+          active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          email: string
+          name?: string | null
+          phone?: string | null
+          active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string | null
+          phone?: string | null
+          active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      owner_properties: {
+        Row: {
+          owner_id: string
+          property_id: number
+          created_at: string
+        }
+        Insert: {
+          owner_id: string
+          property_id: number
+          created_at?: string
+        }
+        Update: {
+          owner_id?: string
+          property_id?: number
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_properties_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      owner_property_permissions: {
+        Row: {
+          owner_id: string
+          property_id: number
+          permissions: Json
+          updated_at: string
+        }
+        Insert: {
+          owner_id: string
+          property_id: number
+          permissions?: Json
+          updated_at?: string
+        }
+        Update: {
+          owner_id?: string
+          property_id?: number
+          permissions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_property_permissions_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       van_build_questionnaire: {
         Row: {
           annual_miles: string | null
@@ -4265,6 +4373,31 @@ export type Database = {
         }[]
       }
       current_user_role: { Args: never; Returns: string }
+      current_auth_email: { Args: never; Returns: string }
+      current_owner_id: { Args: never; Returns: string }
+      is_staff: { Args: never; Returns: boolean }
+      owner_owns_property: { Args: { p_property_id: number }; Returns: boolean }
+      get_owner_property_tasks: {
+        Args: { p_property_id: number }
+        Returns: {
+          source: string
+          title: string
+          task_date: string
+          status: string
+        }[]
+      }
+      get_owner_properties: {
+        Args: never
+        Returns: Json[]
+      }
+      owner_field_permissions_default: {
+        Args: never
+        Returns: Json
+      }
+      owner_property_perms: {
+        Args: { p_owner_id: string; p_property_id: number }
+        Returns: Json
+      }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
       get_property_names_for_weigh_in: { Args: never; Returns: string[] }
       is_current_user_admin: { Args: never; Returns: boolean }

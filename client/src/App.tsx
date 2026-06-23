@@ -79,6 +79,8 @@ const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
 const IssueSharePage = lazyRetry(() => import("@/pages/issue-share"));
 const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
+const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
+const ResetPasswordPage = lazyRetry(() => import("@/pages/reset-password"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -278,8 +280,12 @@ function AppRoutes() {
   );
 }
 
+const spinnerFallback = (
+  <div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>
+);
+
 function AppLayout() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, isPasswordRecovery } = useAuth();
   const [location] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -308,6 +314,17 @@ function AppLayout() {
       <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  // Password recovery: the user followed a reset link (temporary session). Gate
+  // the whole app behind the "set a new password" screen until they finish.
+  // Also serve the page directly if someone lands on /reset-password.
+  if (isPasswordRecovery || window.location.pathname === '/reset-password') {
+    return (
+      <Suspense fallback={spinnerFallback}>
+        <ResetPasswordPage />
+      </Suspense>
+    );
+  }
 
   if (!user) {
     const path = window.location.pathname;
@@ -351,6 +368,16 @@ function AppLayout() {
       );
     }
     return <LoginPage />;
+  }
+
+  // Property owners get a dedicated, sidebar-free portal — they never see the
+  // staff app shell or routes.
+  if (user.role === 'owner') {
+    return (
+      <Suspense fallback={spinnerFallback}>
+        <OwnerPortalPage />
+      </Suspense>
+    );
   }
 
   return (

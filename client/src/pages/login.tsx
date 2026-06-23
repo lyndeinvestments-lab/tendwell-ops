@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
@@ -17,7 +20,44 @@ function GoogleIcon() {
 
 export default function LoginPage() {
   usePageTitle('Sign In')
-  const { loginWithGoogle, isLoading, authError } = useAuth()
+  const { loginWithGoogle, loginWithPassword, requestPasswordReset, isLoading, authError } = useAuth()
+
+  const [mode, setMode] = useState<'signin' | 'forgot'>('signin')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+
+  async function handlePasswordSignIn(e: React.FormEvent) {
+    e.preventDefault()
+    setLocalError(null)
+    if (!email.trim() || !password) {
+      setLocalError('Enter your email and password.')
+      return
+    }
+    setSubmitting(true)
+    await loginWithPassword(email, password)
+    setSubmitting(false)
+  }
+
+  async function handleForgot(e: React.FormEvent) {
+    e.preventDefault()
+    setLocalError(null)
+    if (!email.trim()) {
+      setLocalError('Enter your email address.')
+      return
+    }
+    setSubmitting(true)
+    const { error } = await requestPasswordReset(email)
+    setSubmitting(false)
+    if (error) {
+      setLocalError(error)
+      return
+    }
+    // Always show success to avoid leaking which emails are registered.
+    setResetSent(true)
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
@@ -37,32 +77,133 @@ export default function LoginPage() {
 
         <Card className="border-border/70 shadow-sm">
           <CardHeader className="pb-3 pt-5 px-6">
-            <p className="text-sm font-medium text-foreground">Sign in to continue</p>
+            <p className="text-sm font-medium text-foreground">
+              {mode === 'forgot' ? 'Reset your password' : 'Sign in to continue'}
+            </p>
           </CardHeader>
           <CardContent className="px-6 pb-6 space-y-4">
-            <Button
-              variant="outline"
-              className="w-full h-9 gap-2"
-              onClick={loginWithGoogle}
-              disabled={isLoading}
-              data-testid="button-sign-in-google"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <GoogleIcon />
-              )}
-              {isLoading ? 'Redirecting…' : 'Continue with Google'}
-            </Button>
+            {mode === 'signin' && (
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full h-9 gap-2"
+                  onClick={loginWithGoogle}
+                  disabled={isLoading || submitting}
+                  data-testid="button-sign-in-google"
+                >
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />}
+                  {isLoading ? 'Redirecting…' : 'Continue with Google'}
+                </Button>
 
-            {authError && (
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-border" />
+                  <span className="text-2xs text-muted-foreground">or</span>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+
+                <form onSubmit={handlePasswordSignIn} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="email" className="text-xs">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      data-testid="input-email"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="password" className="text-xs">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      data-testid="input-password"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full h-9"
+                    disabled={submitting || isLoading}
+                    data-testid="button-sign-in-password"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign in'}
+                  </Button>
+                </form>
+
+                <button
+                  type="button"
+                  onClick={() => { setMode('forgot'); setLocalError(null) }}
+                  className="text-xs text-primary hover:underline w-full text-center"
+                  data-testid="link-forgot-password"
+                >
+                  Forgot your password?
+                </button>
+              </>
+            )}
+
+            {mode === 'forgot' && (
+              resetSent ? (
+                <div className="space-y-3 text-center">
+                  <p className="text-sm text-foreground">Check your email</p>
+                  <p className="text-xs text-muted-foreground">
+                    If an account exists for <span className="font-medium">{email}</span>, a password
+                    reset link is on its way.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full h-9"
+                    onClick={() => { setMode('signin'); setResetSent(false); setPassword('') }}
+                  >
+                    Back to sign in
+                  </Button>
+                </div>
+              ) : (
+                <form onSubmit={handleForgot} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="forgot-email" className="text-xs">Email</Label>
+                    <Input
+                      id="forgot-email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      data-testid="input-forgot-email"
+                    />
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full h-9"
+                    disabled={submitting}
+                    data-testid="button-send-reset"
+                  >
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send reset link'}
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => { setMode('signin'); setLocalError(null) }}
+                    className="text-xs text-muted-foreground hover:text-foreground w-full text-center"
+                  >
+                    Back to sign in
+                  </button>
+                </form>
+              )
+            )}
+
+            {(authError || localError) && (
               <p data-testid="text-login-error" className="text-sm text-destructive text-center">
-                {authError}
+                {localError || authError}
               </p>
             )}
 
             <p className="text-xs text-muted-foreground text-center">
-              Access is restricted to invited users only.
+              Access is restricted to invited users and property owners.
             </p>
           </CardContent>
         </Card>

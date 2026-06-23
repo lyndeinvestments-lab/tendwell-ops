@@ -46,7 +46,7 @@ export const VIEW_DEFINITIONS = [
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
 const VALID_VIEW_IDS = new Set<string>(VIEW_DEFINITIONS.map(v => v.id))
 
-export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer'
+export type UserRole = 'admin' | 'operations' | 'cleaning' | 'viewer' | 'owner'
 
 // ─── Page Permission type ───────────────────────────────────────────────────
 export interface PagePermission {
@@ -70,10 +70,19 @@ interface AuthContextType {
   isEmulating: boolean
   setViewAs: (u: AuthUser | null) => void
   loginWithGoogle: () => Promise<void>
+  loginWithPassword: (email: string, password: string) => Promise<void>
+  requestPasswordReset: (email: string) => Promise<{ error: string | null }>
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>
   logout: () => void
   isLoading: boolean
   authError: string | null
+  /** True when the user arrived via a password-recovery link and must set a new password. */
+  isPasswordRecovery: boolean
 }
+
+/** Owners are not staff (`app_users`). They authenticate with email/password and
+ *  are tracked in `property_owners`. This sentinel role drives the owner portal. */
+export const OWNER_ROLE = 'owner'
 
 // ─── Hardcoded role defaults (final fallback) ────────────────────────────────
 export const ROLE_VIEWS: Record<string, string[]> = {
@@ -266,6 +275,29 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
   }
 }
 
+// ─── Resolve a property owner from email ──────────────────────────────────────
+// Owners aren't in app_users; they live in property_owners and authenticate with
+// email/password. Returns an AuthUser with the synthetic `owner` role. Owners
+// have no staff views — the app routes them to the dedicated owner portal by
+// role, not by VIEW_DEFINITIONS.
+async function resolveOwnerFromEmail(email: string): Promise<AuthUser | null> {
+  const { data, error } = await supabase
+    .from('property_owners')
+    .select('id, name, email, active')
+    .eq('email', email.toLowerCase())
+    .eq('active', true)
+    .maybeSingle()
+  if (error || !data) return null
+  return {
+    id: data.id,
+    role: OWNER_ROLE,
+    label: data.name ?? data.email,
+    resolvedViews: [],
+    resolvedPermissions: {},
+    hasCustomViews: false,
+  }
+}
+
 // ─── Context ─────────────────────────────────────────────────────────────────
 const AuthContext = createContext<AuthContextType | null>(null)
 
@@ -274,6 +306,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [viewAs, setViewAsState] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
 
   const [sessionEmail, setSessionEmail] = useState<string | null | undefined>(undefined)
 
@@ -293,7 +326,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isEmulating = viewAs !== null
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      // A recovery link signs the user into a temporary session and fires this
+      // event — gate the app behind the "set a new password" screen until done.
+      if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true)
       setSessionEmail(session?.user?.email ?? null)
     })
     const failsafe = setTimeout(() => setSessionEmail(prev => prev === undefined ? null : prev), 5000)
@@ -317,14 +353,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (appUser) {
           setUser(appUser)
           setAuthError(null)
-        } else {
-          setAuthError('Your Google account is not authorized. Contact an admin.')
-          setUser(null)
-          clearCachedIdentity()
-          // Await the sign-out so the session token is actually invalidated
-          // before we move on (it was fire-and-forget, leaving a live session).
-          await supabase.auth.signOut()
+          return
         }
+        // Not staff — maybe a property owner signing in with email/password.
+        const owner = await resolveOwnerFromEmail(sessionEmail)
+        if (owner) {
+          setUser(owner)
+          setAuthError(null)
+          return
+        }
+        setAuthError('This account is not authorized. Contact an admin.')
+        setUser(null)
+        clearCachedIdentity()
+        // Await the sign-out so the session token is actually invalidated
+        // before we move on (it was fire-and-forget, leaving a live session).
+        await supabase.auth.signOut()
       })
       .catch(() => {
         setUser(null)
@@ -347,8 +390,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function loginWithPassword(email: string, password: string) {
+    setIsLoading(true)
+    setAuthError(null)
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+    if (error) {
+      // Supabase returns the same generic message for bad email/password, which
+      // is the desired behavior (don't reveal whether an account exists).
+      setAuthError('Invalid email or password.')
+      setIsLoading(false)
+    }
+    // On success the onAuthStateChange listener resolves the user + clears loading.
+  }
+
+  async function requestPasswordReset(email: string): Promise<{ error: string | null }> {
+    const { error } = await supabase.auth.resetPasswordForEmail(
+      email.trim().toLowerCase(),
+      { redirectTo: `${window.location.origin}/reset-password` },
+    )
+    return { error: error?.message ?? null }
+  }
+
+  async function updatePassword(newPassword: string): Promise<{ error: string | null }> {
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    if (!error) setIsPasswordRecovery(false)
+    return { error: error?.message ?? null }
+  }
+
   const logout = useCallback(async () => {
     setViewAsState(null)
+    setIsPasswordRecovery(false)
     // Bust the cached identity so a subsequent login within the TTL isn't
     // attributed to the previous user in the audit log.
     clearCachedIdentity()
@@ -379,7 +453,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, viewAs, effectiveUser, isEmulating, setViewAs,
-      loginWithGoogle, logout, isLoading, authError,
+      loginWithGoogle, loginWithPassword, requestPasswordReset, updatePassword,
+      logout, isLoading, authError, isPasswordRecovery,
     }}>
       {children}
     </AuthContext.Provider>

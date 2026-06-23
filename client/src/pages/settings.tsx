@@ -27,7 +27,14 @@ import {
   UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, CalendarDays,
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
   Lock, Plug, MapPin, Database, Receipt, KeyRound, Bell as BellIcon,
+  Home, Search, Mail, Loader2,
 } from 'lucide-react'
+import { Switch } from '@/components/ui/switch'
+import {
+  provisionOwnerLogin, deleteOwnerLogin,
+  OWNER_FIELD_DEFS, defaultOwnerPermissions, normalizeOwnerPermissions,
+  type OwnerFieldKey, type OwnerPermissions,
+} from '@/lib/owners'
 import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/components/AddressAutocomplete'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
@@ -924,7 +931,7 @@ function UsersSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google.` })
+      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google using this email.` })
       setInviteOpen(false)
       setNewEmail('')
       setNewLabel('')
@@ -933,7 +940,7 @@ function UsersSection() {
     onError: (err: any) => {
       const msg = err?.message || ''
       if (msg.includes('unique') || msg.includes('duplicate')) {
-        toast({ title: 'Email already exists', description: 'That Google account already has access.', variant: 'destructive' })
+        toast({ title: 'Email already exists', description: 'That account email already has access.', variant: 'destructive' })
       } else {
         toast({ title: 'Failed to invite user', description: err?.message, variant: 'destructive' })
       }
@@ -1045,7 +1052,7 @@ function UsersSection() {
               <Users className="w-4 h-4" />
               Users
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Add a user's Google email to grant access. They sign in with Google.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Staff &amp; internal accounts. Add an account email to grant access; staff sign in with Google using that email. Property owners are managed in the Owners tab and sign in with email/password.</p>
           </div>
           <Button
             size="sm"
@@ -1066,7 +1073,7 @@ function UsersSection() {
             <thead className="bg-muted/80 border-b border-border">
               <tr>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Google Email</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
                 <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
               </tr>
@@ -1206,14 +1213,16 @@ function UsersSection() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add User</DialogTitle>
+            <DialogTitle>Add Staff User</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">
-            Enter their Google account email. They'll be able to sign in immediately.
+            For staff/internal accounts. Enter the account email — staff sign in with Google using
+            this email and can access immediately. (Property owners are added in the Owners tab and
+            sign in with email/password.)
           </p>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Google Email</label>
+              <label className="text-xs font-medium text-muted-foreground">Account email</label>
               <Input
                 type="email"
                 value={newEmail}
@@ -1991,6 +2000,711 @@ function RoleDescriptions() {
   )
 }
 
+// ─── Owners Section (owner portal access management) ──────────────────────────
+
+type OwnerRow = {
+  id: string
+  email: string
+  name: string | null
+  phone: string | null
+  active: boolean
+  created_at: string
+}
+
+function AssignPropertiesDialog({
+  owner,
+  open,
+  onOpenChange,
+}: {
+  owner: OwnerRow | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+
+  // All properties to choose from.
+  const { data: properties, isLoading: loadingProps } = useQuery({
+    queryKey: ['/supabase/owner-assignable-properties'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, name, address')
+        .order('name')
+      if (error) throw error
+      return data || []
+    },
+  })
+
+  // This owner's current assignments.
+  const { data: assigned, isLoading: loadingAssigned } = useQuery({
+    queryKey: ['/supabase/owner-assignments', owner?.id],
+    enabled: !!owner?.id,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('owner_properties')
+        .select('property_id')
+        .eq('owner_id', owner!.id)
+      if (error) throw error
+      return (data || []).map((r: any) => r.property_id as number)
+    },
+  })
+
+  useEffect(() => {
+    if (assigned) setSelected(new Set(assigned))
+  }, [assigned, owner?.id])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return properties || []
+    return (properties || []).filter((p: any) =>
+      (p.name || '').toLowerCase().includes(q) || (p.address || '').toLowerCase().includes(q)
+    )
+  }, [properties, search])
+
+  const { mutate: saveAssignments, isPending } = useMutation({
+    mutationFn: async () => {
+      if (!owner) return
+      const current = new Set(assigned || [])
+      const toAdd = Array.from(selected).filter(id => !current.has(id))
+      const toRemove = Array.from(current).filter(id => !selected.has(id))
+      if (toAdd.length) {
+        const { error } = await supabase
+          .from('owner_properties')
+          .insert(toAdd.map(property_id => ({ owner_id: owner.id, property_id })))
+        if (error) throw error
+      }
+      if (toRemove.length) {
+        const { error } = await supabase
+          .from('owner_properties')
+          .delete()
+          .eq('owner_id', owner.id)
+          .in('property_id', toRemove)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-assignments'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-assignment-counts'] })
+      toast({ title: 'Property access updated' })
+      onOpenChange(false)
+    },
+    onError: (e: any) => toast({ title: 'Failed to update access', description: e?.message, variant: 'destructive' }),
+  })
+
+  function toggle(id: number, checked: boolean) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id); else next.delete(id)
+      return next
+    })
+  }
+
+  if (!owner) return null
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Property access for {owner.name || owner.email}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Select which properties this owner can see and edit in the portal.
+        </p>
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search properties…"
+            className="h-8 text-xs pl-8"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto rounded-lg border border-border divide-y divide-border/50">
+          {loadingProps || loadingAssigned ? (
+            [...Array(5)].map((_, i) => <Skeleton key={i} className="h-9 w-full" />)
+          ) : filtered.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-6">No properties found</p>
+          ) : (
+            filtered.map((p: any) => (
+              <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/20 cursor-pointer">
+                <Checkbox
+                  checked={selected.has(p.id)}
+                  onCheckedChange={(c) => toggle(p.id, !!c)}
+                />
+                <div className="min-w-0">
+                  <p className="text-sm truncate">{p.name}</p>
+                  {p.address && <p className="text-2xs text-muted-foreground truncate">{p.address}</p>}
+                </div>
+              </label>
+            ))
+          )}
+        </div>
+        <DialogFooter className="items-center">
+          <span className="text-xs text-muted-foreground mr-auto">{selected.size} selected</span>
+          <Button size="sm" onClick={() => saveAssignments()} disabled={isPending}>
+            {isPending ? 'Saving…' : 'Save access'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Owner field permission matrix (per owner / per property) ────────────────
+function OwnerPermissionsDialog({
+  owner,
+  open,
+  onOpenChange,
+}: {
+  owner: OwnerRow | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [selectedPropId, setSelectedPropId] = useState<number | null>(null)
+  // Working copy: property_id → permission map. Edited in place, saved on demand.
+  const [draft, setDraft] = useState<Record<number, OwnerPermissions>>({})
+
+  // The owner's assigned properties (the matrix is scoped to these).
+  const { data: assigned, isLoading: loadingAssigned } = useQuery({
+    queryKey: ['/supabase/owner-assigned-props', owner?.id],
+    enabled: !!owner?.id && open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('owner_properties')
+        .select('property_id, properties(id, name, address)')
+        .eq('owner_id', owner!.id)
+      if (error) throw error
+      return (data || [])
+        .map((r: any) => r.properties)
+        .filter(Boolean)
+        .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) as { id: number; name: string; address: string | null }[]
+    },
+  })
+
+  // Existing permission rows for this owner.
+  const { data: existing, isLoading: loadingPerms } = useQuery({
+    queryKey: ['/supabase/owner-permissions', owner?.id],
+    enabled: !!owner?.id && open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('owner_property_permissions')
+        .select('property_id, permissions')
+        .eq('owner_id', owner!.id)
+      if (error) throw error
+      const m = new Map<number, OwnerPermissions>()
+      for (const r of (data || [])) m.set(r.property_id as number, normalizeOwnerPermissions(r.permissions))
+      return m
+    },
+  })
+
+  // Build the working draft once both queries land.
+  useEffect(() => {
+    if (!assigned || !existing) return
+    const next: Record<number, OwnerPermissions> = {}
+    for (const p of assigned) next[p.id] = existing.get(p.id) ?? defaultOwnerPermissions()
+    setDraft(next)
+    setSelectedPropId(prev => (prev && next[prev] ? prev : assigned[0]?.id ?? null))
+  }, [assigned, existing])
+
+  const current = selectedPropId != null ? draft[selectedPropId] : undefined
+
+  function setPerm(field: OwnerFieldKey, change: Partial<{ visible: boolean; editable: boolean }>) {
+    if (selectedPropId == null) return
+    setDraft(prev => {
+      const map = prev[selectedPropId] ?? defaultOwnerPermissions()
+      const cur = map[field]
+      let next = { ...cur, ...change }
+      // Editing implies visibility; hiding implies not editable.
+      if (change.editable) next.visible = true
+      if (change.visible === false) next.editable = false
+      return { ...prev, [selectedPropId]: { ...map, [field]: next } }
+    })
+  }
+
+  function copyToAll() {
+    if (selectedPropId == null || !current || !assigned) return
+    setDraft(prev => {
+      const next = { ...prev }
+      for (const p of assigned) next[p.id] = { ...current }
+      return next
+    })
+    toast({ title: 'Applied to all properties', description: 'Review and Save to persist.' })
+  }
+
+  const { mutate: savePerms, isPending } = useMutation({
+    mutationFn: async () => {
+      if (!owner || !assigned) return
+      const rows = assigned.map(p => ({
+        owner_id: owner.id,
+        property_id: p.id,
+        permissions: draft[p.id] ?? defaultOwnerPermissions(),
+      }))
+      if (rows.length === 0) return
+      const { error } = await supabase
+        .from('owner_property_permissions')
+        .upsert(rows, { onConflict: 'owner_id,property_id' })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-permissions', owner?.id] })
+      toast({ title: 'Field permissions saved' })
+      onOpenChange(false)
+    },
+    onError: (e: any) => toast({ title: 'Failed to save permissions', description: e?.message, variant: 'destructive' }),
+  })
+
+  if (!owner) return null
+  const loading = loadingAssigned || loadingPerms
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Field permissions for {owner.name || owner.email}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Choose which portal fields this owner can see and edit, per property. Hidden fields don't
+          appear in their portal; view-only fields show but can't be changed. New assignments default
+          to everything visible and editable.
+        </p>
+
+        {loading ? (
+          <div className="space-y-2 py-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+        ) : !assigned?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No properties assigned yet. Assign properties first, then configure field permissions.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs font-medium text-muted-foreground">Property</label>
+              <select
+                value={selectedPropId ?? ''}
+                onChange={e => setSelectedPropId(Number(e.target.value))}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-0"
+                data-testid="select-perm-property"
+              >
+                {assigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyToAll} disabled={assigned.length < 2}>
+                Copy to all
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto rounded-lg border border-border mt-1">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/80 border-b border-border sticky top-0">
+                  <tr>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Field</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Visible</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Editable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {OWNER_FIELD_DEFS.map(f => {
+                    const p = current?.[f.key] ?? { visible: true, editable: true }
+                    return (
+                      <tr key={f.key} className="border-b border-border/50">
+                        <td className="py-2 px-3 text-xs">{f.label}</td>
+                        <td className="py-2 px-3 text-center">
+                          <Checkbox
+                            checked={p.visible}
+                            onCheckedChange={c => setPerm(f.key, { visible: !!c })}
+                            aria-label={`${f.label} visible`}
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Checkbox
+                            checked={p.editable}
+                            disabled={!p.visible}
+                            onCheckedChange={c => setPerm(f.key, { editable: !!c })}
+                            aria-label={`${f.label} editable`}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <DialogFooter>
+          <Button size="sm" onClick={() => savePerms()} disabled={isPending || loading || !assigned?.length} data-testid="button-save-owner-permissions">
+            {isPending ? 'Saving…' : 'Save permissions'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { toast } = useToast()
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  const [email, setEmail] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  function reset() {
+    setEmail(''); setName(''); setPhone(''); setPassword('')
+  }
+
+  async function handleCreate() {
+    const cleanEmail = email.trim().toLowerCase()
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
+      toast({ title: 'Enter a valid email', variant: 'destructive' }); return
+    }
+    if (password.length < 8) {
+      toast({ title: 'Password must be at least 8 characters', variant: 'destructive' }); return
+    }
+    setSubmitting(true)
+    try {
+      // 1. Mint the Supabase Auth login (service-role, server-side).
+      const prov = await provisionOwnerLogin(cleanEmail, password)
+      if (!prov.ok) {
+        toast({ title: 'Could not create login', description: prov.error, variant: 'destructive' })
+        return
+      }
+      // 2. Create the property_owners record (admin RLS).
+      const { error } = await supabase.from('property_owners').insert({
+        email: cleanEmail,
+        name: name.trim() || null,
+        phone: phone.trim() || null,
+        active: true,
+      })
+      if (error) {
+        // Unique email → owner already exists.
+        if (/unique|duplicate/i.test(error.message)) {
+          toast({ title: 'Owner already exists', description: 'An owner with that email is already set up.', variant: 'destructive' })
+        } else {
+          toast({ title: 'Login created, but record failed', description: error.message, variant: 'destructive' })
+        }
+        return
+      }
+      logActivity({
+        entity_type: 'other', action: 'create', entity_name: 'property_owner',
+        field_name: cleanEmail, changed_by: user?.label ?? null,
+      })
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      toast({
+        title: 'Owner created',
+        description: prov.created
+          ? `${cleanEmail} can now sign in. Assign properties to grant access.`
+          : `Login already existed — owner record linked. Assign properties to grant access.`,
+      })
+      reset()
+      onOpenChange(false)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o) }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Add Owner</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Creates an email/password portal login and an owner record. After saving, assign properties to grant access.
+        </p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Email</label>
+            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="owner@example.com" className="mt-1" data-testid="input-new-owner-email" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Name</label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="Jane Owner" className="mt-1" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Phone</label>
+            <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" className="mt-1" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Temporary password</label>
+            <Input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="min 8 characters" className="mt-1" data-testid="input-new-owner-password" />
+            <p className="text-2xs text-muted-foreground mt-1">
+              Share this with the owner, or have them use “Forgot password” on the login page to set their own.
+            </p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button size="sm" disabled={submitting} onClick={handleCreate} data-testid="button-confirm-add-owner">
+            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create Owner'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function OwnersSection() {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const { user, requestPasswordReset } = useAuth()
+  const [search, setSearch] = useState('')
+  const [addOpen, setAddOpen] = useState(false)
+  const [assignOwner, setAssignOwner] = useState<OwnerRow | null>(null)
+  const [permsOwner, setPermsOwner] = useState<OwnerRow | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+
+  const { data: owners, isLoading, isError, refetch } = useQuery({
+    queryKey: ['/supabase/owners'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<OwnerRow[]> => {
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('id, email, name, phone, active, created_at')
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return (data || []) as OwnerRow[]
+    },
+  })
+
+  // Per-owner property counts (one query, grouped client-side).
+  const { data: counts } = useQuery({
+    queryKey: ['/supabase/owner-assignment-counts'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('owner_properties').select('owner_id')
+      if (error) throw error
+      const m = new Map<string, number>()
+      for (const r of (data || [])) m.set(r.owner_id, (m.get(r.owner_id) || 0) + 1)
+      return m
+    },
+  })
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return owners || []
+    return (owners || []).filter(o =>
+      (o.name || '').toLowerCase().includes(q) || o.email.toLowerCase().includes(q)
+    )
+  }, [owners, search])
+
+  const { mutate: toggleActive } = useMutation({
+    mutationFn: async ({ id, active }: { id: string; active: boolean }) => {
+      const { error } = await supabase.from('property_owners').update({ active }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      toast({ title: v.active ? 'Owner access enabled' : 'Owner access disabled' })
+    },
+    onError: (e: any) => toast({ title: 'Failed to update', description: e?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: saveProfile } = useMutation({
+    mutationFn: async ({ id, name, phone }: { id: string; name: string; phone: string }) => {
+      const { error } = await supabase
+        .from('property_owners')
+        .update({ name: name.trim() || null, phone: phone.trim() || null })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      setEditingId(null)
+      toast({ title: 'Owner updated' })
+    },
+    onError: (e: any) => toast({ title: 'Failed to update', description: e?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: deleteOwner, isPending: deleting } = useMutation({
+    mutationFn: async (owner: OwnerRow) => {
+      // Remove the record first (cascades owner_properties), then the auth login.
+      const { error } = await supabase.from('property_owners').delete().eq('id', owner.id)
+      if (error) throw error
+      await deleteOwnerLogin(owner.email) // best-effort cleanup
+    },
+    onSuccess: (_d, owner) => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-assignment-counts'] })
+      logActivity({
+        entity_type: 'other', action: 'delete', entity_name: 'property_owner',
+        field_name: owner.email, changed_by: user?.label ?? null,
+      })
+      toast({ title: 'Owner removed' })
+      setConfirmDeleteId(null)
+    },
+    onError: (e: any) => {
+      toast({ title: 'Failed to remove owner', description: e?.message, variant: 'destructive' })
+      setConfirmDeleteId(null)
+    },
+  })
+
+  async function handleSendReset(email: string) {
+    const { error } = await requestPasswordReset(email)
+    if (error) toast({ title: 'Could not send reset email', description: error, variant: 'destructive' })
+    else toast({ title: 'Password reset email sent', description: `Sent to ${email}` })
+  }
+
+  function startEdit(o: OwnerRow) {
+    setEditingId(o.id)
+    setEditName(o.name || '')
+    setEditPhone(o.phone || '')
+  }
+
+  return (
+    <>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-base font-medium flex items-center gap-2">
+              <Home className="w-4 h-4" />
+              Property Owners
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Manage owner portal logins, profile info, property access, and active status.
+            </p>
+          </div>
+          <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)} data-testid="button-add-owner">
+            <UserPlus className="w-3.5 h-3.5" />
+            Add Owner
+          </Button>
+        </div>
+
+        <div className="relative max-w-xs">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search owners…" className="h-8 text-xs pl-8" />
+        </div>
+
+        {isError ? (
+          <ErrorState title="Couldn't load owners" onRetry={() => refetch()} />
+        ) : (
+          <div className="rounded-lg border border-border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/80 border-b border-border">
+                <tr>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Owner</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Properties</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Active</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  [...Array(3)].map((_, i) => (
+                    <tr key={i} className="border-b border-border/50">
+                      {[...Array(6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                    </tr>
+                  ))
+                ) : !filtered.length ? (
+                  <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">No owners yet. Click “Add Owner” to create one.</td></tr>
+                ) : (
+                  filtered.map(o => (
+                    <tr key={o.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-owner-${o.id}`}>
+                      <td className="py-2 px-3 font-medium text-xs">
+                        {editingId === o.id ? (
+                          <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" placeholder="Name" autoFocus />
+                        ) : (
+                          o.name || <span className="italic text-muted-foreground">no name</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">{o.email}</td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">
+                        {editingId === o.id ? (
+                          <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder="Phone" />
+                        ) : (
+                          o.phone || <span className="italic">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <button
+                          className="text-xs underline-offset-2 hover:underline text-muted-foreground hover:text-foreground"
+                          onClick={() => setAssignOwner(o)}
+                          title="Manage property access"
+                        >
+                          {counts?.get(o.id) ?? 0}
+                        </button>
+                      </td>
+                      <td className="py-2 px-3 text-center">
+                        <Switch
+                          checked={o.active}
+                          onCheckedChange={(v) => toggleActive({ id: o.id, active: !!v })}
+                          aria-label="Toggle owner access"
+                        />
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          {editingId === o.id ? (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => saveProfile({ id: o.id, name: editName, phone: editPhone })} title="Save">
+                                <Check className="w-3.5 h-3.5 text-success" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)} title="Cancel">
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title="Manage property access">
+                                <Home className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title="Field permissions" data-testid={`button-owner-permissions-${o.id}`}>
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title="Edit name / phone">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => handleSendReset(o.email)} title="Send password reset email">
+                                <Mail className="w-3.5 h-3.5" />
+                              </Button>
+                              {confirmDeleteId === o.id ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs text-muted-foreground">Remove?</span>
+                                  <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => deleteOwner(o)} data-testid={`button-confirm-delete-owner-${o.id}`}>
+                                    {deleting ? 'Removing…' : 'Confirm'}
+                                  </Button>
+                                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+                                </div>
+                              ) : (
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteId(o.id)} aria-label={`Remove ${o.email}`} data-testid={`button-delete-owner-${o.id}`}>
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <p className="text-2xs text-muted-foreground">
+          Use the sliders icon to set per-property field permissions (which fields an owner can see and edit).
+          Disabling an owner blocks portal sign-in and revokes all property access immediately, without deleting their record or assignments.
+        </p>
+      </div>
+
+      <AddOwnerDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AssignPropertiesDialog owner={assignOwner} open={!!assignOwner} onOpenChange={(o) => { if (!o) setAssignOwner(null) }} />
+      <OwnerPermissionsDialog owner={permsOwner} open={!!permsOwner} onOpenChange={(o) => { if (!o) setPermsOwner(null) }} />
+    </>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -2005,6 +2719,7 @@ export default function SettingsPage() {
       <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start flex-wrap h-auto">
           <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
+          <TabsTrigger value="owners" data-testid="tab-owners">Owners</TabsTrigger>
           <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
           <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
           <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
@@ -2015,6 +2730,9 @@ export default function SettingsPage() {
         <div className="flex-1 overflow-y-auto mt-4">
           <TabsContent value="users" className="mt-0">
             <UsersSection />
+          </TabsContent>
+          <TabsContent value="owners" className="mt-0">
+            <OwnersSection />
           </TabsContent>
           <TabsContent value="roles" className="mt-0 space-y-6">
             <PermissionsSection />
