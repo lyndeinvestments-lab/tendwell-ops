@@ -1135,6 +1135,28 @@ export default function QuoteSheetPage() {
                     </p>
                   )
                 })()}
+                {(() => {
+                  // Margin guard: cleaner pay should stay at/under 55% of the client
+                  // charge. When it exceeds 55%, suggest a higher client charge
+                  // (pay / 0.55) instead of cutting pay. The linen-program cost is
+                  // added on top of that suggestion regardless of the pay math.
+                  // Display-only — does not write into any field or cost/profit formula.
+                  const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
+                  const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
+                  if (ce == null || Number.isNaN(ce) || ce <= 0) return null
+                  if (pay == null || Number.isNaN(pay)) return null
+                  const pct = (pay / ce) * 100
+                  if (pct <= 55) return null
+                  const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
+                  const linen = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
+                  const suggested = pay / 0.55 + linen
+                  return (
+                    <p className="text-xs text-warning font-medium" data-testid="quote-client-charge-suggest">
+                      Pay is {pct.toFixed(0)}% of client charge. Suggested client charge: ${suggested.toFixed(2)}
+                      {linen > 0 ? ` (incl. $${linen.toFixed(2)} linen)` : ''}
+                    </p>
+                  )
+                })()}
               </div>
             </div>
 
