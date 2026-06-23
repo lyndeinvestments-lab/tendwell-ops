@@ -158,9 +158,12 @@ export default function DashboardPage() {
   })
 
   // Inspections data for Quality widgets
-  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString()
+  // Date-only string is stable within a day, so the query key below stays
+  // stable within a day but changes at the day boundary — forcing a refetch
+  // when the 90-day window slides instead of serving a stale cached result.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const { data: recentInspections } = useQuery({
-    queryKey: ['/supabase/dashboard-inspections'],
+    queryKey: ['/supabase/dashboard-inspections', ninetyDaysAgo],
     // 90-day inspection feed consumed as an aggregate (avg score, count).
     // Inspections are logged a handful per day, so a 2 min window is
     // imperceptibly stale for the Quality widgets while skipping refetch
@@ -186,14 +189,18 @@ export default function DashboardPage() {
   weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1)
   const weekEnd = new Date(weekStart)
   weekEnd.setDate(weekEnd.getDate() + 6)
+  // Include the week bounds in the key so the count refetches when the week
+  // rolls over instead of serving last week's cached result.
+  const weekStartStr = weekStart.toISOString().split('T')[0]
+  const weekEndStr = weekEnd.toISOString().split('T')[0]
   const { data: scheduledThisWeek } = useQuery({
-    queryKey: ['/supabase/dashboard-scheduled-week'],
+    queryKey: ['/supabase/dashboard-scheduled-week', weekStartStr, weekEndStr],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('clean_assignments')
         .select('id')
-        .gte('scheduled_date', weekStart.toISOString().split('T')[0])
-        .lte('scheduled_date', weekEnd.toISOString().split('T')[0])
+        .gte('scheduled_date', weekStartStr)
+        .lte('scheduled_date', weekEndStr)
         .eq('status', 'scheduled')
       if (error) return []
       return data || []

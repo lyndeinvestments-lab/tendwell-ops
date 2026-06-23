@@ -348,7 +348,9 @@ export default function LinenTrackerPage() {
       if (!error) updated++
       else skipped++
     }
-    qc.invalidateQueries({ queryKey: ['/supabase/linen-tracker'] })
+    // CSV import mutates property rows — invalidate all property-derived
+    // views (master-list, dashboard, cost-tracking), not just linen-tracker.
+    invalidateAllPropertyQueries(qc)
     toast({ title: `Import complete`, description: `${updated} updated, ${skipped} skipped` })
     setImportData(null)
     setImporting(false)
