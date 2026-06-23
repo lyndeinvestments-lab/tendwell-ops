@@ -62,7 +62,24 @@ function parseCount(reply: string): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Require a valid Supabase session — each call bills a Trellis agent invoke,
+  // so this must not be reachable by unauthenticated traffic.
+  const authHeader = req.headers.authorization
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!authHeader?.startsWith('Bearer ') || !supabaseUrl || !supabaseKey) {
+    res.status(401).json({ error: 'Unauthorized' })
+    return
+  }
+  const userRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+    headers: { Authorization: authHeader, apikey: supabaseKey },
+  })
+  if (!userRes.ok) {
+    res.status(401).json({ error: 'Invalid session' })
+    return
+  }
+
   try {
     const key = process.env.TRELLIS_API_KEY
     if (!key) {

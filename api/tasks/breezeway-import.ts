@@ -162,9 +162,16 @@ function getServiceClient(): SupabaseClient | null {
 // Drain the request stream into a UTF-8 string. Used when the runtime did
 // not auto-parse the body (e.g. Content-Type: text/csv on @vercel/node).
 async function readRawBody(req: VercelRequest): Promise<string> {
+  // Bound the stream so a key-holder can't OOM/timeout the function with a
+  // multi-GB body. Breezeway CSV exports are far below this.
+  const MAX_BYTES = 10 * 1024 * 1024 // 10 MB
   const chunks: Buffer[] = []
+  let total = 0
   for await (const chunk of req as unknown as AsyncIterable<Buffer | string>) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk
+    total += buf.length
+    if (total > MAX_BYTES) throw new Error('Request body too large')
+    chunks.push(buf)
   }
   return Buffer.concat(chunks).toString('utf8')
 }
