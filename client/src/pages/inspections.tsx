@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { thumbUrl } from '@/lib/image'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -718,7 +719,7 @@ export default function InspectionsPage() {
                   <div className="grid grid-cols-3 gap-2">
                     {activeDetail.photos_url.map((url, i) => (
                       <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block aspect-square rounded overflow-hidden border border-border hover:border-primary">
-                        <img src={url} alt={`Photo ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                        <img src={thumbUrl(url, { width: 300 })} alt={`Photo ${i + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       </a>
                     ))}
                   </div>
