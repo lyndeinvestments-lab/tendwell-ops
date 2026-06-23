@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { TablePagination } from '@/components/TablePagination'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
@@ -45,9 +46,10 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
       if (!result.ok) throw new Error(result.error)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/properties-list'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      // Stage changes ripple into every property-derived view (dashboard
+      // velocity, operational_properties, pro-forma, revenue, etc.), not just
+      // the six keys previously listed — invalidate the full registry.
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
