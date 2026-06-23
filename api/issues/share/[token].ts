@@ -61,6 +61,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'photo') {
         const photo_url = String(body.photo_url || '')
         if (!photo_url) return res.status(400).json({ error: 'No photo' })
+        // This endpoint is unauthenticated (cleaner share link). The stored
+        // photo_url is later rendered as <img src> and <a href> in the Ops
+        // dashboard, so reject anything that isn't an https Supabase Storage
+        // URL to prevent stored javascript:/data: injection.
+        let parsed: URL
+        try { parsed = new URL(photo_url) } catch { return res.status(400).json({ error: 'Invalid photo URL' }) }
+        if (parsed.protocol !== 'https:' || !parsed.host.toLowerCase().endsWith('.supabase.co')) {
+          return res.status(400).json({ error: 'Invalid photo URL' })
+        }
         await sb('issue_photos', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, photo_url, photo_path: body.photo_path || null, phase: body.phase === 'completion' ? 'completion' : 'initial', uploaded_by: author, author_type: 'cleaner' }) })
         return res.json({ ok: true })
       }

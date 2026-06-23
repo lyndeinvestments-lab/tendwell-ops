@@ -380,7 +380,14 @@ Guidelines:
 - When presenting property or stage data, highlight counts and important status items
 - Never guess data — use the available tools to retrieve accurate information`
 
-    const apiMessages: Anthropic.MessageParam[] = messages.slice(-20).map(m => ({ role: m.role, content: m.content }))
+    // Validate client-supplied history at runtime: the TS type is not a
+    // guarantee. Drop anything that isn't a user/assistant text turn (blocks
+    // injected system-role messages) and cap content length (bounds cost).
+    const apiMessages: Anthropic.MessageParam[] = messages
+      .filter((m): m is { role: 'user' | 'assistant'; content: string } =>
+        (m?.role === 'user' || m?.role === 'assistant') && typeof m?.content === 'string')
+      .slice(-20)
+      .map(m => ({ role: m.role, content: m.content.slice(0, 8000) }))
 
     const MAX_ROUNDS = 5
     let finalText = ''
