@@ -13,36 +13,55 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock } from 'lucide-react'
+import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
-// Owner-editable property fields. The DB guard trigger enforces that only these
-// columns can ever change on an owner UPDATE, so this list is the single source
-// of truth for the portal's edit form.
-type EditableProperty = {
+// A property as returned by the get_owner_properties() RPC. The RPC omits any
+// field the owner can't see (visibility enforced in the DB), so every value
+// field is optional. `permissions` carries the resolved visible/editable matrix
+// so the portal can render read-only vs editable inputs.
+type OwnerProperty = {
   id: number
   name: string
-  address: string | null
-  bed_sizes_text: string | null
-  number_of_beds: number | null
-  square_footage: number | null
-  door_code: string | null
-  auto_code: string | null
-  other_codes: string | null
-  wifi_info: string | null
-  owner_contact_name: string | null
-  owner_contact_email: string | null
-  owner_contact_phone: string | null
-  preferred_payment_method: string | null
+  permissions: OwnerPermissions
+  address?: string | null
+  bed_sizes_text?: string | null
+  number_of_beds?: number | null
+  square_footage?: number | null
+  door_code?: string | null
+  auto_code?: string | null
+  other_codes?: string | null
+  wifi_info?: string | null
+  owner_contact_name?: string | null
+  owner_contact_email?: string | null
+  owner_contact_phone?: string | null
+  preferred_payment_method?: string | null
 }
 
-const SELECT_COLS =
-  'id, name, address, bed_sizes_text, number_of_beds, square_footage, door_code, auto_code, other_codes, wifi_info, owner_contact_name, owner_contact_email, owner_contact_phone, preferred_payment_method'
+// Columns the owner may submit, grouped by permission field key. Used to build
+// the update payload from only the fields the owner can edit (the DB guard
+// trigger enforces this too — this just keeps the request honest).
+const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> = {
+  address: ['address'],
+  bed_sizes: ['bed_sizes_text'],
+  bed_count: ['number_of_beds'],
+  square_footage: ['square_footage'],
+  door_code: ['door_code'],
+  auto_code: ['auto_code'],
+  other_codes: ['other_codes'],
+  wifi_info: ['wifi_info'],
+  owner_contact: ['owner_contact_name', 'owner_contact_email', 'owner_contact_phone'],
+  payment_method: ['preferred_payment_method'],
+}
 
-type FormState = Omit<EditableProperty, 'id' | 'name'>
+type FormState = Partial<Record<keyof OwnerProperty, string | number | null>>
 
-function toForm(p: EditableProperty): FormState {
-  const { id, name, ...rest } = p
-  return rest
+function initialForm(p: OwnerProperty): FormState {
+  const form: FormState = {}
+  for (const cols of Object.values(EDITABLE_COLUMNS)) {
+    for (const c of cols) form[c] = (p[c] ?? null) as string | number | null
+  }
+  return form
 }
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
@@ -94,16 +113,38 @@ function TasksSection({ propertyId }: { propertyId: number }) {
   )
 }
 
+// ─── Read-only field display ───────────────────────────────────────────────────
+function ReadOnlyValue({ value }: { value: string | number | null | undefined }) {
+  const text = value == null || value === '' ? '—' : String(value)
+  return (
+    <div className="flex items-center gap-1.5 min-h-9 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+      <Lock className="w-3 h-3 shrink-0 opacity-60" />
+      <span className="truncate whitespace-pre-wrap">{text}</span>
+    </div>
+  )
+}
+
 // ─── Per-property editable card ────────────────────────────────────────────────
-function PropertyCard({ property }: { property: EditableProperty }) {
+function PropertyCard({ property }: { property: OwnerProperty }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<FormState>(() => toForm(property))
+  const [form, setForm] = useState<FormState>(() => initialForm(property))
   const [open, setOpen] = useState(false)
 
-  const dirty = useMemo(() => JSON.stringify(form) !== JSON.stringify(toForm(property)), [form, property])
+  const perms = property.permissions
+  const can = (key: keyof OwnerPermissions) => perms[key] ?? { visible: true, editable: true }
 
-  const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
+  const dirty = useMemo(
+    () => JSON.stringify(form) !== JSON.stringify(initialForm(property)),
+    [form, property],
+  )
+  // True when the owner can edit at least one field on this property.
+  const anyEditable = useMemo(
+    () => Object.keys(EDITABLE_COLUMNS).some(k => can(k as keyof OwnerPermissions).editable),
+    [perms],
+  )
+
+  const set = (key: keyof OwnerProperty, value: string | number | null) =>
     setForm(prev => ({ ...prev, [key]: value }))
 
   const setNum = (key: 'number_of_beds' | 'square_footage', raw: string) => {
@@ -114,14 +155,25 @@ function PropertyCard({ property }: { property: EditableProperty }) {
   const save = useMutation({
     mutationFn: async () => {
       // Light validation
-      if (form.owner_contact_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.owner_contact_email)) {
+      const email = form.owner_contact_email
+      if (typeof email === 'string' && email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
         throw new Error('Enter a valid owner contact email.')
       }
       for (const k of ['number_of_beds', 'square_footage'] as const) {
         const v = form[k]
-        if (v != null && (isNaN(v) || v < 0)) throw new Error('Bed count and square footage must be positive numbers.')
+        if (typeof v === 'number' && (isNaN(v) || v < 0)) {
+          throw new Error('Bed count and square footage must be positive numbers.')
+        }
       }
-      const { error } = await supabase.from('properties').update(form).eq('id', property.id)
+      // Build a payload of only the columns this owner may edit. The DB guard
+      // trigger enforces the same restriction server-side regardless.
+      const payload: FormState = {}
+      for (const [key, cols] of Object.entries(EDITABLE_COLUMNS)) {
+        if (!can(key as keyof OwnerPermissions).editable) continue
+        for (const c of cols) payload[c] = form[c] ?? null
+      }
+      if (Object.keys(payload).length === 0) return
+      const { error } = await supabase.from('properties').update(payload as any).eq('id', property.id)
       if (error) throw error
     },
     onSuccess: () => {
@@ -133,6 +185,30 @@ function PropertyCard({ property }: { property: EditableProperty }) {
     },
   })
 
+  // Renders an editable input, a read-only value, or nothing, per permission.
+  const renderField = (
+    key: keyof OwnerPermissions,
+    label: string,
+    column: keyof OwnerProperty,
+    input: (editable: boolean) => React.ReactNode,
+    className?: string,
+  ) => {
+    const p = can(key)
+    if (!p.visible) return null
+    return (
+      <Field label={label} locked={!p.editable} className={className}>
+        {p.editable ? input(true) : <ReadOnlyValue value={property[column] as any} />}
+      </Field>
+    )
+  }
+
+  const detailKeys: (keyof OwnerPermissions)[] = [
+    'address', 'bed_sizes', 'bed_count', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
+  ]
+  const contactKeys: (keyof OwnerPermissions)[] = ['owner_contact', 'payment_method']
+  const showDetails = detailKeys.some(k => can(k).visible)
+  const showContact = contactKeys.some(k => can(k).visible)
+
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
@@ -140,7 +216,9 @@ function PropertyCard({ property }: { property: EditableProperty }) {
           <Home className="w-4 h-4 text-muted-foreground shrink-0" />
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-foreground truncate">{property.name}</h2>
-            {property.address && <p className="text-xs text-muted-foreground truncate">{property.address}</p>}
+            {can('address').visible && property.address && (
+              <p className="text-xs text-muted-foreground truncate">{property.address}</p>
+            )}
           </div>
         </div>
         <Button
@@ -158,101 +236,122 @@ function PropertyCard({ property }: { property: EditableProperty }) {
       {open && (
         <CardContent className="space-y-6 pb-6">
           {/* Property details */}
+          {showDetails && (
           <section className="space-y-4">
             <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
               <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" /> Property details
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Address" className="sm:col-span-2">
-                <Input value={form.address ?? ''} onChange={e => set('address', e.target.value || null)} />
-              </Field>
-              <Field label="Bed sizes">
+              {renderField('address', 'Address', 'address', () => (
+                <Input value={(form.address as string) ?? ''} onChange={e => set('address', e.target.value || null)} />
+              ), 'sm:col-span-2')}
+              {renderField('bed_sizes', 'Bed sizes', 'bed_sizes_text', () => (
                 <Input
-                  value={form.bed_sizes_text ?? ''}
+                  value={(form.bed_sizes_text as string) ?? ''}
                   onChange={e => set('bed_sizes_text', e.target.value || null)}
                   placeholder="e.g. 1 King, 2 Queens"
                 />
-              </Field>
-              <Field label="Bed count">
+              ))}
+              {renderField('bed_count', 'Bed count', 'number_of_beds', () => (
                 <Input
                   type="number"
                   min={0}
-                  value={form.number_of_beds ?? ''}
+                  value={(form.number_of_beds as number) ?? ''}
                   onChange={e => setNum('number_of_beds', e.target.value)}
                 />
-              </Field>
-              <Field label="Square footage">
+              ))}
+              {renderField('square_footage', 'Square footage', 'square_footage', () => (
                 <Input
                   type="number"
                   min={0}
-                  value={form.square_footage ?? ''}
+                  value={(form.square_footage as number) ?? ''}
                   onChange={e => setNum('square_footage', e.target.value)}
                 />
-              </Field>
-              <Field label="Door / access code">
-                <Input value={form.door_code ?? ''} onChange={e => set('door_code', e.target.value || null)} />
-              </Field>
-              <Field label="Auto / lock code">
-                <Input value={form.auto_code ?? ''} onChange={e => set('auto_code', e.target.value || null)} />
-              </Field>
-              <Field label="Other codes" className="sm:col-span-2">
+              ))}
+              {renderField('door_code', 'Door / access code', 'door_code', () => (
+                <Input value={(form.door_code as string) ?? ''} onChange={e => set('door_code', e.target.value || null)} />
+              ))}
+              {renderField('auto_code', 'Auto / lock code', 'auto_code', () => (
+                <Input value={(form.auto_code as string) ?? ''} onChange={e => set('auto_code', e.target.value || null)} />
+              ))}
+              {renderField('other_codes', 'Other codes', 'other_codes', () => (
                 <Textarea
                   rows={2}
-                  value={form.other_codes ?? ''}
+                  value={(form.other_codes as string) ?? ''}
                   onChange={e => set('other_codes', e.target.value || null)}
                   placeholder="Gate codes, alarm codes, etc."
                 />
-              </Field>
-              <Field label="Wi-Fi information" className="sm:col-span-2">
+              ), 'sm:col-span-2')}
+              {renderField('wifi_info', 'Wi-Fi information', 'wifi_info', () => (
                 <Textarea
                   rows={2}
-                  value={form.wifi_info ?? ''}
+                  value={(form.wifi_info as string) ?? ''}
                   onChange={e => set('wifi_info', e.target.value || null)}
                   placeholder="Network name and password"
                 />
-              </Field>
+              ), 'sm:col-span-2')}
             </div>
           </section>
+          )}
 
           {/* Owner contact + payment */}
+          {showContact && (
           <section className="space-y-4">
             <h3 className="text-sm font-medium text-foreground">Owner contact &amp; payment</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Contact name">
-                <Input value={form.owner_contact_name ?? ''} onChange={e => set('owner_contact_name', e.target.value || null)} />
-              </Field>
-              <Field label="Contact phone">
-                <Input value={form.owner_contact_phone ?? ''} onChange={e => set('owner_contact_phone', e.target.value || null)} />
-              </Field>
-              <Field label="Contact email">
-                <Input
-                  type="email"
-                  value={form.owner_contact_email ?? ''}
-                  onChange={e => set('owner_contact_email', e.target.value || null)}
-                />
-              </Field>
-              <Field label="Preferred payment method">
-                <Input
-                  list="payment-methods"
-                  value={form.preferred_payment_method ?? ''}
-                  onChange={e => set('preferred_payment_method', e.target.value || null)}
-                  placeholder="e.g. ACH, Zelle, Check"
-                />
-                <datalist id="payment-methods">
-                  <option value="ACH / Bank transfer" />
-                  <option value="Zelle" />
-                  <option value="Venmo" />
-                  <option value="Check" />
-                  <option value="Credit card" />
-                </datalist>
-              </Field>
+              {can('owner_contact').visible && (
+                can('owner_contact').editable ? (
+                  <>
+                    <Field label="Contact name">
+                      <Input value={(form.owner_contact_name as string) ?? ''} onChange={e => set('owner_contact_name', e.target.value || null)} />
+                    </Field>
+                    <Field label="Contact phone">
+                      <Input value={(form.owner_contact_phone as string) ?? ''} onChange={e => set('owner_contact_phone', e.target.value || null)} />
+                    </Field>
+                    <Field label="Contact email">
+                      <Input
+                        type="email"
+                        value={(form.owner_contact_email as string) ?? ''}
+                        onChange={e => set('owner_contact_email', e.target.value || null)}
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    <Field label="Contact name" locked><ReadOnlyValue value={property.owner_contact_name} /></Field>
+                    <Field label="Contact phone" locked><ReadOnlyValue value={property.owner_contact_phone} /></Field>
+                    <Field label="Contact email" locked><ReadOnlyValue value={property.owner_contact_email} /></Field>
+                  </>
+                )
+              )}
+              {renderField('payment_method', 'Preferred payment method', 'preferred_payment_method', () => (
+                <>
+                  <Input
+                    list="payment-methods"
+                    value={(form.preferred_payment_method as string) ?? ''}
+                    onChange={e => set('preferred_payment_method', e.target.value || null)}
+                    placeholder="e.g. ACH, Zelle, Check"
+                  />
+                  <datalist id="payment-methods">
+                    <option value="ACH / Bank transfer" />
+                    <option value="Zelle" />
+                    <option value="Venmo" />
+                    <option value="Check" />
+                    <option value="Credit card" />
+                  </datalist>
+                </>
+              ))}
             </div>
+          </section>
+          )}
+
+          {(showDetails || showContact) && anyEditable && (
             <div className="flex justify-end">
               <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid={`button-save-${property.id}`}>
                 {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
               </Button>
             </div>
-          </section>
+          )}
 
           {/* Scheduled tasks */}
           <section className="space-y-3">
@@ -267,10 +366,13 @@ function PropertyCard({ property }: { property: EditableProperty }) {
   )
 }
 
-function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+function Field({ label, children, className, locked }: { label: string; children: React.ReactNode; className?: string; locked?: boolean }) {
   return (
     <div className={`space-y-1.5 ${className ?? ''}`}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground flex items-center gap-1">
+        {label}
+        {locked && <span className="text-2xs text-muted-foreground/70">(view only)</span>}
+      </Label>
       {children}
     </div>
   )
@@ -283,14 +385,15 @@ export default function OwnerPortalPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-properties'],
-    queryFn: async (): Promise<EditableProperty[]> => {
-      // RLS scopes this to only the signed-in owner's assigned properties.
-      const { data, error } = await supabase
-        .from('properties')
-        .select(SELECT_COLS)
-        .order('name')
+    queryFn: async (): Promise<OwnerProperty[]> => {
+      // The RPC scopes to the signed-in owner's assigned properties and omits
+      // any field they don't have visibility permission for.
+      const { data, error } = await supabase.rpc('get_owner_properties')
       if (error) throw error
-      return (data ?? []) as EditableProperty[]
+      return ((data ?? []) as any[]).map(row => ({
+        ...row,
+        permissions: normalizeOwnerPermissions(row?.permissions),
+      })) as OwnerProperty[]
     },
   })
 

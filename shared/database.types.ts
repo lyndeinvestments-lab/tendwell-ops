@@ -3865,6 +3865,42 @@ export type Database = {
           }
         ]
       }
+      owner_property_permissions: {
+        Row: {
+          owner_id: string
+          property_id: number
+          permissions: Json
+          updated_at: string
+        }
+        Insert: {
+          owner_id: string
+          property_id: number
+          permissions?: Json
+          updated_at?: string
+        }
+        Update: {
+          owner_id?: string
+          property_id?: number
+          permissions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_property_permissions_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       van_build_questionnaire: {
         Row: {
           annual_miles: string | null
@@ -4349,6 +4385,18 @@ export type Database = {
           task_date: string
           status: string
         }[]
+      }
+      get_owner_properties: {
+        Args: never
+        Returns: Json[]
+      }
+      owner_field_permissions_default: {
+        Args: never
+        Returns: Json
+      }
+      owner_property_perms: {
+        Args: { p_owner_id: string; p_property_id: number }
+        Returns: Json
       }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
       get_property_names_for_weigh_in: { Args: never; Returns: string[] }

@@ -30,7 +30,11 @@ import {
   Home, Search, Mail, Loader2,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
-import { provisionOwnerLogin, deleteOwnerLogin } from '@/lib/owners'
+import {
+  provisionOwnerLogin, deleteOwnerLogin,
+  OWNER_FIELD_DEFS, defaultOwnerPermissions, normalizeOwnerPermissions,
+  type OwnerFieldKey, type OwnerPermissions,
+} from '@/lib/owners'
 import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/components/AddressAutocomplete'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
@@ -927,7 +931,7 @@ function UsersSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google.` })
+      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google using this email.` })
       setInviteOpen(false)
       setNewEmail('')
       setNewLabel('')
@@ -936,7 +940,7 @@ function UsersSection() {
     onError: (err: any) => {
       const msg = err?.message || ''
       if (msg.includes('unique') || msg.includes('duplicate')) {
-        toast({ title: 'Email already exists', description: 'That Google account already has access.', variant: 'destructive' })
+        toast({ title: 'Email already exists', description: 'That account email already has access.', variant: 'destructive' })
       } else {
         toast({ title: 'Failed to invite user', description: err?.message, variant: 'destructive' })
       }
@@ -1048,7 +1052,7 @@ function UsersSection() {
               <Users className="w-4 h-4" />
               Users
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Add a user's Google email to grant access. They sign in with Google.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Staff &amp; internal accounts. Add an account email to grant access; staff sign in with Google using that email. Property owners are managed in the Owners tab and sign in with email/password.</p>
           </div>
           <Button
             size="sm"
@@ -1069,7 +1073,7 @@ function UsersSection() {
             <thead className="bg-muted/80 border-b border-border">
               <tr>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Google Email</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
                 <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
               </tr>
@@ -1209,14 +1213,16 @@ function UsersSection() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add User</DialogTitle>
+            <DialogTitle>Add Staff User</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">
-            Enter their Google account email. They'll be able to sign in immediately.
+            For staff/internal accounts. Enter the account email — staff sign in with Google using
+            this email and can access immediately. (Property owners are added in the Owners tab and
+            sign in with email/password.)
           </p>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Google Email</label>
+              <label className="text-xs font-medium text-muted-foreground">Account email</label>
               <Input
                 type="email"
                 value={newEmail}
@@ -2148,6 +2154,198 @@ function AssignPropertiesDialog({
   )
 }
 
+// ─── Owner field permission matrix (per owner / per property) ────────────────
+function OwnerPermissionsDialog({
+  owner,
+  open,
+  onOpenChange,
+}: {
+  owner: OwnerRow | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [selectedPropId, setSelectedPropId] = useState<number | null>(null)
+  // Working copy: property_id → permission map. Edited in place, saved on demand.
+  const [draft, setDraft] = useState<Record<number, OwnerPermissions>>({})
+
+  // The owner's assigned properties (the matrix is scoped to these).
+  const { data: assigned, isLoading: loadingAssigned } = useQuery({
+    queryKey: ['/supabase/owner-assigned-props', owner?.id],
+    enabled: !!owner?.id && open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('owner_properties')
+        .select('property_id, properties(id, name, address)')
+        .eq('owner_id', owner!.id)
+      if (error) throw error
+      return (data || [])
+        .map((r: any) => r.properties)
+        .filter(Boolean)
+        .sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')) as { id: number; name: string; address: string | null }[]
+    },
+  })
+
+  // Existing permission rows for this owner.
+  const { data: existing, isLoading: loadingPerms } = useQuery({
+    queryKey: ['/supabase/owner-permissions', owner?.id],
+    enabled: !!owner?.id && open,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('owner_property_permissions')
+        .select('property_id, permissions')
+        .eq('owner_id', owner!.id)
+      if (error) throw error
+      const m = new Map<number, OwnerPermissions>()
+      for (const r of (data || [])) m.set(r.property_id as number, normalizeOwnerPermissions(r.permissions))
+      return m
+    },
+  })
+
+  // Build the working draft once both queries land.
+  useEffect(() => {
+    if (!assigned || !existing) return
+    const next: Record<number, OwnerPermissions> = {}
+    for (const p of assigned) next[p.id] = existing.get(p.id) ?? defaultOwnerPermissions()
+    setDraft(next)
+    setSelectedPropId(prev => (prev && next[prev] ? prev : assigned[0]?.id ?? null))
+  }, [assigned, existing])
+
+  const current = selectedPropId != null ? draft[selectedPropId] : undefined
+
+  function setPerm(field: OwnerFieldKey, change: Partial<{ visible: boolean; editable: boolean }>) {
+    if (selectedPropId == null) return
+    setDraft(prev => {
+      const map = prev[selectedPropId] ?? defaultOwnerPermissions()
+      const cur = map[field]
+      let next = { ...cur, ...change }
+      // Editing implies visibility; hiding implies not editable.
+      if (change.editable) next.visible = true
+      if (change.visible === false) next.editable = false
+      return { ...prev, [selectedPropId]: { ...map, [field]: next } }
+    })
+  }
+
+  function copyToAll() {
+    if (selectedPropId == null || !current || !assigned) return
+    setDraft(prev => {
+      const next = { ...prev }
+      for (const p of assigned) next[p.id] = { ...current }
+      return next
+    })
+    toast({ title: 'Applied to all properties', description: 'Review and Save to persist.' })
+  }
+
+  const { mutate: savePerms, isPending } = useMutation({
+    mutationFn: async () => {
+      if (!owner || !assigned) return
+      const rows = assigned.map(p => ({
+        owner_id: owner.id,
+        property_id: p.id,
+        permissions: draft[p.id] ?? defaultOwnerPermissions(),
+      }))
+      if (rows.length === 0) return
+      const { error } = await supabase
+        .from('owner_property_permissions')
+        .upsert(rows, { onConflict: 'owner_id,property_id' })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-permissions', owner?.id] })
+      toast({ title: 'Field permissions saved' })
+      onOpenChange(false)
+    },
+    onError: (e: any) => toast({ title: 'Failed to save permissions', description: e?.message, variant: 'destructive' }),
+  })
+
+  if (!owner) return null
+  const loading = loadingAssigned || loadingPerms
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Field permissions for {owner.name || owner.email}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Choose which portal fields this owner can see and edit, per property. Hidden fields don't
+          appear in their portal; view-only fields show but can't be changed. New assignments default
+          to everything visible and editable.
+        </p>
+
+        {loading ? (
+          <div className="space-y-2 py-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
+        ) : !assigned?.length ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No properties assigned yet. Assign properties first, then configure field permissions.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <label className="text-xs font-medium text-muted-foreground">Property</label>
+              <select
+                value={selectedPropId ?? ''}
+                onChange={e => setSelectedPropId(Number(e.target.value))}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs flex-1 min-w-0"
+                data-testid="select-perm-property"
+              >
+                {assigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyToAll} disabled={assigned.length < 2}>
+                Copy to all
+              </Button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto rounded-lg border border-border mt-1">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/80 border-b border-border sticky top-0">
+                  <tr>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Field</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Visible</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Editable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {OWNER_FIELD_DEFS.map(f => {
+                    const p = current?.[f.key] ?? { visible: true, editable: true }
+                    return (
+                      <tr key={f.key} className="border-b border-border/50">
+                        <td className="py-2 px-3 text-xs">{f.label}</td>
+                        <td className="py-2 px-3 text-center">
+                          <Checkbox
+                            checked={p.visible}
+                            onCheckedChange={c => setPerm(f.key, { visible: !!c })}
+                            aria-label={`${f.label} visible`}
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Checkbox
+                            checked={p.editable}
+                            disabled={!p.visible}
+                            onCheckedChange={c => setPerm(f.key, { editable: !!c })}
+                            aria-label={`${f.label} editable`}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        <DialogFooter>
+          <Button size="sm" onClick={() => savePerms()} disabled={isPending || loading || !assigned?.length} data-testid="button-save-owner-permissions">
+            {isPending ? 'Saving…' : 'Save permissions'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { toast } = useToast()
   const { user } = useAuth()
@@ -2259,6 +2457,7 @@ function OwnersSection() {
   const [search, setSearch] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [assignOwner, setAssignOwner] = useState<OwnerRow | null>(null)
+  const [permsOwner, setPermsOwner] = useState<OwnerRow | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
@@ -2459,6 +2658,9 @@ function OwnersSection() {
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title="Manage property access">
                                 <Home className="w-3.5 h-3.5" />
                               </Button>
+                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title="Field permissions" data-testid={`button-owner-permissions-${o.id}`}>
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                              </Button>
                               <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title="Edit name / phone">
                                 <Pencil className="w-3.5 h-3.5" />
                               </Button>
@@ -2491,12 +2693,14 @@ function OwnersSection() {
         )}
 
         <p className="text-2xs text-muted-foreground">
+          Use the sliders icon to set per-property field permissions (which fields an owner can see and edit).
           Disabling an owner blocks portal sign-in and revokes all property access immediately, without deleting their record or assignments.
         </p>
       </div>
 
       <AddOwnerDialog open={addOpen} onOpenChange={setAddOpen} />
       <AssignPropertiesDialog owner={assignOwner} open={!!assignOwner} onOpenChange={(o) => { if (!o) setAssignOwner(null) }} />
+      <OwnerPermissionsDialog owner={permsOwner} open={!!permsOwner} onOpenChange={(o) => { if (!o) setPermsOwner(null) }} />
     </>
   )
 }
