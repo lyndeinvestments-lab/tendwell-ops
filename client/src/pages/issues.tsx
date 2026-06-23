@@ -250,7 +250,7 @@ export default function IssuesPage() {
       setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
       setNewPhoto(null)
-      setNewForm({ ...newForm, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' })
+      setNewForm(f => ({ ...f, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' }))
     },
     onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
   })

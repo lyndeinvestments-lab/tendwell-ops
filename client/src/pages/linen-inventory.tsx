@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
@@ -95,6 +95,12 @@ export default function LinenInventoryPage() {
   const [countValues, setCountValues] = useState<Record<string, string>>({})
   const [countBy, setCountBy] = useState(effectiveUser?.label || '')
   const [countNotes, setCountNotes] = useState('')
+
+  // Auth resolves asynchronously, so effectiveUser is usually null at mount —
+  // backfill the "Counted by" name once it loads (without clobbering edits).
+  useEffect(() => {
+    if (effectiveUser?.label && !countBy) setCountBy(effectiveUser.label)
+  }, [effectiveUser])
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 

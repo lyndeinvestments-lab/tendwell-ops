@@ -98,7 +98,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   }, [open])
   const recentProperties = useMemo(() => {
     if (q || !properties) return []
-    return recentIds.map(id => properties.find((p: any) => p.id === id)).filter(Boolean).slice(0, 5)
+    // recentIds are strings (from localStorage); p.id is a number — coerce
+    // both, else the strict-equality match never hits and the list is empty.
+    return recentIds.map(id => properties.find((p: any) => String(p.id) === String(id))).filter(Boolean).slice(0, 5)
   }, [q, properties, recentIds])
 
   const matchedProperties = useMemo(() => {
