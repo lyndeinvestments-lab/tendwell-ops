@@ -61,6 +61,15 @@ export interface TrellisPropOption {
   workspace: 'A' | 'B'
 }
 
+export interface DismissalRow {
+  id: string
+  kind: string
+  trellis_property_id: string | null
+  ops_property_id: number | null
+  dismissed_by: string | null
+  created_at: string
+}
+
 export function useTrellisSync() {
   const qc = useQueryClient()
 
@@ -124,6 +133,23 @@ export function useTrellisSync() {
     refetchOnWindowFocus: false,
   })
 
+  // Admin-controlled dismissals for exception + reconciliation rows.
+  // The view does NOT filter these — the client handles show/hide via toggle.
+  // Note: cast to `any` because generated DB types don't include this table
+  // until the migration is applied and types are regenerated.
+  const dismissals = useQuery({
+    queryKey: [...KEY, 'dismissals'],
+    queryFn: async (): Promise<DismissalRow[]> => {
+      const { data, error } = await (supabase as any)
+        .from('trellis_reconciliation_dismissals')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as DismissalRow[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
   // Link an Ops property to a Trellis property (confirm a suggested/changed match).
   const linkMatch = useMutation({
     mutationFn: async ({ opsId, opsName, trellisId }: { opsId: number; opsName: string; trellisId: string | null }) => {
@@ -137,6 +163,37 @@ export function useTrellisSync() {
     },
   })
 
+  // Dismiss a row — inserts a record into trellis_reconciliation_dismissals.
+  // kind = 'trellis_not_in_ops'   → set trellis_property_id
+  // kind = 'ops_not_in_trellis'   → set ops_property_id
+  // Cast to `any` — table not yet in generated DB types (pending migration).
+  const dismissRow = useMutation({
+    mutationFn: async (row: Omit<DismissalRow, 'id' | 'created_at'>) => {
+      const { error } = await (supabase as any)
+        .from('trellis_reconciliation_dismissals')
+        .insert(row)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'dismissals'] })
+    },
+  })
+
+  // Restore a dismissed row — deletes by id.
+  // Cast to `any` — table not yet in generated DB types (pending migration).
+  const restoreRow = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await (supabase as any)
+        .from('trellis_reconciliation_dismissals')
+        .delete()
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'dismissals'] })
+    },
+  })
+
   // Enqueue an on-demand sync; the local poller picks it up.
   const requestSync = useMutation({
     mutationFn: async (requestedBy: string) => {
@@ -146,7 +203,7 @@ export function useTrellisSync() {
     onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'lastSync'] }),
   })
 
-  return { recon, exceptions, roster, lastSync, trellisProps, linkMatch, requestSync }
+  return { recon, exceptions, roster, lastSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, requestSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).

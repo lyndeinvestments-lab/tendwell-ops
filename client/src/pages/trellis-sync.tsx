@@ -10,11 +10,11 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
-import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check } from 'lucide-react'
+import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow } from '@/hooks/use-trellis-sync'
 
 function workspaceBadge(ws: 'A' | 'B' | null) {
   if (!ws) return null
@@ -86,19 +86,54 @@ function MatchPicker({ opsId, opsName, currentTrellisId, options, disabled, onAp
   )
 }
 
-function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch }: {
+function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
   trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
   linkMatch: ReturnType<typeof useTrellisSync>['linkMatch']
+  dismissals: ReturnType<typeof useTrellisSync>['dismissals']
+  dismissRow: ReturnType<typeof useTrellisSync>['dismissRow']
+  restoreRow: ReturnType<typeof useTrellisSync>['restoreRow']
+  userLabel: string
 }) {
   const { toast } = useToast()
   const [pendingId, setPendingId] = useState<number | null>(null)
+  const [showDismissed, setShowDismissed] = useState(false)
+  const [pendingDismiss, setPendingDismiss] = useState<string | null>(null)
+
   if (recon.error) return <ErrorState onRetry={() => recon.refetch()} />
 
   const rows = recon.data ?? []
   const exRows = exceptions.data ?? []
   const options = trellisProps.data ?? []
+  const allDismissals: DismissalRow[] = dismissals.data ?? []
+
+  // Build fast lookup sets
+  const dismissedExSet = new Set(
+    allDismissals
+      .filter(d => d.kind === 'trellis_not_in_ops' && d.trellis_property_id != null)
+      .map(d => d.trellis_property_id as string)
+  )
+  const dismissedReconSet = new Set(
+    allDismissals
+      .filter(d => d.kind === 'ops_not_in_trellis' && d.ops_property_id != null)
+      .map(d => String(d.ops_property_id))
+  )
+
+  // Helper: find dismissal record for a given key (for restore)
+  const findExDismissal = (trellisId: string) =>
+    allDismissals.find(d => d.kind === 'trellis_not_in_ops' && d.trellis_property_id === trellisId)
+  const findReconDismissal = (opsId: number) =>
+    allDismissals.find(d => d.kind === 'ops_not_in_trellis' && d.ops_property_id === opsId)
+
+  // Filtered rows based on show/hide toggle
+  const visibleExRows = showDismissed
+    ? exRows
+    : exRows.filter(e => !dismissedExSet.has(e.trellis_id))
+
+  const visibleReconRows = showDismissed
+    ? rows
+    : rows.filter(r => r.match_status === 'matched' || !dismissedReconSet.has(String(r.ops_property_id)))
 
   const applyLink = async (opsId: number, opsName: string, trellisId: string | null) => {
     setPendingId(opsId)
@@ -112,34 +147,138 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch }: {
     }
   }
 
+  const handleDismissEx = async (trellisId: string, name: string) => {
+    setPendingDismiss(`ex-${trellisId}`)
+    try {
+      await dismissRow.mutateAsync({
+        kind: 'trellis_not_in_ops',
+        trellis_property_id: trellisId,
+        ops_property_id: null,
+        dismissed_by: userLabel,
+      })
+      toast({ title: 'Dismissed', description: name })
+    } catch (e) {
+      toast({ title: 'Dismiss failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingDismiss(null)
+    }
+  }
+
+  const handleDismissRecon = async (opsId: number, opsName: string) => {
+    setPendingDismiss(`recon-${opsId}`)
+    try {
+      await dismissRow.mutateAsync({
+        kind: 'ops_not_in_trellis',
+        trellis_property_id: null,
+        ops_property_id: opsId,
+        dismissed_by: userLabel,
+      })
+      toast({ title: 'Dismissed', description: opsName })
+    } catch (e) {
+      toast({ title: 'Dismiss failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingDismiss(null)
+    }
+  }
+
+  const handleRestore = async (dismissalId: string, label: string) => {
+    setPendingDismiss(dismissalId)
+    try {
+      await restoreRow.mutateAsync(dismissalId)
+      toast({ title: 'Restored', description: label })
+    } catch (e) {
+      toast({ title: 'Restore failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingDismiss(null)
+    }
+  }
+
+  const dismissedExCount = exRows.filter(e => dismissedExSet.has(e.trellis_id)).length
+  const dismissedReconCount = rows.filter(r =>
+    r.match_status !== 'matched' && dismissedReconSet.has(String(r.ops_property_id))
+  ).length
+  const totalDismissed = dismissedExCount + dismissedReconCount
+
   return (
     <div className="space-y-5">
+      {/* Show dismissed toggle — shared for both panels */}
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => setShowDismissed(v => !v)}
+          className="text-muted-foreground gap-1.5"
+          data-testid="toggle-show-dismissed"
+        >
+          {showDismissed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+          {showDismissed ? 'Hide dismissed' : `Show dismissed${totalDismissed > 0 ? ` (${totalDismissed})` : ''}`}
+        </Button>
+      </div>
+
       {/* Exceptions panel — Tendwell work in Trellis with no Ops home */}
       <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
         <div className="flex items-center gap-2 mb-3">
           <AlertTriangle className="w-4 h-4 text-destructive" />
-          <h2 className="text-sm font-semibold">In Trellis, not in Ops ({exRows.length})</h2>
+          <h2 className="text-sm font-semibold">
+            In Trellis, not in Ops ({exRows.filter(e => !dismissedExSet.has(e.trellis_id)).length})
+          </h2>
         </div>
         {exceptions.error ? (
           <p className="text-xs text-destructive">Failed to load exceptions — <button className="underline" onClick={() => exceptions.refetch()}>retry</button>.</p>
         ) : exceptions.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
-        ) : exRows.length === 0 ? (
-          <p className="text-xs text-muted-foreground">Nothing unaccounted for. Every Tendwell-serviced Trellis property maps to an Ops property.</p>
+        ) : visibleExRows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            {dismissedExCount > 0 && !showDismissed
+              ? `All ${dismissedExCount} exception(s) dismissed. Toggle "Show dismissed" to review.`
+              : 'Nothing unaccounted for. Every Tendwell-serviced Trellis property maps to an Ops property.'}
+          </p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-2xs uppercase text-muted-foreground text-left">
-                <th className="py-1 pr-3">Trellis property</th><th className="py-1 pr-3">Workspace</th><th className="py-1 pr-3">Tendwell tasks</th>
+                <th className="py-1 pr-3">Trellis property</th>
+                <th className="py-1 pr-3">Workspace</th>
+                <th className="py-1 pr-3">Tendwell tasks</th>
+                <th className="py-1 pr-3 text-right">Action</th>
               </tr></thead>
               <tbody>
-                {exRows.map(e => (
-                  <tr key={e.trellis_id} className="border-t border-border/50">
-                    <td className="py-1.5 pr-3">{e.name}</td>
-                    <td className="py-1.5 pr-3">{workspaceBadge(e.workspace)}</td>
-                    <td className="py-1.5 pr-3 tabular-nums">{e.tendwell_task_count}</td>
-                  </tr>
-                ))}
+                {visibleExRows.map(e => {
+                  const isDismissed = dismissedExSet.has(e.trellis_id)
+                  const dismissal = isDismissed ? findExDismissal(e.trellis_id) : undefined
+                  return (
+                    <tr key={e.trellis_id} className={`border-t border-border/50 ${isDismissed ? 'opacity-50' : ''}`}>
+                      <td className={`py-1.5 pr-3 ${isDismissed ? 'line-through text-muted-foreground' : ''}`}>{e.name}</td>
+                      <td className="py-1.5 pr-3">{workspaceBadge(e.workspace)}</td>
+                      <td className="py-1.5 pr-3 tabular-nums">{e.tendwell_task_count}</td>
+                      <td className="py-1.5 pr-3 text-right">
+                        {isDismissed && dismissal ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-2xs"
+                            disabled={pendingDismiss === dismissal.id}
+                            onClick={() => handleRestore(dismissal.id, e.name)}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-2xs text-muted-foreground hover:text-foreground"
+                            disabled={pendingDismiss === `ex-${e.trellis_id}`}
+                            onClick={() => handleDismissEx(e.trellis_id, e.name)}
+                            title="Dismiss this exception"
+                          >
+                            <X className="w-3 h-3 mr-1" />
+                            Dismiss
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -163,43 +302,75 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch }: {
             <tbody>
               {recon.isLoading ? (
                 <tr><td colSpan={6} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
-              ) : rows.length === 0 ? (
+              ) : visibleReconRows.length === 0 ? (
                 <tr><td colSpan={6}><EmptyState icon={Inbox} title="No properties" description="Run a sync to populate Trellis data." /></td></tr>
-              ) : rows.map(r => (
-                <tr key={r.ops_property_id} className="border-t border-border/50">
-                  <td className="py-1.5 px-3 font-medium">{r.ops_name}</td>
-                  <td className="py-1.5 px-3 text-muted-foreground">
-                    {r.match_status === 'matched' && r.linked_trellis_name}
-                    {r.match_status === 'stale' && <span className="text-warning">link no longer resolves</span>}
-                    {r.match_status === 'suggested' && <span>{r.suggested_trellis_name}</span>}
-                    {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">—</span>}
-                  </td>
-                  <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
-                  <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
-                  <td className="py-1.5 px-3">
-                    <StatusBadge tone={r.match_status === 'matched' ? 'success' : r.match_status === 'suggested' ? 'info' : 'warning'}>
-                      {r.match_status}
-                    </StatusBadge>
-                  </td>
-                  <td className="py-1.5 px-3 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {r.match_status === 'suggested' && (
-                        <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
-                          Confirm
-                        </Button>
-                      )}
-                      <MatchPicker
-                        opsId={r.ops_property_id}
-                        opsName={r.ops_name}
-                        currentTrellisId={r.linked_trellis_id}
-                        options={options}
-                        disabled={pendingId === r.ops_property_id}
-                        onApply={applyLink}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              ) : visibleReconRows.map(r => {
+                const isDismissed = r.match_status !== 'matched' && dismissedReconSet.has(String(r.ops_property_id))
+                const dismissal = isDismissed ? findReconDismissal(r.ops_property_id) : undefined
+                const canDismiss = r.match_status !== 'matched'
+                return (
+                  <tr key={r.ops_property_id} className={`border-t border-border/50 ${isDismissed ? 'opacity-50' : ''}`}>
+                    <td className={`py-1.5 px-3 font-medium ${isDismissed ? 'line-through text-muted-foreground' : ''}`}>{r.ops_name}</td>
+                    <td className="py-1.5 px-3 text-muted-foreground">
+                      {r.match_status === 'matched' && r.linked_trellis_name}
+                      {r.match_status === 'stale' && <span className="text-warning">link no longer resolves</span>}
+                      {r.match_status === 'suggested' && <span>{r.suggested_trellis_name}</span>}
+                      {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">—</span>}
+                    </td>
+                    <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
+                    <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
+                    <td className="py-1.5 px-3">
+                      <StatusBadge tone={r.match_status === 'matched' ? 'success' : r.match_status === 'suggested' ? 'info' : 'warning'}>
+                        {r.match_status}
+                      </StatusBadge>
+                    </td>
+                    <td className="py-1.5 px-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isDismissed && dismissal ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-2xs"
+                            disabled={pendingDismiss === dismissal.id}
+                            onClick={() => handleRestore(dismissal.id, r.ops_name)}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <>
+                            {r.match_status === 'suggested' && (
+                              <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
+                                Confirm
+                              </Button>
+                            )}
+                            <MatchPicker
+                              opsId={r.ops_property_id}
+                              opsName={r.ops_name}
+                              currentTrellisId={r.linked_trellis_id}
+                              options={options}
+                              disabled={pendingId === r.ops_property_id}
+                              onApply={applyLink}
+                            />
+                            {canDismiss && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-2xs text-muted-foreground hover:text-foreground"
+                                disabled={pendingDismiss === `recon-${r.ops_property_id}`}
+                                onClick={() => handleDismissRecon(r.ops_property_id, r.ops_name)}
+                                title="Dismiss this row"
+                              >
+                                <X className="w-3 h-3 mr-1" />
+                                Dismiss
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -311,7 +482,7 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, trellisProps, linkMatch, requestSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, requestSync } = useTrellisSync()
 
   // When a sync finishes, the snapshot data has changed — refresh the
   // reconciliation/exceptions/roster queries so the tiles + tables stop
@@ -327,15 +498,29 @@ export default function TrellisSyncPage() {
 
   const tiles = useMemo(() => {
     const rows = recon.data ?? []
-    const by = (s: string) => rows.filter(r => r.match_status === s).length
+    const allDismissals = dismissals.data ?? []
+    const dismissedReconIds = new Set(
+      allDismissals
+        .filter(d => d.kind === 'ops_not_in_trellis' && d.ops_property_id != null)
+        .map(d => String(d.ops_property_id))
+    )
+    const dismissedExIds = new Set(
+      allDismissals
+        .filter(d => d.kind === 'trellis_not_in_ops' && d.trellis_property_id != null)
+        .map(d => d.trellis_property_id as string)
+    )
+    // Matched rows are never dismissable — always shown
+    const by = (s: string) => rows.filter(r =>
+      r.match_status === s && (s === 'matched' || !dismissedReconIds.has(String(r.ops_property_id)))
+    ).length
     return {
       matched: by('matched'),
       suggested: by('suggested'),
       stale: by('stale'),
       unmatchedOps: by('unmatched'),
-      unmatchedTrellis: exceptions.data?.length ?? 0,
+      unmatchedTrellis: (exceptions.data ?? []).filter(e => !dismissedExIds.has(e.trellis_id)).length,
     }
-  }, [recon.data, exceptions.data])
+  }, [recon.data, exceptions.data, dismissals.data])
 
   const syncing = lastSync.data?.status === 'requested' || lastSync.data?.status === 'running'
 
@@ -382,7 +567,16 @@ export default function TrellisSyncPage() {
         </TabsList>
 
         <TabsContent value="reconciliation" className="space-y-5">
-          <ReconciliationTab recon={recon} exceptions={exceptions} trellisProps={trellisProps} linkMatch={linkMatch} />
+          <ReconciliationTab
+            recon={recon}
+            exceptions={exceptions}
+            trellisProps={trellisProps}
+            linkMatch={linkMatch}
+            dismissals={dismissals}
+            dismissRow={dismissRow}
+            restoreRow={restoreRow}
+            userLabel={user?.label || 'admin'}
+          />
         </TabsContent>
         <TabsContent value="workflows">
           <WorkflowsTab />
