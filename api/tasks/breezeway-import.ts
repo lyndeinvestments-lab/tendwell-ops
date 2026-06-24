@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import Papa from 'papaparse'
 
@@ -272,7 +272,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
   const presentedKey = (req.headers['x-tendwell-import-key'] as string | undefined)?.trim()
-  if (!presentedKey || presentedKey !== expectedKey) {
+  // Constant-time comparison: hash both sides to a fixed 32-byte digest first so
+  // neither the key contents nor its length leak through comparison timing.
+  const expectedDigest = createHash('sha256').update(expectedKey).digest()
+  const presentedDigest = createHash('sha256').update(presentedKey ?? '').digest()
+  if (!presentedKey || !timingSafeEqual(presentedDigest, expectedDigest)) {
     res.status(401).json({ error: 'Invalid or missing x-tendwell-import-key' })
     return
   }
