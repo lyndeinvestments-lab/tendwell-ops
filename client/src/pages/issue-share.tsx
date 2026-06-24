@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { format, formatDistanceToNow } from 'date-fns'
 import { AlertTriangle, Check, Upload, Loader2, ImageOff } from 'lucide-react'
+import { resizeImageFile } from '@/lib/resize-image'
 
 // Public, no-login page reached via the shareable issue link. The unguessable
 // token in the URL is the credential; all reads/writes go through the
@@ -56,10 +57,11 @@ export default function IssueSharePage() {
     finally { setBusy(null) }
   }
 
-  async function uploadPhoto(file: File, phase: 'initial' | 'completion') {
+  async function uploadPhoto(raw: File, phase: 'initial' | 'completion') {
     if (!data?.issue?.id) return
     setBusy('photo')
     try {
+      const file = await resizeImageFile(raw)
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${data.issue.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
       const { error } = await supabase.storage.from('issue-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })

@@ -142,7 +142,7 @@ function InspectionsTab({ propertyId }: { propertyId: string }) {
           const file = await resizeImageFile(original)
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
           const path = `inspections/${propertyId}/${Date.now()}_${safeName}`
-          const { error: uploadError } = await supabase.storage.from('inspections').upload(path, file)
+          const { error: uploadError } = await supabase.storage.from('inspections').upload(path, file, { contentType: file.type || 'image/jpeg' })
           if (!uploadError) {
             const { data: urlData } = supabase.storage.from('inspections').getPublicUrl(path)
             if (urlData?.publicUrl) photoUrls.push(urlData.publicUrl)
@@ -352,11 +352,12 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
     if (files.length === 0) return
     setUploading(true)
     try {
-      for (const file of files) {
+      for (const raw of files) {
+        const file = await resizeImageFile(raw)
         const ext = file.name.split('.').pop()
         const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
         const path = `${propertyId}/${filename}`
-        const { error: uploadErr } = await supabase.storage.from('property-photos').upload(path, file)
+        const { error: uploadErr } = await supabase.storage.from('property-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })
         if (uploadErr) throw uploadErr
         const { data: urlData } = supabase.storage.from('property-photos').getPublicUrl(path)
         const currentCount = photos?.length ?? 0

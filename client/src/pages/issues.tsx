@@ -6,6 +6,7 @@ import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { useCleaners } from '@/hooks/use-cleaners'
+import { resizeImageFile } from '@/lib/resize-image'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -214,9 +215,10 @@ export default function IssuesPage() {
       // Optional initial photo attached at logging time (e.g. the dirty hot tub).
       if (newPhoto && created?.id) {
         try {
-          const ext = (newPhoto.name.split('.').pop() || 'jpg').toLowerCase()
+          const photoFile = await resizeImageFile(newPhoto)
+          const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
           const path = `${created.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
-          const up = await supabase.storage.from('issue-photos').upload(path, newPhoto, { contentType: newPhoto.type || 'image/jpeg' })
+          const up = await supabase.storage.from('issue-photos').upload(path, photoFile, { contentType: photoFile.type || 'image/jpeg' })
           if (!up.error) {
             const { data: urlData } = supabase.storage.from('issue-photos').getPublicUrl(path)
             await (supabase as any).from('issue_photos').insert({ issue_id: created.id, photo_url: urlData.publicUrl, photo_path: path, phase: 'initial', uploaded_by: effectiveUser?.label || null, author_type: 'staff' })

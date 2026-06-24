@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink, Upload, Check, Loader2, MessageSquare, Image as ImageIcon, AlertTriangle, Link2 } from 'lucide-react'
 import { format, formatDistanceToNow } from 'date-fns'
+import { resizeImageFile } from '@/lib/resize-image'
 
 const STATUSES = ['Needs Attention', 'In Progress', 'Completed']
 
@@ -78,9 +79,10 @@ export function IssueDetailSheet({
     onError: (e: any) => toast({ title: 'Update failed', description: e?.message, variant: 'destructive' }),
   })
 
-  async function handleUpload(file: File, phase: 'initial' | 'completion') {
+  async function handleUpload(raw: File, phase: 'initial' | 'completion') {
     setUploading(true)
     try {
+      const file = await resizeImageFile(raw)
       const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${issueId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
       const { error: upErr } = await supabase.storage.from('issue-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })

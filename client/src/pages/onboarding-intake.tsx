@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Building2, Upload, X } from 'lucide-react'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
+import { resizeImageFile } from '@/lib/resize-image'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -64,7 +65,8 @@ export default function OnboardingIntakePage() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  async function uploadFile(file: File): Promise<UploadedPhoto | null> {
+  async function uploadFile(raw: File): Promise<UploadedPhoto | null> {
+    const file = await resizeImageFile(raw)
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const safeExt = /^[a-z0-9]{1,5}$/.test(ext) ? ext : 'jpg'
     const today = new Date().toISOString().slice(0, 10)
