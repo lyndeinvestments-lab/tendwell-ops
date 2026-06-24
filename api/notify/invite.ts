@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getSupabaseConfig, verifyAuthHeader, sendEmail, logNotification, renderEmailLayout, composeBodyHtml, escapeHtml } from './_lib.js'
+import { getSupabaseConfig, verifyAuthHeader, getStaffRole, sendEmail, logNotification, renderEmailLayout, composeBodyHtml, escapeHtml } from './_lib.js'
 
 const SITE_URL = 'https://www.tendwellcleaning.com'
 
@@ -16,6 +16,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const session = await verifyAuthHeader(sb, req.headers.authorization)
   if (!session) return res.status(401).json({ error: 'Unauthorized' })
+  // Inviting/adding users is an admin-only action (Settings → Users).
+  const role = await getStaffRole(sb, session.email)
+  if (role !== 'admin') return res.status(403).json({ error: 'Forbidden: admin access required' })
 
   const { email, name } = (req.body || {}) as { email?: string; name?: string }
   if (!email || typeof email !== 'string') {

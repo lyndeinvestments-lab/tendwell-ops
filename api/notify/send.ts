@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  getSupabaseConfig, verifyAuthHeader, getAllUsersWithViews, getAllPreferences,
+  getSupabaseConfig, verifyAuthHeader, getStaffRole, getAllUsersWithViews, getAllPreferences,
   filterRecipients, sendEmail, logNotification, renderEmailLayout, composeBodyHtml, validateCtaUrl,
 } from './_lib.js'
 
@@ -21,6 +21,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const session = await verifyAuthHeader(sb, req.headers.authorization)
   if (!session) return res.status(401).json({ error: 'Unauthorized' })
+  // Must be a staff user (app_users). A valid Supabase session alone is not
+  // enough — owners (property_owners) now authenticate too and must not be able
+  // to send blast notifications to staff.
+  const role = await getStaffRole(sb, session.email)
+  if (!role) return res.status(403).json({ error: 'Forbidden: staff access required' })
 
   const { eventType, subject, bodyLines, quoteText, ctaUrl, ctaLabel, meta, targetUserIds } = (req.body || {}) as any
   if (!eventType || !subject) {
