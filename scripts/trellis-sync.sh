@@ -7,8 +7,8 @@ cd "$(dirname "$0")/.."
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 LOG="${TMPDIR:-/tmp}/trellis-sync-$(date +%Y%m%d-%H%M%S).log"
 echo "[trellis-sync] start $(date)" >> "$LOG"
-# Tool permissions for this unattended run come from .claude/settings.local.json
-# (a scoped allowlist of the trellis + supabase MCP tools) — not a blanket
-# --dangerously-skip-permissions. Keep that file in place on this machine.
-claude -p "Use the trellis-sync skill to run a full Trellis→Supabase sync now. Work strictly sequentially: one MCP call at a time, small pages, upsert each page before the next. Do not spawn sub-agents." >> "$LOG" 2>&1
+# Deterministic, LLM-free sync (fast: ~minutes, not hours). Reads the Trellis
+# API keys from ~/.claude.json (trellis-workspace-a/b) and Supabase creds from
+# the environment (set by the crontab line). Args (e.g. --nightly) pass through.
+node scripts/trellis-sync-direct.mjs "$@" >> "$LOG" 2>&1
 echo "[trellis-sync] done $(date)" >> "$LOG"
