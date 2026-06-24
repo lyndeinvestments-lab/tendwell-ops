@@ -80,6 +80,22 @@ export async function verifyAuthHeader(sb: SupabaseClient, authHeader: string | 
   return data?.email ? { email: data.email } : null
 }
 
+// Resolve the staff role for an authenticated email. Owners (property_owners)
+// and any other authenticated identity are NOT in app_users, so this returns
+// null for them — letting callers reject non-staff. Returns the role string
+// ('admin' | 'operations' | 'cleaning' | 'viewer') for staff.
+export async function getStaffRole(sb: SupabaseClient, email: string): Promise<string | null> {
+  try {
+    const rows = await sbFetch(
+      sb,
+      `app_users?google_email=eq.${encodeURIComponent(email.toLowerCase())}&select=role`,
+    ) as Array<{ role?: string }>
+    return rows[0]?.role ?? null
+  } catch {
+    return null
+  }
+}
+
 // Resolve user's allowed views (matches auth.tsx logic)
 const ROLE_VIEWS_FALLBACK: Record<string, string[]> = {
   admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics'],
@@ -257,7 +273,15 @@ export function escapeHtml(s: string): string {
 const CTA_HOST_ALLOWLIST = [
   'www.tendwellcleaning.com',
   'tendwellcleaning.com',
+  'tendwell-ops.vercel.app',
 ]
+
+// Vercel preview/branch deploys for this project live under the team-scoped
+// suffix below, which an attacker cannot register a deployment under. Match
+// that exact suffix instead of a substring like `includes('tendwell')` — the
+// old check passed any host merely CONTAINING "tendwell" (e.g.
+// `evil-tendwell-phish.vercel.app`), enabling phishing CTAs in outbound email.
+const VERCEL_TEAM_SUFFIX = '.lyndeinvestments-labs-projects.vercel.app'
 
 export function validateCtaUrl(raw: unknown): string | null {
   if (typeof raw !== 'string' || !raw) return null
@@ -265,8 +289,7 @@ export function validateCtaUrl(raw: unknown): string | null {
   try { u = new URL(raw) } catch { return null }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null
   const host = u.host.toLowerCase()
-  const allowed = CTA_HOST_ALLOWLIST.includes(host)
-    || (host.endsWith('.vercel.app') && host.includes('tendwell'))
+  const allowed = CTA_HOST_ALLOWLIST.includes(host) || host.endsWith(VERCEL_TEAM_SUFFIX)
   return allowed ? u.toString() : null
 }
 
