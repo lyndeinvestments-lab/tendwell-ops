@@ -48,8 +48,8 @@ CREATE TRIGGER trg_property_owners_lower_email
 
 -- ─── 3. owner_properties — which owner is assigned to which property ──────────
 CREATE TABLE IF NOT EXISTS owner_properties (
-  owner_id    UUID NOT NULL REFERENCES property_owners(id) ON DELETE CASCADE,
-  property_id INTEGER NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+  owner_id    UUID   NOT NULL REFERENCES property_owners(id) ON DELETE CASCADE,
+  property_id BIGINT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (owner_id, property_id)
 );
@@ -85,7 +85,7 @@ SET search_path = public, auth AS $$
 $$;
 
 -- True when the current owner is assigned the given property.
-CREATE OR REPLACE FUNCTION public.owner_owns_property(p_property_id INTEGER)
+CREATE OR REPLACE FUNCTION public.owner_owns_property(p_property_id BIGINT)
 RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public AS $$
   SELECT EXISTS (
@@ -213,8 +213,8 @@ CREATE TRIGGER trg_properties_owner_update_guard
 -- Sources:
 --   * 'inspection' — internal inspections (scheduled_for, else inspected_at)
 --   * 'trellis'    — Trello/Trellis snapshot, matched by trellis_id or name
-DROP FUNCTION IF EXISTS public.get_owner_property_tasks(INTEGER);
-CREATE OR REPLACE FUNCTION public.get_owner_property_tasks(p_property_id INTEGER)
+DROP FUNCTION IF EXISTS public.get_owner_property_tasks(BIGINT);
+CREATE OR REPLACE FUNCTION public.get_owner_property_tasks(p_property_id BIGINT)
 RETURNS TABLE (
   source     TEXT,
   title      TEXT,
@@ -259,8 +259,8 @@ BEGIN
   ORDER BY task_date DESC;
 END $$;
 
-GRANT EXECUTE ON FUNCTION public.get_owner_property_tasks(INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.get_owner_property_tasks(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_auth_email() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.is_staff() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.current_owner_id() TO authenticated;
-GRANT EXECUTE ON FUNCTION public.owner_owns_property(INTEGER) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.owner_owns_property(BIGINT) TO authenticated;
