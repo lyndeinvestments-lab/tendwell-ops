@@ -184,13 +184,15 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
 
   // Date the property entered its current stage (Quote / Onboarding only).
   // transitions are newest-first and carry the to-stage name, so the first
-  // match is the most recent move into this stage. Null when no such
-  // transition was logged (e.g. created directly in-stage) — line is hidden.
+  // match is the most recent move into this stage. When no such transition was
+  // logged (e.g. the property was created directly in this stage — true for all
+  // current Quote properties), fall back to the property's creation date, which
+  // is when it entered the stage.
   const enteredStageDate = useMemo(() => {
     if (stageName !== 'Quote' && stageName !== 'Onboarding') return null
     const match = transitions.find((t: any) => t?.pipeline_stages?.name === stageName)
-    return match?.created_at ?? null
-  }, [stageName, transitions])
+    return match?.created_at ?? property.created_at ?? null
+  }, [stageName, transitions, property.created_at])
 
   function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
     e.stopPropagation()
@@ -399,14 +401,14 @@ export default function PipelinePage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+        .select('id, name, stage_id, created_at, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, follow_up_date, first_clean_date, notes, contact_id, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, contacts(full_name, phone, email, payment_method, client_since), pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
         .is('archived_at', null)
         .is('deleted_at', null)
       if (error) {
         if (error.message?.includes('follow_up_date') || error.message?.includes('contact')) {
           const { data: fallback, error: fallbackError } = await supabase
             .from('properties')
-            .select('id, name, stage_id, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
+            .select('id, name, stage_id, created_at, ce_charged, total_estimated_cost, cleaner_pay, profit_percentage, first_clean_date, notes, address, bedrooms, number_of_beds, full_baths, half_baths, kitchens, square_footage, guest_count, auto_code, door_code, wifi_info, pipeline_stages!properties_stage_id_fkey(name, color, requires_fields)')
             .is('archived_at', null)
             .is('deleted_at', null)
           if (fallbackError) throw fallbackError
