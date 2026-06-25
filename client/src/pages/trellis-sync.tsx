@@ -5,6 +5,7 @@ import { StatCard } from '@/components/StatCard'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
+import { Progress } from '@/components/ui/progress'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
@@ -14,7 +15,29 @@ import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress } from '@/hooks/use-trellis-sync'
+
+function formatEta(seconds: number): string {
+  if (seconds <= 0) return ''
+  if (seconds < 60) return `~${seconds}s left`
+  return `~${Math.round(seconds / 60)}m left`
+}
+
+function SyncProgressBar({ progress }: { progress: SyncProgress | null }) {
+  if (!progress) return null
+  return (
+    <div className="space-y-1.5 mt-1">
+      <div className="flex items-center justify-between text-2xs text-muted-foreground">
+        <span>{progress.message}</span>
+        <span className="tabular-nums">
+          {progress.current}/{progress.total}
+          {progress.eta_seconds > 0 && <span className="ml-2 text-muted-foreground/70">{formatEta(progress.eta_seconds)} (approx.)</span>}
+        </span>
+      </div>
+      <Progress value={progress.pct} className="h-1.5" />
+    </div>
+  )
+}
 
 function workspaceBadge(ws: 'A' | 'B' | null) {
   if (!ws) return null
@@ -482,17 +505,16 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, requestSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, lastDoneSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync } = useTrellisSync()
 
-  // When a sync finishes, the snapshot data has changed — refresh the
-  // reconciliation/exceptions/roster queries so the tiles + tables stop
-  // showing pre-sync counts without requiring a manual page reload.
+  // When a sync finishes, refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
   useEffect(() => {
     if (syncStatus === 'done') {
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'recon'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'exceptions'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'roster'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'lastDoneSync'] })
     }
   }, [syncStatus, qc])
 
@@ -509,7 +531,6 @@ export default function TrellisSyncPage() {
         .filter(d => d.kind === 'trellis_not_in_ops' && d.trellis_property_id != null)
         .map(d => d.trellis_property_id as string)
     )
-    // Matched rows are never dismissable — always shown
     const by = (s: string) => rows.filter(r =>
       r.match_status === s && (s === 'matched' || !dismissedReconIds.has(String(r.ops_property_id)))
     ).length
@@ -522,14 +543,16 @@ export default function TrellisSyncPage() {
     }
   }, [recon.data, exceptions.data, dismissals.data])
 
-  const syncing = lastSync.data?.status === 'requested' || lastSync.data?.status === 'running'
+  const liveStatus = lastSync.data?.status
+  const syncing = liveStatus === 'requested' || liveStatus === 'running'
+  const liveProgress = lastSync.data?.progress ?? null
 
   const refresh = async () => {
     try {
-      await requestSync.mutateAsync(user?.label || 'admin')
-      toast({ title: 'Sync requested', description: 'The local runner will pick this up within a couple of minutes.' })
+      await triggerSync.mutateAsync()
+      toast({ title: 'Sync started', description: 'Running server-side sync…' })
     } catch (e) {
-      toast({ title: 'Could not request sync', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+      toast({ title: 'Could not start sync', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     }
   }
 
@@ -538,13 +561,22 @@ export default function TrellisSyncPage() {
       <PageHeader
         title="Trellis Sync"
         subtitle={
-          <span>
-            Last synced {timeAgo(lastSync.data?.finished_at ?? null)}
-            {syncing && <span className="ml-2 text-warning">· sync {lastSync.data?.status}…</span>}
-          </span>
+          <div className="space-y-1">
+            <span>
+              Last synced {timeAgo(lastDoneSync.data?.finished_at ?? null)}
+              {syncing && (
+                <span className="ml-2 text-warning">
+                  · {liveStatus === 'running' ? 'syncing…' : 'sync queued…'}
+                </span>
+              )}
+            </span>
+            {syncing && liveProgress && (
+              <SyncProgressBar progress={liveProgress} />
+            )}
+          </div>
         }
         actions={
-          <Button size="sm" variant="outline" onClick={refresh} disabled={requestSync.isPending || syncing}>
+          <Button size="sm" variant="outline" onClick={refresh} disabled={triggerSync.isPending || syncing}>
             <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>

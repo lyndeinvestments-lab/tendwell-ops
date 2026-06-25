@@ -8,7 +8,11 @@
       "includeFiles": "api/notify/_lib.ts"
     },
     "api/trellis/*.ts": {
-      "includeFiles": "api/trellis/_lib.ts"
+      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/notify/_lib.ts"
+    },
+    "api/cron/trellis-sync.ts": {
+      "includeFiles": "api/trellis/_sync-core.ts",
+      "maxDuration": 300
     },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts"
@@ -18,9 +22,6 @@
     },
     "api/lost-items/*.ts": {
       "includeFiles": "api/lost-items/_lib.ts"
-    },
-    "api/cron/trellis-sync.ts": {
-      "maxDuration": 300
     }
   },
   "rewrites": [
