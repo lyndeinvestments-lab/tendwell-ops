@@ -40,12 +40,29 @@ export interface SyncOptions {
 // ── MCP / Trellis keys ───────────────────────────────────────────────────────
 
 function trellisKeys(): { A: string; B: string } {
-  const cfg = JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8'))
-  const s = cfg.mcpServers || {}
-  const A = s['trellis-workspace-a']?.env?.TRELLIS_API_KEY
-  const B = s['trellis-workspace-b']?.env?.TRELLIS_API_KEY
-  if (!A || !B) throw new Error('trellis-workspace-a/b TRELLIS_API_KEY not found in ~/.claude.json')
-  return { A, B }
+  // Primary (works on Vercel serverless): per-workspace env vars. Matches the
+  // existing api/trellis/_lib.ts convention of reading keys from process.env.
+  const envA = process.env.TRELLIS_API_KEY_A
+  const envB = process.env.TRELLIS_API_KEY_B
+  if (envA && envB) return { A: envA, B: envB }
+
+  // Local-dev fallback only: read the Trellis MCP keys from ~/.claude.json.
+  // This branch never runs on Vercel (no home config there) — it keeps the
+  // Mac/CLI path working without requiring env vars to be exported locally.
+  try {
+    const cfg = JSON.parse(readFileSync(join(homedir(), '.claude.json'), 'utf8'))
+    const s = cfg.mcpServers || {}
+    const A = envA || s['trellis-workspace-a']?.env?.TRELLIS_API_KEY
+    const B = envB || s['trellis-workspace-b']?.env?.TRELLIS_API_KEY
+    if (A && B) return { A, B }
+  } catch {
+    // fall through to the error below
+  }
+
+  throw new Error(
+    'Trellis API keys not configured. Set TRELLIS_API_KEY_A and TRELLIS_API_KEY_B ' +
+      'env vars (required on Vercel), or provide trellis-workspace-a/b keys in ~/.claude.json for local dev.',
+  )
 }
 
 // ── JSON-RPC MCP call ────────────────────────────────────────────────────────
