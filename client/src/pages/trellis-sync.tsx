@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
@@ -11,11 +11,11 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
-import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X } from 'lucide-react'
+import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X, Square, History, Clock } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress, type SyncLogRow } from '@/hooks/use-trellis-sync'
 
 function formatEta(seconds: number): string {
   if (seconds <= 0) return ''
@@ -500,23 +500,122 @@ function RosterTab({ roster }: { roster: ReturnType<typeof useTrellisSync>['rost
   )
 }
 
+// ── Duration formatter ────────────────────────────────────────────────────────
+
+function formatDuration(startedAt: string | null, finishedAt: string | null): string {
+  if (!startedAt || !finishedAt) return '—'
+  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime()
+  if (ms < 0) return '—'
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem === 0 ? `${m}m` : `${m}m ${rem}s`
+}
+
+function formatCounts(counts: Record<string, number> | null): string {
+  if (!counts) return '—'
+  const tasks = (counts.tasks_a ?? 0) + (counts.tasks_b ?? 0)
+  const props = (counts.props_a ?? 0) + (counts.props_b ?? 0)
+  if (tasks === 0 && props === 0) return '—'
+  const parts: string[] = []
+  if (tasks > 0) parts.push(`${tasks.toLocaleString()} tasks`)
+  if (props > 0) parts.push(`${props.toLocaleString()} props`)
+  return parts.join(' · ')
+}
+
+type SyncStatusTone = 'success' | 'destructive' | 'warning' | 'info'
+
+function syncStatusTone(status: SyncLogRow['status']): SyncStatusTone {
+  if (status === 'done') return 'success'
+  if (status === 'error') return 'destructive'
+  if (status === 'canceled') return 'warning'
+  return 'info'
+}
+
+function HistoryTab({ syncHistory }: { syncHistory: ReturnType<typeof useTrellisSync>['syncHistory'] }) {
+  if (syncHistory.error) return <ErrorState onRetry={() => syncHistory.refetch()} />
+  const rows = syncHistory.data ?? []
+
+  return (
+    <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40">
+            <tr className="text-2xs uppercase text-muted-foreground text-left">
+              <th className="py-2 px-3">When</th>
+              <th className="py-2 px-3">Trigger</th>
+              <th className="py-2 px-3">Status</th>
+              <th className="py-2 px-3">Duration</th>
+              <th className="py-2 px-3">Counts</th>
+              <th className="py-2 px-3">Requested by</th>
+              <th className="py-2 px-3">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {syncHistory.isLoading ? (
+              <tr><td colSpan={7} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+            ) : rows.length === 0 ? (
+              <tr><td colSpan={7}><EmptyState icon={History} title="No sync history" description="Run a sync to see history here." /></td></tr>
+            ) : rows.map(row => (
+              <tr key={row.id} className="border-t border-border/50">
+                <td className="py-1.5 px-3 whitespace-nowrap tabular-nums" title={row.started_at ?? ''}>
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-muted-foreground/60 shrink-0" />
+                    {timeAgo(row.started_at)}
+                  </span>
+                </td>
+                <td className="py-1.5 px-3 capitalize text-muted-foreground">{row.trigger}</td>
+                <td className="py-1.5 px-3">
+                  <StatusBadge tone={syncStatusTone(row.status)}>
+                    {row.status}
+                  </StatusBadge>
+                </td>
+                <td className="py-1.5 px-3 tabular-nums text-muted-foreground">
+                  {formatDuration(row.started_at, row.finished_at)}
+                </td>
+                <td className="py-1.5 px-3 text-muted-foreground text-2xs">
+                  {formatCounts(row.counts)}
+                </td>
+                <td className="py-1.5 px-3 text-muted-foreground text-2xs truncate max-w-[140px]">
+                  {row.requested_by ?? '—'}
+                </td>
+                <td className="py-1.5 px-3 text-2xs text-destructive/80 max-w-[200px] truncate" title={row.error ?? ''}>
+                  {row.error ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function TrellisSyncPage() {
   usePageTitle('Trellis Sync')
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, lastDoneSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync } = useTrellisSync()
 
-  // When a sync finishes, refresh snapshot-dependent queries.
+  // When a sync finishes (done or canceled), refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
+  const prevSyncStatus = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (syncStatus === 'done') {
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'recon'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'exceptions'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'roster'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'lastDoneSync'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'history'] })
     }
-  }, [syncStatus, qc])
+    if (syncStatus === 'canceled' && prevSyncStatus.current !== 'canceled') {
+      toast({ title: 'Sync canceled', description: 'The sync was stopped. Partial data is retained.' })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'history'] })
+    }
+    prevSyncStatus.current = syncStatus
+  }, [syncStatus, qc, toast])
 
   const tiles = useMemo(() => {
     const rows = recon.data ?? []
@@ -545,6 +644,8 @@ export default function TrellisSyncPage() {
 
   const liveStatus = lastSync.data?.status
   const syncing = liveStatus === 'requested' || liveStatus === 'running'
+  // "Canceling" means we've sent the cancel request but the row hasn't flipped yet
+  const canceling = cancelSync.isPending || (liveStatus === 'running' && lastSync.data?.cancel_requested === true)
   const liveProgress = lastSync.data?.progress ?? null
 
   const refresh = async () => {
@@ -553,6 +654,14 @@ export default function TrellisSyncPage() {
       toast({ title: 'Sync started', description: 'Running server-side sync…' })
     } catch (e) {
       toast({ title: 'Could not start sync', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    }
+  }
+
+  const stopSync = async () => {
+    try {
+      await cancelSync.mutateAsync()
+    } catch (e) {
+      toast({ title: 'Could not cancel sync', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     }
   }
 
@@ -576,10 +685,24 @@ export default function TrellisSyncPage() {
           </div>
         }
         actions={
-          <Button size="sm" variant="outline" onClick={refresh} disabled={triggerSync.isPending || syncing}>
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            {syncing && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={stopSync}
+                disabled={canceling}
+                className="text-warning border-warning/40 hover:bg-warning/10"
+              >
+                <Square className="w-3.5 h-3.5 mr-1.5" />
+                {canceling ? 'Canceling…' : 'Stop'}
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={refresh} disabled={triggerSync.isPending || syncing}>
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -596,6 +719,7 @@ export default function TrellisSyncPage() {
           <TabsTrigger value="reconciliation" data-testid="tab-reconciliation">Reconciliation</TabsTrigger>
           <TabsTrigger value="workflows" data-testid="tab-workflows">Workflows</TabsTrigger>
           <TabsTrigger value="roster" data-testid="tab-roster">Tendwell Roster</TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
         </TabsList>
 
         <TabsContent value="reconciliation" className="space-y-5">
@@ -615,6 +739,9 @@ export default function TrellisSyncPage() {
         </TabsContent>
         <TabsContent value="roster">
           <RosterTab roster={roster} />
+        </TabsContent>
+        <TabsContent value="history">
+          <HistoryTab syncHistory={syncHistory} />
         </TabsContent>
       </Tabs>
     </PageContainer>

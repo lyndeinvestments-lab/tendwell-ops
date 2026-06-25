@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { verifyAuthHeader, getStaffRole, getSupabaseConfig } from '../notify/_lib.js'
-import { runSync, type SyncProgress } from './_sync-core.js'
+import { runSync, SyncCanceledError, type SyncProgress } from './_sync-core.js'
 import { createClient } from '@supabase/supabase-js'
 
 // POST /api/trellis/sync-now
@@ -87,10 +87,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // ── Run sync ──────────────────────────────────────────────────────────────
   try {
-    const counts = await runSync({ trigger: 'manual', requestedBy: session.email, onProgress })
+    const counts = await runSync({
+      trigger: 'manual',
+      requestedBy: session.email,
+      onProgress,
+      syncLogId: logId,
+      cancelCheckClient: supabase,
+    })
     await supabase.from('trellis_sync_log').update({ status: 'done', finished_at: now(), counts, progress: null }).eq('id', logId)
     return res.status(200).json({ ok: true, log_id: logId, counts })
   } catch (err: any) {
+    if (err instanceof SyncCanceledError) {
+      await supabase.from('trellis_sync_log').update({ status: 'canceled', finished_at: now(), progress: null }).eq('id', logId)
+      return res.status(200).json({ ok: true, log_id: logId, canceled: true })
+    }
     const msg = String(err?.message || err)
     await supabase.from('trellis_sync_log').update({ status: 'error', finished_at: now(), error: msg, progress: null }).eq('id', logId)
     console.error('TRELLIS SYNC-NOW FAILED:', msg)
