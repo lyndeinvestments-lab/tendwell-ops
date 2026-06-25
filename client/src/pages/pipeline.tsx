@@ -182,6 +182,16 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
     return daysSince >= 14
   }, [stageName, property.follow_up_date, transitions])
 
+  // Date the property entered its current stage (Quote / Onboarding only).
+  // transitions are newest-first and carry the to-stage name, so the first
+  // match is the most recent move into this stage. Null when no such
+  // transition was logged (e.g. created directly in-stage) — line is hidden.
+  const enteredStageDate = useMemo(() => {
+    if (stageName !== 'Quote' && stageName !== 'Onboarding') return null
+    const match = transitions.find((t: any) => t?.pipeline_stages?.name === stageName)
+    return match?.created_at ?? null
+  }, [stageName, transitions])
+
   function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
     e.stopPropagation()
     onFollowUpChange(e.target.value)
@@ -219,6 +229,11 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
             )}
           </div>
         </div>
+        {enteredStageDate && (
+          <p className="text-2xs text-muted-foreground/70 mt-0.5">
+            In {stageName} since {format(new Date(enteredStageDate), 'MMM d, yyyy')}
+          </p>
+        )}
         {showFollowUp && (
           <div className="flex items-center gap-1 mt-0.5" onClick={handleDateClick}>
             <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
@@ -270,6 +285,11 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       {property.notes && (
         <p className="text-xs text-muted-foreground/80 mt-1 truncate italic" title={property.notes.split('\n')[0]}>
           {property.notes.split('\n')[0].slice(0, 60)}{property.notes.split('\n')[0].length > 60 ? '…' : ''}
+        </p>
+      )}
+      {enteredStageDate && (
+        <p className="text-2xs text-muted-foreground/70 mt-1">
+          In {stageName} since {format(new Date(enteredStageDate), 'MMM d, yyyy')}
         </p>
       )}
       <div className="flex items-center justify-end mt-2 gap-1">
