@@ -8,7 +8,10 @@
       "includeFiles": "api/notify/_lib.ts"
     },
     "api/trellis/*.ts": {
-      "includeFiles": "api/trellis/_lib.ts"
+      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/notify/_lib.ts"
+    },
+    "api/cron/trellis-sync.ts": {
+      "includeFiles": "api/trellis/_sync-core.ts"
     },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts"
@@ -29,7 +32,8 @@
     { "path": "/api/cron/purge-properties", "schedule": "0 3 * * *" },
     { "path": "/api/cron/purge-laundry-photos", "schedule": "0 4 * * *" },
     { "path": "/api/cron/reconcile-snapshots", "schedule": "0 6 * * *" },
-    { "path": "/api/cron/archive-stale-quotes", "schedule": "0 5 * * *" }
+    { "path": "/api/cron/archive-stale-quotes", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/trellis-sync", "schedule": "15 3 * * *" }
   ],
   "headers": [
     {

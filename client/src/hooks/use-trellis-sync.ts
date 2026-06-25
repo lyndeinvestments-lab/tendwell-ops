@@ -3,6 +3,15 @@ import { supabase, logPropertyEdit } from '@/lib/supabase'
 
 const KEY = ['/supabase/trellis-sync'] as const
 
+export interface SyncProgress {
+  phase: string
+  current: number
+  total: number
+  pct: number
+  eta_seconds: number
+  message: string
+}
+
 export interface ReconRow {
   ops_property_id: number
   ops_name: string
@@ -52,6 +61,7 @@ export interface SyncLogRow {
   finished_at: string | null
   counts: Record<string, number> | null
   error: string | null
+  progress: SyncProgress | null
   created_at: string
 }
 
@@ -103,6 +113,22 @@ export function useTrellisSync() {
     refetchOnWindowFocus: false,
   })
 
+  // Most recent DONE row — shown as "Last synced X ago". Never let
+  // in-progress rows corrupt this display.
+  const lastDoneSync = useQuery({
+    queryKey: [...KEY, 'lastDoneSync'],
+    queryFn: async (): Promise<SyncLogRow | null> => {
+      const { data, error } = await supabase
+        .from('trellis_sync_log').select('*')
+        .eq('status', 'done')
+        .order('finished_at', { ascending: false }).limit(1)
+      if (error) throw error
+      return (data?.[0] ?? null) as unknown as SyncLogRow | null
+    },
+    refetchOnWindowFocus: false,
+  })
+
+  // Live row — any status. Polled every 2s while running/requested.
   const lastSync = useQuery({
     queryKey: [...KEY, 'lastSync'],
     queryFn: async (): Promise<SyncLogRow | null> => {
@@ -110,12 +136,14 @@ export function useTrellisSync() {
         .from('trellis_sync_log').select('*')
         .order('created_at', { ascending: false }).limit(1)
       if (error) throw error
-      return (data?.[0] ?? null) as SyncLogRow | null
+      return (data?.[0] ?? null) as unknown as SyncLogRow | null
     },
-    // Poll while a sync is in flight so the page reflects requested→running→done.
+    // Poll at 2s while running, fall back to 5s for requested, else stop.
     refetchInterval: (q) => {
       const s = (q.state.data as SyncLogRow | null)?.status
-      return s === 'requested' || s === 'running' ? 5000 : false
+      if (s === 'running') return 2000
+      if (s === 'requested') return 5000
+      return false
     },
     refetchOnWindowFocus: false,
   })
@@ -194,16 +222,31 @@ export function useTrellisSync() {
     },
   })
 
-  // Enqueue an on-demand sync; the local poller picks it up.
-  const requestSync = useMutation({
-    mutationFn: async (requestedBy: string) => {
-      const { error } = await supabase.from('trellis_sync_log').insert({ status: 'requested', trigger: 'manual', requested_by: requestedBy })
-      if (error) throw error
+  // Trigger a real server-side sync via POST /api/trellis/sync-now.
+  // Returns the log row id so the polling query can pick it up immediately.
+  const triggerSync = useMutation({
+    mutationFn: async (): Promise<{ log_id: string }> => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      if (!token) throw new Error('Not authenticated')
+      const res = await fetch('/api/trellis/sync-now', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      return json as { log_id: string }
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'lastSync'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'lastSync'] })
+      qc.invalidateQueries({ queryKey: [...KEY, 'lastDoneSync'] })
+    },
   })
 
-  return { recon, exceptions, roster, lastSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, requestSync }
+  return { recon, exceptions, roster, lastSync, lastDoneSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).
