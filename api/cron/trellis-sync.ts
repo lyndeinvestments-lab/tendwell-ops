@@ -53,4 +53,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+// maxDuration: 300 seconds (5 min). Configured in vercel.json.
+// NOTE: Vercel Hobby plan caps functions at 60 s — this REQUIRES Vercel Pro.
 export const config = { runtime: 'nodejs' }

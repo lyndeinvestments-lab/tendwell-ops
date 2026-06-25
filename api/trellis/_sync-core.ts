@@ -40,10 +40,11 @@ export interface SyncOptions {
 // ── MCP / Trellis keys ───────────────────────────────────────────────────────
 
 function trellisKeys(): { A: string; B: string } {
-  // Primary (works on Vercel serverless): per-workspace env vars. Matches the
-  // existing api/trellis/_lib.ts convention of reading keys from process.env.
-  const envA = process.env.TRELLIS_API_KEY_A
-  const envB = process.env.TRELLIS_API_KEY_B
+  // Primary (works on Vercel serverless): per-workspace env vars.
+  // These match the env vars configured in the Vercel project and used by
+  // api/cron/trellis-sync.ts on main.
+  const envA = process.env.TRELLIS_WORKSPACE_A_KEY
+  const envB = process.env.TRELLIS_WORKSPACE_B_KEY
   if (envA && envB) return { A: envA, B: envB }
 
   // Local-dev fallback only: read the Trellis MCP keys from ~/.claude.json.
@@ -60,7 +61,7 @@ function trellisKeys(): { A: string; B: string } {
   }
 
   throw new Error(
-    'Trellis API keys not configured. Set TRELLIS_API_KEY_A and TRELLIS_API_KEY_B ' +
+    'Trellis API keys not configured. Set TRELLIS_WORKSPACE_A_KEY and TRELLIS_WORKSPACE_B_KEY ' +
       'env vars (required on Vercel), or provide trellis-workspace-a/b keys in ~/.claude.json for local dev.',
   )
 }
