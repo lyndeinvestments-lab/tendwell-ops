@@ -3,7 +3,7 @@
 
 const RESEND_API = 'https://api.resend.com/emails'
 
-export const FROM_EMAIL = process.env.NOTIFY_FROM_EMAIL || 'Tendwell Ops <noreply@tendwellcleaning.com>'
+export const FROM_EMAIL = process.env.NOTIFY_FROM_EMAIL || 'Tendwell Ops <noreply@tendwellcleaningco.com>'
 
 // Map each notification event to the view a user must have access to
 export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
