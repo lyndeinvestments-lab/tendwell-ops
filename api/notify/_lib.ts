@@ -271,6 +271,10 @@ export function escapeHtml(s: string): string {
 // phishing links or `javascript:` URIs into outbound emails (bounty finding
 // #1). Accepts same-origin Tendwell + Vercel preview deploys only.
 const CTA_HOST_ALLOWLIST = [
+  'app.tendwellcleaningco.com',
+  // Legacy host kept during the app.tendwellcleaningco.com transition so
+  // in-flight links in already-sent emails still validate. Safe to remove
+  // once the old domain redirect has been live for a full notification cycle.
   'www.tendwellcleaning.com',
   'tendwellcleaning.com',
   'tendwell-ops.vercel.app',
@@ -320,6 +324,6 @@ export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUr
       ${opts.bodyHtml}
       ${cta}
       <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 12px;"/>
-      <p style="font-size:11px;color:#64748b;margin:0;">Tendwell Cleaning Co. — <a href="https://www.tendwellcleaning.com/#/settings" style="color:#64748b;">manage notifications</a></p>
+      <p style="font-size:11px;color:#64748b;margin:0;">Tendwell Cleaning Co. — <a href="https://app.tendwellcleaningco.com/#/settings" style="color:#64748b;">manage notifications</a></p>
     </div></body></html>`
 }

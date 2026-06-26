@@ -88,7 +88,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const html = renderEmailLayout({
         title: `Tendwell Ops — Daily digest`,
         bodyHtml: sections.join('\n'),
-        ctaUrl: 'https://www.tendwellcleaning.com',
+        ctaUrl: 'https://app.tendwellcleaningco.com',
         ctaLabel: 'Open Tendwell Ops',
       })
       const r = await sendEmail({ to: u.google_email, subject: `Daily digest — ${today}`, html })

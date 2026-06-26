@@ -62,7 +62,7 @@ export default function LaundryWeighInsPage() {
   const [copied, setCopied] = useState(false)
   const [page, setPage] = useState(1)
 
-  const FORM_URL = 'https://www.tendwellcleaning.com/#/weigh-in'
+  const FORM_URL = 'https://app.tendwellcleaningco.com/#/weigh-in'
 
   async function handleCopyLink() {
     try {

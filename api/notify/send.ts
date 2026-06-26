@@ -9,7 +9,7 @@ import {
 //
 // Server composes the email body from structured fields so callers can't
 // inject arbitrary HTML (bounty finding #2). Any `bodyHtml` from clients is
-// ignored. ctaUrl is allowlisted to tendwellcleaning.com + preview hosts
+// ignored. ctaUrl is allowlisted to the canonical Tendwell hosts + preview hosts
 // (bounty finding #1).
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
