@@ -2408,6 +2408,56 @@ export type Database = {
           },
         ]
       }
+      owner_referrals: {
+        Row: {
+          created_at: string
+          id: string
+          note: string | null
+          owner_id: string
+          referred_email: string | null
+          referred_name: string
+          referred_phone: string | null
+          reward_note: string | null
+          reward_status: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          owner_id: string
+          referred_email?: string | null
+          referred_name: string
+          referred_phone?: string | null
+          reward_note?: string | null
+          reward_status?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          note?: string | null
+          owner_id?: string
+          referred_email?: string | null
+          referred_name?: string
+          referred_phone?: string | null
+          reward_note?: string | null
+          reward_status?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_referrals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           color: string

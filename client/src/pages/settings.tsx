@@ -2705,6 +2705,101 @@ function OwnersSection() {
   )
 }
 
+// ─── Referrals Section (owner-submitted referrals management) ─────────────────
+type AdminReferral = {
+  id: string
+  referred_name: string
+  referred_email: string | null
+  referred_phone: string | null
+  note: string | null
+  status: string
+  reward_status: string
+  reward_note: string | null
+  created_at: string
+  property_owners: { name: string | null; email: string | null } | null
+}
+
+const REFERRAL_STATUSES = ['submitted', 'contacted', 'converted', 'declined']
+const REFERRAL_REWARDS = ['pending', 'earned', 'paid']
+
+function ReferralsSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['admin-referrals'],
+    queryFn: async (): Promise<AdminReferral[]> => {
+      const { data, error } = await supabase
+        .from('owner_referrals')
+        .select('id, referred_name, referred_email, referred_phone, note, status, reward_status, reward_note, created_at, property_owners(name, email)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as any as AdminReferral[]
+    },
+  })
+
+  const update = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+      const { error } = await supabase.from('owner_referrals').update(patch as any).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-referrals'] }),
+    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const rows = data ?? []
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Referrals</h2>
+        <p className="text-sm text-muted-foreground">Referrals submitted by property owners. Update status and reward as you work them.</p>
+      </div>
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No referrals yet.</p>}
+      <div className="space-y-3">
+        {rows.map(r => (
+          <div key={r.id} className="rounded-xl border border-border p-4 space-y-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{r.referred_name}</p>
+              <p className="text-xs text-muted-foreground">{[r.referred_email, r.referred_phone].filter(Boolean).join(' · ') || '—'}</p>
+              <p className="text-xs text-muted-foreground">
+                Referred by {r.property_owners?.name || r.property_owners?.email || 'owner'} · {new Date(r.created_at).toLocaleDateString()}
+              </p>
+              {r.note && <p className="text-xs text-foreground/80 mt-1">&ldquo;{r.note}&rdquo;</p>}
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                Status
+                <select
+                  className="border border-border rounded-md px-2 py-1 text-sm bg-background"
+                  value={r.status}
+                  onChange={e => update.mutate({ id: r.id, patch: { status: e.target.value } })}
+                  data-testid={`select-referral-status-${r.id}`}
+                >
+                  {REFERRAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+              <label className="text-xs text-muted-foreground flex items-center gap-1.5">
+                Reward
+                <select
+                  className="border border-border rounded-md px-2 py-1 text-sm bg-background"
+                  value={r.reward_status}
+                  onChange={e => update.mutate({ id: r.id, patch: { reward_status: e.target.value } })}
+                  data-testid={`select-referral-reward-${r.id}`}
+                >
+                  {REFERRAL_REWARDS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -2720,6 +2815,7 @@ export default function SettingsPage() {
         <TabsList className="self-start flex-wrap h-auto">
           <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
           <TabsTrigger value="owners" data-testid="tab-owners">Owners</TabsTrigger>
+          <TabsTrigger value="referrals" data-testid="tab-referrals">Referrals</TabsTrigger>
           <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
           <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
           <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
@@ -2733,6 +2829,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="owners" className="mt-0">
             <OwnersSection />
+          </TabsContent>
+          <TabsContent value="referrals" className="mt-0">
+            <ReferralsSection />
           </TabsContent>
           <TabsContent value="roles" className="mt-0 space-y-6">
             <PermissionsSection />
