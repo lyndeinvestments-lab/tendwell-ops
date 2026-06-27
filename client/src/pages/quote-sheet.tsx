@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
+import { notifyOwner } from '@/lib/notify'
 import { StageTransitionModal } from '@/components/StageTransitionModal'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -414,6 +415,8 @@ export default function QuoteSheetPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      // Email the owner that a quote is waiting (best-effort).
+      notifyOwner(sendOwnerId, 'quote_sent', { propertyName: sendingQuote?.name })
       toast({ title: 'Quote sent to owner' })
       setSendingQuote(null)
       setSendOwnerId('')

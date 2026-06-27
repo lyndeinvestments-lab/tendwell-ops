@@ -20,6 +20,7 @@ import { StatusTone, TONE_SOFT } from '@/lib/status-colors'
 import { roleBadgeClasses } from '@/lib/role-colors'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
+import { notifyOwner } from '@/lib/notify'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -2708,6 +2709,7 @@ function OwnersSection() {
 // ─── Referrals Section (owner-submitted referrals management) ─────────────────
 type AdminReferral = {
   id: string
+  owner_id: string
   referred_name: string
   referred_email: string | null
   referred_phone: string | null
@@ -2731,7 +2733,7 @@ function ReferralsSection() {
     queryFn: async (): Promise<AdminReferral[]> => {
       const { data, error } = await supabase
         .from('owner_referrals')
-        .select('id, referred_name, referred_email, referred_phone, note, status, reward_status, reward_note, created_at, property_owners(name, email)')
+        .select('id, owner_id, referred_name, referred_email, referred_phone, note, status, reward_status, reward_note, created_at, property_owners(name, email)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as any as AdminReferral[]
@@ -2739,11 +2741,14 @@ function ReferralsSection() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any>; ownerId?: string; referredName?: string }) => {
       const { error } = await supabase.from('owner_referrals').update(patch as any).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-referrals'] }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-referrals'] })
+      if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'referral_update', { status: vars.patch.status, referredName: vars.referredName })
+    },
     onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
   })
 
@@ -2775,7 +2780,7 @@ function ReferralsSection() {
                 <select
                   className="border border-border rounded-md px-2 py-1 text-sm bg-background"
                   value={r.status}
-                  onChange={e => update.mutate({ id: r.id, patch: { status: e.target.value } })}
+                  onChange={e => update.mutate({ id: r.id, ownerId: r.owner_id, referredName: r.referred_name, patch: { status: e.target.value } })}
                   data-testid={`select-referral-status-${r.id}`}
                 >
                   {REFERRAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2803,6 +2808,7 @@ function ReferralsSection() {
 // ─── Testimonials Section (owner-submitted testimonials review) ────────────────
 type AdminTestimonial = {
   id: string
+  owner_id: string
   rating: number | null
   body: string
   display_preference: string
@@ -2824,7 +2830,7 @@ function TestimonialsSection() {
     queryFn: async (): Promise<AdminTestimonial[]> => {
       const { data, error } = await supabase
         .from('owner_testimonials')
-        .select('id, rating, body, display_preference, allow_photo, status, admin_note, created_at, property_owners(name, email)')
+        .select('id, owner_id, rating, body, display_preference, allow_photo, status, admin_note, created_at, property_owners(name, email)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as any as AdminTestimonial[]
@@ -2832,11 +2838,14 @@ function TestimonialsSection() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any>; ownerId?: string }) => {
       const { error } = await supabase.from('owner_testimonials').update(patch as any).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
+      if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'testimonial_update', { status: vars.patch.status })
+    },
     onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
   })
 
@@ -2866,7 +2875,7 @@ function TestimonialsSection() {
               <select
                 className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
                 value={t.status}
-                onChange={e => update.mutate({ id: t.id, patch: { status: e.target.value } })}
+                onChange={e => update.mutate({ id: t.id, ownerId: t.owner_id, patch: { status: e.target.value } })}
                 data-testid={`select-testimonial-status-${t.id}`}
               >
                 {TESTIMONIAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -2889,6 +2898,7 @@ function TestimonialsSection() {
 // ─── Feedback Section (owner feedback / suggestions) ───────────────────────────
 type AdminFeedback = {
   id: string
+  owner_id: string
   category: string
   body: string
   status: string
@@ -2908,7 +2918,7 @@ function FeedbackSection() {
     queryFn: async (): Promise<AdminFeedback[]> => {
       const { data, error } = await supabase
         .from('owner_feedback')
-        .select('id, category, body, status, admin_note, created_at, property_owners(name, email)')
+        .select('id, owner_id, category, body, status, admin_note, created_at, property_owners(name, email)')
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as any as AdminFeedback[]
@@ -2916,11 +2926,14 @@ function FeedbackSection() {
   })
 
   const update = useMutation({
-    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any>; ownerId?: string }) => {
       const { error } = await supabase.from('owner_feedback').update(patch as any).eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-feedback'] }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-feedback'] })
+      if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'feedback_update', { status: vars.patch.status })
+    },
     onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
   })
 
@@ -2949,7 +2962,7 @@ function FeedbackSection() {
               <select
                 className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
                 value={f.status}
-                onChange={e => update.mutate({ id: f.id, patch: { status: e.target.value } })}
+                onChange={e => update.mutate({ id: f.id, ownerId: f.owner_id, patch: { status: e.target.value } })}
                 data-testid={`select-feedback-status-${f.id}`}
               >
                 {FEEDBACK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
