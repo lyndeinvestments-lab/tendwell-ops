@@ -982,6 +982,7 @@ export default function OwnerPortalPage() {
   // For a pure owner, user.id is the property_owners id; for a staff user acting
   // as owner it's on ownerIdentity. Used as owner_id on owner-scoped inserts.
   const ownerId = user?.ownerIdentity?.id ?? user?.id ?? ''
+  const firstName = user?.label?.trim().split(/\s+/)[0] ?? ''
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-properties'],
@@ -999,25 +1000,29 @@ export default function OwnerPortalPage() {
 
   return (
     <div className="min-h-dvh bg-background flex flex-col">
-      <header className="flex items-center justify-between h-14 px-4 sm:px-6 border-b border-border/60 bg-background/95 sticky top-0 z-10">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Home className="w-4 h-4 text-primary-foreground" />
+      <header className="border-b border-border/60 bg-gradient-to-r from-primary/10 via-background to-background sticky top-0 z-10 backdrop-blur">
+        <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2 px-4 sm:px-7 py-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
+              <Home className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground leading-tight truncate">
+                Welcome back{firstName ? `, ${firstName}` : ''}
+              </p>
+              <p className="text-2xs text-muted-foreground leading-tight">Tendwell owner portal</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold text-foreground leading-tight">Owner Portal</p>
-            <p className="text-2xs text-muted-foreground leading-tight">{user?.label}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {canActAsOwner && (
-            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
-              <ArrowLeft className="w-4 h-4" /> Staff view
+          <div className="flex items-center gap-1.5 shrink-0">
+            {canActAsOwner && (
+              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
+                <ArrowLeft className="w-4 h-4" /> Staff view
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
+              <LogOut className="w-4 h-4" /> Sign out
             </Button>
-          )}
-          <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
-            <LogOut className="w-4 h-4" /> Sign out
-          </Button>
+          </div>
         </div>
       </header>
 
