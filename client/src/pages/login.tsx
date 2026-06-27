@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
 function GoogleIcon() {
   return (
@@ -59,34 +58,37 @@ export default function LoginPage() {
     setResetSent(true)
   }
 
+  const fieldClass =
+    'bg-white/80 border-[#E4D9C7] text-[#3D3225] placeholder:text-[#8A7860]/70 focus-visible:ring-[#C58A3D] focus-visible:border-[#C58A3D]'
+  const pineButtonClass =
+    'w-full h-10 rounded-full bg-[#2F4A3C] text-[#FAF6EF] font-semibold tracking-wide hover:bg-[#22382D] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_6px_16px_-6px_rgba(61,50,37,0.45)] focus-visible:ring-[#C58A3D]'
+  const outlineButtonClass =
+    'w-full h-10 rounded-full gap-2 border-[#E4D9C7] bg-white/80 text-[#3D3225] font-medium hover:bg-white focus-visible:ring-[#C58A3D]'
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="w-full max-w-sm px-4">
-        {/* Logo mark */}
+    <div className="marketing-auth marketing-grain min-h-screen flex items-center justify-center bg-[#FAF6EF] px-4 py-10">
+      <div className="relative z-10 w-full max-w-sm">
+        {/* Brand mark */}
         <div className="flex flex-col items-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center mb-3">
-            <svg aria-label="Tendwell logo" viewBox="0 0 24 24" fill="none" className="w-7 h-7 text-primary-foreground" strokeWidth="2">
-              <path d="M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke="currentColor" strokeLinejoin="round"/>
-              <path d="M9 22V12h6v10" stroke="currentColor" strokeLinecap="round"/>
-              <path d="M8 6.5C10 5 14 5 16 6.5" stroke="currentColor" strokeLinecap="round" opacity="0.5"/>
-            </svg>
-          </div>
-          <h1 className="text-xl font-semibold text-foreground tracking-tight">Tendwell Ops</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">Operations dashboard</p>
+          <img
+            src="/brand/tendwell-logo-black.png"
+            alt="Tendwell Cleaning Co."
+            className="w-60 max-w-full h-auto"
+          />
+          <p className="mt-3 text-xs uppercase tracking-[0.2em] text-[#8A7860]">Operations</p>
         </div>
 
-        <Card className="border-border/70 shadow-sm">
-          <CardHeader className="pb-3 pt-5 px-6">
-            <p className="text-sm font-medium text-foreground">
-              {mode === 'forgot' ? 'Reset your password' : 'Sign in to continue'}
-            </p>
-          </CardHeader>
-          <CardContent className="px-6 pb-6 space-y-4">
+        <div className="rounded-2xl border border-[#EDE3D3] bg-white/70 backdrop-blur-sm shadow-[0_8px_30px_rgba(61,50,37,0.10)] px-6 py-6">
+          <h1 className="font-display text-2xl leading-snug text-[#22382D] mb-5">
+            {mode === 'forgot' ? 'Reset your password' : 'Sign in to continue'}
+          </h1>
+
+          <div className="space-y-4">
             {mode === 'signin' && (
               <>
                 <Button
                   variant="outline"
-                  className="w-full h-9 gap-2"
+                  className={outlineButtonClass}
                   onClick={loginWithGoogle}
                   disabled={isLoading || submitting}
                   data-testid="button-sign-in-google"
@@ -96,14 +98,14 @@ export default function LoginPage() {
                 </Button>
 
                 <div className="flex items-center gap-2">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="text-2xs text-muted-foreground">or</span>
-                  <div className="h-px flex-1 bg-border" />
+                  <div className="h-px flex-1 bg-[#E4D9C7]" />
+                  <span className="text-2xs uppercase tracking-wider text-[#8A7860]">or</span>
+                  <div className="h-px flex-1 bg-[#E4D9C7]" />
                 </div>
 
                 <form onSubmit={handlePasswordSignIn} className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="email" className="text-xs">Email</Label>
+                    <Label htmlFor="email" className="text-xs text-[#5C4D3A]">Email</Label>
                     <Input
                       id="email"
                       type="email"
@@ -111,11 +113,12 @@ export default function LoginPage() {
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       placeholder="you@example.com"
+                      className={fieldClass}
                       data-testid="input-email"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="password" className="text-xs">Password</Label>
+                    <Label htmlFor="password" className="text-xs text-[#5C4D3A]">Password</Label>
                     <Input
                       id="password"
                       type="password"
@@ -123,12 +126,13 @@ export default function LoginPage() {
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       placeholder="••••••••"
+                      className={fieldClass}
                       data-testid="input-password"
                     />
                   </div>
                   <Button
                     type="submit"
-                    className="w-full h-9"
+                    className={pineButtonClass}
                     disabled={submitting || isLoading}
                     data-testid="button-sign-in-password"
                   >
@@ -139,7 +143,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => { setMode('forgot'); setLocalError(null) }}
-                  className="text-xs text-primary hover:underline w-full text-center"
+                  className="text-xs text-[#2F4A3C] hover:text-[#22382D] hover:underline w-full text-center"
                   data-testid="link-forgot-password"
                 >
                   Forgot your password?
@@ -150,14 +154,14 @@ export default function LoginPage() {
             {mode === 'forgot' && (
               resetSent ? (
                 <div className="space-y-3 text-center">
-                  <p className="text-sm text-foreground">Check your email</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm font-medium text-[#3D3225]">Check your email</p>
+                  <p className="text-xs text-[#8A7860]">
                     If an account exists for <span className="font-medium">{email}</span>, a password
                     reset link is on its way.
                   </p>
                   <Button
                     variant="outline"
-                    className="w-full h-9"
+                    className={outlineButtonClass}
                     onClick={() => { setMode('signin'); setResetSent(false); setPassword('') }}
                   >
                     Back to sign in
@@ -166,7 +170,7 @@ export default function LoginPage() {
               ) : (
                 <form onSubmit={handleForgot} className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="forgot-email" className="text-xs">Email</Label>
+                    <Label htmlFor="forgot-email" className="text-xs text-[#5C4D3A]">Email</Label>
                     <Input
                       id="forgot-email"
                       type="email"
@@ -174,12 +178,13 @@ export default function LoginPage() {
                       value={email}
                       onChange={e => setEmail(e.target.value)}
                       placeholder="you@example.com"
+                      className={fieldClass}
                       data-testid="input-forgot-email"
                     />
                   </div>
                   <Button
                     type="submit"
-                    className="w-full h-9"
+                    className={pineButtonClass}
                     disabled={submitting}
                     data-testid="button-send-reset"
                   >
@@ -188,7 +193,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => { setMode('signin'); setLocalError(null) }}
-                    className="text-xs text-muted-foreground hover:text-foreground w-full text-center"
+                    className="text-xs text-[#8A7860] hover:text-[#3D3225] w-full text-center"
                   >
                     Back to sign in
                   </button>
@@ -197,16 +202,16 @@ export default function LoginPage() {
             )}
 
             {(authError || localError) && (
-              <p data-testid="text-login-error" className="text-sm text-destructive text-center">
+              <p data-testid="text-login-error" className="text-sm text-red-700 text-center">
                 {localError || authError}
               </p>
             )}
 
-            <p className="text-xs text-muted-foreground text-center">
+            <p className="text-xs text-[#8A7860] text-center">
               Access is restricted to invited users and property owners.
             </p>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   )
