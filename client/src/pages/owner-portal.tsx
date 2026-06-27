@@ -23,6 +23,7 @@ import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 type OwnerProperty = {
   id: number
   name: string
+  stage?: string | null
   permissions: OwnerPermissions
   address?: string | null
   bed_sizes_text?: string | null
@@ -829,6 +830,36 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
   )
 }
 
+// ─── Onboarding ───────────────────────────────────────────────────────────────
+function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
+  const onboarding = properties.filter(p => p.stage === 'Onboarding')
+  if (onboarding.length === 0) return null
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-muted-foreground" /> Onboarding in progress
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-3 pb-5">
+        <p className="text-sm text-muted-foreground">
+          We're getting {onboarding.length === 1 ? 'your property' : 'your properties'} ready. Please make sure the details below (access codes, Wi-Fi, bed sizes) are complete — it helps us start clean.
+        </p>
+        <ul className="space-y-1">
+          {onboarding.map(p => (
+            <li key={p.id} className="text-sm font-medium text-foreground flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" /> {p.name}
+            </li>
+          ))}
+        </ul>
+        <a href="/#/onboarding" className="inline-block text-sm font-medium text-primary hover:underline">
+          Onboarding a new property? Start here →
+        </a>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Quotes ───────────────────────────────────────────────────────────────────
 type OwnerQuote = {
   id: number
@@ -992,6 +1023,7 @@ export default function OwnerPortalPage() {
 
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
         {ownerId && <QuotesSection />}
+        {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">
