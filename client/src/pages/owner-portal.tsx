@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -378,6 +378,74 @@ function Field({ label, children, className, locked }: { label: string; children
   )
 }
 
+// ─── Shipments ──────────────────────────────────────────────────────────────────
+type OwnerShipment = {
+  id: string
+  property_name: string | null
+  sender_name: string | null
+  tracking_number: string | null
+  estimated_delivery: string | null
+  description: string | null
+  delivery_responsible: string | null
+  received_at: string | null
+  submitted_at: string | null
+}
+
+function ShipmentsSection() {
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-shipments'],
+    queryFn: async (): Promise<OwnerShipment[]> => {
+      // Owner-scoped RPC: returns shipments only for the signed-in owner's properties.
+      const { data, error } = await supabase.rpc('get_owner_shipments')
+      if (error) throw error
+      return (data ?? []) as OwnerShipment[]
+    },
+  })
+
+  if (isLoading) return <Skeleton className="h-24 rounded-2xl" />
+  if (isError) {
+    return <ErrorState onRetry={() => refetch()} title="Couldn't load shipments" description="Something went wrong loading your shipments. Please try again." />
+  }
+  const shipments = data ?? []
+  // Hide the section entirely when there's nothing to show (keeps the portal tidy).
+  if (shipments.length === 0) return null
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Package className="w-4 h-4 text-muted-foreground" /> Incoming shipments
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-2 pb-4">
+        {shipments.map(s => {
+          const received = !!s.received_at
+          return (
+            <div key={s.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{s.description || s.sender_name || 'Shipment'}</p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {[s.property_name, s.sender_name ? `from ${s.sender_name}` : null, s.tracking_number].filter(Boolean).join(' · ')}
+                </p>
+                <p className="text-2xs text-muted-foreground">
+                  {received
+                    ? `Received ${formatDate(s.received_at)}`
+                    : s.estimated_delivery
+                      ? `Est. delivery ${formatDate(s.estimated_delivery)}`
+                      : 'In transit'}
+                </p>
+              </div>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${received ? 'bg-success/10 text-success' : 'bg-info/10 text-info'}`}>
+                {received ? 'Received' : 'In transit'}
+              </span>
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -450,6 +518,8 @@ export default function OwnerPortalPage() {
             {data!.map(p => <PropertyCard key={p.id} property={p} />)}
           </div>
         )}
+
+        <ShipmentsSection />
       </main>
     </div>
   )
