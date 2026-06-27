@@ -36,7 +36,7 @@ so re-imports are safe and the two daily exports deduplicate naturally
 where their date windows overlap.
 
 ```
-POST https://www.tendwellcleaning.com/api/tasks/breezeway-import?source=<LABEL>
+POST https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=<LABEL>
 Headers:
   Content-Type: text/csv
   x-tendwell-import-key: <BREEZEWAY_IMPORT_KEY>
@@ -92,7 +92,7 @@ but couldn't be linked to a `properties` row (the address fragment after
 >       - Otherwise → `next_month`
 >    4. POST the raw CSV bytes to:
 >       ```
->       https://www.tendwellcleaning.com/api/tasks/breezeway-import?source=<LABEL>
+>       https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=<LABEL>
 >       ```
 >       with these headers:
 >       ```
@@ -184,7 +184,7 @@ the new pattern set without duplicating rows.
 ## Manual test (one-off)
 
 ```bash
-curl -X POST 'https://www.tendwellcleaning.com/api/tasks/breezeway-import?source=current_month' \
+curl -X POST 'https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=current_month' \
   -H 'Content-Type: text/csv' \
   -H "x-tendwell-import-key: $BREEZEWAY_IMPORT_KEY" \
   --data-binary @breezeway_export.csv

@@ -725,7 +725,7 @@ export default function TasksPage() {
             ...(newForm.description ? [newForm.description] : []),
             detailBits.join(' · '),
           ],
-          ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
+          ctaUrl: 'https://app.tendwellcleaningco.com/#/tasks',
           ctaLabel: 'Open Tasks',
           meta: { assignee: newForm.assignee_name, priority: newForm.priority },
         })
@@ -775,7 +775,7 @@ export default function TasksPage() {
               `${effectiveUser?.label || 'Someone'} mentioned you in a comment on "${detailTask.title}".`,
             ],
             quoteText: text,
-            ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
+            ctaUrl: 'https://app.tendwellcleaningco.com/#/tasks',
             ctaLabel: 'Open Task',
             targetUserIds: targets as number[],
             meta: { task_id: detailTask.id },
@@ -910,7 +910,7 @@ export default function TasksPage() {
           bodyLines: [
             `${effectiveUser?.label || 'Someone'} added you to the task list "${list?.name || 'Untitled'}".`,
           ],
-          ctaUrl: 'https://www.tendwellcleaning.com/#/tasks',
+          ctaUrl: 'https://app.tendwellcleaningco.com/#/tasks',
           ctaLabel: 'Open Tasks',
           targetUserIds: [userId],
         })

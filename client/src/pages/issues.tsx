@@ -240,7 +240,7 @@ export default function IssuesPage() {
             ...(newForm.details ? [newForm.details] : []),
             trailing.join(' · '),
           ],
-          ctaUrl: 'https://www.tendwellcleaning.com/#/issues',
+          ctaUrl: 'https://app.tendwellcleaningco.com/#/issues',
           ctaLabel: 'View Issues',
           meta: { property: newForm.property_name, category: newForm.category },
         })

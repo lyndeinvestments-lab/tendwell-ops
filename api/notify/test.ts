@@ -15,7 +15,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const html = renderEmailLayout({
     title: 'Test notification',
     bodyHtml: `<p style="font-size:14px;line-height:1.6;">If you can read this, email notifications are working. You can configure which events trigger emails in Settings → Notifications.</p>`,
-    ctaUrl: 'https://www.tendwellcleaning.com/#/settings',
+    ctaUrl: 'https://app.tendwellcleaningco.com/#/settings',
     ctaLabel: 'Open Settings',
   })
 

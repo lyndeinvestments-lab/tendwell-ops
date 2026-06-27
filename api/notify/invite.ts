@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { getSupabaseConfig, verifyAuthHeader, getStaffRole, sendEmail, logNotification, renderEmailLayout, composeBodyHtml, escapeHtml } from './_lib.js'
 
-const SITE_URL = 'https://www.tendwellcleaning.com'
+const SITE_URL = 'https://app.tendwellcleaningco.com'
 
 // POST /api/notify/invite
 // Body: { email, name }
