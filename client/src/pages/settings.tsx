@@ -2886,6 +2886,89 @@ function TestimonialsSection() {
   )
 }
 
+// ─── Feedback Section (owner feedback / suggestions) ───────────────────────────
+type AdminFeedback = {
+  id: string
+  category: string
+  body: string
+  status: string
+  admin_note: string | null
+  created_at: string
+  property_owners: { name: string | null; email: string | null } | null
+}
+
+const FEEDBACK_STATUSES = ['open', 'reviewing', 'planned', 'done', 'declined']
+
+function FeedbackSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['admin-feedback'],
+    queryFn: async (): Promise<AdminFeedback[]> => {
+      const { data, error } = await supabase
+        .from('owner_feedback')
+        .select('id, category, body, status, admin_note, created_at, property_owners(name, email)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as any as AdminFeedback[]
+    },
+  })
+
+  const update = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+      const { error } = await supabase.from('owner_feedback').update(patch as any).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-feedback'] }),
+    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const rows = data ?? []
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Feedback &amp; suggestions</h2>
+        <p className="text-sm text-muted-foreground">Feedback submitted by property owners. Triage with a status and an optional internal note.</p>
+      </div>
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No feedback yet.</p>}
+      <div className="space-y-3">
+        {rows.map(f => (
+          <div key={f.id} className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground">{f.category}</p>
+                <p className="text-sm text-foreground/90 mt-0.5">{f.body}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {f.property_owners?.name || f.property_owners?.email || 'owner'} · {new Date(f.created_at).toLocaleDateString()}
+                </p>
+              </div>
+              <select
+                className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
+                value={f.status}
+                onChange={e => update.mutate({ id: f.id, patch: { status: e.target.value } })}
+                data-testid={`select-feedback-status-${f.id}`}
+              >
+                {FEEDBACK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <Input
+              defaultValue={f.admin_note ?? ''}
+              placeholder="Internal note (optional)"
+              className="text-sm"
+              onBlur={e => { if (e.target.value !== (f.admin_note ?? '')) update.mutate({ id: f.id, patch: { admin_note: e.target.value || null } }) }}
+              data-testid={`input-feedback-note-${f.id}`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -2903,6 +2986,7 @@ export default function SettingsPage() {
           <TabsTrigger value="owners" data-testid="tab-owners">Owners</TabsTrigger>
           <TabsTrigger value="referrals" data-testid="tab-referrals">Referrals</TabsTrigger>
           <TabsTrigger value="testimonials" data-testid="tab-testimonials">Testimonials</TabsTrigger>
+          <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
           <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
           <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
           <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
@@ -2922,6 +3006,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="testimonials" className="mt-0">
             <TestimonialsSection />
+          </TabsContent>
+          <TabsContent value="feedback" className="mt-0">
+            <FeedbackSection />
           </TabsContent>
           <TabsContent value="roles" className="mt-0 space-y-6">
             <PermissionsSection />

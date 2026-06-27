@@ -2269,6 +2269,47 @@ export type Database = {
           },
         ]
       }
+      owner_feedback: {
+        Row: {
+          admin_note: string | null
+          body: string
+          category: string
+          created_at: string
+          id: string
+          owner_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          admin_note?: string | null
+          body: string
+          category?: string
+          created_at?: string
+          id?: string
+          owner_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          admin_note?: string | null
+          body?: string
+          category?: string
+          created_at?: string
+          id?: string
+          owner_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_feedback_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       owner_properties: {
         Row: {
           created_at: string
