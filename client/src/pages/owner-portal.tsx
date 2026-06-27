@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -710,6 +710,125 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
   )
 }
 
+// ─── Feedback ─────────────────────────────────────────────────────────────────
+type OwnerFeedback = {
+  id: string
+  category: string
+  body: string
+  status: string
+  created_at: string
+}
+
+const FEEDBACK_STATUS_LABEL: Record<string, string> = {
+  open: 'Open', reviewing: 'Reviewing', planned: 'Planned', done: 'Done', declined: 'Declined',
+}
+const FEEDBACK_STATUS_TONE: Record<string, string> = {
+  open: 'bg-info/10 text-info',
+  reviewing: 'bg-warning/10 text-warning',
+  planned: 'bg-info/10 text-info',
+  done: 'bg-success/10 text-success',
+  declined: 'bg-muted text-muted-foreground',
+}
+
+function FeedbackSection({ ownerId }: { ownerId: string }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ category: 'suggestion', body: '' })
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-feedback'],
+    queryFn: async (): Promise<OwnerFeedback[]> => {
+      const { data, error } = await supabase
+        .from('owner_feedback')
+        .select('id, category, body, status, created_at')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as OwnerFeedback[]
+    },
+  })
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('owner_feedback').insert({
+        owner_id: ownerId,
+        category: form.category,
+        body: form.body.trim(),
+      } as any)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Feedback sent', description: 'Thanks! We read every note.' })
+      setForm({ category: 'suggestion', body: '' })
+      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['owner-feedback'] })
+    },
+    onError: (e: any) => toast({ title: 'Could not send', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const items = data ?? []
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <MessageSquare className="w-4 h-4 text-muted-foreground" /> Feedback &amp; suggestions
+        </h2>
+        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-feedback-form">
+          {open ? 'Cancel' : 'Send feedback'}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5">
+        <p className="text-sm text-muted-foreground">Have an idea, a request, or something that could be better? Tell us.</p>
+
+        {open && (
+          <div className="space-y-3 rounded-lg border border-border/60 p-3">
+            <Field label="Type">
+              <select
+                className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+                value={form.category}
+                onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                data-testid="select-feedback-category"
+              >
+                <option value="suggestion">Suggestion</option>
+                <option value="issue">Issue</option>
+                <option value="praise">Praise</option>
+                <option value="other">Other</option>
+              </select>
+            </Field>
+            <Field label="Your message">
+              <Textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={3} data-testid="input-feedback-body" />
+            </Field>
+            <div className="flex justify-end">
+              <Button size="sm" disabled={!form.body.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-feedback">
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <Skeleton className="h-16 rounded-lg" />}
+        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load feedback" description="Please try again." />}
+        {!isLoading && !isError && items.length === 0 && !open && (
+          <p className="text-sm text-muted-foreground">No feedback submitted yet.</p>
+        )}
+        {items.map(f => (
+          <div key={f.id} className="rounded-lg border border-border/60 p-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-2xs uppercase tracking-wide text-muted-foreground">{f.category}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${FEEDBACK_STATUS_TONE[f.status] ?? 'bg-muted text-muted-foreground'}`}>
+                {FEEDBACK_STATUS_LABEL[f.status] ?? f.status}
+              </span>
+            </div>
+            <p className="text-sm text-foreground/90">{f.body}</p>
+            <p className="text-2xs text-muted-foreground">Sent {formatDate(f.created_at)}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -789,6 +908,7 @@ export default function OwnerPortalPage() {
         <ShipmentsSection />
         {ownerId && <ReferralsSection ownerId={ownerId} />}
         {ownerId && <TestimonialsSection ownerId={ownerId} />}
+        {ownerId && <FeedbackSection ownerId={ownerId} />}
       </main>
     </div>
   )
