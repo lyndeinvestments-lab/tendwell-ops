@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -446,10 +446,140 @@ function ShipmentsSection() {
   )
 }
 
+// ─── Referrals ──────────────────────────────────────────────────────────────────
+type OwnerReferral = {
+  id: string
+  referred_name: string
+  referred_email: string | null
+  referred_phone: string | null
+  note: string | null
+  status: string
+  reward_status: string
+  reward_note: string | null
+  created_at: string
+}
+
+const REFERRAL_STATUS_LABEL: Record<string, string> = {
+  submitted: 'Submitted', contacted: 'Contacted', converted: 'Converted', declined: 'Declined',
+}
+const REFERRAL_STATUS_TONE: Record<string, string> = {
+  submitted: 'bg-info/10 text-info',
+  contacted: 'bg-warning/10 text-warning',
+  converted: 'bg-success/10 text-success',
+  declined: 'bg-muted text-muted-foreground',
+}
+
+function ReferralsSection({ ownerId }: { ownerId: string }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ referred_name: '', referred_email: '', referred_phone: '', note: '' })
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-referrals'],
+    queryFn: async (): Promise<OwnerReferral[]> => {
+      // RLS scopes rows to the signed-in owner.
+      const { data, error } = await supabase
+        .from('owner_referrals')
+        .select('id, referred_name, referred_email, referred_phone, note, status, reward_status, reward_note, created_at')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as OwnerReferral[]
+    },
+  })
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      // owner_id must equal current_owner_id() per RLS; we send the owner's id
+      // and the policy enforces it (a wrong id is rejected, not trusted).
+      const { error } = await supabase.from('owner_referrals').insert({
+        owner_id: ownerId,
+        referred_name: form.referred_name.trim(),
+        referred_email: form.referred_email.trim() || null,
+        referred_phone: form.referred_phone.trim() || null,
+        note: form.note.trim() || null,
+      } as any)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Referral submitted', description: 'Thanks! Our team will follow up.' })
+      setForm({ referred_name: '', referred_email: '', referred_phone: '', note: '' })
+      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['owner-referrals'] })
+    },
+    onError: (e: any) => toast({ title: 'Could not submit referral', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const referrals = data ?? []
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Gift className="w-4 h-4 text-muted-foreground" /> Refer a friend
+        </h2>
+        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-referral-form">
+          {open ? 'Cancel' : 'Refer someone'}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5">
+        <p className="text-sm text-muted-foreground">Know someone who could use Tendwell? Send them our way and our team takes it from there.</p>
+
+        {open && (
+          <div className="space-y-3 rounded-lg border border-border/60 p-3">
+            <Field label="Their name">
+              <Input value={form.referred_name} onChange={e => setForm(f => ({ ...f, referred_name: e.target.value }))} data-testid="input-referral-name" />
+            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Email">
+                <Input type="email" value={form.referred_email} onChange={e => setForm(f => ({ ...f, referred_email: e.target.value }))} data-testid="input-referral-email" />
+              </Field>
+              <Field label="Phone">
+                <Input value={form.referred_phone} onChange={e => setForm(f => ({ ...f, referred_phone: e.target.value }))} data-testid="input-referral-phone" />
+              </Field>
+            </div>
+            <Field label="Anything we should know?">
+              <Textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} rows={2} data-testid="input-referral-note" />
+            </Field>
+            <div className="flex justify-end">
+              <Button size="sm" disabled={!form.referred_name.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-referral">
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit referral'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <Skeleton className="h-16 rounded-lg" />}
+        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load referrals" description="Please try again." />}
+        {!isLoading && !isError && referrals.length === 0 && !open && (
+          <p className="text-sm text-muted-foreground">You haven't referred anyone yet.</p>
+        )}
+        {referrals.map(r => (
+          <div key={r.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{r.referred_name}</p>
+              <p className="text-xs text-muted-foreground truncate">{[r.referred_email, r.referred_phone].filter(Boolean).join(' · ') || '—'}</p>
+              <p className="text-2xs text-muted-foreground">
+                Referred {formatDate(r.created_at)}{r.reward_status !== 'pending' ? ` · Reward: ${r.reward_status}` : ''}
+              </p>
+            </div>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${REFERRAL_STATUS_TONE[r.status] ?? 'bg-muted text-muted-foreground'}`}>
+              {REFERRAL_STATUS_LABEL[r.status] ?? r.status}
+            </span>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
   const { user, logout, canActAsOwner, setActingAsOwner } = useAuth()
+  // For a pure owner, user.id is the property_owners id; for a staff user acting
+  // as owner it's on ownerIdentity. Used as owner_id on owner-scoped inserts.
+  const ownerId = user?.ownerIdentity?.id ?? user?.id ?? ''
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-properties'],
@@ -520,6 +650,7 @@ export default function OwnerPortalPage() {
         )}
 
         <ShipmentsSection />
+        {ownerId && <ReferralsSection ownerId={ownerId} />}
       </main>
     </div>
   )
