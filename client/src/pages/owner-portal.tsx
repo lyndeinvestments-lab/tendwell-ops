@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -381,7 +381,7 @@ function Field({ label, children, className, locked }: { label: string; children
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
-  const { user, logout } = useAuth()
+  const { user, logout, canActAsOwner, setActingAsOwner } = useAuth()
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-properties'],
@@ -409,9 +409,16 @@ export default function OwnerPortalPage() {
             <p className="text-2xs text-muted-foreground leading-tight">{user?.label}</p>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
-          <LogOut className="w-4 h-4" /> Sign out
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {canActAsOwner && (
+            <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
+              <ArrowLeft className="w-4 h-4" /> Staff view
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
+            <LogOut className="w-4 h-4" /> Sign out
+          </Button>
+        </div>
       </header>
 
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
