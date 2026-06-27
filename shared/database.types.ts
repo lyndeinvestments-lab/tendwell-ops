@@ -2269,6 +2269,145 @@ export type Database = {
           },
         ]
       }
+      owner_properties: {
+        Row: {
+          created_at: string
+          owner_id: string
+          property_id: number
+        }
+        Insert: {
+          created_at?: string
+          owner_id: string
+          property_id: number
+        }
+        Update: {
+          created_at?: string
+          owner_id?: string
+          property_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_properties_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
+      owner_property_permissions: {
+        Row: {
+          owner_id: string
+          permissions: Json
+          property_id: number
+          updated_at: string
+        }
+        Insert: {
+          owner_id: string
+          permissions?: Json
+          property_id: number
+          updated_at?: string
+        }
+        Update: {
+          owner_id?: string
+          permissions?: Json
+          property_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_property_permissions_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           color: string
@@ -2304,6 +2443,585 @@ export type Database = {
           slug?: string
         }
         Relationships: []
+      }
+      portal_email_events: {
+        Row: {
+          created_at: string
+          delivery: Database["public"]["Enums"]["portal_email_delivery"]
+          detail: string | null
+          id: string
+          owner_id: string | null
+          subject: string
+          to_address: string
+          type: Database["public"]["Enums"]["portal_email_event_type"]
+        }
+        Insert: {
+          created_at?: string
+          delivery?: Database["public"]["Enums"]["portal_email_delivery"]
+          detail?: string | null
+          id?: string
+          owner_id?: string | null
+          subject: string
+          to_address: string
+          type: Database["public"]["Enums"]["portal_email_event_type"]
+        }
+        Update: {
+          created_at?: string
+          delivery?: Database["public"]["Enums"]["portal_email_delivery"]
+          detail?: string | null
+          id?: string
+          owner_id?: string | null
+          subject?: string
+          to_address?: string
+          type?: Database["public"]["Enums"]["portal_email_event_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_email_events_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_feature_suggestions: {
+        Row: {
+          created_at: string
+          detail: string | null
+          id: string
+          owner_id: string
+          owner_name: string
+          status: Database["public"]["Enums"]["portal_suggestion_status"]
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: string | null
+          id?: string
+          owner_id: string
+          owner_name: string
+          status?: Database["public"]["Enums"]["portal_suggestion_status"]
+          title: string
+        }
+        Update: {
+          created_at?: string
+          detail?: string | null
+          id?: string
+          owner_id?: string
+          owner_name?: string
+          status?: Database["public"]["Enums"]["portal_suggestion_status"]
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_feature_suggestions_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_feedback: {
+        Row: {
+          created_at: string
+          id: string
+          kind: Database["public"]["Enums"]["portal_feedback_kind"]
+          message: string
+          owner_id: string
+          owner_name: string
+          rating: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["portal_feedback_kind"]
+          message: string
+          owner_id: string
+          owner_name: string
+          rating?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["portal_feedback_kind"]
+          message?: string
+          owner_id?: string
+          owner_name?: string
+          rating?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_feedback_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_profiles: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          phone: string | null
+          role: Database["public"]["Enums"]["portal_role"]
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name?: string
+          id: string
+          phone?: string | null
+          role?: Database["public"]["Enums"]["portal_role"]
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          role?: Database["public"]["Enums"]["portal_role"]
+        }
+        Relationships: []
+      }
+      portal_properties: {
+        Row: {
+          ac_filter_size: string | null
+          address: string
+          bed_sizes: string
+          bedrooms: number | null
+          beds: number | null
+          booking_calendar_kind: Database["public"]["Enums"]["portal_booking_calendar_kind"]
+          booking_calendar_value: string | null
+          check_in_time: string | null
+          check_out_time: string | null
+          cleaner_closet_code: string | null
+          created_at: string
+          email: string | null
+          front_door_code: string | null
+          full_baths: number | null
+          half_baths: number | null
+          hot_tub: boolean
+          id: string
+          invoice_email: string | null
+          invoice_same_as_primary: boolean
+          linen_program: boolean
+          lockbox_code: string | null
+          name: string
+          onboarding_deep_clean: boolean
+          onboarding_status: Database["public"]["Enums"]["portal_onboarding_status"]
+          other_codes: string | null
+          owner_id: string
+          owner_name: string
+          phone: string | null
+          photo_urls: string[]
+          pool: boolean
+          pool_code: string | null
+          property_name: string | null
+          quote_id: string | null
+          special_instructions: string | null
+          square_footage: number | null
+          status: Database["public"]["Enums"]["portal_property_status"]
+          updated_at: string
+          wifi_network: string | null
+          wifi_password: string | null
+        }
+        Insert: {
+          ac_filter_size?: string | null
+          address?: string
+          bed_sizes?: string
+          bedrooms?: number | null
+          beds?: number | null
+          booking_calendar_kind?: Database["public"]["Enums"]["portal_booking_calendar_kind"]
+          booking_calendar_value?: string | null
+          check_in_time?: string | null
+          check_out_time?: string | null
+          cleaner_closet_code?: string | null
+          created_at?: string
+          email?: string | null
+          front_door_code?: string | null
+          full_baths?: number | null
+          half_baths?: number | null
+          hot_tub?: boolean
+          id?: string
+          invoice_email?: string | null
+          invoice_same_as_primary?: boolean
+          linen_program?: boolean
+          lockbox_code?: string | null
+          name: string
+          onboarding_deep_clean?: boolean
+          onboarding_status?: Database["public"]["Enums"]["portal_onboarding_status"]
+          other_codes?: string | null
+          owner_id: string
+          owner_name?: string
+          phone?: string | null
+          photo_urls?: string[]
+          pool?: boolean
+          pool_code?: string | null
+          property_name?: string | null
+          quote_id?: string | null
+          special_instructions?: string | null
+          square_footage?: number | null
+          status?: Database["public"]["Enums"]["portal_property_status"]
+          updated_at?: string
+          wifi_network?: string | null
+          wifi_password?: string | null
+        }
+        Update: {
+          ac_filter_size?: string | null
+          address?: string
+          bed_sizes?: string
+          bedrooms?: number | null
+          beds?: number | null
+          booking_calendar_kind?: Database["public"]["Enums"]["portal_booking_calendar_kind"]
+          booking_calendar_value?: string | null
+          check_in_time?: string | null
+          check_out_time?: string | null
+          cleaner_closet_code?: string | null
+          created_at?: string
+          email?: string | null
+          front_door_code?: string | null
+          full_baths?: number | null
+          half_baths?: number | null
+          hot_tub?: boolean
+          id?: string
+          invoice_email?: string | null
+          invoice_same_as_primary?: boolean
+          linen_program?: boolean
+          lockbox_code?: string | null
+          name?: string
+          onboarding_deep_clean?: boolean
+          onboarding_status?: Database["public"]["Enums"]["portal_onboarding_status"]
+          other_codes?: string | null
+          owner_id?: string
+          owner_name?: string
+          phone?: string | null
+          photo_urls?: string[]
+          pool?: boolean
+          pool_code?: string | null
+          property_name?: string | null
+          quote_id?: string | null
+          special_instructions?: string | null
+          square_footage?: number | null
+          status?: Database["public"]["Enums"]["portal_property_status"]
+          updated_at?: string
+          wifi_network?: string | null
+          wifi_password?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_properties_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_properties_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "portal_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_property_notes: {
+        Row: {
+          author_id: string
+          author_name: string
+          body: string
+          created_at: string
+          id: string
+          property_id: string
+        }
+        Insert: {
+          author_id: string
+          author_name: string
+          body: string
+          created_at?: string
+          id?: string
+          property_id: string
+        }
+        Update: {
+          author_id?: string
+          author_name?: string
+          body?: string
+          created_at?: string
+          id?: string
+          property_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_property_notes_author_id_fkey"
+            columns: ["author_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "portal_properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_quote_line_items: {
+        Row: {
+          cadence: string
+          description: string
+          id: string
+          quantity: number
+          quote_id: string
+          unit_price_cents: number
+        }
+        Insert: {
+          cadence?: string
+          description: string
+          id?: string
+          quantity?: number
+          quote_id: string
+          unit_price_cents?: number
+        }
+        Update: {
+          cadence?: string
+          description?: string
+          id?: string
+          quantity?: number
+          quote_id?: string
+          unit_price_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_quote_line_items_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "portal_quotes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_quotes: {
+        Row: {
+          approved_at: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          owner_id: string
+          property_name: string | null
+          status: Database["public"]["Enums"]["portal_quote_status"]
+          title: string
+        }
+        Insert: {
+          approved_at?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          owner_id: string
+          property_name?: string | null
+          status?: Database["public"]["Enums"]["portal_quote_status"]
+          title: string
+        }
+        Update: {
+          approved_at?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          owner_id?: string
+          property_name?: string | null
+          status?: Database["public"]["Enums"]["portal_quote_status"]
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_quotes_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_referrals: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          notes: string | null
+          owner_id: string
+          referred_email: string | null
+          referred_name: string
+          referred_property_name: string | null
+          reward_cents: number
+          status: Database["public"]["Enums"]["portal_referral_status"]
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          owner_id: string
+          referred_email?: string | null
+          referred_name: string
+          referred_property_name?: string | null
+          reward_cents?: number
+          status?: Database["public"]["Enums"]["portal_referral_status"]
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          owner_id?: string
+          referred_email?: string | null
+          referred_name?: string
+          referred_property_name?: string | null
+          reward_cents?: number
+          status?: Database["public"]["Enums"]["portal_referral_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_referrals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_shipments: {
+        Row: {
+          carrier: string | null
+          category: string
+          created_at: string
+          delivered_at: string | null
+          description: string
+          eta_date: string | null
+          id: string
+          owner_id: string
+          property_id: string | null
+          shipped_at: string | null
+          status: Database["public"]["Enums"]["portal_shipment_status"]
+          tracking_number: string | null
+        }
+        Insert: {
+          carrier?: string | null
+          category?: string
+          created_at?: string
+          delivered_at?: string | null
+          description: string
+          eta_date?: string | null
+          id?: string
+          owner_id: string
+          property_id?: string | null
+          shipped_at?: string | null
+          status?: Database["public"]["Enums"]["portal_shipment_status"]
+          tracking_number?: string | null
+        }
+        Update: {
+          carrier?: string | null
+          category?: string
+          created_at?: string
+          delivered_at?: string | null
+          description?: string
+          eta_date?: string | null
+          id?: string
+          owner_id?: string
+          property_id?: string | null
+          shipped_at?: string | null
+          status?: Database["public"]["Enums"]["portal_shipment_status"]
+          tracking_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_shipments_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_shipments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "portal_properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      portal_testimonials: {
+        Row: {
+          admin_notes: string | null
+          consent_public_use: boolean
+          created_at: string
+          display_name: string | null
+          id: string
+          owner_id: string
+          owner_name: string
+          photo_url: string | null
+          property_id: string | null
+          property_name: string | null
+          quote_text: string
+          share_name: boolean
+          share_photo: boolean
+          status: Database["public"]["Enums"]["portal_testimonial_status"]
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          consent_public_use?: boolean
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          owner_id: string
+          owner_name: string
+          photo_url?: string | null
+          property_id?: string | null
+          property_name?: string | null
+          quote_text: string
+          share_name?: boolean
+          share_photo?: boolean
+          status?: Database["public"]["Enums"]["portal_testimonial_status"]
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          consent_public_use?: boolean
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          owner_id?: string
+          owner_name?: string
+          photo_url?: string | null
+          property_id?: string | null
+          property_name?: string | null
+          quote_text?: string
+          share_name?: boolean
+          share_photo?: boolean
+          status?: Database["public"]["Enums"]["portal_testimonial_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "portal_testimonials_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "portal_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "portal_testimonials_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "portal_properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       proforma_months: {
         Row: {
@@ -2431,8 +3149,12 @@ export type Database = {
           offboarding_date: string | null
           onboarding_date: string | null
           other_codes: string | null
+          owner_contact_email: string | null
+          owner_contact_name: string | null
+          owner_contact_phone: string | null
           pet_friendly: string | null
           pool_towels: number | null
+          preferred_payment_method: string | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
           profit_percentage: number | null
@@ -2448,10 +3170,6 @@ export type Database = {
           updated_at: string | null
           washcloths: number | null
           wifi_info: string | null
-          owner_contact_name: string | null
-          owner_contact_email: string | null
-          owner_contact_phone: string | null
-          preferred_payment_method: string | null
         }
         Insert: {
           address?: string | null
@@ -2512,8 +3230,12 @@ export type Database = {
           offboarding_date?: string | null
           onboarding_date?: string | null
           other_codes?: string | null
+          owner_contact_email?: string | null
+          owner_contact_name?: string | null
+          owner_contact_phone?: string | null
           pet_friendly?: string | null
           pool_towels?: number | null
+          preferred_payment_method?: string | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
           profit_percentage?: number | null
@@ -2529,10 +3251,6 @@ export type Database = {
           updated_at?: string | null
           washcloths?: number | null
           wifi_info?: string | null
-          owner_contact_name?: string | null
-          owner_contact_email?: string | null
-          owner_contact_phone?: string | null
-          preferred_payment_method?: string | null
         }
         Update: {
           address?: string | null
@@ -2593,8 +3311,12 @@ export type Database = {
           offboarding_date?: string | null
           onboarding_date?: string | null
           other_codes?: string | null
+          owner_contact_email?: string | null
+          owner_contact_name?: string | null
+          owner_contact_phone?: string | null
           pet_friendly?: string | null
           pool_towels?: number | null
+          preferred_payment_method?: string | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
           profit_percentage?: number | null
@@ -2610,10 +3332,6 @@ export type Database = {
           updated_at?: string | null
           washcloths?: number | null
           wifi_info?: string | null
-          owner_contact_name?: string | null
-          owner_contact_email?: string | null
-          owner_contact_phone?: string | null
-          preferred_payment_method?: string | null
         }
         Relationships: [
           {
@@ -2784,6 +3502,33 @@ export type Database = {
             referencedColumns: ["ops_property_id"]
           },
         ]
+      }
+      property_owners: {
+        Row: {
+          active: boolean
+          created_at: string
+          email: string
+          id: string
+          name: string | null
+          phone: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          email: string
+          id?: string
+          name?: string | null
+          phone?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          email?: string
+          id?: string
+          name?: string | null
+          phone?: string | null
+        }
+        Relationships: []
       }
       property_photos: {
         Row: {
@@ -3685,6 +4430,33 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_reconciliation_dismissals: {
+        Row: {
+          created_at: string
+          dismissed_by: string | null
+          id: string
+          kind: string
+          ops_property_id: number | null
+          trellis_property_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          dismissed_by?: string | null
+          id?: string
+          kind: string
+          ops_property_id?: number | null
+          trellis_property_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          dismissed_by?: string | null
+          id?: string
+          kind?: string
+          ops_property_id?: number | null
+          trellis_property_id?: string | null
+        }
+        Relationships: []
+      }
       trellis_roster: {
         Row: {
           departments: string[]
@@ -3728,6 +4500,7 @@ export type Database = {
           error: string | null
           finished_at: string | null
           id: string
+          progress: Json | null
           requested_by: string | null
           started_at: string | null
           status: string
@@ -3739,6 +4512,7 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          progress?: Json | null
           requested_by?: string | null
           started_at?: string | null
           status: string
@@ -3750,6 +4524,7 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          progress?: Json | null
           requested_by?: string | null
           started_at?: string | null
           status?: string
@@ -3804,102 +4579,6 @@ export type Database = {
           workspace?: string
         }
         Relationships: []
-      }
-      property_owners: {
-        Row: {
-          id: string
-          email: string
-          name: string | null
-          phone: string | null
-          active: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          email: string
-          name?: string | null
-          phone?: string | null
-          active?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          email?: string
-          name?: string | null
-          phone?: string | null
-          active?: boolean
-          created_at?: string
-        }
-        Relationships: []
-      }
-      owner_properties: {
-        Row: {
-          owner_id: string
-          property_id: number
-          created_at: string
-        }
-        Insert: {
-          owner_id: string
-          property_id: number
-          created_at?: string
-        }
-        Update: {
-          owner_id?: string
-          property_id?: number
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "owner_properties_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: false
-            referencedRelation: "property_owners"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "owner_properties_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          }
-        ]
-      }
-      owner_property_permissions: {
-        Row: {
-          owner_id: string
-          property_id: number
-          permissions: Json
-          updated_at: string
-        }
-        Insert: {
-          owner_id: string
-          property_id: number
-          permissions?: Json
-          updated_at?: string
-        }
-        Update: {
-          owner_id?: string
-          property_id?: number
-          permissions?: Json
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "owner_property_permissions_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: false
-            referencedRelation: "property_owners"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "owner_property_permissions_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          }
-        ]
       }
       van_build_questionnaire: {
         Row: {
@@ -4332,8 +5011,12 @@ export type Database = {
           offboarding_date: string | null
           onboarding_date: string | null
           other_codes: string | null
+          owner_contact_email: string | null
+          owner_contact_name: string | null
+          owner_contact_phone: string | null
           pet_friendly: string | null
           pool_towels: number | null
+          preferred_payment_method: string | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
           profit_percentage: number | null
@@ -4372,35 +5055,44 @@ export type Database = {
           per_property: Json
         }[]
       }
-      current_user_role: { Args: never; Returns: string }
       current_auth_email: { Args: never; Returns: string }
       current_owner_id: { Args: never; Returns: string }
-      is_staff: { Args: never; Returns: boolean }
-      owner_owns_property: { Args: { p_property_id: number }; Returns: boolean }
+      current_user_role: { Args: never; Returns: string }
+      get_laundry_weigh_in_names: { Args: never; Returns: string[] }
+      get_owner_properties: { Args: never; Returns: Json[] }
       get_owner_property_tasks: {
         Args: { p_property_id: number }
         Returns: {
           source: string
-          title: string
-          task_date: string
           status: string
+          task_date: string
+          title: string
         }[]
       }
-      get_owner_properties: {
+      get_owner_shipments: {
         Args: never
-        Returns: Json[]
+        Returns: {
+          delivery_responsible: string
+          description: string
+          estimated_delivery: string
+          id: string
+          property_name: string
+          received_at: string
+          sender_name: string
+          submitted_at: string
+          tracking_number: string
+        }[]
       }
-      owner_field_permissions_default: {
-        Args: never
-        Returns: Json
-      }
+      get_property_names_for_weigh_in: { Args: never; Returns: string[] }
+      is_current_user_admin: { Args: never; Returns: boolean }
+      is_staff: { Args: never; Returns: boolean }
+      owner_field_permissions_default: { Args: never; Returns: Json }
+      owner_owns_property: { Args: { p_property_id: number }; Returns: boolean }
       owner_property_perms: {
         Args: { p_owner_id: string; p_property_id: number }
         Returns: Json
       }
-      get_laundry_weigh_in_names: { Args: never; Returns: string[] }
-      get_property_names_for_weigh_in: { Args: never; Returns: string[] }
-      is_current_user_admin: { Args: never; Returns: boolean }
+      portal_is_admin: { Args: never; Returns: boolean }
       purge_deleted_properties: {
         Args: { retention_days?: number }
         Returns: {
@@ -4458,7 +5150,39 @@ export type Database = {
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
     }
     Enums: {
-      [_ in never]: never
+      portal_booking_calendar_kind: "ical" | "api" | "none"
+      portal_email_delivery: "sent" | "logged" | "error"
+      portal_email_event_type:
+        | "quote_created"
+        | "quote_approved"
+        | "onboarding_submitted"
+        | "feature_suggestion_received"
+        | "referral_received"
+        | "shipment_updated"
+        | "testimonial_submitted"
+      portal_feedback_kind: "praise" | "issue" | "question" | "other"
+      portal_onboarding_status:
+        | "not_started"
+        | "in_progress"
+        | "submitted"
+        | "complete"
+      portal_property_status: "onboarding" | "active" | "paused"
+      portal_quote_status: "draft" | "sent" | "approved" | "declined"
+      portal_referral_status: "pending" | "qualified" | "rewarded" | "closed"
+      portal_role: "owner" | "admin"
+      portal_shipment_status:
+        | "preparing"
+        | "shipped"
+        | "in_transit"
+        | "delivered"
+        | "delayed"
+      portal_suggestion_status: "new" | "planned" | "shipped" | "declined"
+      portal_testimonial_status:
+        | "submitted"
+        | "reviewed"
+        | "approved"
+        | "published"
+        | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4585,7 +5309,44 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      portal_booking_calendar_kind: ["ical", "api", "none"],
+      portal_email_delivery: ["sent", "logged", "error"],
+      portal_email_event_type: [
+        "quote_created",
+        "quote_approved",
+        "onboarding_submitted",
+        "feature_suggestion_received",
+        "referral_received",
+        "shipment_updated",
+        "testimonial_submitted",
+      ],
+      portal_feedback_kind: ["praise", "issue", "question", "other"],
+      portal_onboarding_status: [
+        "not_started",
+        "in_progress",
+        "submitted",
+        "complete",
+      ],
+      portal_property_status: ["onboarding", "active", "paused"],
+      portal_quote_status: ["draft", "sent", "approved", "declined"],
+      portal_referral_status: ["pending", "qualified", "rewarded", "closed"],
+      portal_role: ["owner", "admin"],
+      portal_shipment_status: [
+        "preparing",
+        "shipped",
+        "in_transit",
+        "delivered",
+        "delayed",
+      ],
+      portal_suggestion_status: ["new", "planned", "shipped", "declined"],
+      portal_testimonial_status: [
+        "submitted",
+        "reviewed",
+        "approved",
+        "published",
+        "archived",
+      ],
+    },
   },
 } as const
-
