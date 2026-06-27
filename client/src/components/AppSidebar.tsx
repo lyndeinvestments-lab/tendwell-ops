@@ -127,18 +127,20 @@ export function AppSidebar() {
       {/* Brand header — single brand mark + product name. The user identity
           lives in the footer (avoids the user-label appearing alongside the
           identical footer block which previously read as a duplicated tile). */}
-      <SidebarHeader className="px-4 py-3 border-b border-sidebar-border">
-        <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
-            <svg aria-label="Tendwell logo" viewBox="0 0 24 24" fill="none" className="w-4 h-4 text-primary-foreground" strokeWidth="2.2">
-              <path d="M3 9l9-6 9 6v11a1 1 0 01-1 1H4a1 1 0 01-1-1V9z" stroke="currentColor" strokeLinejoin="round"/>
-              <path d="M9 22V12h6v10" stroke="currentColor" strokeLinecap="round"/>
-            </svg>
-          </div>
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-sidebar-foreground leading-none">Tendwell Ops</div>
-            <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider">Property operations</div>
-          </div>
+      <SidebarHeader className="px-4 py-4 border-b border-sidebar-border">
+        <div className="flex flex-col items-center gap-1.5">
+          {/* Brand lockup — black on light, white on dark (next-themes adds `.dark` to <html>) */}
+          <img
+            src="/brand/tendwell-logo-black.png"
+            alt="Tendwell Cleaning Co."
+            className="w-44 max-w-full h-auto block dark:hidden"
+          />
+          <img
+            src="/brand/tendwell-logo-white.png"
+            alt="Tendwell Cleaning Co."
+            className="w-44 max-w-full h-auto hidden dark:block"
+          />
+          <div className="text-2xs text-muted-foreground uppercase tracking-[0.2em]">Operations</div>
         </div>
       </SidebarHeader>
 
