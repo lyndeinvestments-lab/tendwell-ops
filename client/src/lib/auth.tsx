@@ -61,6 +61,9 @@ export interface AuthUser {
   resolvedViews: ViewId[]
   resolvedPermissions: Record<string, PagePermission>
   hasCustomViews: boolean
+  /** Set when a staff user's email is ALSO an active property owner. Lets the
+   *  user switch into the owner portal view without a separate account. */
+  ownerIdentity?: { id: string; label: string } | null
 }
 
 interface AuthContextType {
@@ -69,6 +72,11 @@ interface AuthContextType {
   effectiveUser: AuthUser | null
   isEmulating: boolean
   setViewAs: (u: AuthUser | null) => void
+  /** True when the signed-in staff user is also an active property owner. */
+  canActAsOwner: boolean
+  /** When true, a dual staff+owner user is viewing the owner portal. */
+  actingAsOwner: boolean
+  setActingAsOwner: (v: boolean) => void
   loginWithGoogle: () => Promise<void>
   loginWithPassword: (email: string, password: string) => Promise<void>
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>
@@ -307,6 +315,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
   const [isPasswordRecovery, setIsPasswordRecovery] = useState(false)
+  const [actingAsOwner, setActingAsOwnerState] = useState<boolean>(() => {
+    try { return localStorage.getItem('tendwell-acting-as-owner') === '1' } catch { return false }
+  })
 
   const [sessionEmail, setSessionEmail] = useState<string | null | undefined>(undefined)
 
@@ -324,6 +335,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const effectiveUser = viewAs ?? user
   const isEmulating = viewAs !== null
+
+  // A staff user whose email is also an active property owner may switch into
+  // the owner portal view. Pure owners (role 'owner') already see the portal.
+  const canActAsOwner = !!user?.ownerIdentity && user.role !== OWNER_ROLE
+
+  const setActingAsOwner = useCallback((v: boolean) => {
+    setActingAsOwnerState(v)
+    try {
+      if (v) localStorage.setItem('tendwell-acting-as-owner', '1')
+      else localStorage.removeItem('tendwell-acting-as-owner')
+    } catch { /* ignore storage failures */ }
+  }, [])
+
+  // Drop the owner view if the current user isn't eligible (e.g. after a
+  // different user signs in), so a stale flag never routes a non-owner.
+  useEffect(() => {
+    if (actingAsOwner && !canActAsOwner) setActingAsOwner(false)
+  }, [actingAsOwner, canActAsOwner, setActingAsOwner])
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -351,7 +380,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     resolveUserFromEmail(sessionEmail)
       .then(async appUser => {
         if (appUser) {
-          setUser(appUser)
+          // If this staff email is also an active property owner, attach the
+          // owner identity so the user can switch into the owner portal view.
+          // Default experience stays staff.
+          const alsoOwner = await resolveOwnerFromEmail(sessionEmail)
+          setUser(alsoOwner
+            ? { ...appUser, ownerIdentity: { id: alsoOwner.id, label: alsoOwner.label } }
+            : appUser)
           setAuthError(null)
           return
         }
@@ -423,6 +458,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     setViewAsState(null)
     setIsPasswordRecovery(false)
+    setActingAsOwnerState(false)
+    try { localStorage.removeItem('tendwell-acting-as-owner') } catch { /* ignore */ }
     // Bust the cached identity so a subsequent login within the TTL isn't
     // attributed to the previous user in the audit log.
     clearCachedIdentity()
@@ -453,6 +490,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user, viewAs, effectiveUser, isEmulating, setViewAs,
+      canActAsOwner, actingAsOwner, setActingAsOwner,
       loginWithGoogle, loginWithPassword, requestPasswordReset, updatePassword,
       logout, isLoading, authError, isPasswordRecovery,
     }}>

@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug
+  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -104,7 +104,7 @@ function loadCollapsedState(): Record<string, boolean> {
 }
 
 export function AppSidebar() {
-  const { user, effectiveUser, logout } = useAuth()
+  const { user, effectiveUser, logout, canActAsOwner, setActingAsOwner } = useAuth()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
@@ -236,6 +236,18 @@ export function AppSidebar() {
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           <span className="text-sm">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
         </Button>
+        {canActAsOwner && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setActingAsOwner(true)}
+            data-testid="button-switch-owner-view"
+            className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground h-8"
+          >
+            <Eye className="w-4 h-4" />
+            <span className="text-sm">Owner view</span>
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

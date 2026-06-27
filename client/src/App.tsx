@@ -285,7 +285,7 @@ const spinnerFallback = (
 );
 
 function AppLayout() {
-  const { user, isLoading, isPasswordRecovery } = useAuth();
+  const { user, isLoading, isPasswordRecovery, actingAsOwner } = useAuth();
   const [location] = useLocation();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -371,8 +371,9 @@ function AppLayout() {
   }
 
   // Property owners get a dedicated, sidebar-free portal — they never see the
-  // staff app shell or routes.
-  if (user.role === 'owner') {
+  // staff app shell or routes. A staff user who is also an owner reaches the
+  // same portal by switching into "Owner view" (actingAsOwner).
+  if (user.role === 'owner' || (actingAsOwner && user.ownerIdentity)) {
     return (
       <Suspense fallback={spinnerFallback}>
         <OwnerPortalPage />
