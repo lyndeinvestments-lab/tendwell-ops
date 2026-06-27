@@ -2458,6 +2458,53 @@ export type Database = {
           },
         ]
       }
+      owner_testimonials: {
+        Row: {
+          admin_note: string | null
+          allow_photo: boolean
+          body: string
+          created_at: string
+          display_preference: string
+          id: string
+          owner_id: string
+          rating: number | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          admin_note?: string | null
+          allow_photo?: boolean
+          body: string
+          created_at?: string
+          display_preference?: string
+          id?: string
+          owner_id: string
+          rating?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          admin_note?: string | null
+          allow_photo?: boolean
+          body?: string
+          created_at?: string
+          display_preference?: string
+          id?: string
+          owner_id?: string
+          rating?: number | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_testimonials_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           color: string

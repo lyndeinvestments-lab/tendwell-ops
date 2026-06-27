@@ -2800,6 +2800,92 @@ function ReferralsSection() {
   )
 }
 
+// ─── Testimonials Section (owner-submitted testimonials review) ────────────────
+type AdminTestimonial = {
+  id: string
+  rating: number | null
+  body: string
+  display_preference: string
+  allow_photo: boolean
+  status: string
+  admin_note: string | null
+  created_at: string
+  property_owners: { name: string | null; email: string | null } | null
+}
+
+const TESTIMONIAL_STATUSES = ['submitted', 'approved', 'published', 'declined']
+
+function TestimonialsSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['admin-testimonials'],
+    queryFn: async (): Promise<AdminTestimonial[]> => {
+      const { data, error } = await supabase
+        .from('owner_testimonials')
+        .select('id, rating, body, display_preference, allow_photo, status, admin_note, created_at, property_owners(name, email)')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as any as AdminTestimonial[]
+    },
+  })
+
+  const update = useMutation({
+    mutationFn: async ({ id, patch }: { id: string; patch: Record<string, any> }) => {
+      const { error } = await supabase.from('owner_testimonials').update(patch as any).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] }),
+    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const rows = data ?? []
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Testimonials</h2>
+        <p className="text-sm text-muted-foreground">Testimonials submitted by owners. Review, then approve or publish. Respect each owner's display preference.</p>
+      </div>
+      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No testimonials yet.</p>}
+      <div className="space-y-3">
+        {rows.map(t => (
+          <div key={t.id} className="rounded-xl border border-border p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs text-amber-500">{t.rating ? '★'.repeat(t.rating) : 'No rating'}</p>
+                <p className="text-sm text-foreground/90 mt-0.5">&ldquo;{t.body}&rdquo;</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t.property_owners?.name || t.property_owners?.email || 'owner'} · show as {t.display_preference.replace('_', ' ')}
+                  {t.allow_photo ? ' · photo OK' : ''} · {new Date(t.created_at).toLocaleDateString()}
+                </p>
+              </div>
+              <select
+                className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
+                value={t.status}
+                onChange={e => update.mutate({ id: t.id, patch: { status: e.target.value } })}
+                data-testid={`select-testimonial-status-${t.id}`}
+              >
+                {TESTIMONIAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <Input
+              defaultValue={t.admin_note ?? ''}
+              placeholder="Internal note (optional)"
+              className="text-sm"
+              onBlur={e => { if (e.target.value !== (t.admin_note ?? '')) update.mutate({ id: t.id, patch: { admin_note: e.target.value || null } }) }}
+              data-testid={`input-testimonial-note-${t.id}`}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
@@ -2816,6 +2902,7 @@ export default function SettingsPage() {
           <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
           <TabsTrigger value="owners" data-testid="tab-owners">Owners</TabsTrigger>
           <TabsTrigger value="referrals" data-testid="tab-referrals">Referrals</TabsTrigger>
+          <TabsTrigger value="testimonials" data-testid="tab-testimonials">Testimonials</TabsTrigger>
           <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
           <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
           <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
@@ -2832,6 +2919,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="referrals" className="mt-0">
             <ReferralsSection />
+          </TabsContent>
+          <TabsContent value="testimonials" className="mt-0">
+            <TestimonialsSection />
           </TabsContent>
           <TabsContent value="roles" className="mt-0 space-y-6">
             <PermissionsSection />

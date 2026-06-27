@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -573,6 +573,143 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
   )
 }
 
+// ─── Testimonials ─────────────────────────────────────────────────────────────
+type OwnerTestimonial = {
+  id: string
+  rating: number | null
+  body: string
+  display_preference: string
+  allow_photo: boolean
+  status: string
+  created_at: string
+}
+
+const TESTIMONIAL_STATUS_LABEL: Record<string, string> = {
+  submitted: 'Submitted', approved: 'Approved', published: 'Published', declined: 'Declined',
+}
+const TESTIMONIAL_STATUS_TONE: Record<string, string> = {
+  submitted: 'bg-info/10 text-info',
+  approved: 'bg-warning/10 text-warning',
+  published: 'bg-success/10 text-success',
+  declined: 'bg-muted text-muted-foreground',
+}
+
+function TestimonialsSection({ ownerId }: { ownerId: string }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ rating: '5', body: '', display_preference: 'full_name', allow_photo: false })
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-testimonials'],
+    queryFn: async (): Promise<OwnerTestimonial[]> => {
+      const { data, error } = await supabase
+        .from('owner_testimonials')
+        .select('id, rating, body, display_preference, allow_photo, status, created_at')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as OwnerTestimonial[]
+    },
+  })
+
+  const submit = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('owner_testimonials').insert({
+        owner_id: ownerId,
+        rating: form.rating ? Number(form.rating) : null,
+        body: form.body.trim(),
+        display_preference: form.display_preference,
+        allow_photo: form.allow_photo,
+      } as any)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Thank you!', description: 'Your testimonial was submitted for review.' })
+      setForm({ rating: '5', body: '', display_preference: 'full_name', allow_photo: false })
+      setOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['owner-testimonials'] })
+    },
+    onError: (e: any) => toast({ title: 'Could not submit', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  const items = data ?? []
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Quote className="w-4 h-4 text-muted-foreground" /> Share your experience
+        </h2>
+        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-testimonial-form">
+          {open ? 'Cancel' : 'Write a testimonial'}
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5">
+        <p className="text-sm text-muted-foreground">Loved working with Tendwell? Share a few words. You control how your name is shown, and we review before anything is published.</p>
+
+        {open && (
+          <div className="space-y-3 rounded-lg border border-border/60 p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Rating">
+                <select
+                  className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+                  value={form.rating}
+                  onChange={e => setForm(f => ({ ...f, rating: e.target.value }))}
+                  data-testid="select-testimonial-rating"
+                >
+                  {[5, 4, 3, 2, 1].map(n => <option key={n} value={String(n)}>{'★'.repeat(n)} ({n})</option>)}
+                </select>
+              </Field>
+              <Field label="Show my name as">
+                <select
+                  className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+                  value={form.display_preference}
+                  onChange={e => setForm(f => ({ ...f, display_preference: e.target.value }))}
+                  data-testid="select-testimonial-display"
+                >
+                  <option value="full_name">Full name</option>
+                  <option value="first_name">First name only</option>
+                  <option value="anonymous">Anonymous</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Your testimonial">
+              <Textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={4} data-testid="input-testimonial-body" />
+            </Field>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input type="checkbox" checked={form.allow_photo} onChange={e => setForm(f => ({ ...f, allow_photo: e.target.checked }))} data-testid="checkbox-testimonial-photo" />
+              You may use a property photo alongside my testimonial
+            </label>
+            <div className="flex justify-end">
+              <Button size="sm" disabled={!form.body.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-testimonial">
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit testimonial'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {isLoading && <Skeleton className="h-16 rounded-lg" />}
+        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load testimonials" description="Please try again." />}
+        {!isLoading && !isError && items.length === 0 && !open && (
+          <p className="text-sm text-muted-foreground">You haven't submitted a testimonial yet.</p>
+        )}
+        {items.map(t => (
+          <div key={t.id} className="rounded-lg border border-border/60 p-3 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-amber-500">{t.rating ? '★'.repeat(t.rating) : ''}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${TESTIMONIAL_STATUS_TONE[t.status] ?? 'bg-muted text-muted-foreground'}`}>
+                {TESTIMONIAL_STATUS_LABEL[t.status] ?? t.status}
+              </span>
+            </div>
+            <p className="text-sm text-foreground/90">{t.body}</p>
+            <p className="text-2xs text-muted-foreground">Submitted {formatDate(t.created_at)}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -651,6 +788,7 @@ export default function OwnerPortalPage() {
 
         <ShipmentsSection />
         {ownerId && <ReferralsSection ownerId={ownerId} />}
+        {ownerId && <TestimonialsSection ownerId={ownerId} />}
       </main>
     </div>
   )
