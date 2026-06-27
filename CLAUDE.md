@@ -97,6 +97,7 @@ tendwell-ops/
 | `/settings` | `settings.tsx` | admin |
 | `/revenue-report` | `revenue-report.tsx` | admin, viewer |
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
+| `/reviews` | `reviews.tsx` | admin, operations, viewer |
 | `/trellis-sync` | `trellis-sync.tsx` | **admin only** (`AdminRoute`) |
 | `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal) |
 | `/reset-password` | `reset-password.tsx` | Public (password-recovery link target) |
@@ -222,6 +223,8 @@ npm run db:push    # Push Drizzle schema to SQLite
 ---
 
 ## Current State & Recent Work
+
+- **Reviews page (2026-06-27, branch `claude/reviews-page`):** new `/reviews` page (Operations group, admin/operations/viewer) showing **live Hostaway guest reviews from Haven** — Tendwell cleans for Haven, so guest feedback is a direct cleaning-quality signal. Read-only, modeled on Haven-OS's own `/operations/reviews` page. Hostaway credentials stay only in Haven-OS: a new shared-key endpoint `GET /api/reviews` was added there (auth via `HAVEN_REVIEWS_API_KEY`, mirrors the lost-items pattern), and Tendwell proxies it server-side at `api/reviews/list.ts` (`api/reviews/_lib.ts`, reuses `HAVEN_API_BASE_URL` + new `HAVEN_REVIEWS_API_KEY`). The page (`client/src/pages/reviews.tsx`) converts Hostaway's 0–10 ratings to 5-star, leads with a **Cleanliness** KPI + category sub-scores (cleanliness/check-in/communication/value/location/accuracy), and has search + window/rating/response/status/sort filters, a desktop table, mobile cards, a slide-over detail drawer, and loading/empty/error states. **Manual/live setup:** set `HAVEN_REVIEWS_API_KEY` (same value) in BOTH Haven-OS and Tendwell Vercel envs; `HAVEN_API_BASE_URL` already set for lost-items. No DB changes (read-only; no workflow overlay).
 
 - **Branding: login redesign + real logo (2026-06-27, branch `feat/ops-branding-login-logo`):** added the real Tendwell logo lockup (`client/public/brand/tendwell-logo-black.png` + `-white.png`, 3200×1600 transparent PNGs). (1) **Login page** (`pages/login.tsx`) restyled to mirror the public tendwellcleaningco.com marketing site — warm cream `#FAF6EF` bg, fine paper grain, Newsreader display heading, linen card, pine pill buttons, amber focus rings. It is intentionally **light-only** (hardcoded marketing hex, not theme tokens) so the app's dark-mode toggle never affects it. All auth functionality + `data-testid`s preserved. (2) **Sidebar brand** (`components/AppSidebar.tsx`) now shows the horizontal logo with an "Operations" caption, swapping black↔white via `block dark:hidden` / `hidden dark:block` (sidebar is `collapsible="offcanvas"`, so no icon-rail variant needed). Helpers added to `index.css` (`.font-display`, `.marketing-auth`, `.marketing-grain`); Newsreader added to the Google Fonts `<link>` in `index.html`.
 
