@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText } from 'lucide-react'
 import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -829,6 +829,121 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
   )
 }
 
+// ─── Quotes ───────────────────────────────────────────────────────────────────
+type OwnerQuote = {
+  id: number
+  name: string
+  ce_charged: number | null
+  deep_clean_3x_ce: number | null
+  estimated_deep_clean_cost: number | null
+  linen_program: boolean | null
+  linen_program_cost: number | null
+  bedrooms: number | null
+  number_of_beds: number | null
+  full_baths: number | null
+  half_baths: number | null
+  quote_sent_at: string | null
+  quote_owner_response: string | null
+  quote_responded_at: string | null
+}
+
+function formatMoney(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+}
+
+function QuotesSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-quotes'],
+    queryFn: async (): Promise<OwnerQuote[]> => {
+      const { data, error } = await supabase.rpc('get_owner_quotes')
+      if (error) throw error
+      return (data ?? []) as OwnerQuote[]
+    },
+  })
+
+  const respond = useMutation({
+    mutationFn: async ({ id, response }: { id: number; response: 'approved' | 'declined' }) => {
+      const { error } = await supabase.rpc('owner_respond_to_quote', { p_property_id: id, p_response: response })
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      toast({
+        title: v.response === 'approved' ? 'Quote approved' : 'Quote declined',
+        description: v.response === 'approved' ? 'Thanks! Our team will begin onboarding.' : 'Thanks for letting us know.',
+      })
+      queryClient.invalidateQueries({ queryKey: ['owner-quotes'] })
+    },
+    onError: (e: any) => toast({ title: 'Could not submit', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+  })
+
+  if (isLoading) return <Skeleton className="h-28 rounded-2xl" />
+  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load your quote" description="Please try again." />
+  const quotes = data ?? []
+  if (quotes.length === 0) return null
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/30">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <FileText className="w-4 h-4 text-muted-foreground" /> Your quote{quotes.length > 1 ? 's' : ''}
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-3 pb-5">
+        {quotes.map(q => {
+          const pending = !q.quote_owner_response || q.quote_owner_response === 'pending'
+          const approved = q.quote_owner_response === 'approved'
+          return (
+            <div key={q.id} className="rounded-lg border border-border/60 p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold text-foreground">{q.name}</p>
+                {!pending && (
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${approved ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
+                    {approved ? 'Approved' : 'Declined'}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1 text-sm">
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Cleaning fee (per turn)</span>
+                  <span className="font-medium text-foreground">{formatMoney(q.ce_charged)}</span>
+                </div>
+                {q.deep_clean_3x_ce ? (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Onboarding deep clean</span>
+                    <span className="font-medium text-foreground">{formatMoney(q.deep_clean_3x_ce)}</span>
+                  </div>
+                ) : null}
+                {q.linen_program && q.linen_program_cost ? (
+                  <div className="flex justify-between gap-3">
+                    <span className="text-muted-foreground">Linen program (monthly)</span>
+                    <span className="font-medium text-foreground">{formatMoney(q.linen_program_cost)}</span>
+                  </div>
+                ) : null}
+              </div>
+              {pending ? (
+                <div className="flex gap-2 justify-end pt-1">
+                  <Button size="sm" variant="outline" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'declined' })} data-testid={`button-decline-quote-${q.id}`}>
+                    Decline
+                  </Button>
+                  <Button size="sm" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'approved' })} data-testid={`button-approve-quote-${q.id}`}>
+                    {respond.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Approve'}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-2xs text-muted-foreground">Responded {formatDate(q.quote_responded_at)}</p>
+              )}
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -876,6 +991,7 @@ export default function OwnerPortalPage() {
       </header>
 
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
+        {ownerId && <QuotesSection />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">

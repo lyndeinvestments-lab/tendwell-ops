@@ -15,7 +15,7 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
-import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FileText, TrendingUp, Clock } from 'lucide-react'
+import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FileText, TrendingUp, Clock, Send } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
@@ -98,6 +98,9 @@ export default function QuoteSheetPage() {
   }
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
+  // "Send quote to owner" flow: pick a provisioned owner to review the quote.
+  const [sendingQuote, setSendingQuote] = useState<any>(null)
+  const [sendOwnerId, setSendOwnerId] = useState('')
   const [newProp, setNewProp] = useState<NewProp>(EMPTY_PROP)
   // Inline "create a client from this quote" flow — small dialog over the
   // Add Quote dialog. On success we invalidate the contacts query and
@@ -379,6 +382,44 @@ export default function QuoteSheetPage() {
     })
     setAddOpen(true)
   }
+
+  // Owners eligible to receive a quote (provisioned, active portal owners).
+  const { data: portalOwners } = useQuery({
+    queryKey: ['property-owners-active'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('id, name, email')
+        .eq('active', true)
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as { id: string; name: string | null; email: string }[]
+    },
+  })
+
+  const { mutate: sendQuoteToOwner, isPending: sendPending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async () => {
+      if (!sendingQuote || !sendOwnerId) throw new Error('Select an owner')
+      // Link the owner to the property (idempotent) so the portal scopes it to them...
+      const { error: linkErr } = await supabase
+        .from('owner_properties')
+        .upsert({ owner_id: sendOwnerId, property_id: sendingQuote.id }, { onConflict: 'owner_id,property_id' })
+      if (linkErr) throw linkErr
+      // ...then mark the quote as sent + awaiting the owner's response.
+      const { error: updErr } = await supabase
+        .from('properties')
+        .update({ quote_sent_at: new Date().toISOString(), quote_owner_response: 'pending' } as any)
+        .eq('id', sendingQuote.id)
+      if (updErr) throw updErr
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      toast({ title: 'Quote sent to owner' })
+      setSendingQuote(null)
+      setSendOwnerId('')
+    },
+    onError: (e: any) => toast({ title: 'Failed to send', description: e?.message, variant: 'destructive' }),
+  })
 
   function handleConvert(prop: any) {
     const reqFields = onboardingStage?.requires_fields || []
@@ -845,6 +886,16 @@ export default function QuoteSheetPage() {
                             <Button
                               size="sm"
                               variant="ghost"
+                              className="h-6 text-xs gap-1 hover:text-primary px-2"
+                              onClick={(e) => { e.stopPropagation(); setSendingQuote(p); setSendOwnerId('') }}
+                              data-testid={`button-send-owner-${p.id}`}
+                              title={p.quote_sent_at ? `Quote ${p.quote_owner_response ?? 'sent'} to owner` : 'Send quote to owner'}
+                            >
+                              <Send className="w-3 h-3" /> {p.quote_owner_response === 'approved' ? 'Approved' : p.quote_owner_response === 'declined' ? 'Declined' : p.quote_sent_at ? 'Sent' : 'Send'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
                               onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
                               data-testid={`button-archive-${p.id}`}
@@ -903,6 +954,36 @@ export default function QuoteSheetPage() {
         </table>
       </div>
       {filtered.length > 0 && <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />}
+
+      {/* Send Quote to Owner Dialog */}
+      <Dialog open={!!sendingQuote} onOpenChange={v => { if (!v) { setSendingQuote(null); setSendOwnerId('') } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base">Send quote to owner</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">
+              Link an owner to <strong>{sendingQuote?.name}</strong> and send them this quote to review and approve in their portal.
+            </p>
+            <select
+              className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+              value={sendOwnerId}
+              onChange={e => setSendOwnerId(e.target.value)}
+              data-testid="select-send-owner"
+            >
+              <option value="">Select an owner…</option>
+              {(portalOwners ?? []).map(o => <option key={o.id} value={o.id}>{o.name || o.email}</option>)}
+            </select>
+            <p className="text-2xs text-muted-foreground">Owner not listed? Add them in Settings → Owners first.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setSendingQuote(null); setSendOwnerId('') }}>Cancel</Button>
+            <Button disabled={!sendOwnerId || sendPending} onClick={() => sendQuoteToOwner()} data-testid="button-confirm-send-quote">
+              {sendPending ? 'Sending…' : 'Send quote'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Quote Dialog */}
       <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>

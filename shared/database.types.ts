@@ -3297,6 +3297,9 @@ export type Database = {
           profit_deep_clean: number | null
           profit_percentage: number | null
           queen_beds: number | null
+          quote_owner_response: string | null
+          quote_responded_at: string | null
+          quote_sent_at: string | null
           square_footage: number | null
           stage_id: number | null
           suggested_pay: number | null
@@ -3378,6 +3381,9 @@ export type Database = {
           profit_deep_clean?: number | null
           profit_percentage?: number | null
           queen_beds?: number | null
+          quote_owner_response?: string | null
+          quote_responded_at?: string | null
+          quote_sent_at?: string | null
           square_footage?: number | null
           stage_id?: number | null
           suggested_pay?: number | null
@@ -3459,6 +3465,9 @@ export type Database = {
           profit_deep_clean?: number | null
           profit_percentage?: number | null
           queen_beds?: number | null
+          quote_owner_response?: string | null
+          quote_responded_at?: string | null
+          quote_sent_at?: string | null
           square_footage?: number | null
           stage_id?: number | null
           suggested_pay?: number | null
@@ -5159,6 +5168,9 @@ export type Database = {
           profit_deep_clean: number | null
           profit_percentage: number | null
           queen_beds: number | null
+          quote_owner_response: string | null
+          quote_responded_at: string | null
+          quote_sent_at: string | null
           square_footage: number | null
           stage_id: number | null
           suggested_pay: number | null
@@ -5207,6 +5219,25 @@ export type Database = {
           title: string
         }[]
       }
+      get_owner_quotes: {
+        Args: never
+        Returns: {
+          bedrooms: number
+          ce_charged: number
+          deep_clean_3x_ce: number
+          estimated_deep_clean_cost: number
+          full_baths: number
+          half_baths: number
+          id: number
+          linen_program: boolean
+          linen_program_cost: number
+          name: string
+          number_of_beds: number
+          quote_owner_response: string
+          quote_responded_at: string
+          quote_sent_at: string
+        }[]
+      }
       get_owner_shipments: {
         Args: never
         Returns: {
@@ -5229,6 +5260,10 @@ export type Database = {
       owner_property_perms: {
         Args: { p_owner_id: string; p_property_id: number }
         Returns: Json
+      }
+      owner_respond_to_quote: {
+        Args: { p_property_id: number; p_response: string }
+        Returns: undefined
       }
       portal_is_admin: { Args: never; Returns: boolean }
       purge_deleted_properties: {
