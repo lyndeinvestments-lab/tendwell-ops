@@ -164,3 +164,24 @@ export async function sendInviteEmail(email: string, name: string): Promise<{ ok
     return { ok: false, error: e?.message || 'Network error' }
   }
 }
+
+// Fire-and-forget owner notification (staff-triggered). Never throws — a failed
+// email must not break the staff action that triggered it. The recipient is
+// resolved server-side from ownerId; we only pass display context here.
+export async function notifyOwner(
+  ownerId: string,
+  event: 'quote_sent' | 'referral_update' | 'testimonial_update' | 'feedback_update',
+  ctx?: { propertyName?: string; status?: string; referredName?: string },
+): Promise<void> {
+  try {
+    const token = await getToken()
+    if (!token) return
+    await fetch('/api/notify/owner', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ ownerId, event, ...(ctx || {}) }),
+    })
+  } catch (e) {
+    console.warn('notifyOwner error:', e)
+  }
+}
