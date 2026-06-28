@@ -7,14 +7,19 @@ create or replace view financial_breezeway_property_ids as
 
 -- Monthly cleans, deduped, trailing 12 months, no future dates.
 create or replace view financial_monthly_cleans as
+-- Count by due_date (when the clean was scheduled / happened), NOT
+-- completed_date: the one-time historical backfill carries a corrupted
+-- completed_date (a bulk "mark complete" dated ~2026-03 for the whole
+-- backlog), whereas due_date preserves the real per-month timing and
+-- reproduces the known growth curve.
 with bz as (
-  select to_char(date_trunc('month', coalesce(completed_date, due_date)), 'YYYY-MM') as month,
+  select to_char(date_trunc('month', due_date), 'YYYY-MM') as month,
          count(*) as cleans
   from breezeway_tasks
   where is_clean = true
-    and coalesce(completed_date, due_date) is not null
-    and coalesce(completed_date, due_date) <= current_date
-    and coalesce(completed_date, due_date) >= (current_date - interval '12 months')
+    and due_date is not null
+    and due_date <= current_date
+    and due_date >= (current_date - interval '12 months')
   group by 1
 ),
 -- Trellis cleans ONLY for properties absent from Breezeway (Trellis-only).
