@@ -71,14 +71,19 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Financials',
     items: [
-      { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
-      { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
-      { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
+      { title: 'Overview', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       // Pro Forma now hosts the Live Pro Forma (forecaster) + Per-Property tabs
       // in a single page. Either historical permission shows the entry.
       { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
-      { title: 'Overview', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
+      { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
+      { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
+    ],
+  },
+  {
+    label: 'Admin',
+    items: [
+      { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'Trellis Sync', href: '/trellis-sync', view: 'trellis-sync', icon: Plug },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
