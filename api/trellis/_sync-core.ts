@@ -35,6 +35,12 @@ export interface SyncOptions {
   logId?: string
   requestedBy?: string
   onProgress?: ProgressCallback
+  /** Row id of the trellis_sync_log entry being written, so the core can
+   *  poll cancel_requested at each checkpoint. Required for cancellation. */
+  syncLogId?: string
+  /** Supabase service-role client to use for cancel checks. Required when
+   *  syncLogId is provided. */
+  cancelCheckClient?: SupabaseClient
 }
 
 // ── MCP / Trellis keys ───────────────────────────────────────────────────────
@@ -183,6 +189,13 @@ function estimateEta(t0: number, pct: number): number {
   return Math.round(elapsed / (pct / 100) - elapsed)
 }
 
+// ── Cancellation sentinel ────────────────────────────────────────────────────
+
+// Thrown when cancel_requested=true is detected at a checkpoint.
+class SyncCanceledError extends Error {
+  constructor() { super('Sync canceled by user request'); this.name = 'SyncCanceledError' }
+}
+
 // ── Main sync ────────────────────────────────────────────────────────────────
 
 export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
@@ -214,8 +227,23 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     } catch { /* fire-and-forget */ }
   }
 
+  // Check cancel_requested on the current log row. Reads only the one column
+  // for the current row id — cheap single-row point read.
+  const checkCancel = async () => {
+    if (!opts.syncLogId || !opts.cancelCheckClient) return
+    const { data } = await opts.cancelCheckClient
+      .from('trellis_sync_log')
+      .select('cancel_requested')
+      .eq('id', opts.syncLogId)
+      .single()
+    if ((data as { cancel_requested?: boolean } | null)?.cancel_requested) {
+      throw new SyncCanceledError()
+    }
+  }
+
   // ── Workspace A: Roster ──────────────────────────────────────────────────
   await emit('roster', 0, estimatedTotal, 'Loading Workspace A roster…')
+  await checkCancel()
   const wf = await callTool(A, 'read_workforce', { limit: 100 }) as { data?: { members?: Array<Record<string, unknown>> }; members?: Array<Record<string, unknown>> }
   const members = wf.data?.members || wf.members || []
   const rosterMap = new Map<unknown, Record<string, unknown>>()
@@ -231,38 +259,47 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   processed += rosterMap.size
   estimatedTotal = Math.max(estimatedTotal, processed + 730)
   await emit('roster', processed, estimatedTotal, `Roster loaded (${rosterMap.size} members)`)
+  await checkCancel()
 
   // ── Workspace A: Properties ──────────────────────────────────────────────
   await emit('props_a', processed, estimatedTotal, 'Pulling Workspace A properties…')
+  await checkCancel()
   const propsA = await queryAll(A, 'properties', PROP_SELECT, null, 100)
   await upsert(supabase, 'trellis_property_snapshot', propsA.map(p => propRow(p, 'A')), 'trellis_id')
   processed += propsA.length
   estimatedTotal = Math.max(estimatedTotal, processed + 650)
   await emit('props_a', processed, estimatedTotal, `Workspace A properties done (${propsA.length})`)
+  await checkCancel()
 
   // ── Workspace A: Tasks ───────────────────────────────────────────────────
   await emit('tasks_a', processed, estimatedTotal, 'Pulling Workspace A tasks…')
+  await checkCancel()
   const tasksA = dedupeById(await queryAll(A, 'tasks', TASK_SELECT, dateFilter, 100))
   await upsert(supabase, 'trellis_task_snapshot', tasksA.map(t => taskRow(t, 'A')), 'trellis_task_id')
   processed += tasksA.length
   estimatedTotal = Math.max(estimatedTotal, processed + 460)
   await emit('tasks_a', processed, estimatedTotal, `Workspace A tasks done (${tasksA.length})`)
+  await checkCancel()
 
   // ── Workspace B: Properties ──────────────────────────────────────────────
   await emit('props_b', processed, estimatedTotal, 'Pulling Workspace B properties…')
+  await checkCancel()
   const propsB = await queryAll(B, 'properties', PROP_SELECT, null, 50)
   await upsert(supabase, 'trellis_property_snapshot', propsB.map(p => propRow(p, 'B')), 'trellis_id')
   processed += propsB.length
   estimatedTotal = Math.max(estimatedTotal, processed + 400)
   await emit('props_b', processed, estimatedTotal, `Workspace B properties done (${propsB.length})`)
+  await checkCancel()
 
   // ── Workspace B: Tasks ───────────────────────────────────────────────────
   await emit('tasks_b', processed, estimatedTotal, 'Pulling Workspace B tasks…')
+  await checkCancel()
   const bTasks = new Map<unknown, Record<string, unknown>>()
   // Tendwell Cleaning Co. assignment
   for (const t of await queryAll(B, 'tasks', TASK_SELECT, { assigned_to_name: 'Tendwell Cleaning Co.', ...dateFilter }, 50)) {
     if (t.id) bTasks.set(t.id, t)
   }
+  await checkCancel()
   // Per-roster-member tasks
   let membersDone = 0
   for (const uid of rosterMap.keys()) {
@@ -273,11 +310,13 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     processed = processed + (bTasks.size / Math.max(membersDone, 1))
     await emit('tasks_b', Math.round(processed), estimatedTotal,
       `Pulling Workspace B tasks… (member ${membersDone}/${rosterMap.size})`)
+    await checkCancel()
   }
   await upsert(supabase, 'trellis_task_snapshot', [...bTasks.values()].map(t => taskRow(t, 'B')), 'trellis_task_id')
   processed = Math.round(processed)
   estimatedTotal = processed + 10
   await emit('tasks_b', processed, estimatedTotal, `Workspace B tasks done (${bTasks.size})`)
+  await checkCancel()
 
   // ── Prune stale B tasks ──────────────────────────────────────────────────
   await emit('pruning', processed, estimatedTotal, 'Pruning stale Workspace B tasks…')
@@ -295,6 +334,8 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   await emit('done', estimatedTotal, estimatedTotal, `Sync complete in ${((Date.now() - t0) / 1000).toFixed(1)}s`)
   return counts
 }
+
+export { SyncCanceledError }
 
 // ── Convenience: build a supabase service-role client ───────────────────────
 export function makeServiceSupabase(): SupabaseClient {

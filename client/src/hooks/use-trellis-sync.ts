@@ -55,13 +55,15 @@ export interface TaskRow {
 }
 export interface SyncLogRow {
   id: string
-  status: 'requested' | 'running' | 'done' | 'error'
+  status: 'requested' | 'running' | 'done' | 'error' | 'canceled'
   trigger: string
+  requested_by: string | null
   started_at: string | null
   finished_at: string | null
   counts: Record<string, number> | null
   error: string | null
   progress: SyncProgress | null
+  cancel_requested: boolean
   created_at: string
 }
 
@@ -138,12 +140,27 @@ export function useTrellisSync() {
       if (error) throw error
       return (data?.[0] ?? null) as unknown as SyncLogRow | null
     },
-    // Poll at 2s while running, fall back to 5s for requested, else stop.
+    // Poll at 2s while running or canceling (cancel_requested=true), 5s for requested, else stop.
     refetchInterval: (q) => {
-      const s = (q.state.data as SyncLogRow | null)?.status
-      if (s === 'running') return 2000
-      if (s === 'requested') return 5000
+      const row = q.state.data as SyncLogRow | null
+      if (row?.status === 'running') return 2000
+      if (row?.status === 'requested') return 5000
       return false
+    },
+    refetchOnWindowFocus: false,
+  })
+
+  // Sync history — most recent 50 rows for the History tab.
+  const syncHistory = useQuery({
+    queryKey: [...KEY, 'history'],
+    queryFn: async (): Promise<SyncLogRow[]> => {
+      const { data, error } = await supabase
+        .from('trellis_sync_log')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50)
+      if (error) throw error
+      return (data ?? []) as unknown as SyncLogRow[]
     },
     refetchOnWindowFocus: false,
   })
@@ -246,7 +263,30 @@ export function useTrellisSync() {
     },
   })
 
-  return { recon, exceptions, roster, lastSync, lastDoneSync, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync }
+  // Request cooperative cancellation of a running sync via POST /api/trellis/sync-cancel.
+  const cancelSync = useMutation({
+    mutationFn: async (): Promise<{ ok: boolean; log_id?: string; message?: string }> => {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
+      if (!token) throw new Error('Not authenticated')
+      const res = await fetch('/api/trellis/sync-cancel', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
+      return json as { ok: boolean; log_id?: string; message?: string }
+    },
+    onSuccess: () => {
+      // Keep polling — lastSync will eventually flip to 'canceled'
+      qc.invalidateQueries({ queryKey: [...KEY, 'lastSync'] })
+    },
+  })
+
+  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).
