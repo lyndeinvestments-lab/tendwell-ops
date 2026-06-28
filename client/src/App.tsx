@@ -58,7 +58,7 @@ const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"))
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overview"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
-const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
+// RevenueReportPage retired — /revenue-report now redirects to /pro-forma (By Client tab)
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
 const ReviewsPage = lazyRetry(() => import("@/pages/reviews"));
@@ -254,7 +254,7 @@ function AppRoutes() {
         <Route path="/forecaster">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
-        <Route path="/revenue-report">{() => <GuardedRoute viewId="revenue-report" component={RevenueReportPage} />}</Route>
+        <Route path="/revenue-report">{() => <Redirect to="/pro-forma" />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
         <Route path="/reviews">{() => <GuardedRoute viewId="reviews" component={ReviewsPage} />}</Route>
