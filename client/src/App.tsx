@@ -55,7 +55,7 @@ const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
 const LostItemsPage = lazyRetry(() => import("@/pages/lost-items"));
 const LostItemDetailPage = lazyRetry(() => import("@/pages/lost-item-detail"));
 const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"));
-const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-dashboard"));
+const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overview"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
 const RevenueReportPage = lazyRetry(() => import("@/pages/revenue-report"));
@@ -67,7 +67,6 @@ const AlertsPage = lazyRetry(() => import("@/pages/alerts"));
 const ActivityFeedPage = lazyRetry(() => import("@/pages/activity"));
 const IssuesPage = lazyRetry(() => import("@/pages/issues"));
 const TasksPage = lazyRetry(() => import("@/pages/tasks"));
-const ReportPage = lazyRetry(() => import("@/pages/report"));
 const CleanerMetricsPage = lazyRetry(() => import("@/pages/cleaner-metrics"));
 const NorthStarPage = lazyRetry(() => import("@/pages/north-star"));
 const NotFound = lazyRetry(() => import("@/pages/not-found"));
@@ -266,7 +265,7 @@ function AppRoutes() {
         <Route path="/activity">{() => <GuardedRoute viewId="activity" component={ActivityFeedPage} />}</Route>
         <Route path="/issues">{() => <GuardedRoute viewId="issues" component={IssuesPage} />}</Route>
         <Route path="/tasks">{() => <GuardedRoute viewId="tasks" component={TasksPage} />}</Route>
-        <Route path="/report">{() => <GuardedRoute viewId="report" component={ReportPage} />}</Route>
+        <Route path="/report">{() => <Redirect to="/financial-dashboard" />}</Route>
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/trellis-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
