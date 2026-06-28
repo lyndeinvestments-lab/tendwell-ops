@@ -17,7 +17,9 @@ export function parseQboMonthly(raw: any): { months: QboMonth[]; updatedAt: stri
     const ym = toYm(key); if (!ym) continue
     const income = Number(v.income ?? v.totalIncome ?? 0)
     const cogs = Number(v.cogs ?? v.totalCOGS ?? 0)
-    const expenses = Number(v.expenses ?? v.totalExpenses ?? 0)
+    // Only `expenses` (operating expenses). NOT `totalExpenses` — in QBO that
+    // is COGS+opex already summed, which would double-count COGS below.
+    const expenses = Number(v.expenses ?? 0)
     const netIncome = Number(v.netIncome ?? income - cogs - expenses)
     months.push({ ym, income, cogs, expenses, totalExpenses: cogs + expenses, netIncome,
       marginPct: income ? (netIncome / income) * 100 : null })
