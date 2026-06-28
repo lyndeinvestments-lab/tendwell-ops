@@ -15,7 +15,7 @@ import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress, type SyncLogRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
 
 function formatEta(seconds: number): string {
   if (seconds <= 0) return ''
@@ -109,7 +109,7 @@ function MatchPicker({ opsId, opsName, currentTrellisId, options, disabled, onAp
   )
 }
 
-function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel }: {
+function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel, breezewayCoverage, breezewayExceptions }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
   trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
@@ -118,6 +118,8 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   dismissRow: ReturnType<typeof useTrellisSync>['dismissRow']
   restoreRow: ReturnType<typeof useTrellisSync>['restoreRow']
   userLabel: string
+  breezewayCoverage: ReturnType<typeof useTrellisSync>['breezewayCoverage']
+  breezewayExceptions: ReturnType<typeof useTrellisSync>['breezewayExceptions']
 }) {
   const { toast } = useToast()
   const [pendingId, setPendingId] = useState<number | null>(null)
@@ -130,6 +132,10 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   const exRows = exceptions.data ?? []
   const options = trellisProps.data ?? []
   const allDismissals: DismissalRow[] = dismissals.data ?? []
+  const bzExRows: BreezewayExceptionRow[] = breezewayExceptions.data ?? []
+  const bzCoverageMap = new Map<number, BreezewayCoverageRow>(
+    (breezewayCoverage.data ?? []).map(r => [r.property_id, r])
+  )
 
   // Build fast lookup sets
   const dismissedExSet = new Set(
@@ -308,6 +314,46 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
         )}
       </div>
 
+      {/* Breezeway exceptions panel — tasks in Breezeway with no matching Ops property */}
+      <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle className="w-4 h-4 text-destructive" />
+          <h2 className="text-sm font-semibold">
+            In Breezeway, not in Ops ({bzExRows.length})
+          </h2>
+        </div>
+        {breezewayExceptions.error ? (
+          <p className="text-xs text-destructive">Failed to load Breezeway exceptions — <button className="underline" onClick={() => breezewayExceptions.refetch()}>retry</button>.</p>
+        ) : breezewayExceptions.isLoading ? (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        ) : bzExRows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No unmatched Breezeway properties. Every Breezeway task maps to an Ops property.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-2xs uppercase text-muted-foreground text-left">
+                <th className="py-1 pr-3">Breezeway property</th>
+                <th className="py-1 pr-3">Cleans</th>
+                <th className="py-1 pr-3">Tasks</th>
+                <th className="py-1 pr-3">Date range</th>
+              </tr></thead>
+              <tbody>
+                {bzExRows.map(e => (
+                  <tr key={e.property_raw} className="border-t border-border/50">
+                    <td className="py-1.5 pr-3">{e.property_raw}</td>
+                    <td className="py-1.5 pr-3 tabular-nums">{e.clean_count}</td>
+                    <td className="py-1.5 pr-3 tabular-nums">{e.task_count}</td>
+                    <td className="py-1.5 pr-3 tabular-nums text-muted-foreground">
+                      {e.first_due && e.last_due ? `${e.first_due} – ${e.last_due}` : e.first_due ?? e.last_due ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Mapping table */}
       <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -318,15 +364,16 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                 <th className="py-2 px-3">Trellis match</th>
                 <th className="py-2 px-3">Workspace</th>
                 <th className="py-2 px-3">Tendwell tasks</th>
+                <th className="py-2 px-3">Breezeway</th>
                 <th className="py-2 px-3">Status</th>
                 <th className="py-2 px-3 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {recon.isLoading ? (
-                <tr><td colSpan={6} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+                <tr><td colSpan={7} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
               ) : visibleReconRows.length === 0 ? (
-                <tr><td colSpan={6}><EmptyState icon={Inbox} title="No properties" description="Run a sync to populate Trellis data." /></td></tr>
+                <tr><td colSpan={7}><EmptyState icon={Inbox} title="No properties" description="Run a sync to populate Trellis data." /></td></tr>
               ) : visibleReconRows.map(r => {
                 const isDismissed = r.match_status !== 'matched' && dismissedReconSet.has(String(r.ops_property_id))
                 const dismissal = isDismissed ? findReconDismissal(r.ops_property_id) : undefined
@@ -342,6 +389,13 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                     </td>
                     <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
                     <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
+                    <td className="py-1.5 px-3">
+                      {(() => {
+                        const bz = bzCoverageMap.get(r.ops_property_id)
+                        if (!bz) return <span className="text-muted-foreground/60">—</span>
+                        return <StatusBadge tone="info">{bz.clean_count} cleans</StatusBadge>
+                      })()}
+                    </td>
                     <td className="py-1.5 px-3">
                       <StatusBadge tone={r.match_status === 'matched' ? 'success' : r.match_status === 'suggested' ? 'info' : 'warning'}>
                         {r.match_status}
@@ -597,7 +651,7 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync } = useTrellisSync()
 
   // When a sync finishes (done or canceled), refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
@@ -609,6 +663,8 @@ export default function TrellisSyncPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'roster'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'lastDoneSync'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'history'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'breezewayCoverage'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'breezewayExceptions'] })
     }
     if (syncStatus === 'canceled' && prevSyncStatus.current !== 'canceled') {
       toast({ title: 'Sync canceled', description: 'The sync was stopped. Partial data is retained.' })
@@ -732,6 +788,8 @@ export default function TrellisSyncPage() {
             dismissRow={dismissRow}
             restoreRow={restoreRow}
             userLabel={user?.label || 'admin'}
+            breezewayCoverage={breezewayCoverage}
+            breezewayExceptions={breezewayExceptions}
           />
         </TabsContent>
         <TabsContent value="workflows">

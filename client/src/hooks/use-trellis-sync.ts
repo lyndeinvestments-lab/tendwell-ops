@@ -82,6 +82,20 @@ export interface DismissalRow {
   created_at: string
 }
 
+export interface BreezewayCoverageRow {
+  property_id: number
+  clean_count: number
+  last_clean_due: string | null
+}
+
+export interface BreezewayExceptionRow {
+  property_raw: string
+  clean_count: number
+  task_count: number
+  first_due: string | null
+  last_due: string | null
+}
+
 export function useTrellisSync() {
   const qc = useQueryClient()
 
@@ -174,6 +188,31 @@ export function useTrellisSync() {
         .from('trellis_property_snapshot').select('trellis_id, name, workspace').order('name')
       if (error) throw error
       return (data ?? []) as TrellisPropOption[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
+  const breezewayCoverage = useQuery({
+    queryKey: [...KEY, 'breezewayCoverage'],
+    queryFn: async (): Promise<BreezewayCoverageRow[]> => {
+      const { data, error } = await (supabase as any)
+        .from('breezeway_property_coverage')
+        .select('property_id, clean_count, last_clean_due')
+      if (error) throw error
+      return (data ?? []) as BreezewayCoverageRow[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
+  const breezewayExceptions = useQuery({
+    queryKey: [...KEY, 'breezewayExceptions'],
+    queryFn: async (): Promise<BreezewayExceptionRow[]> => {
+      const { data, error } = await (supabase as any)
+        .from('breezeway_exceptions')
+        .select('*')
+        .order('clean_count', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as BreezewayExceptionRow[]
     },
     refetchOnWindowFocus: false,
   })
@@ -286,7 +325,7 @@ export function useTrellisSync() {
     },
   })
 
-  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync }
+  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).
