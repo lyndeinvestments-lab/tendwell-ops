@@ -45,7 +45,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const since = new Date()
     since.setMonth(since.getMonth() - windowMonths)
     since.setDate(1)
-    const fromDate = since.toISOString().slice(0, 10)
+    // Ramp's /transactions from_date requires a full RFC3339 datetime — a
+    // date-only string (YYYY-MM-DD) is rejected with HTTP 422.
+    const fromDate = since.toISOString()
 
     const MAX_TX = 3000
     const allTransactions: any[] = []
