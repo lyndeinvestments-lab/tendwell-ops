@@ -79,8 +79,8 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
       { title: 'Overview', href: '/financial-dashboard', view: 'financial-dashboard', icon: DollarSign },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
-      { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
       { title: 'Trellis Sync', href: '/trellis-sync', view: 'trellis-sync', icon: Plug },
+      { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },
 ]
