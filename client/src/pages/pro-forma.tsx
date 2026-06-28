@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download, FlaskConical, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
@@ -233,10 +233,6 @@ export default function ProFormaPage() {
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
-  // Feature 2: Scenario overrides
-  const [scenarioOverrides, setScenarioOverrides] = useState<Record<string, number>>({})
-  const [scenarioEnabled, setScenarioEnabled] = useState<Set<string>>(new Set())
-
   // Feature 3: Filter controls
   const [freqFilter, setFreqFilter] = useState('all')
   const [profitFilter, setProfitFilter] = useState('all')
@@ -350,9 +346,11 @@ export default function ProFormaPage() {
       const costPerClean = Number(p.total_estimated_cost) || 0
       const revenue = cpm * ce
       const cost    = cpm * costPerClean
+      const manualCpm = Number(p.avg_cleans_per_month) || null
       return {
         ...p,
         avg_cleans_per_month: cpm,
+        _manual_avg_cleans: manualCpm,
         monthly_revenue_estimate: revenue,
         monthly_cost_estimate: cost,
         monthly_profit_estimate: revenue - cost,
@@ -412,13 +410,14 @@ export default function ProFormaPage() {
     const result = properties.filter((p: any) => {
       if (search && !p.name?.toLowerCase().includes(search.toLowerCase())) return false
       if (freqFilter !== 'all' && p.cleaning_frequency !== freqFilter) return false
-      if (missingDataFilter && p.first_clean_date != null) return false
+      if (missingDataFilter && p.first_clean_date == null) return false
+      const breakEvenThreshold = breakEvenMargin * 100
       if (profitFilter === 'profitable') {
         const pct = p.profit_percentage ?? 0
-        if (pct <= 5) return false
+        if (pct <= breakEvenThreshold) return false
       } else if (profitFilter === 'near_break_even') {
         const pct = p.profit_percentage ?? 0
-        if (pct <= 0 || pct > 5) return false
+        if (pct <= 0 || pct > breakEvenThreshold) return false
       } else if (profitFilter === 'unprofitable') {
         const pct = p.profit_percentage ?? 0
         if (pct > 0) return false
@@ -515,9 +514,6 @@ export default function ProFormaPage() {
     return { total, avgMargin, belowBreakEven, negativeProfit }
   }, [filtered])
 
-  // Feature 2: Scenario columns visibility
-  const hasScenarios = Object.keys(scenarioOverrides).length > 0
-
   function toggleSelect(id: string) {
     setSelected(prev => {
       const next = new Set(prev)
@@ -532,23 +528,6 @@ export default function ProFormaPage() {
     } else {
       setSelected(new Set(filtered.map((p: any) => p.id)))
     }
-  }
-
-  function toggleScenario(id: string) {
-    setScenarioEnabled(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-        setScenarioOverrides(o => {
-          const n = { ...o }
-          delete n[id]
-          return n
-        })
-      } else {
-        next.add(id)
-      }
-      return next
-    })
   }
 
   // Feature 6: CSV export with Frequency Type column
@@ -581,9 +560,7 @@ export default function ProFormaPage() {
   const someSelected = selected.size > 0 && selected.size < filtered.length
 
   // Total col count for colSpan calculations
-  const baseColCount = 13 // checkbox + 11 data cols + scenario toggle col
-  const scenarioColCount = hasScenarios ? 3 : 0
-  const totalColCount = baseColCount + scenarioColCount
+  const totalColCount = 12 // checkbox + 11 data cols
 
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
@@ -676,8 +653,8 @@ export default function ProFormaPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="text-xs">All</SelectItem>
-              <SelectItem value="profitable" className="text-xs">Profitable (&gt;5%)</SelectItem>
-              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (&lt;5%)</SelectItem>
+              <SelectItem value="profitable" className="text-xs">Profitable (&gt;{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
+              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (0–{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
               <SelectItem value="unprofitable" className="text-xs">Unprofitable</SelectItem>
             </SelectContent>
           </Select>
@@ -921,17 +898,6 @@ export default function ProFormaPage() {
               >
                 <span className="flex items-center gap-1">B/E CE <SortIcon col="total_estimated_cost" /></span>
               </th>
-              {/* Scenario toggle column */}
-              <th className="py-2 px-2 w-8" title="Enable scenario mode for this row">
-                <FlaskConical className="w-3.5 h-3.5 text-muted-foreground mx-auto" />
-              </th>
-              {hasScenarios && (
-                <>
-                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Rev</th>
-                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Cost</th>
-                  <th className="text-left text-xs font-medium text-info uppercase tracking-wide py-2 px-3 whitespace-nowrap">Scenario Mo Profit</th>
-                </>
-              )}
             </tr>
           </thead>
           <tbody>
@@ -948,13 +914,6 @@ export default function ProFormaPage() {
             ) : (
               paged.map((p: any) => {
                 const profitNeg = (p.monthly_profit_estimate || 0) < 0
-                const scenarioOn = scenarioEnabled.has(p.id)
-                const scenarioCpm = scenarioOverrides[p.id] ?? null
-                const scenarioRev = p.ce_charged != null && scenarioCpm != null ? p.ce_charged * scenarioCpm : null
-                const scenarioCost = p.total_estimated_cost != null && scenarioCpm != null ? p.total_estimated_cost * scenarioCpm : null
-                const scenarioProfit = p.ce_charged != null && p.total_estimated_cost != null && scenarioCpm != null
-                  ? (p.ce_charged - p.total_estimated_cost) * scenarioCpm
-                  : null
                 return (
                   <tr key={p.id} data-testid={`row-proforma-${p.id}`} className={`border-b border-border/50 hover:bg-muted/20 transition-colors ${profitNeg ? 'bg-destructive/5' : ''}`}>
                     <td className="py-2 px-3 sticky left-0 z-10 bg-card">
@@ -1001,7 +960,16 @@ export default function ProFormaPage() {
                       {/* Feature 1: Custom frequency with inline input */}
                       <FrequencyCell id={p.id} value={p.cleaning_frequency} avgCleans={p.avg_cleans_per_month} />
                     </td>
-                    <td className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`} title={(p.avg_cleans_per_month ?? 0) > 10 ? 'Unusually high — verify cleaning history' : undefined}>
+                    <td
+                      className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`}
+                      title={
+                        (p.avg_cleans_per_month ?? 0) > 10
+                          ? 'Unusually high — verify cleaning history'
+                          : p._manual_avg_cleans != null && p._manual_avg_cleans !== p.avg_cleans_per_month
+                            ? `Manual: ${p._manual_avg_cleans} · Breezeway: ${p.avg_cleans_per_month}`
+                            : undefined
+                      }
+                    >
                       {p.avg_cleans_per_month ?? '—'}
                     </td>
                     <td className="py-2 px-3">
@@ -1020,50 +988,6 @@ export default function ProFormaPage() {
                         ? fmt(p.total_estimated_cost / (1 - breakEvenMargin))
                         : '—'}
                     </td>
-                    {/* Feature 2: Scenario toggle button */}
-                    <td className="py-2 px-2 text-center">
-                      <button
-                        title={scenarioOn ? 'Disable scenario mode' : 'Enable scenario mode'}
-                        onClick={() => toggleScenario(p.id)}
-                        className={`p-0.5 rounded transition-colors ${scenarioOn ? 'text-info bg-info/15' : 'text-muted-foreground hover:text-info'}`}
-                      >
-                        <FlaskConical className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                    {/* Feature 2: Scenario columns */}
-                    {hasScenarios && (
-                      <>
-                        <td className="py-2 px-3 text-xs tabular-nums text-info">
-                          {scenarioOn ? (
-                            <div className="flex items-center gap-1">
-                              <Input
-                                type="number"
-                                min="0"
-                                step="0.1"
-                                value={scenarioOverrides[p.id] ?? ''}
-                                onChange={e => {
-                                  const v = parseFloat(e.target.value)
-                                  if (!isNaN(v)) {
-                                    setScenarioOverrides(o => ({ ...o, [p.id]: v }))
-                                  } else {
-                                    setScenarioOverrides(o => { const n = { ...o }; delete n[p.id]; return n })
-                                  }
-                                }}
-                                className="h-6 w-16 text-xs px-1"
-                                placeholder="cpm"
-                              />
-                              {scenarioRev != null && <span>{fmt(scenarioRev)}</span>}
-                            </div>
-                          ) : '—'}
-                        </td>
-                        <td className="py-2 px-3 text-xs tabular-nums text-info">
-                          {scenarioOn && scenarioCost != null ? fmt(scenarioCost) : '—'}
-                        </td>
-                        <td className={`py-2 px-3 text-xs tabular-nums font-semibold ${scenarioProfit != null && scenarioProfit < 0 ? 'text-destructive' : 'text-info'}`}>
-                          {scenarioOn && scenarioProfit != null ? fmt(scenarioProfit) : '—'}
-                        </td>
-                      </>
-                    )}
                   </tr>
                 )
               })
@@ -1083,8 +1007,6 @@ export default function ProFormaPage() {
                 <td className="py-2 px-3 text-xs tabular-nums">{fmt(totals.cost)}</td>
                 <td className={`py-2 px-3 text-xs tabular-nums ${totals.profit < 0 ? 'text-destructive' : 'text-primary'}`}>{fmt(totals.profit)}</td>
                 <td className="py-2 px-3" />
-                <td className="py-2 px-3" />
-                {hasScenarios && <><td /><td /><td /></>}
               </tr>
             )}
           </tbody>
