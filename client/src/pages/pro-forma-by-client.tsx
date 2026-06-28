@@ -160,7 +160,17 @@ export default function ProFormaByClientPage() {
           activeCount: g.properties.length,
         }
       })
-      .sort((a, b) => b.ce - a.ce)
+      .sort((a, b) => {
+        let av: any, bv: any
+        if (sortKey === 'name') { av = a.name || ''; bv = b.name || ''; return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av) }
+        if (sortKey === 'ce_charged') { av = a.ce; bv = b.ce }
+        else if (sortKey === 'cleaner_pay') { av = a.pay; bv = b.pay }
+        else if (sortKey === 'profit') { av = a.profit; bv = b.profit }
+        else { av = a.avgPct; bv = b.avgPct }
+        if (av < bv) return sortDir === 'asc' ? -1 : 1
+        if (av > bv) return sortDir === 'asc' ? 1 : -1
+        return 0
+      })
   }, [sorted, contacts])
 
   // ------------------------------------------------------------------

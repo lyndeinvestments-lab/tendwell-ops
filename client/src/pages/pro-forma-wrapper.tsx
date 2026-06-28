@@ -36,7 +36,7 @@ const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
   },
   'per-property': {
     title: 'Per-Property Pro Forma',
-    subtitle: 'Estimated monthly revenue, cost, and profit per property — with what-if scenarios and CSV import.',
+    subtitle: 'Estimated monthly revenue, cost, and profit per property — with CSV import.',
   },
   'by-client': {
     title: 'Pro Forma by Client',

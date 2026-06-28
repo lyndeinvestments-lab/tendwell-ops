@@ -58,7 +58,7 @@ const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"))
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overview"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
-// RevenueReportPage retired — /revenue-report now redirects to /pro-forma (By Client tab)
+// RevenueReportPage retired — /revenue-report now redirects to /pro-forma (Pro Forma wrapper; By Client available as a tab)
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
 const ReviewsPage = lazyRetry(() => import("@/pages/reviews"));
