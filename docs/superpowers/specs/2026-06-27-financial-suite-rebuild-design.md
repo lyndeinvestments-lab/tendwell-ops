@@ -32,7 +32,9 @@ Collapse six pages → **three**, each with one clear job, all reading a **share
 
 ## Cross-cutting data-quality rule: Trellis ⟂ Breezeway de-duplication
 
-**Trellis mirrors/duplicates Breezeway tasks for some properties.** Any count of "tasks" or "cleans" that touches both systems MUST de-duplicate so totals are not inflated. This applies to (a) the canonical clean-volume series used across all three pages and (b) the live Trellis task tile. Dedup approach: treat Breezeway as the system of record for cleans where a property exists in both; identify overlap by (property + date + task type) and/or an external-id/source mapping, and never sum Trellis + Breezeway for the same property/period. The dedup logic lives once, in the shared layer (`cleanVolume.ts` / a `taskLoad` helper), not per page. Surface the dedup assumption in the UI footnote.
+**The duplication is at the PROPERTY level, not per-task.** A given property's tasks are mirrored wholesale: Property A's tasks appear in **both** Breezeway and Trellis; Property B's appear **only in Breezeway**; Property C's appear **only in Trellis**. There is no partial/per-task overlap within a property.
+
+**Dedup rule:** assign each property a **single source** and count only from it — **Breezeway is system-of-record whenever the property exists in Breezeway** (covers A and B); **Trellis is used only for properties absent from Breezeway** (covers C). Never sum both systems for the same property. Implementation: build the set of property keys present in `breezeway_tasks`; a property is counted from Trellis (`trellis_task_snapshot`/`trellis_task_attributed`) **only if its key is not in that set**. This applies to (a) the canonical monthly clean-volume series and (b) the live Trellis task tile. The dedup logic lives once in the shared layer (`cleanVolume.ts` / `taskLoad.ts`), not per page, and the property↔system mapping is exposed for debugging. Surface the dedup assumption in a UI footnote. **Property-key matching** between the two systems must be resolved (Ops `property_id` ↔ Trellis property id/name) — reuse the existing Trellis reconciliation mapping (`trellis_property_enriched`/`trellis_reconciliation`) rather than inventing a new join.
 
 ---
 
@@ -43,8 +45,8 @@ The core fix for "no source of truth." A small, tested module all three pages im
 
 - **`scope.ts`** — the single definition of which property stages count as operational for financials (resolves the Active-only vs Active+Onboarding+Offboarding inconsistency). One exported predicate, used everywhere.
 - **`qbo.ts`** — parse `app_settings.qbo_pl_data`: normalize `monthly` (object keyed `"Mon YYYY"`, each `{income, cogs, expenses, netIncome}`) into a sorted `{ ym: "YYYY-MM", income, cogs, expenses, totalExpenses: cogs+expenses, netIncome, marginPct }[]`; expose `updatedAt`, breakdowns, and a "connected/stale" status. Tolerate both `totalX`/`x` key forms.
-- **`cleanVolume.ts`** — ONE canonical monthly clean-count source, **de-duplicated across Breezeway and Trellis** (see cross-cutting rule). Prefer `breezeway_tasks`/`property_breezeway_stats` as system-of-record; fold in `cleaning_history` only for months/properties Breezeway doesn't cover; never double-count a property present in both Breezeway and Trellis. Filter `<= today` (drop stray future-dated rows). This same de-duplicated series is what Forecast and P&L must consume.
-- **`taskLoad.ts`** — current open/overdue/due-this-week task counts from `trellis_task_snapshot`, **de-duplicated against Breezeway** so a clean represented in both isn't counted twice.
+- **`cleanVolume.ts`** — ONE canonical monthly clean-count series using **per-property single-source selection** (cross-cutting rule): for each property, count Breezeway cleans if the property is in Breezeway, else Trellis cleans — never both. `cleaning_history` (CSV-imported) is used only as historical backfill for periods before Breezeway coverage, also property-deduped. Filter `<= today` (drop stray future-dated rows). This exact series is what Forecast and P&L must consume.
+- **`taskLoad.ts`** — current open/overdue/due-this-week counts using the **same per-property single-source** rule: Breezeway-tracked properties counted from Breezeway, Trellis-only properties from `trellis_task_snapshot` — so a property mirrored in both is never counted twice.
 - **`perClean.ts`** — unit economics from QBO + (deduped) clean volume: revenue/clean, cost/clean, net/clean, margin%; divide-by-zero → `null` ("—").
 - **`format.ts`** — shared currency/percent/delta formatting (no more per-page `fmt` variants).
 
@@ -79,7 +81,7 @@ Remove its nav entry; redirect `/report` → `/financial-dashboard` (Overview). 
 
 ## 6. Acceptance criteria (Phase 1)
 - Shared `lib/financials` modules exist and are the only place Overview computes financials.
-- Clean/task counts are de-duplicated across Trellis and Breezeway (no inflation); verified against a known property that exists in both.
+- Per-property single-source dedup verified on three cases: a property in BOTH systems is counted once (from Breezeway), a Breezeway-only property is counted, and a Trellis-only property is counted — no inflation, no omission.
 - `/financial-dashboard` shows the KPI tiles, 12-month margin trend, throughput trend, and Ramp category panel; numbers reconcile to QBO.
 - Revenue-per-clean / cost-per-clean computed with divide-by-zero guarded.
 - Ramp shown as a separate, clearly-labeled lens, never summed with QBO.
