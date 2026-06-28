@@ -507,11 +507,16 @@ export default function ForecasterPage() {
   // QBO actuals refresh nightly via a scheduled import on the backend; no user-facing pull button.
   const monthOptions = useMemo(() => {
     const seen = new Set(histData.map(m => m.month))
-    // Always include the current and selected months even if not in DB.
+    // proforma_months is sparse (only seeded months). Also offer every month
+    // that has clean-volume data (financial_monthly_cleans, trailing 12 mo) so
+    // the picker isn't missing months like Feb–May 2026 — selecting one shows
+    // QBO actuals via the qbo fallback.
+    for (const c of monthlyCleans || []) seen.add(c.month)
+    // Always include the current and selected months even if not in any source.
     seen.add(todayMonth())
     seen.add(selectedMonth)
     return Array.from(seen).sort().reverse()
-  }, [histData, selectedMonth])
+  }, [histData, monthlyCleans, selectedMonth])
 
   const isLoading = loadingMonths
 
