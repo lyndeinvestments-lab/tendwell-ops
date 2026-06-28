@@ -5090,6 +5090,20 @@ export type Database = {
         }
         Relationships: []
       }
+      financial_monthly_cleans: {
+        Row: {
+          month: string | null
+          cleans: number | null
+        }
+        Relationships: []
+      }
+      financial_task_load: {
+        Row: {
+          bucket: string | null
+          tasks: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       add_cleaner_app_user: {
