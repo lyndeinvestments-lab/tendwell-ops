@@ -89,6 +89,20 @@ export default function ForecasterPage() {
     },
   })
 
+  // ── Canonical monthly clean counts (deduped view) ───────────────────────
+  // financial_monthly_cleans is the same deduped view the Financial Overview
+  // uses (Breezeway is system-of-record; Trellis fills in properties absent
+  // from Breezeway). Using this as the authoritative task/clean count keeps
+  // the Forecaster consistent with the Overview for historical months.
+  const { data: monthlyCleans } = useQuery({
+    queryKey: ['/supabase/financial-monthly-cleans'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('financial_monthly_cleans').select('month, cleans')
+      if (error) throw error
+      return (data || []) as Array<{ month: string; cleans: number }>
+    },
+  })
+
   // ── QBO P&L fallback ─────────────────────────
   // Live Pro Forma actuals come from `proforma_months`. If a row is missing
   // for the selected month (or its values are zero) we synthesize one from
@@ -154,24 +168,34 @@ export default function ForecasterPage() {
 
   const histData: DerivedMonth[] = useMemo(() => {
     if (!rawMonths) return []
-    return rawMonths.map(r => computeDerived({
-      month: r.month,
-      cleaningFee: Number(r.cleaning_fee) || 0,
-      services: Number(r.services) || 0,
-      onboardingRevenue: Number(r.onboarding_revenue) || 0,
-      otherIncome: Number(r.other_income) || 0,
-      contractorPay: Number(r.contractor_pay) || 0,
-      laundry: Number(r.laundry) || 0,
-      leadership: Number(r.leadership) || 0,
-      supplies: Number(r.supplies) || 0,
-      inspections: Number(r.inspections) || 0,
-      trash: Number(r.trash) || 0,
-      otherCOGS: Number(r.other_cogs) || 0,
-      opex: Number(r.opex) || 0,
-      tasks: Number(r.tasks) || 0,
-      properties: Number(r.properties) || 0,
-    }))
-  }, [rawMonths])
+    // Build a fast lookup for canonical clean counts from the deduped view.
+    // Fall back to proforma_months.tasks only when the month is absent from
+    // the view (e.g. very old months before Breezeway/Trellis data existed).
+    const cleanMap = new Map<string, number>()
+    for (const c of monthlyCleans || []) cleanMap.set(c.month, Number(c.cleans))
+    return rawMonths.map(r => {
+      const canonicalTasks = cleanMap.has(r.month)
+        ? cleanMap.get(r.month)!
+        : Number(r.tasks) || 0
+      return computeDerived({
+        month: r.month,
+        cleaningFee: Number(r.cleaning_fee) || 0,
+        services: Number(r.services) || 0,
+        onboardingRevenue: Number(r.onboarding_revenue) || 0,
+        otherIncome: Number(r.other_income) || 0,
+        contractorPay: Number(r.contractor_pay) || 0,
+        laundry: Number(r.laundry) || 0,
+        leadership: Number(r.leadership) || 0,
+        supplies: Number(r.supplies) || 0,
+        inspections: Number(r.inspections) || 0,
+        trash: Number(r.trash) || 0,
+        otherCOGS: Number(r.other_cogs) || 0,
+        opex: Number(r.opex) || 0,
+        tasks: canonicalTasks,
+        properties: Number(r.properties) || 0,
+      })
+    })
+  }, [rawMonths, monthlyCleans])
 
   const latestMonth = histData[histData.length - 1]
   const prevMonth = histData[histData.length - 2]
@@ -245,9 +269,9 @@ export default function ForecasterPage() {
     if (monthly[yyyymm]) return monthly[yyyymm]
     const [y, m] = yyyymm.split('-').map(Number)
     if (!y || !m) return null
-    const longLabel = `${MONTH_NAMES[m - 1]} ${y}`           // e.g. "March 2026"
     const shortLabel = `${MONTH_NAMES[m - 1].slice(0, 3)} ${y}` // e.g. "Mar 2026"
-    return monthly[longLabel] || monthly[shortLabel] || null
+    const longLabel = `${MONTH_NAMES[m - 1]} ${y}`             // e.g. "March 2026"
+    return monthly[shortLabel] || monthly[longLabel] || null
   }
 
   // Synthesizes a DerivedMonth from the QBO P&L blob for a single month so
@@ -629,7 +653,18 @@ export default function ForecasterPage() {
             />
             <StatCard
               title="Tasks"
-              value={String(actualsRow.tasks ?? totalPeriodTasks ?? 0)}
+              value={String(
+                // For historical months prefer the canonical deduped count from
+                // financial_monthly_cleans (same source as Financial Overview).
+                // Fall back to actualsRow.tasks or the live breezeway count for
+                // months not yet in the view (current/future months).
+                (() => {
+                  const canonMap = new Map((monthlyCleans || []).map(c => [c.month, Number(c.cleans)]))
+                  return canonMap.has(selectedMonth)
+                    ? canonMap.get(selectedMonth)!
+                    : (actualsRow.tasks ?? totalPeriodTasks ?? 0)
+                })()
+              )}
               subtitle={`${actualsRow.properties ?? activePropsInPeriod ?? 0} properties`}
             />
             <StatCard
