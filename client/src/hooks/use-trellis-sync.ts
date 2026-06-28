@@ -96,6 +96,11 @@ export interface BreezewayExceptionRow {
   last_due: string | null
 }
 
+export interface OpsPropertyOption {
+  id: number
+  name: string
+}
+
 export function useTrellisSync() {
   const qc = useQueryClient()
 
@@ -217,6 +222,22 @@ export function useTrellisSync() {
     refetchOnWindowFocus: false,
   })
 
+  // Ops properties — option list for the Breezeway match picker.
+  // Excludes soft-deleted properties (deleted_at IS NOT NULL).
+  const opsProperties = useQuery({
+    queryKey: [...KEY, 'opsProperties'],
+    queryFn: async (): Promise<OpsPropertyOption[]> => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, name')
+        .is('deleted_at', null)
+        .order('name')
+      if (error) throw error
+      return (data ?? []) as OpsPropertyOption[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
   // Admin-controlled dismissals for exception + reconciliation rows.
   // The view does NOT filter these — the client handles show/hide via toggle.
   // Note: cast to `any` because generated DB types don't include this table
@@ -278,6 +299,50 @@ export function useTrellisSync() {
     },
   })
 
+  // Match a Breezeway orphan to an Ops property — upserts into
+  // breezeway_property_resolutions then back-fills property_id on existing
+  // breezeway_tasks rows that are still unmatched for that raw string.
+  // Cast to `any` — table not yet in generated DB types.
+  const matchBreezeway = useMutation({
+    mutationFn: async ({ propertyRaw, propertyId, resolvedBy }: { propertyRaw: string; propertyId: number; resolvedBy: string }) => {
+      const { error: resErr } = await (supabase as any)
+        .from('breezeway_property_resolutions')
+        .upsert(
+          { property_raw: propertyRaw, status: 'matched', property_id: propertyId, resolved_by: resolvedBy },
+          { onConflict: 'property_raw' }
+        )
+      if (resErr) throw resErr
+      const { error: taskErr } = await (supabase as any)
+        .from('breezeway_tasks')
+        .update({ property_id: propertyId })
+        .eq('property_raw', propertyRaw)
+        .is('property_id', null)
+      if (taskErr) throw taskErr
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'breezewayExceptions'] })
+      qc.invalidateQueries({ queryKey: [...KEY, 'breezewayCoverage'] })
+    },
+  })
+
+  // Dismiss a Breezeway orphan — upserts status='ignored' so the
+  // breezeway_exceptions view hides it on next refetch.
+  // Cast to `any` — table not yet in generated DB types.
+  const dismissBreezeway = useMutation({
+    mutationFn: async ({ propertyRaw, resolvedBy }: { propertyRaw: string; resolvedBy: string }) => {
+      const { error } = await (supabase as any)
+        .from('breezeway_property_resolutions')
+        .upsert(
+          { property_raw: propertyRaw, status: 'ignored', property_id: null, resolved_by: resolvedBy },
+          { onConflict: 'property_raw' }
+        )
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'breezewayExceptions'] })
+    },
+  })
+
   // Trigger a real server-side sync via POST /api/trellis/sync-now.
   // Returns the log row id so the polling query can pick it up immediately.
   const triggerSync = useMutation({
@@ -325,7 +390,7 @@ export function useTrellisSync() {
     },
   })
 
-  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync }
+  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, matchBreezeway, dismissBreezeway, triggerSync, cancelSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).

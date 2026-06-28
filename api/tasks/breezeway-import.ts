@@ -333,6 +333,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Load manual resolutions (admin-matched property_raw → property_id) so that
+  // previously resolved orphans are durably matched on every re-import, even
+  // when the automatic name/address matcher can't find them.
+  const resolutionMap = new Map<string, number>()
+  {
+    const { data: resRows } = await supabase
+      .from('breezeway_property_resolutions')
+      .select('property_raw, property_id')
+      .eq('status', 'matched')
+      .not('property_id', 'is', null)
+    for (const row of (resRows ?? []) as Array<{ property_raw: string; property_id: number }>) {
+      resolutionMap.set(row.property_raw, row.property_id)
+    }
+  }
+
   const matcher = await buildPropertyMatcher(supabase)
 
   const batch = randomUUID()
@@ -353,12 +368,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (seenIds.has(externalId)) continue
     seenIds.add(externalId)
 
-    // Try the (more reliable) name-based match first; fall back to the
-    // normalized-address match. Address-format inconsistency between
-    // Breezeway and Tendwell is severe enough that name is the primary
-    // signal — see extractPropertyNickname comment.
+    // Resolution map (admin-curated) takes priority over automatic matching.
+    // Falls back to name-match (more reliable) then address-match.
     const nickname = extractPropertyNickname(propertyRaw)
-    const propertyId = matcher.byName(nickname) ?? matcher.byAddress(propertyAddress)
+    const propertyId = (propertyRaw != null ? resolutionMap.get(propertyRaw) ?? null : null)
+      ?? matcher.byName(nickname)
+      ?? matcher.byAddress(propertyAddress)
     if (propertyId == null && propertyAddress) unmatchedAddrs.add(propertyAddress)
 
     rows.push({
