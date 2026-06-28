@@ -2,14 +2,16 @@ import { lazy, Suspense, useEffect, useState, createContext, useContext } from '
 import { useLocation } from 'wouter'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
-import { TrendingUp, Building2 } from 'lucide-react'
+import { TrendingUp, Building2, Users } from 'lucide-react'
 
 // Live Pro Forma (formerly /forecaster) — variance + historical + forecast.
 // Per-Property Pro Forma — the legacy table showing per-property economics.
+// By Client — client rollup view ported from the retired Revenue Report.
 const ForecasterPage = lazy(() => import('@/pages/forecaster'))
 const ProFormaTablePage = lazy(() => import('@/pages/pro-forma'))
+const ProFormaByClientPage = lazy(() => import('@/pages/pro-forma-by-client'))
 
-type TabValue = 'live' | 'per-property'
+type TabValue = 'live' | 'per-property' | 'by-client'
 
 // Children inspect this context and hide their own page h1 / sub-title so the
 // unified wrapper renders the single page chrome. Default false → child pages
@@ -34,7 +36,11 @@ const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
   },
   'per-property': {
     title: 'Per-Property Pro Forma',
-    subtitle: 'Estimated monthly revenue, cost, and profit per property — with what-if scenarios and CSV import.',
+    subtitle: 'Estimated monthly revenue, cost, and profit per property — with CSV import.',
+  },
+  'by-client': {
+    title: 'Pro Forma by Client',
+    subtitle: 'Client rollup: total revenue, cleaner pay, and gross margin grouped by owner, with expandable property rows.',
   },
 }
 
@@ -68,6 +74,9 @@ export default function ProFormaWrapperPage() {
               <TabsTrigger value="per-property" data-testid="tab-pro-forma-per-property" className="gap-1.5">
                 <Building2 className="w-3.5 h-3.5" /> Per-Property
               </TabsTrigger>
+              <TabsTrigger value="by-client" data-testid="tab-pro-forma-by-client" className="gap-1.5">
+                <Users className="w-3.5 h-3.5" /> By Client
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         </div>
@@ -82,6 +91,12 @@ export default function ProFormaWrapperPage() {
           <TabsContent value="per-property" className="flex-1 mt-0 data-[state=inactive]:hidden overflow-auto">
             <Suspense fallback={<TabFallback />}>
               <ProFormaTablePage />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent value="by-client" className="flex-1 mt-0 data-[state=inactive]:hidden overflow-auto">
+            <Suspense fallback={<TabFallback />}>
+              <ProFormaByClientPage />
             </Suspense>
           </TabsContent>
         </Tabs>

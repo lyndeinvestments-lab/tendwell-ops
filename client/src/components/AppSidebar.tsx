@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  BarChart3, ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText
+  ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -75,7 +75,6 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       // Pro Forma now hosts the Live Pro Forma (forecaster) + Per-Property tabs
       // in a single page. Either historical permission shows the entry.
       { title: 'Pro Forma', href: '/pro-forma', view: ['pro-forma', 'forecaster'], icon: TrendingUp },
-      { title: 'Revenue Report', href: '/revenue-report', view: 'revenue-report', icon: BarChart3 },
       { title: 'Master List', href: '/master-list', view: ['cost-tracking', 'master-list'], icon: ListFilter },
       { title: 'North Star', href: '/north-star', view: 'north-star', icon: TrendingUp },
     ],
