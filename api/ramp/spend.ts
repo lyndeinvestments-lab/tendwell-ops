@@ -40,18 +40,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const rampToken = await getRampToken()
 
-    // Support ?months=N window (default 12, clamped to 12 max)
-    const windowMonths = Math.min(Number(req.query.months) || 12, 12)
+    // Support ?months=N window (default 12, clamped 1–12; negative values clamped to 1)
+    const windowMonths = Math.max(1, Math.min(Number(req.query.months) || 12, 12))
     const since = new Date()
     since.setMonth(since.getMonth() - windowMonths)
     since.setDate(1)
     const fromDate = since.toISOString().slice(0, 10)
 
+    const MAX_TX = 3000
     const allTransactions: any[] = []
     let nextUrl: string | null = `${RAMP_API_BASE}/transactions?from_date=${fromDate}&page_size=100`
 
-    // Paginate through all results
-    while (nextUrl && allTransactions.length < 500) {
+    // Paginate through all results (bounded to MAX_TX to avoid runaway)
+    while (nextUrl && allTransactions.length < MAX_TX) {
       const txRes = await fetch(nextUrl, {
         headers: { Authorization: `Bearer ${rampToken}` },
       })
@@ -124,6 +125,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       byMonth,
       byCategory,
       windowMonths,
+      truncated: allTransactions.length >= MAX_TX,
     })
   } catch (err: any) {
     console.error('Ramp API error:', err)
