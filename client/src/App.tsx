@@ -82,6 +82,7 @@ const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
 const ResetPasswordPage = lazyRetry(() => import("@/pages/reset-password"));
+const FinancialOverviewPage = lazyRetry(() => import("@/pages/financial-overview"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
