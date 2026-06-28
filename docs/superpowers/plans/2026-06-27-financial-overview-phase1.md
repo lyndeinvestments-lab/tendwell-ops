@@ -532,6 +532,9 @@ const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overvie
 
 ---
 
+## Follow-on (Phase 1.5, after Overview ships) — unified property-source reconciliation
+Fold a **Breezeway** column into the existing **Trellis Sync** page so it becomes a per-Ops-property source map: shows Breezeway ✓ / Trellis ✓ / both / neither, and flags orphans on each side (unmatched Breezeway tasks — currently 0; unmapped Trellis — currently 6 properties / 9 tasks). Purpose: trust/transparency for the dedup + catch future Breezeway-import drift. Reuses the Trellis Sync reconciliation framework (one home, DRY). Not part of Phase 1; tracked as the next phase.
+
 ## Self-Review Notes
 - **Spec coverage:** shared layer (T2–T6), Overview page (T7), Ramp lens (T5), dedup property-single-source (T1, verified T1.S3), QBO-as-truth (T3/T7), retire Executive Summary (T8), QBO 12-month refresh (T9). ✓
 - **Dedup correctness** has an explicit SQL assertion (union = 182) and a live check across A/B/C.
