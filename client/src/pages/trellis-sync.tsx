@@ -15,7 +15,7 @@ import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
 
 function formatEta(seconds: number): string {
   if (seconds <= 0) return ''
@@ -109,7 +109,47 @@ function MatchPicker({ opsId, opsName, currentTrellisId, options, disabled, onAp
   )
 }
 
-function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel, breezewayCoverage, breezewayExceptions }: {
+// Searchable Ops-property picker for resolving Breezeway orphans.
+// Mirrors MatchPicker above but maps a Breezeway property_raw → Ops property id.
+function BreezewayMatchPicker({ propertyRaw, options, disabled, onApply }: {
+  propertyRaw: string
+  options: OpsPropertyOption[]
+  disabled: boolean
+  onApply: (propertyRaw: string, propertyId: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="ghost" disabled={disabled}>
+          <Link2 className="w-3.5 h-3.5 mr-1.5" />
+          Match
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="end">
+        <Command>
+          <CommandInput placeholder="Search Ops properties…" />
+          <CommandList>
+            <CommandEmpty>No Ops property found.</CommandEmpty>
+            <CommandGroup heading="Ops properties">
+              {options.map(o => (
+                <CommandItem
+                  key={o.id}
+                  value={`${o.name} ${o.id}`}
+                  onSelect={() => { onApply(propertyRaw, o.id); setOpen(false) }}
+                >
+                  <span className="flex-1 truncate">{o.name}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel, breezewayCoverage, breezewayExceptions, opsProperties, matchBreezeway, dismissBreezeway }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
   trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
@@ -120,11 +160,16 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   userLabel: string
   breezewayCoverage: ReturnType<typeof useTrellisSync>['breezewayCoverage']
   breezewayExceptions: ReturnType<typeof useTrellisSync>['breezewayExceptions']
+  opsProperties: ReturnType<typeof useTrellisSync>['opsProperties']
+  matchBreezeway: ReturnType<typeof useTrellisSync>['matchBreezeway']
+  dismissBreezeway: ReturnType<typeof useTrellisSync>['dismissBreezeway']
 }) {
   const { toast } = useToast()
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [showDismissed, setShowDismissed] = useState(false)
   const [pendingDismiss, setPendingDismiss] = useState<string | null>(null)
+  const [pendingBzMatch, setPendingBzMatch] = useState<string | null>(null)
+  const [pendingBzDismiss, setPendingBzDismiss] = useState<string | null>(null)
 
   if (recon.error) return <ErrorState onRetry={() => recon.refetch()} />
 
@@ -136,6 +181,7 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   const bzCoverageMap = new Map<number, BreezewayCoverageRow>(
     (breezewayCoverage.data ?? []).map(r => [r.property_id, r])
   )
+  const opsOptions: OpsPropertyOption[] = opsProperties.data ?? []
 
   // Build fast lookup sets
   const dismissedExSet = new Set(
@@ -219,6 +265,31 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
       toast({ title: 'Restore failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     } finally {
       setPendingDismiss(null)
+    }
+  }
+
+  const handleMatchBreezeway = async (propertyRaw: string, propertyId: number) => {
+    setPendingBzMatch(propertyRaw)
+    const opsName = opsOptions.find(o => o.id === propertyId)?.name ?? String(propertyId)
+    try {
+      await matchBreezeway.mutateAsync({ propertyRaw, propertyId, resolvedBy: userLabel })
+      toast({ title: 'Matched', description: `${propertyRaw} → ${opsName}` })
+    } catch (e) {
+      toast({ title: 'Match failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingBzMatch(null)
+    }
+  }
+
+  const handleDismissBreezeway = async (propertyRaw: string) => {
+    setPendingBzDismiss(propertyRaw)
+    try {
+      await dismissBreezeway.mutateAsync({ propertyRaw, resolvedBy: userLabel })
+      toast({ title: 'Dismissed', description: propertyRaw })
+    } catch (e) {
+      toast({ title: 'Dismiss failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingBzDismiss(null)
     }
   }
 
@@ -336,6 +407,7 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                 <th className="py-1 pr-3">Cleans</th>
                 <th className="py-1 pr-3">Tasks</th>
                 <th className="py-1 pr-3">Date range</th>
+                <th className="py-1 pr-3 text-right">Action</th>
               </tr></thead>
               <tbody>
                 {bzExRows.map(e => (
@@ -345,6 +417,27 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                     <td className="py-1.5 pr-3 tabular-nums">{e.task_count}</td>
                     <td className="py-1.5 pr-3 tabular-nums text-muted-foreground">
                       {e.first_due && e.last_due ? `${e.first_due} – ${e.last_due}` : e.first_due ?? e.last_due ?? '—'}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <BreezewayMatchPicker
+                          propertyRaw={e.property_raw}
+                          options={opsOptions}
+                          disabled={pendingBzMatch === e.property_raw || pendingBzDismiss === e.property_raw}
+                          onApply={handleMatchBreezeway}
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 text-2xs text-muted-foreground hover:text-foreground"
+                          disabled={pendingBzDismiss === e.property_raw || pendingBzMatch === e.property_raw}
+                          onClick={() => handleDismissBreezeway(e.property_raw)}
+                          title="Dismiss this Breezeway property"
+                        >
+                          <X className="w-3 h-3 mr-1" />
+                          Dismiss
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -651,7 +744,7 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, triggerSync, cancelSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, matchBreezeway, dismissBreezeway, triggerSync, cancelSync } = useTrellisSync()
 
   // When a sync finishes (done or canceled), refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
@@ -790,6 +883,9 @@ export default function TrellisSyncPage() {
             userLabel={user?.label || 'admin'}
             breezewayCoverage={breezewayCoverage}
             breezewayExceptions={breezewayExceptions}
+            opsProperties={opsProperties}
+            matchBreezeway={matchBreezeway}
+            dismissBreezeway={dismissBreezeway}
           />
         </TabsContent>
         <TabsContent value="workflows">
