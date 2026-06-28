@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildMonthlySeries } from './perClean'
+import { buildMonthlySeries, lastTwo } from './perClean'
 
 const qbo = [
   { ym: '2026-05', income: 142235.52, cogs: 127773.65, expenses: 2257.96, totalExpenses: 130031.61, netIncome: 12203.91, marginPct: 8.58 },
@@ -14,5 +14,11 @@ describe('buildMonthlySeries', () => {
     const may = s.find(r => r.ym === '2026-05')!
     expect(may.cleans).toBe(0)
     expect(may.revPerClean).toBeNull()  // divide-by-zero guard
+  })
+  it('lastTwo returns the final two months', () => {
+    const s = buildMonthlySeries(qbo as any, [], 2)
+    const { curr, prev } = lastTwo(s)
+    expect(curr?.ym).toBe('2026-06')
+    expect(prev?.ym).toBe('2026-05')
   })
 })
