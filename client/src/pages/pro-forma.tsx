@@ -410,7 +410,9 @@ export default function ProFormaPage() {
     const result = properties.filter((p: any) => {
       if (search && !p.name?.toLowerCase().includes(search.toLowerCase())) return false
       if (freqFilter !== 'all' && p.cleaning_frequency !== freqFilter) return false
-      if (missingDataFilter && p.first_clean_date == null) return false
+      // Exclude-filter: drop rows that HAVE a first_clean_date, so the toggle
+      // shows ONLY properties missing it. (Original logic was correct.)
+      if (missingDataFilter && p.first_clean_date != null) return false
       const breakEvenThreshold = breakEvenMargin * 100
       if (profitFilter === 'profitable') {
         const pct = p.profit_percentage ?? 0
