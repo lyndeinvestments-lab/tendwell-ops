@@ -79,6 +79,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(401).json({ error: 'Invalid session' })
     return
   }
+  // Staff-only. Each call bills a Trellis agent invoke, so a valid session is
+  // not enough: owner-portal users are also `authenticated` in Supabase but are
+  // NOT in app_users. Confirm staff membership before reaching Trellis, or an
+  // owner token could burn the Trellis quota (CWE-287). Inlined rather than
+  // importing api/notify/_lib because this endpoint is intentionally
+  // self-contained (sibling _lib bundling wasn't reliable at runtime).
+  const sessionUser = (await userRes.json()) as { email?: string }
+  const email = sessionUser.email?.toLowerCase()
+  if (!email) {
+    res.status(401).json({ error: 'Invalid session' })
+    return
+  }
+  const staffRes = await fetch(
+    `${supabaseUrl}/rest/v1/app_users?select=role&google_email=eq.${encodeURIComponent(email)}&limit=1`,
+    { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } },
+  )
+  const staffRows = staffRes.ok ? ((await staffRes.json()) as Array<{ role?: string }>) : []
+  if (!staffRows[0]?.role) {
+    res.status(403).json({ error: 'Staff access required' })
+    return
+  }
 
   try {
     const key = process.env.TRELLIS_API_KEY
