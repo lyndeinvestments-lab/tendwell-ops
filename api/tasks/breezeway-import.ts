@@ -348,6 +348,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Load admin-dismissed orphans (status='ignored') so they stop counting toward
+  // the "unmatched address(es)" banner. These are property_raw strings an admin
+  // intentionally marked as non-Ops properties; without this they'd be re-counted
+  // as unmatched on every import (matching still can't resolve them), so the
+  // banner would never clear after dismissal.
+  const ignoredRaws = new Set<string>()
+  {
+    const { data: ignRows } = await supabase
+      .from('breezeway_property_resolutions')
+      .select('property_raw')
+      .eq('status', 'ignored')
+    for (const row of (ignRows ?? []) as Array<{ property_raw: string }>) {
+      ignoredRaws.add(row.property_raw)
+    }
+  }
+
   const matcher = await buildPropertyMatcher(supabase)
 
   const batch = randomUUID()
@@ -374,7 +390,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const propertyId = (propertyRaw != null ? resolutionMap.get(propertyRaw) ?? null : null)
       ?? matcher.byName(nickname)
       ?? matcher.byAddress(propertyAddress)
-    if (propertyId == null && propertyAddress) unmatchedAddrs.add(propertyAddress)
+    const isIgnored = propertyRaw != null && ignoredRaws.has(propertyRaw)
+    if (propertyId == null && propertyAddress && !isIgnored) unmatchedAddrs.add(propertyAddress)
 
     rows.push({
       external_id: externalId,
