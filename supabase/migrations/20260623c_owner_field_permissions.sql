@@ -37,9 +37,9 @@
 -- field_key → { "visible": bool, "editable": bool }. Missing keys fall back to
 -- the all-true default via owner_field_permissions_default() below.
 CREATE TABLE IF NOT EXISTS owner_property_permissions (
-  owner_id    UUID    NOT NULL REFERENCES property_owners(id) ON DELETE CASCADE,
-  property_id INTEGER NOT NULL REFERENCES properties(id)      ON DELETE CASCADE,
-  permissions JSONB   NOT NULL DEFAULT '{}'::jsonb,
+  owner_id    UUID   NOT NULL REFERENCES property_owners(id) ON DELETE CASCADE,
+  property_id BIGINT NOT NULL REFERENCES properties(id)      ON DELETE CASCADE,
+  permissions JSONB  NOT NULL DEFAULT '{}'::jsonb,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (owner_id, property_id)
 );
@@ -69,7 +69,7 @@ $$;
 -- Resolved permissions for one (owner, property): defaults overlaid with any
 -- stored row. The UI always writes complete per-field objects, so the top-level
 -- jsonb concat (`||`) gives correct per-field resolution.
-CREATE OR REPLACE FUNCTION public.owner_property_perms(p_owner_id UUID, p_property_id INTEGER)
+CREATE OR REPLACE FUNCTION public.owner_property_perms(p_owner_id UUID, p_property_id BIGINT)
 RETURNS JSONB LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public AS $$
   SELECT public.owner_field_permissions_default() || COALESCE(
