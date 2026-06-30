@@ -4,6 +4,7 @@ import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supa
 import { thumbUrl } from '@/lib/image'
 import { resizeImageFile } from '@/lib/resize-image'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
 import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
@@ -22,7 +23,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore } from 'lucide-react'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 
 // Recharts is heavy — load it only when a chart actually renders inside the
@@ -1045,13 +1046,22 @@ export function PropertyDetailModal() {
   const canViewAssignments = canAccessView('cleaners', effectiveUser)
   const canViewVerification = canAccessView('property-verifications', effectiveUser)
   const canChangeStage = canEditView('property-list', effectiveUser)
+  // Archive is a quote-stage action mirroring the quote sheet. Gate on the same
+  // permission so the same users can archive from either entry point.
+  const canArchiveQuote = canEditView('quote-sheet', effectiveUser)
 
   const stageColor = property?.pipeline_stages?.color || '#6b7280'
   const stageName = property?.pipeline_stages?.name || '—'
 
-  const { data: allStages } = usePipelineStages({ enabled: canChangeStage && !!propertyId })
+  const { data: allStages } = usePipelineStages({ enabled: (canChangeStage || canArchiveQuote) && !!propertyId })
+
+  const quoteStage = (allStages || []).find((s: any) => s.name === 'Quote')
+  const isQuoteStage = !!quoteStage && property?.stage_id === quoteStage.id
+  const isArchived = !!property?.archived_at
 
   const [stagePopoverOpen, setStagePopoverOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiveReason, setArchiveReason] = useState('')
   const { mutate: changeStage, isPending: changingStagePending } = useMutation({
     mutationFn: async (toStage: { id: string; name: string }) => {
       const fromStage = property?.pipeline_stages
@@ -1076,6 +1086,46 @@ export function PropertyDetailModal() {
       setStagePopoverOpen(false)
     },
     onError: (err: any) => toast({ title: 'Stage change failed', description: err?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async (reason: string) => {
+      const { error } = await supabase
+        .from('properties')
+        .update({
+          archived_at: new Date().toISOString(),
+          archived_reason: reason,
+          archived_by: effectiveUser?.label ?? null,
+        })
+        .eq('id', Number(propertyId!))
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote archived' })
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+      setArchiveOpen(false)
+      setArchiveReason('')
+    },
+    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
+  })
+
+  const { mutate: restoreQuote, isPending: restorePending } = useGuardedMutation('quote-sheet', {
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from('properties')
+        .update({ archived_at: null, archived_reason: null, archived_by: null })
+        .eq('id', Number(propertyId!))
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Quote restored' })
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+    },
+    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
   })
 
   // Highlight field ring class
@@ -1111,7 +1161,8 @@ export function PropertyDetailModal() {
   ]
 
   return (
-    <Dialog open={!!propertyId} onOpenChange={v => !v && closePropertyModal()}>
+    <>
+      <Dialog open={!!propertyId} onOpenChange={v => !v && closePropertyModal()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="property-detail-modal">
         <DialogHeader>
           <div className="flex items-center justify-between gap-3 pr-6">
@@ -1187,6 +1238,27 @@ export function PropertyDetailModal() {
               )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              {!isLoading && property && canArchiveQuote && isQuoteStage && !isArchived && (
+                <button
+                  onClick={() => { setArchiveReason(''); setArchiveOpen(true) }}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                  title="Archive quote (didn't pan out)"
+                  data-testid="modal-archive-btn"
+                >
+                  <Archive className="w-4 h-4" />
+                </button>
+              )}
+              {!isLoading && property && canArchiveQuote && isArchived && (
+                <button
+                  onClick={() => restoreQuote()}
+                  disabled={restorePending}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                  title="Restore quote"
+                  data-testid="modal-restore-btn"
+                >
+                  {restorePending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />}
+                </button>
+              )}
               {!isLoading && property && !isEditing && (
                 <button
                   onClick={async () => {
@@ -1995,5 +2067,49 @@ export function PropertyDetailModal() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <Dialog open={archiveOpen} onOpenChange={v => !v && !archivePending && setArchiveOpen(false)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="text-base">Archive quote</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <p>Archive <span className="font-medium">{property?.name ?? '—'}</span>?
+            The property stays in the database, the quote sheet hides it by default,
+            and you can restore it any time.</p>
+          <div>
+            <Label htmlFor="modal-archive-reason" className="text-xs">
+              Reason <span className="text-destructive">*</span>
+            </Label>
+            <textarea
+              id="modal-archive-reason"
+              value={archiveReason}
+              onChange={e => setArchiveReason(e.target.value)}
+              placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up."
+              rows={3}
+              className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              data-testid="modal-archive-reason"
+              autoFocus
+            />
+            <p className="text-2xs text-muted-foreground mt-1">
+              Required. Visible in the quote sheet's archived view so you can audit why a quote didn't onboard.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setArchiveOpen(false)} disabled={archivePending}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => archiveReason.trim() && archiveQuote(archiveReason.trim())}
+            disabled={archivePending || !archiveReason.trim()}
+            data-testid="modal-confirm-archive"
+          >
+            {archivePending ? 'Archiving…' : 'Archive quote'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
