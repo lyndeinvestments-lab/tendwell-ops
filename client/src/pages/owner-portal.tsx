@@ -1029,6 +1029,65 @@ function ContactPaymentCard() {
   )
 }
 
+// ─── Account security ─────────────────────────────────────────────────────────
+function AccountSecurityCard() {
+  const { toast } = useToast()
+  const { updatePassword } = useAuth()
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (password.length < 8) {
+      toast({ title: 'Password too short', description: 'Use at least 8 characters.', variant: 'destructive' })
+      return
+    }
+    if (password !== confirm) {
+      toast({ title: 'Passwords do not match', description: 'Please re-enter them.', variant: 'destructive' })
+      return
+    }
+    setSubmitting(true)
+    const { error } = await updatePassword(password)
+    setSubmitting(false)
+    if (error) {
+      toast({ title: 'Could not update password', description: error, variant: 'destructive' })
+      return
+    }
+    setPassword(''); setConfirm('')
+    toast({ title: 'Password updated', description: 'Your new password is now active.' })
+  }
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground">Account security</h2>
+      </CardHeader>
+      <CardContent className="pb-6">
+        <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="New password">
+              <Input type="password" autoComplete="new-password" value={password}
+                onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters"
+                data-testid="input-owner-new-password" />
+            </Field>
+            <Field label="Confirm password">
+              <Input type="password" autoComplete="new-password" value={confirm}
+                onChange={e => setConfirm(e.target.value)} placeholder="Re-enter password"
+                data-testid="input-owner-confirm-password" />
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={submitting} data-testid="button-owner-update-password">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update password'}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -1117,6 +1176,7 @@ export default function OwnerPortalPage() {
         {ownerId && <ReferralsSection ownerId={ownerId} />}
         {ownerId && <TestimonialsSection ownerId={ownerId} />}
         {ownerId && <FeedbackSection ownerId={ownerId} />}
+        <AccountSecurityCard />
       </main>
     </div>
   )
