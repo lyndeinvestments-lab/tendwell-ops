@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
@@ -14,7 +14,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText } from 'lucide-react'
-import { normalizeOwnerPermissions, type OwnerPermissions } from '@/lib/owners'
+import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
 // field the owner can't see (visibility enforced in the DB), so every value
@@ -33,10 +33,6 @@ type OwnerProperty = {
   auto_code?: string | null
   other_codes?: string | null
   wifi_info?: string | null
-  owner_contact_name?: string | null
-  owner_contact_email?: string | null
-  owner_contact_phone?: string | null
-  preferred_payment_method?: string | null
 }
 
 // Columns the owner may submit, grouped by permission field key. Used to build
@@ -51,8 +47,6 @@ const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> 
   auto_code: ['auto_code'],
   other_codes: ['other_codes'],
   wifi_info: ['wifi_info'],
-  owner_contact: ['owner_contact_name', 'owner_contact_email', 'owner_contact_phone'],
-  payment_method: ['preferred_payment_method'],
 }
 
 type FormState = Partial<Record<keyof OwnerProperty, string | number | null>>
@@ -94,7 +88,7 @@ function TasksSection({ propertyId }: { propertyId: number }) {
   }
   if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load tasks" description="Something went wrong loading scheduled tasks." />
   if (!data || data.length === 0) {
-    return <EmptyState icon={CalendarClock} title="No scheduled tasks" description="Tasks from inspections and Trello will appear here." />
+    return <EmptyState icon={CalendarClock} title="No scheduled tasks" description="Tasks from inspections and Trellis will appear here." />
   }
 
   return (
@@ -106,7 +100,7 @@ function TasksSection({ propertyId }: { propertyId: number }) {
             <p className="text-2xs text-muted-foreground">{formatDate(t.task_date)}</p>
           </div>
           <Badge variant="outline" className="shrink-0 capitalize">
-            {t.source === 'trellis' ? 'Trello' : t.source}
+            {t.source === 'trellis' ? 'Trellis' : t.source}
           </Badge>
         </li>
       ))}
@@ -156,10 +150,6 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const save = useMutation({
     mutationFn: async () => {
       // Light validation
-      const email = form.owner_contact_email
-      if (typeof email === 'string' && email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        throw new Error('Enter a valid owner contact email.')
-      }
       for (const k of ['number_of_beds', 'square_footage'] as const) {
         const v = form[k]
         if (typeof v === 'number' && (isNaN(v) || v < 0)) {
@@ -206,9 +196,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const detailKeys: (keyof OwnerPermissions)[] = [
     'address', 'bed_sizes', 'bed_count', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
   ]
-  const contactKeys: (keyof OwnerPermissions)[] = ['owner_contact', 'payment_method']
   const showDetails = detailKeys.some(k => can(k).visible)
-  const showContact = contactKeys.some(k => can(k).visible)
 
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
@@ -295,58 +283,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
           </section>
           )}
 
-          {/* Owner contact + payment */}
-          {showContact && (
-          <section className="space-y-4">
-            <h3 className="text-sm font-medium text-foreground">Owner contact &amp; payment</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {can('owner_contact').visible && (
-                can('owner_contact').editable ? (
-                  <>
-                    <Field label="Contact name">
-                      <Input value={(form.owner_contact_name as string) ?? ''} onChange={e => set('owner_contact_name', e.target.value || null)} />
-                    </Field>
-                    <Field label="Contact phone">
-                      <Input value={(form.owner_contact_phone as string) ?? ''} onChange={e => set('owner_contact_phone', e.target.value || null)} />
-                    </Field>
-                    <Field label="Contact email">
-                      <Input
-                        type="email"
-                        value={(form.owner_contact_email as string) ?? ''}
-                        onChange={e => set('owner_contact_email', e.target.value || null)}
-                      />
-                    </Field>
-                  </>
-                ) : (
-                  <>
-                    <Field label="Contact name" locked><ReadOnlyValue value={property.owner_contact_name} /></Field>
-                    <Field label="Contact phone" locked><ReadOnlyValue value={property.owner_contact_phone} /></Field>
-                    <Field label="Contact email" locked><ReadOnlyValue value={property.owner_contact_email} /></Field>
-                  </>
-                )
-              )}
-              {renderField('payment_method', 'Preferred payment method', 'preferred_payment_method', () => (
-                <>
-                  <Input
-                    list="payment-methods"
-                    value={(form.preferred_payment_method as string) ?? ''}
-                    onChange={e => set('preferred_payment_method', e.target.value || null)}
-                    placeholder="e.g. ACH, Zelle, Check"
-                  />
-                  <datalist id="payment-methods">
-                    <option value="ACH / Bank transfer" />
-                    <option value="Zelle" />
-                    <option value="Venmo" />
-                    <option value="Check" />
-                    <option value="Credit card" />
-                  </datalist>
-                </>
-              ))}
-            </div>
-          </section>
-          )}
-
-          {(showDetails || showContact) && anyEditable && (
+          {showDetails && anyEditable && (
             <div className="flex justify-end">
               <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid={`button-save-${property.id}`}>
                 {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
@@ -975,6 +912,182 @@ function QuotesSection() {
   )
 }
 
+// ─── Owner-wide contact & payment card ────────────────────────────────────────
+function ContactPaymentCard() {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-self'],
+    queryFn: async () => {
+      // current_owner_id() resolves the signed-in owner in the DB; RLS also
+      // restricts property_owners rows to the owner themselves.
+      const { data: oid } = await supabase.rpc('current_owner_id')
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('name, phone, email, preferred_payment_method')
+        .eq('id', (oid as any) ?? '')
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+
+  const [form, setForm] = useState({ name: '', phone: '', email: '', preferred_payment_method: '' })
+  const [initialForm, setInitialForm] = useState({ name: '', phone: '', email: '', preferred_payment_method: '' })
+  useEffect(() => {
+    if (data) {
+      const loaded = {
+        name: data.name ?? '', phone: data.phone ?? '',
+        email: data.email ?? '', preferred_payment_method: data.preferred_payment_method ?? '',
+      }
+      setForm(loaded)
+      setInitialForm(loaded)
+    }
+  }, [data])
+
+  const initialEmail = initialForm.email
+  const dirty =
+    form.name !== initialForm.name ||
+    form.phone !== initialForm.phone ||
+    form.email !== initialForm.email ||
+    form.preferred_payment_method !== initialForm.preferred_payment_method
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const email = form.email.trim().toLowerCase()
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address.')
+      const emailChanged = email !== initialEmail.toLowerCase()
+      if (emailChanged) {
+        const r = await changeOwnerEmail(email)
+        if (!r.ok) throw new Error(r.error || 'Could not change email.')
+      }
+      const { error } = await supabase.rpc('owner_update_self_contact', {
+        p_name: form.name.trim() || null,
+        p_phone: form.phone.trim() || null,
+        p_payment_method: form.preferred_payment_method.trim() || null,
+      } as any)
+      if (error) throw error
+      if (emailChanged) await supabase.auth.refreshSession()
+    },
+    onSuccess: () => {
+      toast({ title: 'Saved', description: 'Your contact information was updated.' })
+      queryClient.invalidateQueries({ queryKey: ['owner-self'] })
+    },
+    onError: (e: unknown) =>
+      toast({ title: 'Could not save', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' }),
+  })
+
+  if (isLoading) return <Skeleton className="h-40 rounded-2xl" />
+  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load your info" description="Please try again." />
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground">Your contact &amp; payment</h2>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Contact name">
+            <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-owner-name" />
+          </Field>
+          <Field label="Contact phone">
+            <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} data-testid="input-owner-phone" />
+          </Field>
+          <Field label="Login email">
+            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
+          </Field>
+          <Field label="Preferred payment method">
+            <>
+              <Input
+                list="owner-payment-methods"
+                value={form.preferred_payment_method}
+                onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
+                placeholder="e.g. ACH, Zelle, Check"
+                data-testid="input-owner-payment"
+              />
+              <datalist id="owner-payment-methods">
+                <option value="ACH / Bank transfer" />
+                <option value="Zelle" />
+                <option value="Venmo" />
+                <option value="Check" />
+                <option value="Credit card" />
+              </datalist>
+            </>
+          </Field>
+        </div>
+        <p className="text-2xs text-muted-foreground">
+          Changing your login email updates the address you sign in with. It does not change your properties or access.
+        </p>
+        <div className="flex justify-end">
+          <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="button-save-owner-contact">
+            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ─── Account security ─────────────────────────────────────────────────────────
+function AccountSecurityCard() {
+  const { toast } = useToast()
+  const { updatePassword } = useAuth()
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (password.length < 8) {
+      toast({ title: 'Password too short', description: 'Use at least 8 characters.', variant: 'destructive' })
+      return
+    }
+    if (password !== confirm) {
+      toast({ title: 'Passwords do not match', description: 'Please re-enter them.', variant: 'destructive' })
+      return
+    }
+    setSubmitting(true)
+    const { error } = await updatePassword(password)
+    setSubmitting(false)
+    if (error) {
+      toast({ title: 'Could not update password', description: error, variant: 'destructive' })
+      return
+    }
+    setPassword(''); setConfirm('')
+    toast({ title: 'Password updated', description: 'Your new password is now active.' })
+  }
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground">Account security</h2>
+      </CardHeader>
+      <CardContent className="pb-6">
+        <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="New password">
+              <Input type="password" autoComplete="new-password" value={password}
+                onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters"
+                data-testid="input-owner-new-password" />
+            </Field>
+            <Field label="Confirm password">
+              <Input type="password" autoComplete="new-password" value={confirm}
+                onChange={e => setConfirm(e.target.value)} placeholder="Re-enter password"
+                data-testid="input-owner-confirm-password" />
+            </Field>
+          </div>
+          <div className="flex justify-end">
+            <Button type="submit" disabled={submitting} data-testid="button-owner-update-password">
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update password'}
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
   usePageTitle('Owner Portal')
@@ -1029,6 +1142,7 @@ export default function OwnerPortalPage() {
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
         {ownerId && <QuotesSection />}
         {!isLoading && !isError && data && <OnboardingSection properties={data} />}
+        {ownerId && <ContactPaymentCard />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">
@@ -1062,6 +1176,7 @@ export default function OwnerPortalPage() {
         {ownerId && <ReferralsSection ownerId={ownerId} />}
         {ownerId && <TestimonialsSection ownerId={ownerId} />}
         {ownerId && <FeedbackSection ownerId={ownerId} />}
+        <AccountSecurityCard />
       </main>
     </div>
   )

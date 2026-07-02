@@ -15,8 +15,6 @@ export const OWNER_FIELD_DEFS = [
   { key: 'auto_code',      label: 'Auto / lock code' },
   { key: 'other_codes',    label: 'Other codes' },
   { key: 'wifi_info',      label: 'Wi-Fi information' },
-  { key: 'owner_contact',  label: 'Owner contact information' },
-  { key: 'payment_method', label: 'Preferred payment method' },
 ] as const
 
 export type OwnerFieldKey = (typeof OWNER_FIELD_DEFS)[number]['key']
@@ -83,6 +81,25 @@ export async function deleteOwnerLogin(email: string): Promise<{ ok: boolean; er
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ email }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data.error || `Failed (${res.status})` }
+    return { ok: true }
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Network error' }
+  }
+}
+
+// Change the signed-in owner's login email. Runs server-side (service role) so
+// the email is updated immediately and property_owners.email is kept in sync.
+export async function changeOwnerEmail(newEmail: string): Promise<{ ok: boolean; error?: string }> {
+  const token = await getToken()
+  if (!token) return { ok: false, error: 'Not signed in' }
+  try {
+    const res = await fetch('/api/owners/change-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ newEmail }),
     })
     const data = await res.json().catch(() => ({}))
     if (!res.ok) return { ok: false, error: data.error || `Failed (${res.status})` }
