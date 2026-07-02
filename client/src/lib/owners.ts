@@ -15,8 +15,6 @@ export const OWNER_FIELD_DEFS = [
   { key: 'auto_code',      label: 'Auto / lock code' },
   { key: 'other_codes',    label: 'Other codes' },
   { key: 'wifi_info',      label: 'Wi-Fi information' },
-  { key: 'owner_contact',  label: 'Owner contact information' },
-  { key: 'payment_method', label: 'Preferred payment method' },
 ] as const
 
 export type OwnerFieldKey = (typeof OWNER_FIELD_DEFS)[number]['key']
