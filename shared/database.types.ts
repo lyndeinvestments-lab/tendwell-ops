@@ -236,6 +236,76 @@ export type Database = {
         }
         Relationships: []
       }
+      breezeway_property_resolutions: {
+        Row: {
+          created_at: string
+          property_id: number | null
+          property_raw: string
+          resolved_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          property_id?: number | null
+          property_raw: string
+          resolved_by?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          property_id?: number | null
+          property_raw?: string
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
       breezeway_tasks: {
         Row: {
           assignees: string | null
@@ -3287,12 +3357,8 @@ export type Database = {
           offboarding_date: string | null
           onboarding_date: string | null
           other_codes: string | null
-          owner_contact_email: string | null
-          owner_contact_name: string | null
-          owner_contact_phone: string | null
           pet_friendly: string | null
           pool_towels: number | null
-          preferred_payment_method: string | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
           profit_percentage: number | null
@@ -3371,12 +3437,8 @@ export type Database = {
           offboarding_date?: string | null
           onboarding_date?: string | null
           other_codes?: string | null
-          owner_contact_email?: string | null
-          owner_contact_name?: string | null
-          owner_contact_phone?: string | null
           pet_friendly?: string | null
           pool_towels?: number | null
-          preferred_payment_method?: string | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
           profit_percentage?: number | null
@@ -3455,12 +3517,8 @@ export type Database = {
           offboarding_date?: string | null
           onboarding_date?: string | null
           other_codes?: string | null
-          owner_contact_email?: string | null
-          owner_contact_name?: string | null
-          owner_contact_phone?: string | null
           pet_friendly?: string | null
           pool_towels?: number | null
-          preferred_payment_method?: string | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
           profit_percentage?: number | null
@@ -3658,6 +3716,7 @@ export type Database = {
           id: string
           name: string | null
           phone: string | null
+          preferred_payment_method: string | null
         }
         Insert: {
           active?: boolean
@@ -3666,6 +3725,7 @@ export type Database = {
           id?: string
           name?: string | null
           phone?: string | null
+          preferred_payment_method?: string | null
         }
         Update: {
           active?: boolean
@@ -3674,6 +3734,7 @@ export type Database = {
           id?: string
           name?: string | null
           phone?: string | null
+          preferred_payment_method?: string | null
         }
         Relationships: []
       }
@@ -4642,6 +4703,7 @@ export type Database = {
       }
       trellis_sync_log: {
         Row: {
+          cancel_requested: boolean
           counts: Json | null
           created_at: string
           error: string | null
@@ -4654,6 +4716,7 @@ export type Database = {
           trigger: string
         }
         Insert: {
+          cancel_requested?: boolean
           counts?: Json | null
           created_at?: string
           error?: string | null
@@ -4666,6 +4729,7 @@ export type Database = {
           trigger?: string
         }
         Update: {
+          cancel_requested?: boolean
           counts?: Json | null
           created_at?: string
           error?: string | null
@@ -4777,6 +4841,131 @@ export type Database = {
       }
     }
     Views: {
+      breezeway_exceptions: {
+        Row: {
+          clean_count: number | null
+          first_due: string | null
+          last_due: string | null
+          property_raw: string | null
+          task_count: number | null
+        }
+        Relationships: []
+      }
+      breezeway_property_coverage: {
+        Row: {
+          clean_count: number | null
+          last_clean_due: string | null
+          property_id: number | null
+          task_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
+      financial_breezeway_property_ids: {
+        Row: {
+          property_id: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
+      financial_monthly_cleans: {
+        Row: {
+          cleans: number | null
+          month: string | null
+        }
+        Relationships: []
+      }
+      financial_task_load: {
+        Row: {
+          bucket: string | null
+          tasks: number | null
+        }
+        Relationships: []
+      }
       linen_inventory_latest: {
         Row: {
           bath_towels: number | null
@@ -5090,20 +5279,6 @@ export type Database = {
         }
         Relationships: []
       }
-      financial_monthly_cleans: {
-        Row: {
-          month: string | null
-          cleans: number | null
-        }
-        Relationships: []
-      }
-      financial_task_load: {
-        Row: {
-          bucket: string | null
-          tasks: number | null
-        }
-        Relationships: []
-      }
     }
     Functions: {
       add_cleaner_app_user: {
@@ -5172,12 +5347,8 @@ export type Database = {
           offboarding_date: string | null
           onboarding_date: string | null
           other_codes: string | null
-          owner_contact_email: string | null
-          owner_contact_name: string | null
-          owner_contact_phone: string | null
           pet_friendly: string | null
           pool_towels: number | null
-          preferred_payment_method: string | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
           profit_percentage: number | null
@@ -5277,6 +5448,10 @@ export type Database = {
       }
       owner_respond_to_quote: {
         Args: { p_property_id: number; p_response: string }
+        Returns: undefined
+      }
+      owner_update_self_contact: {
+        Args: { p_name: string; p_payment_method: string; p_phone: string }
         Returns: undefined
       }
       portal_is_admin: { Args: never; Returns: boolean }
