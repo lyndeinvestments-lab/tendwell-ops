@@ -934,16 +934,24 @@ function ContactPaymentCard() {
   })
 
   const [form, setForm] = useState({ name: '', phone: '', email: '', preferred_payment_method: '' })
-  const [initialEmail, setInitialEmail] = useState('')
+  const [initialForm, setInitialForm] = useState({ name: '', phone: '', email: '', preferred_payment_method: '' })
   useEffect(() => {
     if (data) {
-      setForm({
+      const loaded = {
         name: data.name ?? '', phone: data.phone ?? '',
         email: data.email ?? '', preferred_payment_method: data.preferred_payment_method ?? '',
-      })
-      setInitialEmail(data.email ?? '')
+      }
+      setForm(loaded)
+      setInitialForm(loaded)
     }
   }, [data])
+
+  const initialEmail = initialForm.email
+  const dirty =
+    form.name !== initialForm.name ||
+    form.phone !== initialForm.phone ||
+    form.email !== initialForm.email ||
+    form.preferred_payment_method !== initialForm.preferred_payment_method
 
   const save = useMutation({
     mutationFn: async () => {
@@ -1012,7 +1020,7 @@ function ContactPaymentCard() {
           Changing your login email updates the address you sign in with. It does not change your properties or access.
         </p>
         <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={save.isPending} data-testid="button-save-owner-contact">
+          <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="button-save-owner-contact">
             {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
           </Button>
         </div>
