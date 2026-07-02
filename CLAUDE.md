@@ -99,7 +99,7 @@ tendwell-ops/
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
 | `/reviews` | `reviews.tsx` | admin, operations, viewer |
 | `/trellis-sync` | `trellis-sync.tsx` | **admin only** (`AdminRoute`) |
-| `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal) |
+| `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal). Owners manage owner-wide contact + payment (one card, saved via `owner_update_self_contact` RPC), change their login email in-portal (`POST /api/owners/change-email`), and change their password via the Account Security card. |
 | `/reset-password` | `reset-password.tsx` | Public (password-recovery link target) |
 | `/cleaners` | `cleaners.tsx` | admin, operations |
 | `/alerts` | `alerts.tsx` | admin, operations, viewer |
@@ -133,13 +133,13 @@ Key tables:
 - `app_users` — login users (role, label, password_hash)
 - `app_settings` — KV config store (inspection cost, profit tiers, AC filter interval, etc.)
 - `operational_properties` — DB view for cost tracking
-- `property_owners` — owner portal login identities (email/password owners; separate from staff `app_users`). Has an `active` flag (`20260623b_owner_admin.sql`) — when false, the owner can't sign in and loses all property access (`current_owner_id()` returns NULL for inactive owners).
+- `property_owners` — owner portal login identities (email/password owners; separate from staff `app_users`). Has an `active` flag (`20260623b_owner_admin.sql`) — when false, the owner can't sign in and loses all property access (`current_owner_id()` returns NULL for inactive owners). Has `preferred_payment_method` (added `20260701_owner_account.sql`; owner-level, backfilled from the old per-property value).
 - `owner_properties` — join table linking owners → properties (access scope for the owner portal)
 - `owner_property_permissions` — per-(owner, property) field permission matrix (`20260623c_owner_field_permissions.sql`). `permissions` JSONB maps each owner-portal field key → `{ visible, editable }`. No row = all visible + editable (default for newly assigned properties). Admin-only writes; staff/own-owner read.
 
-Owner-editable property columns (added `20260623_owner_portal.sql`): `owner_contact_name`, `owner_contact_email`, `owner_contact_phone`, `preferred_payment_method` (plus existing `address`, `bed_sizes_text`, `number_of_beds`, `square_footage`, `door_code`, `auto_code`, `other_codes`, `wifi_info`). RPC `get_owner_property_tasks(p_property_id)` (SECURITY DEFINER) returns the combined inspections + Trellis task feed for an owned property.
+Owner-editable property columns (added `20260623_owner_portal.sql`): `address`, `bed_sizes_text`, `number_of_beds`, `square_footage`, `door_code`, `auto_code`, `other_codes`, `wifi_info`. The per-property columns `owner_contact_name`, `owner_contact_email`, `owner_contact_phone`, and `preferred_payment_method` were DROPPED by `20260701_owner_account.sql`; contact + payment are now stored at the owner level on `property_owners`. RPC `get_owner_property_tasks(p_property_id)` (SECURITY DEFINER) returns the combined inspections + Trellis task feed for an owned property. RPC `owner_update_self_contact(p_name, p_phone, p_payment_method)` (SECURITY DEFINER, scoped to `current_owner_id()`) lets an owner update their own contact info and payment method in one call.
 
-**Owner field permissions (10 field keys → property columns):** `address`, `bed_sizes`(→bed_sizes_text), `bed_count`(→number_of_beds), `square_footage`, `door_code`, `auto_code`, `other_codes`, `wifi_info`, `owner_contact`(→owner_contact_name/email/phone), `payment_method`(→preferred_payment_method). The defs live in `client/src/lib/owners.ts` (`OWNER_FIELD_DEFS`) **and** the SQL default `owner_field_permissions_default()` — keep them in sync. DB enforcement: (1) **editability** — the `properties_owner_update_guard` BEFORE-UPDATE trigger overlays a NEW column onto the OLD row only when the owner has `editable` for that field on that property (otherwise frozen at OLD); (2) **visibility** — owners read via the SECURITY DEFINER RPC `get_owner_properties()` which returns a JSONB row per assigned property containing only visible fields plus the resolved `permissions` map (so hidden values never leave the DB). The portal uses this RPC, not a direct SELECT. Staff configure the matrix in **Settings → Owners** (sliders icon → `OwnerPermissionsDialog`, per-property with "Copy to all").
+**Owner field permissions (8 field keys → property columns):** `address`, `bed_sizes`(→bed_sizes_text), `bed_count`(→number_of_beds), `square_footage`, `door_code`, `auto_code`, `other_codes`, `wifi_info`. The `owner_contact` and `payment_method` keys were removed from the field-permission model by `20260701_owner_account.sql` (they are now owner-level, not per-property, so no property-level permission applies). The defs live in `client/src/lib/owners.ts` (`OWNER_FIELD_DEFS`) **and** the SQL default `owner_field_permissions_default()` — keep them in sync. DB enforcement: (1) **editability** — the `properties_owner_update_guard` BEFORE-UPDATE trigger overlays a NEW column onto the OLD row only when the owner has `editable` for that field on that property (otherwise frozen at OLD); (2) **visibility** — owners read via the SECURITY DEFINER RPC `get_owner_properties()` which returns a JSONB row per assigned property containing only visible fields plus the resolved `permissions` map (so hidden values never leave the DB). The portal uses this RPC, not a direct SELECT. Staff configure the matrix in **Settings → Owners** (sliders icon → `OwnerPermissionsDialog`, per-property with "Copy to all").
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
@@ -163,7 +163,12 @@ Simple `users` table only. Schema in `shared/schema.ts`. Config in `drizzle.conf
 
 ## API
 
-No Express API endpoints — all data access goes client → Supabase directly with RLS enforcement. The legacy `/api/auth/login` password endpoint was removed in the security hardening pass.
+No Express API endpoints for CRUD — all data access goes client → Supabase directly with RLS enforcement. The legacy `/api/auth/login` password endpoint was removed in the security hardening pass.
+
+The following Vercel serverless functions exist for operations that require the service role or server-side secrets:
+
+- `POST /DELETE /api/owners/provision` — admin Bearer-gated. Creates or deletes a Supabase Auth email/password login for an owner. Used by the Settings → Owners tab to provision/remove portal access without exposing the service role key to the client.
+- `POST /api/owners/change-email` — owner-gated (caller's own session token). Changes the authenticated owner's login email immediately and syncs `property_owners.email` in place (id preserved, so permissions and property assignments are unchanged). Uses the service role to call `supabase.auth.admin.updateUserById`.
 
 ---
 
@@ -313,6 +318,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 - `20260623_owner_portal.sql` — owner portal: `property_owners` + `owner_properties` tables, owner contact/payment columns on `properties`, identity helpers (`current_auth_email`, `is_staff`, `current_owner_id`, `owner_owns_property`), rewritten `properties` RLS (staff-full + owner-scoped), owner-column guard trigger, and the `get_owner_property_tasks` RPC.
 - `20260623b_owner_admin.sql` — adds `property_owners.active` (owner enable/disable) and re-defines `current_owner_id()` to return NULL for inactive owners, so disabling an owner immediately revokes portal sign-in + all property access. Backs the Settings → Owners admin tab.
 - `20260623c_owner_field_permissions.sql` — per-(owner, property) field permission matrix: `owner_property_permissions` table (JSONB, admin-only writes), `owner_field_permissions_default()` / `owner_property_perms()` helpers, rewrites `properties_owner_update_guard` to enforce per-field editability, and adds the SECURITY DEFINER `get_owner_properties()` RPC enforcing per-field visibility for the portal.
+- `20260701_owner_account.sql` — owner-level account management: adds `property_owners.preferred_payment_method`, backfills owner-level name/phone/payment from the old per-property values, drops the per-property `owner_contact_name/email/phone` and `preferred_payment_method` columns, removes `owner_contact` + `payment_method` keys from the field-permission model (rewrites `owner_field_permissions_default()`, `get_owner_properties()`, `properties_owner_update_guard`), and adds the SECURITY DEFINER RPC `owner_update_self_contact(p_name, p_phone, p_payment_method)` scoped to the calling owner.
 
 ---
 
