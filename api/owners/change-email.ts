@@ -35,17 +35,22 @@ async function resolveCallerUser(
 }
 
 // Lookup an owner row by email via the service-role REST API.
+// Returns { id } on a match, null when no row exists, or throws on HTTP/network error.
 async function findOwnerByEmail(sb: Sb, email: string): Promise<{ id: string } | null> {
   const res = await fetch(
     `${sb.url}/rest/v1/property_owners?select=id&email=eq.${encodeURIComponent(email)}&limit=1`,
     { headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` } },
   )
-  if (!res.ok) return null
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Owner lookup failed (${res.status}): ${errText}`)
+  }
   const rows = (await res.json()) as Array<{ id: string }>
   return rows[0] ?? null
 }
 
 // Check if a new email is already taken in property_owners or app_users.
+// Throws on HTTP/network error so callers can surface a 500 rather than silently skipping a failed check.
 async function isEmailTaken(sb: Sb, email: string): Promise<boolean> {
   const [ownerRes, staffRes] = await Promise.all([
     fetch(
@@ -57,9 +62,17 @@ async function isEmailTaken(sb: Sb, email: string): Promise<boolean> {
       { headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` } },
     ),
   ])
+  if (!ownerRes.ok) {
+    const errText = await ownerRes.text()
+    throw new Error(`Email conflict check (owners) failed (${ownerRes.status}): ${errText}`)
+  }
+  if (!staffRes.ok) {
+    const errText = await staffRes.text()
+    throw new Error(`Email conflict check (staff) failed (${staffRes.status}): ${errText}`)
+  }
   const [ownerRows, staffRows] = await Promise.all([
-    ownerRes.ok ? (ownerRes.json() as Promise<unknown[]>) : Promise.resolve([]),
-    staffRes.ok ? (staffRes.json() as Promise<unknown[]>) : Promise.resolve([]),
+    ownerRes.json() as Promise<unknown[]>,
+    staffRes.json() as Promise<unknown[]>,
   ])
   return ownerRows.length > 0 || staffRows.length > 0
 }
@@ -96,11 +109,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // 2. Must be an existing owner (self-service is owner-only).
-  const owner = await findOwnerByEmail(sb, currentEmail)
+  let owner: { id: string } | null
+  try {
+    owner = await findOwnerByEmail(sb, currentEmail)
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message })
+  }
   if (!owner) return res.status(403).json({ error: 'Not an owner account.' })
 
   // 3. Reject if the new email is already taken anywhere.
-  if (await isEmailTaken(sb, newEmailRaw)) {
+  let taken: boolean
+  try {
+    taken = await isEmailTaken(sb, newEmailRaw)
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message })
+  }
+  if (taken) {
     return res.status(409).json({ error: 'That email is already in use.' })
   }
 
