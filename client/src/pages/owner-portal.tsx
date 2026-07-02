@@ -109,6 +109,85 @@ function TasksSection({ propertyId }: { propertyId: number }) {
   )
 }
 
+// ─── Owner notes section ──────────────────────────────────────────────────────
+type OwnerNote = { id: string; content: string; created_at: string }
+
+function OwnerNotesSection({ propertyId }: { propertyId: number }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [text, setText] = useState('')
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-property-notes', propertyId],
+    queryFn: async (): Promise<OwnerNote[]> => {
+      const { data, error } = await supabase.rpc('get_owner_property_notes', { p_property_id: propertyId })
+      if (error) throw error
+      return (data ?? []) as OwnerNote[]
+    },
+  })
+
+  const add = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('owner_add_property_note', {
+        p_property_id: propertyId,
+        p_content: text.trim(),
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Note added' })
+      setText('')
+      queryClient.invalidateQueries({ queryKey: ['owner-property-notes', propertyId] })
+    },
+    onError: (e: unknown) =>
+      toast({ title: 'Could not add note', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' }),
+  })
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-medium text-foreground">Notes</h3>
+      <div className="space-y-2">
+        <Textarea
+          rows={2}
+          placeholder="Add a note..."
+          value={text}
+          onChange={e => setText(e.target.value)}
+          data-testid={`textarea-owner-note-${propertyId}`}
+        />
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            onClick={() => add.mutate()}
+            disabled={!text.trim() || add.isPending}
+            data-testid={`button-add-note-${propertyId}`}
+          >
+            {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add note'}
+          </Button>
+        </div>
+      </div>
+      {isLoading && (
+        <div className="space-y-2">
+          {[1, 2].map(i => <Skeleton key={i} className="h-9 rounded-md" />)}
+        </div>
+      )}
+      {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load notes" description="Something went wrong loading notes." />}
+      {!isLoading && !isError && (data ?? []).length === 0 && (
+        <p className="text-sm text-muted-foreground">No notes yet.</p>
+      )}
+      {!isLoading && !isError && (data ?? []).length > 0 && (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {(data ?? []).map(n => (
+            <li key={n.id} className="px-3 py-2 space-y-0.5">
+              <p className="text-sm text-foreground whitespace-pre-wrap">{n.content}</p>
+              <p className="text-2xs text-muted-foreground">{formatDate(n.created_at)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 // ─── Read-only field display ───────────────────────────────────────────────────
 function ReadOnlyValue({ value }: { value: string | number | null | undefined }) {
   const text = value == null || value === '' ? '—' : String(value)
@@ -312,6 +391,9 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
               </Button>
             </div>
           )}
+
+          {/* Owner notes */}
+          <OwnerNotesSection propertyId={property.id} />
 
           {/* Scheduled tasks */}
           <section className="space-y-3">
@@ -1020,22 +1102,16 @@ function ContactPaymentCard() {
             <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
           </Field>
           <Field label="Preferred payment method">
-            <>
-              <Input
-                list="owner-payment-methods"
-                value={form.preferred_payment_method}
-                onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
-                placeholder="e.g. ACH, Zelle, Check"
-                data-testid="input-owner-payment"
-              />
-              <datalist id="owner-payment-methods">
-                <option value="ACH / Bank transfer" />
-                <option value="Zelle" />
-                <option value="Venmo" />
-                <option value="Check" />
-                <option value="Credit card" />
-              </datalist>
-            </>
+            <select
+              className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+              value={form.preferred_payment_method}
+              onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
+              data-testid="select-owner-payment"
+            >
+              <option value="">Select a method</option>
+              <option value="QuickBooks">QuickBooks</option>
+              <option value="Bill.com">Bill.com</option>
+            </select>
           </Field>
         </div>
         <p className="text-2xs text-muted-foreground">
