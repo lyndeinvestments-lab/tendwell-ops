@@ -9,7 +9,6 @@ import { supabase } from '@/lib/supabase'
 export const OWNER_FIELD_DEFS = [
   { key: 'address',        label: 'Address' },
   { key: 'bed_sizes',      label: 'Bed sizes' },
-  { key: 'bed_count',      label: 'Bed count' },
   { key: 'square_footage', label: 'Square footage' },
   { key: 'door_code',      label: 'Door / access code' },
   { key: 'auto_code',      label: 'Auto / lock code' },
