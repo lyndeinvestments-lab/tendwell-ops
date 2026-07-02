@@ -169,14 +169,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
             <li key={n.id} className="rounded-md border border-border bg-muted/30 p-2.5">
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mb-1">
                 <span className="flex items-center gap-1">
-                  <span className="flex items-center gap-1">
                   <span className="font-medium text-foreground">{n.created_by || 'Unknown'}</span>
-                  {n.owner_id && (
-                    <span className="text-2xs font-medium px-1.5 py-0.5 rounded-full bg-info/10 text-info leading-none">
-                      Owner
-                    </span>
-                  )}
-                </span>
                   {n.owner_id && (
                     <span className="text-2xs font-medium px-1.5 py-0.5 rounded-full bg-info/10 text-info leading-none">
                       Owner
