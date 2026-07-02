@@ -26,8 +26,10 @@ type OwnerProperty = {
   stage?: string | null
   permissions: OwnerPermissions
   address?: string | null
-  bed_sizes_text?: string | null
-  number_of_beds?: number | null
+  king_beds?: number | null
+  queen_beds?: number | null
+  full_beds?: number | null
+  twin_beds?: number | null
   square_footage?: number | null
   door_code?: string | null
   auto_code?: string | null
@@ -40,8 +42,7 @@ type OwnerProperty = {
 // trigger enforces this too — this just keeps the request honest).
 const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> = {
   address: ['address'],
-  bed_sizes: ['bed_sizes_text'],
-  bed_count: ['number_of_beds'],
+  bed_sizes: ['king_beds', 'queen_beds', 'full_beds', 'twin_beds'],
   square_footage: ['square_footage'],
   door_code: ['door_code'],
   auto_code: ['auto_code'],
@@ -108,6 +109,85 @@ function TasksSection({ propertyId }: { propertyId: number }) {
   )
 }
 
+// ─── Owner notes section ──────────────────────────────────────────────────────
+type OwnerNote = { id: string; content: string; created_at: string }
+
+function OwnerNotesSection({ propertyId }: { propertyId: number }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [text, setText] = useState('')
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-property-notes', propertyId],
+    queryFn: async (): Promise<OwnerNote[]> => {
+      const { data, error } = await supabase.rpc('get_owner_property_notes', { p_property_id: propertyId })
+      if (error) throw error
+      return (data ?? []) as OwnerNote[]
+    },
+  })
+
+  const add = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.rpc('owner_add_property_note', {
+        p_property_id: propertyId,
+        p_content: text.trim(),
+      })
+      if (error) throw error
+    },
+    onSuccess: () => {
+      toast({ title: 'Note added' })
+      setText('')
+      queryClient.invalidateQueries({ queryKey: ['owner-property-notes', propertyId] })
+    },
+    onError: (e: unknown) =>
+      toast({ title: 'Could not add note', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' }),
+  })
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-medium text-foreground">Notes</h3>
+      <div className="space-y-2">
+        <Textarea
+          rows={2}
+          placeholder="Add a note..."
+          value={text}
+          onChange={e => setText(e.target.value)}
+          data-testid={`textarea-owner-note-${propertyId}`}
+        />
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            onClick={() => add.mutate()}
+            disabled={!text.trim() || add.isPending}
+            data-testid={`button-add-note-${propertyId}`}
+          >
+            {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add note'}
+          </Button>
+        </div>
+      </div>
+      {isLoading && (
+        <div className="space-y-2">
+          {[1, 2].map(i => <Skeleton key={i} className="h-9 rounded-md" />)}
+        </div>
+      )}
+      {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load notes" description="Something went wrong loading notes." />}
+      {!isLoading && !isError && (data ?? []).length === 0 && (
+        <p className="text-sm text-muted-foreground">No notes yet.</p>
+      )}
+      {!isLoading && !isError && (data ?? []).length > 0 && (
+        <ul className="divide-y divide-border rounded-lg border border-border">
+          {(data ?? []).map(n => (
+            <li key={n.id} className="px-3 py-2 space-y-0.5">
+              <p className="text-sm text-foreground whitespace-pre-wrap">{n.content}</p>
+              <p className="text-2xs text-muted-foreground">{formatDate(n.created_at)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
 // ─── Read-only field display ───────────────────────────────────────────────────
 function ReadOnlyValue({ value }: { value: string | number | null | undefined }) {
   const text = value == null || value === '' ? '—' : String(value)
@@ -142,7 +222,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const set = (key: keyof OwnerProperty, value: string | number | null) =>
     setForm(prev => ({ ...prev, [key]: value }))
 
-  const setNum = (key: 'number_of_beds' | 'square_footage', raw: string) => {
+  const setNum = (key: 'king_beds' | 'queen_beds' | 'full_beds' | 'twin_beds' | 'square_footage', raw: string) => {
     const trimmed = raw.trim()
     set(key, trimmed === '' ? null : Number(trimmed))
   }
@@ -150,10 +230,10 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const save = useMutation({
     mutationFn: async () => {
       // Light validation
-      for (const k of ['number_of_beds', 'square_footage'] as const) {
+      for (const k of ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'square_footage'] as const) {
         const v = form[k]
         if (typeof v === 'number' && (isNaN(v) || v < 0)) {
-          throw new Error('Bed count and square footage must be positive numbers.')
+          throw new Error('Bed sizes and square footage must be positive numbers.')
         }
       }
       // Build a payload of only the columns this owner may edit. The DB guard
@@ -194,7 +274,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   }
 
   const detailKeys: (keyof OwnerPermissions)[] = [
-    'address', 'bed_sizes', 'bed_count', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
+    'address', 'bed_sizes', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
   ]
   const showDetails = detailKeys.some(k => can(k).visible)
 
@@ -234,21 +314,42 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
               {renderField('address', 'Address', 'address', () => (
                 <Input value={(form.address as string) ?? ''} onChange={e => set('address', e.target.value || null)} />
               ), 'sm:col-span-2')}
-              {renderField('bed_sizes', 'Bed sizes', 'bed_sizes_text', () => (
-                <Input
-                  value={(form.bed_sizes_text as string) ?? ''}
-                  onChange={e => set('bed_sizes_text', e.target.value || null)}
-                  placeholder="e.g. 1 King, 2 Queens"
-                />
-              ))}
-              {renderField('bed_count', 'Bed count', 'number_of_beds', () => (
-                <Input
-                  type="number"
-                  min={0}
-                  value={(form.number_of_beds as number) ?? ''}
-                  onChange={e => setNum('number_of_beds', e.target.value)}
-                />
-              ))}
+              {(() => {
+                const p = can('bed_sizes')
+                if (!p.visible) return null
+                return (
+                  <>
+                    <Field label="King beds" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.king_beds as number) ?? ''} onChange={e => setNum('king_beds', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.king_beds} />
+                      )}
+                    </Field>
+                    <Field label="Queen beds" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.queen_beds as number) ?? ''} onChange={e => setNum('queen_beds', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.queen_beds} />
+                      )}
+                    </Field>
+                    <Field label="Full beds" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.full_beds as number) ?? ''} onChange={e => setNum('full_beds', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.full_beds} />
+                      )}
+                    </Field>
+                    <Field label="Twin beds" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.twin_beds as number) ?? ''} onChange={e => setNum('twin_beds', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.twin_beds} />
+                      )}
+                    </Field>
+                  </>
+                )
+              })()}
               {renderField('square_footage', 'Square footage', 'square_footage', () => (
                 <Input
                   type="number"
@@ -290,6 +391,9 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
               </Button>
             </div>
           )}
+
+          {/* Owner notes */}
+          <OwnerNotesSection propertyId={property.id} />
 
           {/* Scheduled tasks */}
           <section className="space-y-3">
@@ -998,22 +1102,16 @@ function ContactPaymentCard() {
             <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
           </Field>
           <Field label="Preferred payment method">
-            <>
-              <Input
-                list="owner-payment-methods"
-                value={form.preferred_payment_method}
-                onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
-                placeholder="e.g. ACH, Zelle, Check"
-                data-testid="input-owner-payment"
-              />
-              <datalist id="owner-payment-methods">
-                <option value="ACH / Bank transfer" />
-                <option value="Zelle" />
-                <option value="Venmo" />
-                <option value="Check" />
-                <option value="Credit card" />
-              </datalist>
-            </>
+            <select
+              className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+              value={form.preferred_payment_method}
+              onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
+              data-testid="select-owner-payment"
+            >
+              <option value="">Select a method</option>
+              <option value="QuickBooks">QuickBooks</option>
+              <option value="Bill.com">Bill.com</option>
+            </select>
           </Field>
         </div>
         <p className="text-2xs text-muted-foreground">
