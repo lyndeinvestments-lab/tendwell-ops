@@ -3636,6 +3636,7 @@ export type Database = {
           created_by: string | null
           created_by_user_id: number | null
           id: string
+          owner_id: string | null
           property_id: number | null
         }
         Insert: {
@@ -3645,6 +3646,7 @@ export type Database = {
           created_by?: string | null
           created_by_user_id?: number | null
           id?: string
+          owner_id?: string | null
           property_id?: number | null
         }
         Update: {
@@ -3654,6 +3656,7 @@ export type Database = {
           created_by?: string | null
           created_by_user_id?: number | null
           id?: string
+          owner_id?: string | null
           property_id?: number | null
         }
         Relationships: [
@@ -3662,6 +3665,13 @@ export type Database = {
             columns: ["created_by_user_id"]
             isOneToOne: false
             referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_notes_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
             referencedColumns: ["id"]
           },
           {
@@ -5395,6 +5405,10 @@ export type Database = {
       current_user_role: { Args: never; Returns: string }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
       get_owner_properties: { Args: never; Returns: Json[] }
+      get_owner_property_notes: {
+        Args: { p_property_id: number }
+        Returns: Json[]
+      }
       get_owner_property_tasks: {
         Args: { p_property_id: number }
         Returns: {
@@ -5440,6 +5454,10 @@ export type Database = {
       get_property_names_for_weigh_in: { Args: never; Returns: string[] }
       is_current_user_admin: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
+      owner_add_property_note: {
+        Args: { p_content: string; p_property_id: number }
+        Returns: Json
+      }
       owner_field_permissions_default: { Args: never; Returns: Json }
       owner_owns_property: { Args: { p_property_id: number }; Returns: boolean }
       owner_property_perms: {
