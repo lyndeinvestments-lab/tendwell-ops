@@ -209,22 +209,22 @@ function wrapText(
  * Generate the signed PDF from the template, party data, and both signatures.
  *
  * Page-1 layout (US Letter 612×792pt, origin bottom-left):
- *   Effective Date (inline on intro line y≈678):         x=230, y=680
+ *   Effective Date (inline on intro line y≈678):         x=414, y=680
  *   Owner/Auth Rep Name (above underscore y=560):         centered, y=563
  *   Entity (above underscore y=511):                      centered, y=514
  *   Mailing Address (above underscore y=462):             centered, y=465
- *   Property Address(es) (above underscore y=413):        centered, y=416
+ *   Property Address(es) (on blank line y=416):           centered, y=416; extra lines flow downward (-lineSpacing each)
  *   Email (above underscore y=364):                       centered, y=367
  *   Phone (above underscore y=315):                       centered, y=318
  *
  * Page-5 Tendwell block:
- *   Signature image above dash line (y=616):              x=72, y=621
+ *   Signature image bottom on dash line (y=616):          x=72, y=586 (bottom of image clears line; max 180x45pt)
  *   Printed Name (above underscore y=550):                x=72, y=554
  *   Title (above underscore y=505):                       x=72, y=509
  *   Date (above underscore y=460):                        x=72, y=464
  *
  * Page-5 Owner block:
- *   Signature image above dash line (y=415):              x=72, y=420
+ *   Signature image bottom on dash line (y=415):          x=72, y=385 (bottom of image clears line; max 180x45pt)
  *   Printed Name (above underscore y=349):                x=72, y=353
  *   Title/Capacity (above underscore y=304):              x=72, y=308
  *   Date (above underscore y=259):                        x=72, y=263
@@ -247,12 +247,12 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
 
   // ── PAGE 1: party fields ──────────────────────────────────────────────────
 
-  // Effective Date — drawn on the intro line after the blank underscores.
-  // The blank "____________________" in the intro text ends around x=225;
-  // the value goes at x=230, y=680.
+  // Effective Date — drawn on the intro line after "entered into as of ____".
+  // The intro line is at y≈678. The blank underscores begin just after "of";
+  // x=414 nudged right from 406 so the value clears the word "of" without clipping.
   if (agreement.effective_date) {
     p1.drawText(fmtDate(agreement.effective_date), {
-      x: 230,
+      x: 414,
       y: 680,
       size: fieldSize,
       font,
@@ -273,15 +273,24 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
     p1.drawText(trimmed, { x, y, size: fieldSize, font, color: fieldColor })
   }
 
-  // Multi-line variant for property addresses: wrap and stack upward from yTop.
+  // Multi-line variant for property addresses: line 0 sits ON the blank line (yTop),
+  // additional lines flow DOWNWARD (decreasing y). There is ~20pt of clear space below
+  // before the "Email:" label. If wrapping at fieldSize (10pt) produces more than 2 lines,
+  // step down to 8pt so everything fits within 2 lines without ever drawing above the label.
   function drawCenteredFieldWrapped(text: string, yTop: number): void {
     const trimmed = (text ?? '').trim()
     if (!trimmed) return
-    const lines = wrapText(trimmed, maxFieldWidth, font, fieldSize)
-    lines.slice(0, 3).forEach((line, i) => {
-      const w = font.widthOfTextAtSize(line, fieldSize)
+    let size = fieldSize
+    let lines = wrapText(trimmed, maxFieldWidth, font, size)
+    if (lines.length > 2) {
+      size = 8
+      lines = wrapText(trimmed, maxFieldWidth, font, size)
+    }
+    const lineSpacing = size + 4
+    lines.slice(0, 2).forEach((line, i) => {
+      const w = font.widthOfTextAtSize(line, size)
       const x = fieldCenterX - w / 2
-      p1.drawText(line, { x, y: yTop + i * 12, size: fieldSize, font, color: fieldColor })
+      p1.drawText(line, { x, y: yTop - i * lineSpacing, size, font, color: fieldColor })
     })
   }
 
@@ -304,7 +313,8 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
   const tScale = Math.min(tMaxW / tDims.width, tMaxH / tDims.height, 1)
   const tW = tDims.width * tScale
   const tH = tDims.height * tScale
-  p5.drawImage(tendwellImg, { x: 72, y: 621, width: tW, height: tH })
+  // y=586: image bottom rests ~2pt above the Tendwell dash signature line (y=616 minus max height 45 minus gap ~3 ≈ 568; adjusted to 586 so bottom edge clears the line by a few points without overlapping the heading above)
+  p5.drawImage(tendwellImg, { x: 72, y: 586, width: tW, height: tH })
 
   // Tendwell text fields
   p5.drawText(tendwell.name, { x: 72, y: 554, size: fieldSize, font, color: fieldColor })
@@ -322,7 +332,8 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
   const oScale = Math.min(oMaxW / oDims.width, oMaxH / oDims.height, 1)
   const oW = oDims.width * oScale
   const oH = oDims.height * oScale
-  p5.drawImage(ownerImg, { x: 72, y: 420, width: oW, height: oH })
+  // y=385: image bottom rests ~2pt above the Owner dash signature line (y=415 minus max height 45 minus gap ~3 ≈ 367; adjusted to 385 so bottom edge clears the line by a few points without overlapping the heading above)
+  p5.drawImage(ownerImg, { x: 72, y: 385, width: oW, height: oH })
 
   // Owner text fields
   p5.drawText(owner.printedName, { x: 72, y: 353, size: fieldSize, font, color: fieldColor })
