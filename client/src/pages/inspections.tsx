@@ -23,37 +23,10 @@ import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
 import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
+import { MyInspectionsTab } from '@/components/MyInspectionsTab'
+import { useMyInspector } from '@/hooks/use-my-inspector'
+import { INSPECTION_SELECT, scoreColorClass, type Inspection, type InspectionStatus, type ReinspectUrgency } from '@/lib/inspections'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-
-type InspectionStatus = 'scheduled' | 'completed' | 'skipped'
-type ReinspectUrgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
-
-type Inspection = {
-  id: string
-  property_id: number
-  cleaner_id: string | null
-  cleaner_name: string | null
-  inspector_id: string | null
-  inspected_by: string | null
-  inspected_at: string
-  scheduled_for: string | null
-  last_cleaned_on: string | null
-  status: InspectionStatus
-  reinspect_urgency: ReinspectUrgency
-  reinspect_by: string | null
-  overall_score: number | null
-  cleanliness_score: number | null
-  linens_score: number | null
-  supplies_score: number | null
-  exterior_score: number | null
-  notes: string | null
-  photos_url: string[] | null
-  properties?: { name: string; address: string | null } | null
-  cleaners?: { full_name: string } | null
-  inspectors?: { full_name: string } | null
-}
-
-const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
 
 type InspectionFilters = {
   search: string
@@ -96,13 +69,6 @@ function applyInspectionFilters(query: any, f: InspectionFilters, orClause: stri
   if (f.dateTo) q = q.lte('inspected_at', f.dateTo + 'T23:59:59')
   if (f.minScore !== 'any') q = q.gte('overall_score', Number(f.minScore))
   return q
-}
-
-function scoreColorClass(score: number | null): string {
-  if (score == null) return 'bg-muted text-muted-foreground'
-  if (score >= 4) return 'bg-success/15 text-success'
-  if (score >= 3) return 'bg-warning/15 text-warning'
-  return 'bg-destructive/15 text-destructive'
 }
 
 // Text-only tone for the avg-score summary tile value.
@@ -151,6 +117,12 @@ export default function InspectionsPage() {
   const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
   const canEdit = canEditView('inspections', effectiveUser)
+  const { myInspector, isLoading: myInspectorLoading } = useMyInspector()
+
+  // Controlled tabs so inspectors land on their own queue once their identity
+  // resolves; anyone can still switch tabs manually afterwards.
+  const [tabChoice, setTabChoice] = useState<string | null>(null)
+  const activeTab = tabChoice ?? (myInspector ? 'mine' : 'priority')
 
   const [search, setSearch] = useState('')
   const [inspectorFilter, setInspectorFilter] = useState<string>('all')
@@ -406,11 +378,19 @@ export default function InspectionsPage() {
         }
       />
 
-      <Tabs defaultValue="priority" className="flex-1 flex flex-col min-h-0">
+      <Tabs value={activeTab} onValueChange={setTabChoice} className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start">
+          {(myInspector || myInspectorLoading) && (
+            <TabsTrigger value="mine" data-testid="tab-mine" disabled={!myInspector}>My Inspections</TabsTrigger>
+          )}
           <TabsTrigger value="priority" data-testid="tab-priority">Priority Dashboard</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
         </TabsList>
+        {myInspector && (
+          <TabsContent value="mine" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+            <MyInspectionsTab inspectorId={myInspector.id} onOpen={handleRowClick} />
+          </TabsContent>
+        )}
         <TabsContent value="priority" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
           <InspectionPriorityDashboard />
         </TabsContent>
@@ -775,6 +755,7 @@ export default function InspectionsPage() {
           if (!v) setEditing(null)
         }}
         existing={editing}
+        defaultInspectorId={myInspector?.id ?? null}
         onDelete={canEdit ? (insp) => {
           const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? 'this inspection'
           confirmDelete(insp.id, label)

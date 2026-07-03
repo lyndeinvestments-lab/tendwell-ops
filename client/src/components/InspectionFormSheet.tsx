@@ -60,9 +60,11 @@ interface Props {
   onOpenChange: (open: boolean) => void
   existing?: ExistingInspection | null
   onDelete?: (inspection: ExistingInspection) => void
+  /** Pre-select this inspector on new inspections (e.g. the logged-in inspector). */
+  defaultInspectorId?: string | null
 }
 
-export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: Props) {
+export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, defaultInspectorId }: Props) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -134,7 +136,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
       setPropertySearch('')
       setShowPropertyList(false)
       setCleanerId(null)
-      setInspectorId(null)
+      setInspectorId(defaultInspectorId ?? null)
       setDate(today)
       setLastCleanedOn('')
       setScores({ overall_score: null, cleanliness_score: null, linens_score: null, supplies_score: null, exterior_score: null })
