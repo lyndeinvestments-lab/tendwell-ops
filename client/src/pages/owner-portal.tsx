@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -32,7 +32,6 @@ type OwnerProperty = {
   twin_beds?: number | null
   square_footage?: number | null
   door_code?: string | null
-  auto_code?: string | null
   other_codes?: string | null
   wifi_info?: string | null
 }
@@ -45,7 +44,6 @@ const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> 
   bed_sizes: ['king_beds', 'queen_beds', 'full_beds', 'twin_beds'],
   square_footage: ['square_footage'],
   door_code: ['door_code'],
-  auto_code: ['auto_code'],
   other_codes: ['other_codes'],
   wifi_info: ['wifi_info'],
 }
@@ -65,6 +63,14 @@ type OwnerTask = { source: string; title: string; task_date: string | null; stat
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
+  // Date-only strings (YYYY-MM-DD) must be constructed in local time to avoid
+  // UTC-midnight anchoring rolling them back a day in Eastern/other western TZs.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    if (isNaN(dt.getTime())) return '—'
+    return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  }
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
@@ -274,7 +280,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   }
 
   const detailKeys: (keyof OwnerPermissions)[] = [
-    'address', 'bed_sizes', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
+    'address', 'bed_sizes', 'square_footage', 'door_code', 'other_codes', 'wifi_info',
   ]
   const showDetails = detailKeys.some(k => can(k).visible)
 
@@ -360,9 +366,6 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
               ))}
               {renderField('door_code', 'Door / access code', 'door_code', () => (
                 <Input value={(form.door_code as string) ?? ''} onChange={e => set('door_code', e.target.value || null)} />
-              ))}
-              {renderField('auto_code', 'Auto / lock code', 'auto_code', () => (
-                <Input value={(form.auto_code as string) ?? ''} onChange={e => set('auto_code', e.target.value || null)} />
               ))}
               {renderField('other_codes', 'Other codes', 'other_codes', () => (
                 <Textarea
@@ -1016,6 +1019,78 @@ function QuotesSection() {
   )
 }
 
+// ─── Trellis portal card ───────────────────────────────────────────────────────
+function TrellisPortalCard() {
+  const { toast } = useToast()
+  const [copied, setCopied] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-trellis-url'],
+    queryFn: async () => {
+      const { data: oid } = await supabase.rpc('current_owner_id')
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('trellis_portal_url')
+        .eq('id', (oid as any) ?? '')
+        .maybeSingle()
+      if (error) throw error
+      return data?.trellis_portal_url ?? null
+    },
+  })
+
+  const url = typeof data === 'string' ? data.trim() : null
+
+  if (isLoading || !url) return null
+
+  const isOpenable = url.startsWith('http')
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(url!)
+      setCopied(true)
+      toast({ title: 'Link copied' })
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast({ title: 'Could not copy link', description: 'Please copy it manually.', variant: 'destructive' })
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground">Your Trellis portal</h2>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5">
+        <p className="text-sm text-muted-foreground">
+          Access your Trellis owner portal to view reservations, work orders, and more.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {isOpenable && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              data-testid="link-open-trellis"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Open Trellis portal
+            </a>
+          )}
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+            data-testid="button-copy-trellis-link"
+          >
+            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Owner-wide contact & payment card ────────────────────────────────────────
 function ContactPaymentCard() {
   const { toast } = useToast()
@@ -1241,6 +1316,7 @@ export default function OwnerPortalPage() {
         {ownerId && <QuotesSection />}
         {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         {ownerId && <ContactPaymentCard />}
+        {ownerId && <TrellisPortalCard />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">

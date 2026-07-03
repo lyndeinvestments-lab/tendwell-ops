@@ -3727,6 +3727,7 @@ export type Database = {
           name: string | null
           phone: string | null
           preferred_payment_method: string | null
+          trellis_portal_url: string | null
         }
         Insert: {
           active?: boolean
@@ -3736,6 +3737,7 @@ export type Database = {
           name?: string | null
           phone?: string | null
           preferred_payment_method?: string | null
+          trellis_portal_url?: string | null
         }
         Update: {
           active?: boolean
@@ -3745,6 +3747,7 @@ export type Database = {
           name?: string | null
           phone?: string | null
           preferred_payment_method?: string | null
+          trellis_portal_url?: string | null
         }
         Relationships: []
       }
