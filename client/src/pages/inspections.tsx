@@ -17,11 +17,12 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle } from 'lucide-react'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
 import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
+import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
 type InspectionStatus = 'scheduled' | 'completed' | 'skipped'
@@ -47,12 +48,12 @@ type Inspection = {
   exterior_score: number | null
   notes: string | null
   photos_url: string[] | null
-  properties?: { name: string } | null
+  properties?: { name: string; address: string | null } | null
   cleaners?: { full_name: string } | null
   inspectors?: { full_name: string } | null
 }
 
-const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
+const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
 
 type InspectionFilters = {
   search: string
@@ -160,6 +161,7 @@ export default function InspectionsPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
+  const [mapAddress, setMapAddress] = useState<string | null>(null)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ExistingInspection | null>(null)
   const queryClient = useQueryClient()
@@ -661,6 +663,16 @@ export default function InspectionsPage() {
             <SheetTitle className="text-base">
               {activeDetail?.properties?.name ?? 'Inspection'}
             </SheetTitle>
+            {activeDetail?.properties?.address && (
+              <button
+                type="button"
+                onClick={() => setMapAddress(activeDetail.properties!.address!)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground w-fit mt-0.5 group"
+              >
+                <MapPin className="w-3 h-3 shrink-0 text-primary group-hover:text-foreground" />
+                <span className="truncate underline-offset-2 group-hover:underline">{activeDetail.properties.address}</span>
+              </button>
+            )}
           </SheetHeader>
           {activeDetail && (
             <div className="mt-4 space-y-4">
@@ -767,6 +779,11 @@ export default function InspectionsPage() {
           const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? 'this inspection'
           confirmDelete(insp.id, label)
         } : undefined}
+      />
+      <MapPickerDialog
+        open={!!mapAddress}
+        onOpenChange={v => !v && setMapAddress(null)}
+        address={mapAddress ?? ''}
       />
     </PageContainer>
   )
