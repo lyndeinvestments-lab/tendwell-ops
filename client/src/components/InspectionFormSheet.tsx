@@ -494,7 +494,6 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               multiple
               onChange={handlePhotoChange}
               className="hidden"
