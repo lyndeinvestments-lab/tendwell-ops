@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -1016,6 +1016,78 @@ function QuotesSection() {
   )
 }
 
+// ─── Trellis portal card ───────────────────────────────────────────────────────
+function TrellisPortalCard() {
+  const { toast } = useToast()
+  const [copied, setCopied] = useState(false)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['owner-trellis-url'],
+    queryFn: async () => {
+      const { data: oid } = await supabase.rpc('current_owner_id')
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('trellis_portal_url')
+        .eq('id', (oid as any) ?? '')
+        .maybeSingle()
+      if (error) throw error
+      return data?.trellis_portal_url ?? null
+    },
+  })
+
+  const url = typeof data === 'string' ? data.trim() : null
+
+  if (isLoading || !url) return null
+
+  const isOpenable = url.startsWith('http')
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(url!)
+      setCopied(true)
+      toast({ title: 'Link copied' })
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      toast({ title: 'Could not copy link', description: 'Please copy it manually.', variant: 'destructive' })
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground">Your Trellis portal</h2>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5">
+        <p className="text-sm text-muted-foreground">
+          Access your Trellis owner portal to view reservations, work orders, and more.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {isOpenable && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              data-testid="link-open-trellis"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Open Trellis portal
+            </a>
+          )}
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
+            data-testid="button-copy-trellis-link"
+          >
+            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+            {copied ? 'Copied' : 'Copy link'}
+          </button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Owner-wide contact & payment card ────────────────────────────────────────
 function ContactPaymentCard() {
   const { toast } = useToast()
@@ -1241,6 +1313,7 @@ export default function OwnerPortalPage() {
         {ownerId && <QuotesSection />}
         {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         {ownerId && <ContactPaymentCard />}
+        {ownerId && <TrellisPortalCard />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">
