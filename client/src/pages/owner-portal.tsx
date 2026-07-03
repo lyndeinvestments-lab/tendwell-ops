@@ -1287,19 +1287,26 @@ export default function OwnerPortalPage() {
   return (
     <div className="min-h-dvh bg-background flex flex-col">
       <header className="border-b border-border/60 bg-gradient-to-r from-primary/10 via-background to-background sticky top-0 z-10 backdrop-blur">
-        <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-2 px-4 sm:px-7 py-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center shrink-0">
-              <Home className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-foreground leading-tight truncate">
-                Welcome back{firstName ? `, ${firstName}` : ''}
-              </p>
-              <p className="text-2xs text-muted-foreground leading-tight">Tendwell owner portal</p>
-            </div>
+        <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-7 py-3">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <img
+              src="/brand/tendwell-logo-black.png"
+              alt="Tendwell"
+              className="h-7 sm:h-8 w-auto max-w-[180px] object-contain object-left block dark:hidden"
+            />
+            <img
+              src="/brand/tendwell-logo-white.png"
+              alt="Tendwell"
+              className="h-7 sm:h-8 w-auto max-w-[180px] object-contain object-left hidden dark:block"
+            />
+            <span className="text-2xs text-muted-foreground uppercase tracking-[0.2em]">Owner portal</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {firstName && (
+              <span className="hidden sm:inline text-sm text-muted-foreground mr-1 truncate max-w-[160px]">
+                Welcome back, {firstName}
+              </span>
+            )}
             {canActAsOwner && (
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
                 <ArrowLeft className="w-4 h-4" /> Staff view
