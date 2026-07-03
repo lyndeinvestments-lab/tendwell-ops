@@ -32,7 +32,6 @@ type OwnerProperty = {
   twin_beds?: number | null
   square_footage?: number | null
   door_code?: string | null
-  auto_code?: string | null
   other_codes?: string | null
   wifi_info?: string | null
 }
@@ -45,7 +44,6 @@ const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> 
   bed_sizes: ['king_beds', 'queen_beds', 'full_beds', 'twin_beds'],
   square_footage: ['square_footage'],
   door_code: ['door_code'],
-  auto_code: ['auto_code'],
   other_codes: ['other_codes'],
   wifi_info: ['wifi_info'],
 }
@@ -274,7 +272,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   }
 
   const detailKeys: (keyof OwnerPermissions)[] = [
-    'address', 'bed_sizes', 'square_footage', 'door_code', 'auto_code', 'other_codes', 'wifi_info',
+    'address', 'bed_sizes', 'square_footage', 'door_code', 'other_codes', 'wifi_info',
   ]
   const showDetails = detailKeys.some(k => can(k).visible)
 
@@ -360,9 +358,6 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
               ))}
               {renderField('door_code', 'Door / access code', 'door_code', () => (
                 <Input value={(form.door_code as string) ?? ''} onChange={e => set('door_code', e.target.value || null)} />
-              ))}
-              {renderField('auto_code', 'Auto / lock code', 'auto_code', () => (
-                <Input value={(form.auto_code as string) ?? ''} onChange={e => set('auto_code', e.target.value || null)} />
               ))}
               {renderField('other_codes', 'Other codes', 'other_codes', () => (
                 <Textarea

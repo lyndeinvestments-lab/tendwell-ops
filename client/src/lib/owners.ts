@@ -11,7 +11,6 @@ export const OWNER_FIELD_DEFS = [
   { key: 'bed_sizes',      label: 'Bed sizes' },
   { key: 'square_footage', label: 'Square footage' },
   { key: 'door_code',      label: 'Door / access code' },
-  { key: 'auto_code',      label: 'Auto / lock code' },
   { key: 'other_codes',    label: 'Other codes' },
   { key: 'wifi_info',      label: 'Wi-Fi information' },
 ] as const
