@@ -28,7 +28,7 @@ import {
   UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, CalendarDays,
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
   Lock, Plug, MapPin, Database, Receipt, KeyRound, Bell as BellIcon,
-  Home, Search, Mail, Loader2,
+  Home, Search, Mail, Loader2, ExternalLink,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -2010,6 +2010,7 @@ type OwnerRow = {
   phone: string | null
   active: boolean
   created_at: string
+  trellis_portal_url: string | null
 }
 
 function AssignPropertiesDialog({
@@ -2462,6 +2463,7 @@ function OwnersSection() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
+  const [editTrellisUrl, setEditTrellisUrl] = useState('')
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   const { data: owners, isLoading, isError, refetch } = useQuery({
@@ -2470,7 +2472,7 @@ function OwnersSection() {
     queryFn: async (): Promise<OwnerRow[]> => {
       const { data, error } = await supabase
         .from('property_owners')
-        .select('id, email, name, phone, active, created_at')
+        .select('id, email, name, phone, active, created_at, trellis_portal_url')
         .order('created_at', { ascending: true })
       if (error) throw error
       return (data || []) as OwnerRow[]
@@ -2511,10 +2513,10 @@ function OwnersSection() {
   })
 
   const { mutate: saveProfile } = useMutation({
-    mutationFn: async ({ id, name, phone }: { id: string; name: string; phone: string }) => {
+    mutationFn: async ({ id, name, phone, trellis_portal_url }: { id: string; name: string; phone: string; trellis_portal_url: string }) => {
       const { error } = await supabase
         .from('property_owners')
-        .update({ name: name.trim() || null, phone: phone.trim() || null })
+        .update({ name: name.trim() || null, phone: phone.trim() || null, trellis_portal_url: trellis_portal_url.trim() || null })
         .eq('id', id)
       if (error) throw error
     },
@@ -2559,6 +2561,7 @@ function OwnersSection() {
     setEditingId(o.id)
     setEditName(o.name || '')
     setEditPhone(o.phone || '')
+    setEditTrellisUrl(o.trellis_portal_url || '')
   }
 
   return (
@@ -2611,81 +2614,112 @@ function OwnersSection() {
                   <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">No owners yet. Click “Add Owner” to create one.</td></tr>
                 ) : (
                   filtered.map(o => (
-                    <tr key={o.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-owner-${o.id}`}>
-                      <td className="py-2 px-3 font-medium text-xs">
-                        {editingId === o.id ? (
-                          <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" placeholder="Name" autoFocus />
-                        ) : (
-                          o.name || <span className="italic text-muted-foreground">no name</span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">{o.email}</td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">
-                        {editingId === o.id ? (
-                          <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder="Phone" />
-                        ) : (
-                          o.phone || <span className="italic">—</span>
-                        )}
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <button
-                          className="text-xs underline-offset-2 hover:underline text-muted-foreground hover:text-foreground"
-                          onClick={() => setAssignOwner(o)}
-                          title="Manage property access"
-                        >
-                          {counts?.get(o.id) ?? 0}
-                        </button>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <Switch
-                          checked={o.active}
-                          onCheckedChange={(v) => toggleActive({ id: o.id, active: !!v })}
-                          aria-label="Toggle owner access"
-                        />
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                    <React.Fragment key={o.id}>
+                      <tr className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-owner-${o.id}`}>
+                        <td className="py-2 px-3 font-medium text-xs">
                           {editingId === o.id ? (
-                            <>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => saveProfile({ id: o.id, name: editName, phone: editPhone })} title="Save">
-                                <Check className="w-3.5 h-3.5 text-success" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)} title="Cancel">
-                                <X className="w-3.5 h-3.5" />
-                              </Button>
-                            </>
+                            <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" placeholder="Name" autoFocus />
                           ) : (
-                            <>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title="Manage property access">
-                                <Home className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title="Field permissions" data-testid={`button-owner-permissions-${o.id}`}>
-                                <SlidersHorizontal className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title="Edit name / phone">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </Button>
-                              <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => handleSendReset(o.email)} title="Send password reset email">
-                                <Mail className="w-3.5 h-3.5" />
-                              </Button>
-                              {confirmDeleteId === o.id ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-xs text-muted-foreground">Remove?</span>
-                                  <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => deleteOwner(o)} data-testid={`button-confirm-delete-owner-${o.id}`}>
-                                    {deleting ? 'Removing…' : 'Confirm'}
-                                  </Button>
-                                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
-                                </div>
-                              ) : (
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteId(o.id)} aria-label={`Remove ${o.email}`} data-testid={`button-delete-owner-${o.id}`}>
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              )}
-                            </>
+                            o.name || <span className="italic text-muted-foreground">no name</span>
                           )}
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">{o.email}</td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">
+                          {editingId === o.id ? (
+                            <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder="Phone" />
+                          ) : (
+                            <div className="space-y-0.5">
+                              <div>{o.phone || <span className="italic">—</span>}</div>
+                              {o.trellis_portal_url ? (
+                                <a
+                                  href={o.trellis_portal_url.startsWith('http') ? o.trellis_portal_url : undefined}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-2xs text-primary hover:underline"
+                                  title={o.trellis_portal_url}
+                                >
+                                  <ExternalLink className="w-3 h-3" /> Trellis linked
+                                </a>
+                              ) : (
+                                <span className="text-2xs text-muted-foreground/60 italic">No Trellis link</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <button
+                            className="text-xs underline-offset-2 hover:underline text-muted-foreground hover:text-foreground"
+                            onClick={() => setAssignOwner(o)}
+                            title="Manage property access"
+                          >
+                            {counts?.get(o.id) ?? 0}
+                          </button>
+                        </td>
+                        <td className="py-2 px-3 text-center">
+                          <Switch
+                            checked={o.active}
+                            onCheckedChange={(v) => toggleActive({ id: o.id, active: !!v })}
+                            aria-label="Toggle owner access"
+                          />
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            {editingId === o.id ? (
+                              <>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => saveProfile({ id: o.id, name: editName, phone: editPhone, trellis_portal_url: editTrellisUrl })} title="Save">
+                                  <Check className="w-3.5 h-3.5 text-success" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)} title="Cancel">
+                                  <X className="w-3.5 h-3.5" />
+                                </Button>
+                              </>
+                            ) : (
+                              <>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title="Manage property access">
+                                  <Home className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title="Field permissions" data-testid={`button-owner-permissions-${o.id}`}>
+                                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title="Edit name / phone / Trellis URL">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => handleSendReset(o.email)} title="Send password reset email">
+                                  <Mail className="w-3.5 h-3.5" />
+                                </Button>
+                                {confirmDeleteId === o.id ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground">Remove?</span>
+                                    <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => deleteOwner(o)} data-testid={`button-confirm-delete-owner-${o.id}`}>
+                                      {deleting ? 'Removing…' : 'Confirm'}
+                                    </Button>
+                                    <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+                                  </div>
+                                ) : (
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteId(o.id)} aria-label={`Remove ${o.email}`} data-testid={`button-delete-owner-${o.id}`}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                      {editingId === o.id && (
+                        <tr className="border-b border-border/50 bg-muted/10">
+                          <td colSpan={6} className="px-3 pb-3 pt-1">
+                            <label className="block text-2xs text-muted-foreground mb-1">Trellis portal URL</label>
+                            <Input
+                              value={editTrellisUrl}
+                              onChange={e => setEditTrellisUrl(e.target.value)}
+                              className="h-7 text-xs font-mono"
+                              placeholder="https://app.trellistech.com/owner-portal/..."
+                              data-testid={`input-trellis-url-${o.id}`}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))
                 )}
               </tbody>
