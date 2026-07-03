@@ -63,6 +63,14 @@ type OwnerTask = { source: string; title: string; task_date: string | null; stat
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
+  // Date-only strings (YYYY-MM-DD) must be constructed in local time to avoid
+  // UTC-midnight anchoring rolling them back a day in Eastern/other western TZs.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+    const [y, m, d] = iso.split('-').map(Number)
+    const dt = new Date(y, m - 1, d)
+    if (isNaN(dt.getTime())) return '—'
+    return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  }
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
