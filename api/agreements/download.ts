@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getSupabaseConfig } from './_lib'
+import { getSupabaseConfig } from './_lib.js'
 
 // GET /api/agreements/download?id=<uuid> — caller must be the agreement's owner OR staff.
 //
