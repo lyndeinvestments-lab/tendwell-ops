@@ -105,6 +105,9 @@ export const ROLE_VIEWS: Record<string, string[]> = {
   ],
   operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
+  // Inspectors (invited from the Cleaners page with app role 'inspector')
+  // get the inspections page by default; admins can extend via Settings.
+  inspector: ['inspections'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'forecaster',
@@ -190,6 +193,16 @@ export function buildDefaultRolePermissions(): RolePermissionsStore {
       permissions: derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.cleaning), false),
       system: true,
     },
+    inspector: {
+      label: 'Inspector',
+      views: sanitizeViews(ROLE_VIEWS.inspector),
+      // Inspectors must be able to log/complete inspections, not just view.
+      permissions: {
+        ...derivePermissionsFromViews(sanitizeViews(ROLE_VIEWS.inspector), false),
+        inspections: { view: true, edit: true },
+      },
+      system: true,
+    },
     viewer: {
       label: 'Viewer',
       views: sanitizeViews(ROLE_VIEWS.viewer),
@@ -217,6 +230,17 @@ export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
     }
   }
   return result
+}
+
+// Hardcoded default access for a role — prefers the curated defaults in
+// buildDefaultRolePermissions (which can grant per-page edit, e.g. inspector →
+// inspections), falling back to a plain ROLE_VIEWS derivation for roles
+// without a curated entry.
+function roleDefaultAccess(role: string): { views: ViewId[]; permissions: Record<string, PagePermission> } {
+  const curated = buildDefaultRolePermissions()[role]
+  if (curated) return { views: curated.views, permissions: curated.permissions }
+  const views = sanitizeViews(ROLE_VIEWS[role] || [])
+  return { views, permissions: derivePermissionsFromViews(views, role === 'admin') }
 }
 
 // ─── Resolve user from DB ────────────────────────────────────────────────────
@@ -258,16 +282,13 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
           resolvedViews = perms[role].views
           resolvedPermissions = perms[role].permissions
         } else {
-          resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
-          resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
+          ;({ views: resolvedViews, permissions: resolvedPermissions } = roleDefaultAccess(role))
         }
       } else {
-        resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
-        resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
+        ;({ views: resolvedViews, permissions: resolvedPermissions } = roleDefaultAccess(role))
       }
     } catch {
-      resolvedViews = sanitizeViews(ROLE_VIEWS[role] || [])
-      resolvedPermissions = derivePermissionsFromViews(resolvedViews, role === 'admin')
+      ;({ views: resolvedViews, permissions: resolvedPermissions } = roleDefaultAccess(role))
     }
   }
 

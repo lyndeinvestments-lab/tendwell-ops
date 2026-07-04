@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { resizeImageFile } from '@/lib/resize-image'
@@ -8,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2 } from 'lucide-react'
+import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
@@ -59,9 +60,11 @@ interface Props {
   onOpenChange: (open: boolean) => void
   existing?: ExistingInspection | null
   onDelete?: (inspection: ExistingInspection) => void
+  /** Pre-select this inspector on new inspections (e.g. the logged-in inspector). */
+  defaultInspectorId?: string | null
 }
 
-export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: Props) {
+export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, defaultInspectorId }: Props) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -133,7 +136,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
       setPropertySearch('')
       setShowPropertyList(false)
       setCleanerId(null)
-      setInspectorId(null)
+      setInspectorId(defaultInspectorId ?? null)
       setDate(today)
       setLastCleanedOn('')
       setScores({ overall_score: null, cleanliness_score: null, linens_score: null, supplies_score: null, exterior_score: null })
@@ -151,11 +154,12 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
   }, [])
 
   const { data: properties = [] } = useQuery({
-    queryKey: ['/supabase/inspection-form-properties'],
+    queryKey: ['/supabase/inspection-form-properties', 'operational'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, address, filter_size, last_filter_changed, next_filter_due, auto_code, door_code, other_codes, wifi_info')
+        .select('id, name, address, filter_size, last_filter_changed, next_filter_due, auto_code, door_code, other_codes, wifi_info, pipeline_stages!inner(name)')
+        .in('pipeline_stages.name', ['Onboarding', 'Active', 'Offboarding'])
         .order('name')
       if (error) throw error
       return (data ?? []) as PropertyRow[]
@@ -494,7 +498,6 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete }: 
               ref={fileInputRef}
               type="file"
               accept="image/*"
-              capture="environment"
               multiple
               onChange={handlePhotoChange}
               className="hidden"
@@ -651,10 +654,11 @@ type PropertyRow = {
 }
 
 function PropertyInfoCard({ property }: { property: PropertyRow }) {
+  const [mapOpen, setMapOpen] = useState(false)
   const hasFilter = !!(property.filter_size || property.next_filter_due || property.last_filter_changed)
   const hasCodes = !!(property.auto_code || property.door_code || property.other_codes)
   const hasWifi = !!property.wifi_info
-  if (!hasFilter && !hasCodes && !hasWifi) {
+  if (!hasFilter && !hasCodes && !hasWifi && !property.address) {
     return (
       <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
         No filter, access, or Wi-Fi info on file for this property.
@@ -662,7 +666,19 @@ function PropertyInfoCard({ property }: { property: PropertyRow }) {
     )
   }
   return (
+    <>
     <div className="rounded-md border bg-muted/30 divide-y">
+      {property.address && (
+        <InfoRow icon={<MapPin className="w-3.5 h-3.5" />} label="Address">
+          <button
+            type="button"
+            onClick={() => setMapOpen(true)}
+            className="text-sm text-left hover:underline underline-offset-2 text-primary"
+          >
+            {property.address}
+          </button>
+        </InfoRow>
+      )}
       {hasFilter && (
         <InfoRow icon={<Wind className="w-3.5 h-3.5" />} label="AC filter">
           <div className="space-y-0.5">
@@ -689,6 +705,14 @@ function PropertyInfoCard({ property }: { property: PropertyRow }) {
         </InfoRow>
       )}
     </div>
+    {property.address && (
+      <MapPickerDialog
+        open={mapOpen}
+        onOpenChange={setMapOpen}
+        address={property.address}
+      />
+    )}
+    </>
   )
 }
 
