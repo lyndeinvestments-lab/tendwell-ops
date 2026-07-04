@@ -8,7 +8,7 @@ import {
   type AgreementRow,
   type TendwellSigner,
   type OwnerSigner,
-} from './_lib'
+} from './_lib.js'
 
 // POST /api/agreements/sign — owner-gated, service-role.
 //
