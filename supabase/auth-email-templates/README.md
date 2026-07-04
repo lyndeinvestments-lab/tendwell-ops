@@ -1,5 +1,10 @@
 # Supabase Auth email branding (Resend SMTP + Tendwell templates)
 
+> **Automated path:** hand `AGENT-RUNBOOK.md` (this folder) to any agent with
+> the two required secrets and it applies everything via the Supabase
+> Management API (`apply-auth-email-config.py`) with no dashboard clicking.
+> The manual dashboard steps below remain as the fallback.
+
 Auth emails (password reset, etc.) are sent by **Supabase Auth**, not by the app,
 so they default to the unbranded "Supabase Auth" sender. Both the sender and the
 templates are configured in the **Supabase Dashboard** (project
