@@ -50,7 +50,7 @@ Notes:
   templates are provided so nothing unbranded can ever go out.
 - Templates use Supabase's Go-template variable `{{ .ConfirmationURL }}`; do
   not rename it.
-- The logo is loaded from `https://app.tendwellcleaningco.com/brand/tendwell-logo-black.png`
+- The logo is loaded from `https://app.tendwellcleaningco.com/brand/tendwell-logo-email.png`
   (publicly served by the app). If the domain ever changes, update the `<img>`
   URL in all four files and re-paste.
 - Keep this folder in sync with whatever is pasted in the dashboard.
