@@ -57,6 +57,9 @@ def request(method: str, url: str, token: str, body: dict | None = None) -> dict
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
+            # api.supabase.com sits behind Cloudflare, which rejects Python's
+            # default urllib user agent with HTTP 403 (error code 1010).
+            "User-Agent": "tendwell-ops-auth-email-config/1.0",
         },
     )
     try:
