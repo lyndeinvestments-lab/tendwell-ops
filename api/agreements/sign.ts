@@ -142,9 +142,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Fetch template + compute source hash ──────────────────────────────────
+  // Use the routing Host (Vercel only routes requests whose Host belongs to
+  // this deployment, so it cannot point elsewhere) and fall back to the
+  // platform deployment URL. Never trust x-forwarded-host: it is
+  // client-settable, and the fetched bytes become the hashed "source" of a
+  // legal document. (VERCEL_URL is second because the generated deployment
+  // URL can sit behind deployment protection, which would block this fetch.)
   const host =
-    (req.headers['x-forwarded-host'] as string | undefined) ||
     (req.headers['host'] as string | undefined) ||
+    process.env.VERCEL_URL ||
     ''
   let templateBytes: Uint8Array
   try {

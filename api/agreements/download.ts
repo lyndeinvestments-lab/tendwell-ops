@@ -111,7 +111,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Create signed URL (5 min TTL) ─────────────────────────────────────────
-  const storagePath = `signed/${id}.pdf`
+  // Use the path recorded at signing time (validated non-null above) rather
+  // than reconstructing it, so a future path-scheme change can't desync.
+  const storagePath = row.signed_pdf_path as string
   const signRes = await fetch(
     `${sb.url}/storage/v1/object/sign/agreements/${storagePath}`,
     {
