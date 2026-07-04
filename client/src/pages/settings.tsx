@@ -2949,6 +2949,8 @@ function AgreementsSection() {
   const { mutate: sendAgreement, isPending: sending } = useMutation({
     mutationFn: async () => {
       if (!selectedOwner || !config) throw new Error('Missing data')
+      if (!config?.tendwell_signature_png || !config?.tendwell_signer_name) throw new Error('Set up your signature first.')
+      if (ownerHasActiveAgreement) throw new Error('This owner already has an active agreement.')
       const { error } = await supabase.from('owner_agreements').insert({
         owner_id: selectedOwner.id,
         status: 'sent',
@@ -2962,7 +2964,7 @@ function AgreementsSection() {
         tendwell_signer_name: config.tendwell_signer_name,
         tendwell_signer_title: config.tendwell_signer_title,
         tendwell_signed_at: new Date().toISOString(),
-        created_by: user?.label ?? null,
+        created_by: user?.label?.trim() || null,
       })
       if (error) throw error
     },
@@ -3266,7 +3268,7 @@ function AgreementsSection() {
 
                 {!config?.tendwell_signature_png && (
                   <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
-                    Set up your signature first before sending.
+                    Set up your signature first.
                   </div>
                 )}
 
