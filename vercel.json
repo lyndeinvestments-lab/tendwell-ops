@@ -24,7 +24,7 @@
       "includeFiles": "api/lost-items/_lib.ts"
     },
     "api/agreements/*.ts": {
-      "includeFiles": "api/agreements/_lib.ts"
+      "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts"
     }
   },
   "rewrites": [

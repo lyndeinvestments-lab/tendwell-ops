@@ -2033,6 +2033,7 @@ export type Database = {
         Row: {
           digest_frequency: string
           email_enabled: boolean
+          notify_agreement_signed: boolean
           notify_contact_note_mention: boolean
           notify_follow_up_due: boolean
           notify_issue_logged: boolean
@@ -2051,6 +2052,7 @@ export type Database = {
         Insert: {
           digest_frequency?: string
           email_enabled?: boolean
+          notify_agreement_signed?: boolean
           notify_contact_note_mention?: boolean
           notify_follow_up_due?: boolean
           notify_issue_logged?: boolean
@@ -2069,6 +2071,7 @@ export type Database = {
         Update: {
           digest_frequency?: string
           email_enabled?: boolean
+          notify_agreement_signed?: boolean
           notify_contact_note_mention?: boolean
           notify_follow_up_due?: boolean
           notify_issue_logged?: boolean

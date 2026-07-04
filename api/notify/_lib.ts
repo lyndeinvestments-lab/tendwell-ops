@@ -21,6 +21,9 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   // Public onboarding-intake form. Shares the master-list audience + the
   // "Onboarding submitted" preference toggle (notify_onboarding_submitted).
   onboarding_intake_submitted: 'master-list',
+  // Owner signed their service agreement (sent server-side from
+  // api/agreements/sign.ts). Settings view = admin audience.
+  agreement_signed: 'settings',
 }
 
 export const EVENT_PREF_FIELD: Record<string, string> = {
@@ -36,6 +39,7 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   property_note_mention: 'notify_property_note_mention',
   contact_note_mention: 'notify_contact_note_mention',
   onboarding_intake_submitted: 'notify_onboarding_submitted',
+  agreement_signed: 'notify_agreement_signed',
 }
 
 export interface SupabaseClient {
@@ -151,6 +155,7 @@ export interface NotifPrefs {
   notify_follow_up_due: boolean
   notify_property_note_mention: boolean
   notify_contact_note_mention: boolean
+  notify_agreement_signed: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
 }
 
@@ -171,6 +176,7 @@ export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   notify_follow_up_due: false,
   notify_property_note_mention: true,
   notify_contact_note_mention: true,
+  notify_agreement_signed: true,
   digest_frequency: 'instant',
 }
 
