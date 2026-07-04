@@ -23,6 +23,7 @@
 | Styling | Tailwind CSS 3 + Shadcn/ui + Radix UI |
 | Animations | Framer Motion 11 |
 | Charts | Recharts 2 |
+| PDF generation | pdf-lib (server-side signed PDF assembly) |
 | Forms | react-hook-form + Zod |
 | Drag & Drop | dnd-kit 6 (pipeline Kanban) |
 | Backend | Node.js + Express 5, TypeScript |
@@ -48,6 +49,7 @@ tendwell-ops/
 │   │   ├── CommandPalette.tsx   # Cmd+K global search
 │   │   ├── CsvImportModal.tsx
 │   │   ├── ChatBot.tsx          # Floating agentic chatbot (Claude API)
+│   │   ├── SignaturePad.tsx     # Dependency-free touch/canvas signature pad (e-signature)
 │   │   └── ui/                  # ~50 Shadcn components
 │   ├── hooks/
 │   │   ├── use-auth.tsx         # Auth context hook
@@ -58,6 +60,7 @@ tendwell-ops/
 │       ├── auth.tsx             # Role definitions + VIEW_ACCESS map
 │       ├── supabase.ts          # Supabase client + stage colors/order
 │       ├── queryClient.ts       # React Query client + apiRequest util
+│       ├── agreements.ts        # Agreement helper utilities (e-signature)
 │       └── utils.ts             # cn() Tailwind merge util
 ├── server/
 │   ├── index.ts                 # Express app, middleware, error handling
@@ -66,6 +69,11 @@ tendwell-ops/
 │   ├── storage.ts               # Drizzle ORM interface (SQLite fallback)
 │   └── vite.ts                  # Vite dev middleware setup
 ├── api/auth/login.ts            # Vercel serverless login endpoint
+├── api/agreements/
+│   ├── sign.ts                  # POST /api/agreements/sign (pdf-lib PDF assembly + bucket upload)
+│   └── download.ts              # GET /api/agreements/download (signed URL for private bucket)
+├── client/public/agreements/
+│   └── service-agreement-v1.pdf # v1 service agreement template (page 1 party fields, page 5 signatures)
 ├── shared/schema.ts             # Drizzle schema (users table + Zod types)
 ├── supabase/migrations/         # SQL migration files
 ├── script/build.ts              # esbuild server bundle + Vite client build
@@ -99,7 +107,7 @@ tendwell-ops/
 | `/inspections` | `inspections.tsx` | admin, operations, viewer |
 | `/reviews` | `reviews.tsx` | admin, operations, viewer |
 | `/trellis-sync` | `trellis-sync.tsx` | **admin only** (`AdminRoute`) |
-| `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal). Owners manage owner-wide contact + payment (one card, saved via `owner_update_self_contact` RPC), change their login email in-portal (`POST /api/owners/change-email`), and change their password via the Account Security card. Per-property: owners see broken-out bed-size fields (King/Queen/Full/Twin) that write the real `properties` bed columns directly. There is no bed-count field: `number_of_beds` is auto-derived (sum) server-side by the `properties_owner_update_guard` trigger, which also runs the auto-fill-from-beds linen formula (towel par levels on the Operations tab) when the bed total increases. Owners can add per-property notes under Wi-Fi; they see only their own notes, never staff notes. Owner notes appear in the staff property Notes tab with an "Owner" badge. Preferred payment method is a QuickBooks/Bill.com dropdown. |
+| `/owner` (implicit) | `owner-portal.tsx` | **owner role only** (separate sidebar-free portal). Owners manage owner-wide contact + payment (one card, saved via `owner_update_self_contact` RPC), change their login email in-portal (`POST /api/owners/change-email`), and change their password via the Account Security card. Per-property: owners see broken-out bed-size fields (King/Queen/Full/Twin) that write the real `properties` bed columns directly. There is no bed-count field: `number_of_beds` is auto-derived (sum) server-side by the `properties_owner_update_guard` trigger, which also runs the auto-fill-from-beds linen formula (towel par levels on the Operations tab) when the bed total increases. Owners can add per-property notes under Wi-Fi; they see only their own notes, never staff notes. Owner notes appear in the staff property Notes tab with an "Owner" badge. Preferred payment method is a QuickBooks/Bill.com dropdown. **Agreements:** owners with an assigned agreement see an "Action needed: review and sign your Service Agreement" card (open the PDF, edit party fields, draw a signature with a touch signature pad, consent checkbox); after signing, a Download PDF card replaces it. Owners with no assigned agreement see nothing. |
 | `/reset-password` | `reset-password.tsx` | Public (password-recovery link target) |
 | `/cleaners` | `cleaners.tsx` | admin, operations |
 | `/alerts` | `alerts.tsx` | admin, operations, viewer |
@@ -116,7 +124,7 @@ tendwell-ops/
 - **Roles**: `admin` | `operations` | `cleaning` | `inspector` | `viewer` | `owner`. The `inspector` role (created by the Cleaners page invite flow via the `add_cleaner_app_user` RPC) has hardcoded defaults in `ROLE_VIEWS` + `buildDefaultRolePermissions`: view **and edit** on `inspections` only. The logged-in user ↔ inspector identity link is by email (`cleaners.email` ↔ `app_users.google_email` ↔ session email), resolved client-side by `useMyInspector()` (`client/src/hooks/use-my-inspector.ts`).
 - **Owner portal**: users with role `owner` are routed (by role, in `App.tsx`) to a dedicated sidebar-free portal (`owner-portal.tsx`) and never see staff routes. RLS restricts them to their assigned properties only.
 - Role definitions and view access map: `client/src/lib/auth.tsx`
-- **User management**: Settings page (`/settings`, admin only). **Users tab** = staff/internal accounts (sign in with Google OAuth using their account email) — add by email, set role, inline role editing, remove. **Owners tab** = owner portal accounts (email/password). UI copy avoids Google-only language since owners are email/password (the `app_users.google_email` column name is retained for compatibility).
+- **User management**: Settings page (`/settings`, admin only). **Users tab** = staff/internal accounts (sign in with Google OAuth using their account email) — add by email, set role, inline role editing, remove. **Owners tab** = owner portal accounts (email/password). UI copy avoids Google-only language since owners are email/password (the `app_users.google_email` column name is retained for compatibility). **Agreements tab** = one-time Tendwell signer setup (admin enters their name, title, and draws a signature stored in `agreement_config`; admin-only table, owners can never read it); then "Send agreement" to pick an owner (prefilled party fields, inserts a pre-signed `owner_agreements` row). The list shows status badges (sent/signed/void), a Download button for signed agreements, and a Void button for sent ones. Sending is blocked until the signer is configured. Only one active agreement per owner is allowed at a time.
 
 ---
 
@@ -142,6 +150,14 @@ Owner-editable property columns: `address`, the broken-out bed counts `king_beds
 **Owner field permissions (6 field keys → property columns):** `address`, `bed_sizes`(→king/queen/full/twin bed columns), `square_footage`, `door_code`, `other_codes`, `wifi_info`. The `auto_code` key was dropped by `20260704_owner_remove_auto_code.sql` (owners no longer see or edit the auto/lock code; the `auto_code` column stays on `properties` for staff use). The `bed_count` key was dropped by `20260702_owner_beds_notes.sql` (`number_of_beds` is now server-derived and not owner-editable). The `owner_contact` and `payment_method` keys were removed from the field-permission model by `20260701_owner_account.sql` (they are owner-level, not per-property). The defs live in `client/src/lib/owners.ts` (`OWNER_FIELD_DEFS`) and the SQL default `owner_field_permissions_default()` — keep them in sync. DB enforcement: (1) **editability** — the `properties_owner_update_guard` BEFORE-UPDATE trigger overlays each owner-editable column only when the owner has `editable` for that field; it also derives `number_of_beds` (sum of bed-size columns) and, when the bed total increases, auto-fills the linen/towel par levels on the Operations tab; (2) **visibility** — owners read via the SECURITY DEFINER RPC `get_owner_properties()` which returns a JSONB row per assigned property containing only visible fields plus the resolved `permissions` map (hidden values never leave the DB); the `stage` field was restored on this RPC. The portal uses this RPC, not a direct SELECT. Staff configure the matrix in **Settings → Owners** (sliders icon → `OwnerPermissionsDialog`, per-property with "Copy to all").
 
 **Owner notes on properties:** `property_notes` gains an `owner_id UUID` column (FK `property_owners`, ON DELETE SET NULL; non-null = owner-authored note). New SECURITY DEFINER RPCs scoped to the calling owner: `owner_add_property_note(p_property_id, p_content)` (inserts a note, enforces `owner_owns_property()`) and `get_owner_property_notes(p_property_id)` (returns the calling owner's own notes for that property only, never staff notes). Owner notes appear in the staff property Notes tab with an "Owner" badge.
+
+E-signature tables (migration `20260703_owner_agreements.sql`):
+- `agreement_config` — single-row table (staff-only RLS; holds the Tendwell signer name, title, and drawn signature so the signature image never leaves the server). Admin reads/writes; owners have no access.
+- `owner_agreements` — one row per agreement assignment: party fields for both sides, Tendwell and owner signer blocks, consent flag, IP address, user-agent audit columns, SHA-256 hashes of the source template and the final signed PDF, and status (`sent` / `signed` / `void`). RLS: staff ALL, owner SELECT-own only.
+
+SECURITY DEFINER RPC `get_owner_agreement()` — caller-scoped (returns only the calling owner's active agreement). Returns party fields and status but no signature images. Used by the owner portal to determine whether to show the signing card or the download card.
+
+Private Supabase Storage bucket `agreements` — signed PDFs stored under `signed/<id>.pdf`. Service-role access only; no public URLs.
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
@@ -171,6 +187,8 @@ The following Vercel serverless functions exist for operations that require the 
 
 - `POST /DELETE /api/owners/provision` — admin Bearer-gated. Creates or deletes a Supabase Auth email/password login for an owner. Used by the Settings → Owners tab to provision/remove portal access without exposing the service role key to the client.
 - `POST /api/owners/change-email` — owner-gated (caller's own session token). Changes the authenticated owner's login email immediately and syncs `property_owners.email` in place (id preserved, so permissions and property assignments are unchanged). Uses the service role to call `supabase.auth.admin.updateUserById`.
+- `POST /api/agreements/sign` — owner-gated (caller's own session). Generates the signed PDF server-side with pdf-lib: fills party fields on page 1, stamps both the Tendwell and owner signatures on page 5, and appends a Certificate of Completion page (timestamps, IP, user-agent, SHA-256 source and signed hashes). Uploads the result to the private `agreements` bucket at `signed/<id>.pdf` and records all audit fields on the `owner_agreements` row.
+- `GET /api/agreements/download?id=` — accessible to the owner of the agreement or any staff member. Returns a 300-second signed URL for the stored PDF in the private bucket.
 
 ---
 
@@ -326,6 +344,7 @@ npm run db:push    # Push Drizzle schema to SQLite
 - `20260703_owner_trellis_link.sql` — adds `property_owners.trellis_portal_url` TEXT column. Admin-set per owner in Settings → Owners (inline edit); shown in the owner portal as a "Your Trellis portal" card with Open (new tab) and Copy link actions. No new RLS policies needed (existing admin-update + owner-select policies cover it).
 - `20260704_owner_remove_auto_code.sql` — drops `auto_code` from the owner field-permission model (6 keys remain). Rewrites `owner_field_permissions_default()`, `get_owner_properties()`, and `properties_owner_update_guard()` identically to the previous migration except `auto_code` is removed from defaults, visibility output, and editable overlay. The `auto_code` column on `properties` is untouched; staff Access tab is unaffected.
 - `20260705_owner_task_date_fix.sql` — fixes timezone day-shift bug: redefines `get_owner_property_tasks` to return `task_date DATE` (was `TIMESTAMPTZ`); inspection branch uses `COALESCE(...)::date`, trellis branch returns `scheduled_date` directly (already a date). Client `formatDate` updated to construct date-only strings in local time, avoiding UTC-midnight rollback.
+- `20260703_owner_agreements.sql` — owner e-signature agreements: `agreement_config` (single-row, staff-only RLS, stores Tendwell signer info and signature), `owner_agreements` (party fields, signer blocks, consent + audit + hash columns, sent/signed/void status; staff ALL + owner SELECT-own RLS), `get_owner_agreement()` SECURITY DEFINER RPC (caller-scoped, no signature images), and private `agreements` storage bucket for signed PDFs.
 
 ---
 

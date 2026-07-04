@@ -104,6 +104,30 @@ export type Database = {
         }
         Relationships: []
       }
+      agreement_config: {
+        Row: {
+          id: number
+          tendwell_signature_png: string | null
+          tendwell_signer_name: string | null
+          tendwell_signer_title: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          tendwell_signature_png?: string | null
+          tendwell_signer_name?: string | null
+          tendwell_signer_title?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: number
+          tendwell_signature_png?: string | null
+          tendwell_signer_name?: string | null
+          tendwell_signer_title?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       alert_dismissals: {
         Row: {
           alert_key: string
@@ -2336,6 +2360,101 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
+      owner_agreements: {
+        Row: {
+          consent_text: string | null
+          created_at: string | null
+          created_by: string | null
+          effective_date: string | null
+          email: string | null
+          entity: string | null
+          id: string
+          mailing_address: string | null
+          owner_id: string
+          owner_ip: string | null
+          owner_name: string | null
+          owner_printed_name: string | null
+          owner_signature_png: string | null
+          owner_signed_at: string | null
+          owner_title: string | null
+          owner_user_agent: string | null
+          phone: string | null
+          property_addresses: string | null
+          signed_pdf_path: string | null
+          signed_pdf_sha256: string | null
+          source_pdf_sha256: string | null
+          status: string
+          template_version: string | null
+          tendwell_signed_at: string | null
+          tendwell_signer_name: string | null
+          tendwell_signer_title: string | null
+        }
+        Insert: {
+          consent_text?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          effective_date?: string | null
+          email?: string | null
+          entity?: string | null
+          id?: string
+          mailing_address?: string | null
+          owner_id: string
+          owner_ip?: string | null
+          owner_name?: string | null
+          owner_printed_name?: string | null
+          owner_signature_png?: string | null
+          owner_signed_at?: string | null
+          owner_title?: string | null
+          owner_user_agent?: string | null
+          phone?: string | null
+          property_addresses?: string | null
+          signed_pdf_path?: string | null
+          signed_pdf_sha256?: string | null
+          source_pdf_sha256?: string | null
+          status?: string
+          template_version?: string | null
+          tendwell_signed_at?: string | null
+          tendwell_signer_name?: string | null
+          tendwell_signer_title?: string | null
+        }
+        Update: {
+          consent_text?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          effective_date?: string | null
+          email?: string | null
+          entity?: string | null
+          id?: string
+          mailing_address?: string | null
+          owner_id?: string
+          owner_ip?: string | null
+          owner_name?: string | null
+          owner_printed_name?: string | null
+          owner_signature_png?: string | null
+          owner_signed_at?: string | null
+          owner_title?: string | null
+          owner_user_agent?: string | null
+          phone?: string | null
+          property_addresses?: string | null
+          signed_pdf_path?: string | null
+          signed_pdf_sha256?: string | null
+          source_pdf_sha256?: string | null
+          status?: string
+          template_version?: string | null
+          tendwell_signed_at?: string | null
+          tendwell_signer_name?: string | null
+          tendwell_signer_title?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_agreements_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -5407,6 +5526,7 @@ export type Database = {
       current_owner_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
+      get_owner_agreement: { Args: never; Returns: Json[] }
       get_owner_properties: { Args: never; Returns: Json[] }
       get_owner_property_notes: {
         Args: { p_property_id: number }

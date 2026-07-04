@@ -13,8 +13,10 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
+import { signAgreement, getAgreementDownloadUrl } from '@/lib/agreements'
+import { SignaturePad } from '@/components/SignaturePad'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
 // field the owner can't see (visibility enforced in the DB), so every value
@@ -1019,6 +1021,276 @@ function QuotesSection() {
   )
 }
 
+// ─── Agreement section ─────────────────────────────────────────────────────────
+type OwnerAgreement = {
+  id: string
+  status: 'sent' | 'signed' | 'void'
+  owner_name: string | null
+  entity: string | null
+  mailing_address: string | null
+  property_addresses: string | null
+  email: string | null
+  phone: string | null
+  owner_signed_at: string | null
+}
+
+function AgreementSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: rpcData, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-agreement'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_owner_agreement')
+      if (error) throw error
+      return data as OwnerAgreement[] | null
+    },
+  })
+
+  // get_owner_agreement returns a SETOF (jsonb array); at most 1 element.
+  // An empty array means the owner has no agreement assigned.
+  const a = (rpcData as any)?.[0] as OwnerAgreement | undefined
+
+  // Form state for party fields + signing fields
+  const [ownerName, setOwnerName] = useState('')
+  const [entity, setEntity] = useState('')
+  const [mailingAddress, setMailingAddress] = useState('')
+  const [propertyAddresses, setPropertyAddresses] = useState('')
+  const [email, setEmail] = useState('')
+  const [phone, setPhone] = useState('')
+  const [ownerPrintedName, setOwnerPrintedName] = useState('')
+  const [ownerTitle, setOwnerTitle] = useState('')
+  const [sig, setSig] = useState<string | null>(null)
+  const [consent, setConsent] = useState(false)
+  const [isPending, setIsPending] = useState(false)
+
+  // Pre-fill form when agreement data arrives
+  useEffect(() => {
+    if (a) {
+      setOwnerName(a.owner_name ?? '')
+      setEntity(a.entity ?? '')
+      setMailingAddress(a.mailing_address ?? '')
+      setPropertyAddresses(a.property_addresses ?? '')
+      setEmail(a.email ?? '')
+      setPhone(a.phone ?? '')
+    }
+  }, [a?.id])
+
+  if (isLoading) return <Skeleton className="h-28 rounded-2xl" />
+  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load agreement" description="Please try again." />
+
+  // No agreement assigned for this owner.
+  if (!a) return null
+  // void agreements are hidden.
+  if (a.status === 'void') return null
+
+  if (a.status === 'signed') {
+    return (
+      <Card className="rounded-2xl shadow-sm overflow-hidden">
+        <CardHeader className="py-4">
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <FileText className="w-4 h-4 text-muted-foreground" /> Service Agreement
+          </h2>
+        </CardHeader>
+        <CardContent className="space-y-4 pb-5">
+          <p className="text-sm text-muted-foreground">
+            Signed on {formatDate(a.owner_signed_at)}. You can download a copy of the fully signed agreement below.
+          </p>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={async () => {
+              const result = await getAgreementDownloadUrl(a.id)
+              if (result.ok && result.url) {
+                window.open(result.url, '_blank', 'noopener')
+              } else {
+                toast({ title: 'Could not download', description: result.error ?? 'Please try again.', variant: 'destructive' })
+              }
+            }}
+            data-testid="button-download-agreement"
+          >
+            <Download className="w-4 h-4" />
+            Download signed PDF
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // status === 'sent'
+  const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+
+  async function handleSign() {
+    if (!sig || !consent || !ownerPrintedName.trim() || isPending) return
+    setIsPending(true)
+    const result = await signAgreement({
+      agreementId: a!.id,
+      signatureDataUrl: sig,
+      ownerName: ownerName.trim(),
+      entity: entity.trim(),
+      mailingAddress: mailingAddress.trim(),
+      propertyAddresses: propertyAddresses.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      ownerPrintedName: ownerPrintedName.trim(),
+      ownerTitle: ownerTitle.trim(),
+      consent: true,
+    })
+    setIsPending(false)
+    if (result.ok) {
+      toast({ title: 'Agreement signed. Thank you!' })
+      queryClient.invalidateQueries({ queryKey: ['owner-agreement'] })
+    } else {
+      toast({ title: 'Could not sign agreement', description: result.error ?? 'Please try again.', variant: 'destructive' })
+    }
+  }
+
+  return (
+    <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/40">
+      <CardHeader className="py-4">
+        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <PenLine className="w-4 h-4 text-primary" />
+          Action needed: review and sign your Service Agreement
+        </h2>
+      </CardHeader>
+      <CardContent className="space-y-6 pb-6">
+        {/* Open agreement */}
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Please review the Cleaning Services Agreement, then complete and sign below. Your signature is legally binding.
+          </p>
+          <a
+            href="/agreements/service-agreement-v1.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            data-testid="link-open-agreement"
+          >
+            <ExternalLink className="w-4 h-4" />
+            Open agreement
+          </a>
+        </div>
+
+        {/* Party fields */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold text-foreground">Your information</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Owner name">
+              <Input
+                className="text-base sm:text-sm"
+                value={ownerName}
+                onChange={e => setOwnerName(e.target.value)}
+                data-testid="input-agreement-owner-name"
+              />
+            </Field>
+            <Field label="Entity (optional)">
+              <Input
+                className="text-base sm:text-sm"
+                value={entity}
+                onChange={e => setEntity(e.target.value)}
+                placeholder="LLC, Trust, etc."
+                data-testid="input-agreement-entity"
+              />
+            </Field>
+            <Field label="Mailing address" className="sm:col-span-2">
+              <Input
+                className="text-base sm:text-sm"
+                value={mailingAddress}
+                onChange={e => setMailingAddress(e.target.value)}
+                data-testid="input-agreement-mailing-address"
+              />
+            </Field>
+            <Field label="Property address(es)" className="sm:col-span-2">
+              <Textarea
+                className="text-base sm:text-sm"
+                rows={2}
+                value={propertyAddresses}
+                onChange={e => setPropertyAddresses(e.target.value)}
+                placeholder="One address per line"
+                data-testid="textarea-agreement-property-addresses"
+              />
+            </Field>
+            <Field label="Email">
+              <Input
+                type="email"
+                className="text-base sm:text-sm"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                data-testid="input-agreement-email"
+              />
+            </Field>
+            <Field label="Phone">
+              <Input
+                className="text-base sm:text-sm"
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                data-testid="input-agreement-phone"
+              />
+            </Field>
+          </div>
+        </section>
+
+        {/* Signature block */}
+        <section className="space-y-4">
+          <h3 className="text-sm font-semibold text-foreground">Your signature</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Printed name">
+              <Input
+                className="text-base sm:text-sm"
+                value={ownerPrintedName}
+                onChange={e => setOwnerPrintedName(e.target.value)}
+                placeholder="Your full legal name"
+                data-testid="input-agreement-printed-name"
+              />
+            </Field>
+            <Field label="Title or capacity">
+              <Input
+                className="text-base sm:text-sm"
+                value={ownerTitle}
+                onChange={e => setOwnerTitle(e.target.value)}
+                placeholder="Owner, Manager, Trustee, etc."
+                data-testid="input-agreement-title"
+              />
+            </Field>
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Date: <span className="font-medium text-foreground">{today}</span>
+          </div>
+          <Field label="Signature">
+            <SignaturePad onChange={setSig} data-testid="signature-pad" />
+          </Field>
+        </section>
+
+        {/* Consent */}
+        <label className="flex items-start gap-3 cursor-pointer min-h-[44px]">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 shrink-0 rounded border border-border accent-primary"
+            checked={consent}
+            onChange={e => setConsent(e.target.checked)}
+            data-testid="checkbox-agreement-consent"
+          />
+          <span className="text-sm text-foreground leading-snug">
+            I agree to sign electronically and I have read and agree to the Cleaning Services Agreement.
+          </span>
+        </label>
+
+        {/* Sign button */}
+        <Button
+          className="w-full"
+          size="lg"
+          disabled={!sig || !consent || !ownerPrintedName.trim() || isPending}
+          onClick={handleSign}
+          data-testid="button-sign-agreement"
+        >
+          {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+          Sign agreement
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Trellis portal card ───────────────────────────────────────────────────────
 function TrellisPortalCard() {
   const { toast } = useToast()
@@ -1324,6 +1596,7 @@ export default function OwnerPortalPage() {
         {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         {ownerId && <ContactPaymentCard />}
         {ownerId && <TrellisPortalCard />}
+        {ownerId && <AgreementSection />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
           <p className="text-sm text-muted-foreground">
