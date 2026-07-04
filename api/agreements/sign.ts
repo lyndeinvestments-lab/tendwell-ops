@@ -9,6 +9,10 @@ import {
   type TendwellSigner,
   type OwnerSigner,
 } from './_lib.js'
+import {
+  getAllUsersWithViews, getAllPreferences, filterRecipients,
+  sendEmail, logNotification, renderEmailLayout, composeBodyHtml, escapeHtml,
+} from '../notify/_lib.js'
 
 // POST /api/agreements/sign — owner-gated, service-role.
 //
@@ -276,6 +280,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!patchRes.ok) {
     const errText = await patchRes.text()
     return res.status(500).json({ error: `Failed to update agreement record (${patchRes.status}): ${errText}` })
+  }
+
+  // ── Notify admins (best-effort; never fail the signing over email) ────────
+  try {
+    const signerName = (ownerPrintedName || ownerName || row.owner_name || 'An owner') as string
+    const subject = `Agreement signed: ${signerName}`
+    const bodyHtml = composeBodyHtml({
+      lines: [
+        `<strong>${escapeHtml(signerName)}</strong> signed the Cleaning Services Agreement.`,
+        propertyAddresses ? `Property: ${escapeHtml(propertyAddresses)}` : '',
+        email ? `Email: ${escapeHtml(email)}` : '',
+        `Signed at: ${now.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET`,
+      ].filter(Boolean),
+    })
+    const html = renderEmailLayout({
+      title: subject,
+      bodyHtml,
+      ctaUrl: 'https://app.tendwellcleaningco.com/settings',
+      ctaLabel: 'View in Settings',
+    })
+    const [users, prefs] = await Promise.all([getAllUsersWithViews(sb), getAllPreferences(sb)])
+    const recipients = filterRecipients(users, prefs, 'agreement_signed')
+    await Promise.all(recipients.map(async u => {
+      const r = await sendEmail({ to: u.google_email, subject, html })
+      await logNotification(sb, {
+        recipient_email: u.google_email,
+        recipient_user_id: u.id,
+        event_type: 'agreement_signed',
+        subject,
+        status: r.ok ? 'sent' : 'failed',
+        error: r.error,
+      })
+    }))
+  } catch (e) {
+    console.error('agreement_signed notification failed:', e)
   }
 
   return res.status(200).json({ ok: true })

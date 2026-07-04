@@ -1305,6 +1305,7 @@ const DEFAULT_NOTIF_PREFS = {
   notify_follow_up_due: false,
   notify_property_note_mention: true,
   notify_contact_note_mention: true,
+  notify_agreement_signed: true,
 }
 
 function NotificationsSection() {
@@ -1405,6 +1406,7 @@ function NotificationsSection() {
     { field: 'notify_follow_up_due',        label: 'Follow-up due',          view: 'contacts' },
     { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
     { field: 'notify_contact_note_mention',  label: 'Mentioned in a contact note',  view: 'contacts' },
+    { field: 'notify_agreement_signed',      label: 'Agreement signed by owner',    view: 'settings' },
   ]
 
   return (
