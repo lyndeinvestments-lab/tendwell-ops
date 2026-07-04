@@ -130,7 +130,7 @@ def main() -> None:
         actual_subject = after.get(f"mailer_subjects_{stem}") or ""
         content = after.get(f"mailer_templates_{stem}_content") or ""
         ok_subject = actual_subject == subject
-        ok_content = "tendwell-logo-black.png" in content
+        ok_content = "tendwell-logo-email.png" in content
         if not ok_subject:
             problems.append(f"mailer_subjects_{stem}: expected {subject!r}, got {actual_subject!r}")
         if not ok_content:

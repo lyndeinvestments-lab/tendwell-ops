@@ -31,7 +31,7 @@ so ALL Supabase Auth emails:
   shows `smtp_host=smtp.resend.com`, `smtp_port=465`, `smtp_user=resend`,
   `smtp_admin_email=noreply@tendwellcleaningco.com`,
   `smtp_sender_name=Tendwell Cleaning Co.`, and all four
-  `mailer_templates_*_content` fields contain `tendwell-logo-black.png`.
+  `mailer_templates_*_content` fields contain `tendwell-logo-email.png`.
 - A password-reset email triggered from the login page arrives from
   `Tendwell Cleaning Co. <noreply@tendwellcleaningco.com>` with the branded
   design (this last check needs a human inbox; report it as "pending user
