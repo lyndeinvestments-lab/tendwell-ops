@@ -218,13 +218,13 @@ function wrapText(
  *   Phone (above underscore y=315):                       centered, y=318
  *
  * Page-5 Tendwell block:
- *   Signature image bottom on dash line (y=616):          x=72, y=586 (bottom of image clears line; max 180x45pt)
+ *   Signature image on dash line (y=616.2):               x=72, y=611 (cropped ink, bottom 5pt below line; max 220x26pt)
  *   Printed Name (above underscore y=550):                x=72, y=554
  *   Title (above underscore y=505):                       x=72, y=509
  *   Date (above underscore y=460):                        x=72, y=464
  *
  * Page-5 Owner block:
- *   Signature image bottom on dash line (y=415):          x=72, y=385 (bottom of image clears line; max 180x45pt)
+ *   Signature image on dash line (y=415.2):               x=72, y=410 (cropped ink, bottom 5pt below line; max 220x26pt)
  *   Printed Name (above underscore y=349):                x=72, y=353
  *   Title/Capacity (above underscore y=304):              x=72, y=308
  *   Date (above underscore y=259):                        x=72, y=263
@@ -303,18 +303,20 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
 
   // ── PAGE 5: Tendwell signature block ─────────────────────────────────────
 
-  // Signature image above the Tendwell dash line (y=616).
-  // Scale to fit ~180×45pt preserving aspect ratio.
+  // Signature image on the Tendwell dash line (y=616.2). The SignaturePad now
+  // exports ink cropped to its bounding box, so placement is deterministic:
+  // bottom edge 5pt below the line (a natural pen-crossing-the-line look),
+  // bulk of the ink above the line, clear of the heading (~636.8) above and
+  // the italic "Signature" caption below. Max 220x26pt preserving aspect.
   const tendwellSigBytes = dataUrlToPngBytes(tendwell.signaturePng)
   const tendwellImg = await doc.embedPng(tendwellSigBytes)
   const tDims = tendwellImg.scale(1)
-  const tMaxW = 180
-  const tMaxH = 45
-  const tScale = Math.min(tMaxW / tDims.width, tMaxH / tDims.height, 1)
+  const tMaxW = 220
+  const tMaxH = 26
+  const tScale = Math.min(tMaxW / tDims.width, tMaxH / tDims.height)
   const tW = tDims.width * tScale
   const tH = tDims.height * tScale
-  // y=586: image bottom rests ~2pt above the Tendwell dash signature line (y=616 minus max height 45 minus gap ~3 ≈ 568; adjusted to 586 so bottom edge clears the line by a few points without overlapping the heading above)
-  p5.drawImage(tendwellImg, { x: 72, y: 586, width: tW, height: tH })
+  p5.drawImage(tendwellImg, { x: 72, y: 611, width: tW, height: tH })
 
   // Tendwell text fields
   p5.drawText(tendwell.name, { x: 72, y: 554, size: fieldSize, font, color: fieldColor })
@@ -323,17 +325,17 @@ export async function generateSignedPdf(opts: GeneratePdfOpts): Promise<Uint8Arr
 
   // ── PAGE 5: Owner signature block ─────────────────────────────────────────
 
-  // Signature image above the Owner dash line (y=415).
+  // Signature image on the Owner dash line (y=415.2) — same anchoring as the
+  // Tendwell block: cropped ink, bottom edge 5pt below the line.
   const ownerSigBytes = dataUrlToPngBytes(owner.signaturePng)
   const ownerImg = await doc.embedPng(ownerSigBytes)
   const oDims = ownerImg.scale(1)
-  const oMaxW = 180
-  const oMaxH = 45
-  const oScale = Math.min(oMaxW / oDims.width, oMaxH / oDims.height, 1)
+  const oMaxW = 220
+  const oMaxH = 26
+  const oScale = Math.min(oMaxW / oDims.width, oMaxH / oDims.height)
   const oW = oDims.width * oScale
   const oH = oDims.height * oScale
-  // y=385: image bottom rests ~2pt above the Owner dash signature line (y=415 minus max height 45 minus gap ~3 ≈ 367; adjusted to 385 so bottom edge clears the line by a few points without overlapping the heading above)
-  p5.drawImage(ownerImg, { x: 72, y: 385, width: oW, height: oH })
+  p5.drawImage(ownerImg, { x: 72, y: 410, width: oW, height: oH })
 
   // Owner text fields
   p5.drawText(owner.printedName, { x: 72, y: 353, size: fieldSize, font, color: fieldColor })

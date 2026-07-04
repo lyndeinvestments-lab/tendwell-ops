@@ -15,7 +15,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
-import { signAgreement, getAgreementDownloadUrl } from '@/lib/agreements'
+import { signAgreement, downloadAgreementPdf } from '@/lib/agreements'
 import { SignaturePad } from '@/components/SignaturePad'
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
@@ -1100,10 +1100,8 @@ function AgreementSection() {
             variant="outline"
             className="gap-2"
             onClick={async () => {
-              const result = await getAgreementDownloadUrl(a.id)
-              if (result.ok && result.url) {
-                window.open(result.url, '_blank', 'noopener')
-              } else {
+              const result = await downloadAgreementPdf(a.id)
+              if (!result.ok) {
                 toast({ title: 'Could not download', description: result.error ?? 'Please try again.', variant: 'destructive' })
               }
             }}
