@@ -89,8 +89,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     consent?: unknown
   }
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   if (!agreementId) {
     return res.status(400).json({ error: 'agreementId is required' })
+  }
+  if (!UUID_RE.test(agreementId)) {
+    return res.status(400).json({ error: 'Invalid agreement id.' })
   }
   if (!signatureDataUrl || !signatureDataUrl.trim()) {
     return res.status(400).json({ error: 'signatureDataUrl is required' })
@@ -222,8 +226,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const errText = await uploadRes.text()
     return res.status(500).json({ error: `Storage upload failed (${uploadRes.status}): ${errText}` })
   }
+  await uploadRes.text() // drain body so the socket is released
 
   // ── Compute signed hash + PATCH the row ───────────────────────────────────
+  // Note: the signed hash can't be embedded in its own PDF (circular); the certificate references the audit record instead.
   const signedSha256 = sha256Hex(signedPdfBytes)
   const ownerSignedAt = now.toISOString()
 

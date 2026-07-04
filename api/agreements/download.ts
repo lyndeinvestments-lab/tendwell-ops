@@ -51,9 +51,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Agreement id ──────────────────────────────────────────────────────────
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
   const id = (req.query.id as string | undefined) || ''
   if (!id) {
     return res.status(400).json({ error: 'id is required' })
+  }
+  if (!UUID_RE.test(id)) {
+    return res.status(400).json({ error: 'Invalid agreement id.' })
   }
 
   // ── Load agreement (service role) ─────────────────────────────────────────
@@ -75,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── Determine caller identity: owner or staff ─────────────────────────────
   // Check property_owners by email
   const ownerRes = await fetch(
-    `${sb.url}/rest/v1/property_owners?select=id&email=eq.${encodeURIComponent(callerEmail)}&limit=1`,
+    `${sb.url}/rest/v1/property_owners?select=id&email=eq.${encodeURIComponent(callerEmail)}&active=eq.true&limit=1`,
     { headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` } },
   )
   if (!ownerRes.ok) {
@@ -129,8 +133,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Storage did not return a signed URL.' })
   }
 
-  // signedURL is a relative path starting with /object/sign/...
-  const url = `${sb.url}/storage/v1${signData.signedURL}`
+  // Guard: some Supabase versions return an absolute URL; others return a relative path.
+  const url = signData.signedURL.startsWith('http')
+    ? signData.signedURL
+    : `${sb.url}/storage/v1${signData.signedURL}`
 
   return res.status(200).json({ ok: true, url })
 }
