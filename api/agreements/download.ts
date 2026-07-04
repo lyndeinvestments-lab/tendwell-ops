@@ -110,37 +110,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'You do not have access to this agreement.' })
   }
 
-  // ── Create signed URL (5 min TTL) ─────────────────────────────────────────
+  // ── Stream the PDF through this endpoint ──────────────────────────────────
+  // Proxying (rather than returning a Supabase signed URL) gives the user a
+  // clean, professional download with a real filename and no third-party URL
+  // or popup. The file is ~150KB, well within serverless response limits.
   // Use the path recorded at signing time (validated non-null above) rather
   // than reconstructing it, so a future path-scheme change can't desync.
   const storagePath = row.signed_pdf_path as string
-  const signRes = await fetch(
-    `${sb.url}/storage/v1/object/sign/agreements/${storagePath}`,
+  const objectRes = await fetch(
+    `${sb.url}/storage/v1/object/agreements/${storagePath}`,
     {
-      method: 'POST',
       headers: {
         apikey: sb.serviceKey,
         Authorization: `Bearer ${sb.serviceKey}`,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ expiresIn: 300 }),
     },
   )
-  if (!signRes.ok) {
-    const errText = await signRes.text()
-    return res.status(500).json({ error: `Failed to create signed URL (${signRes.status}): ${errText}` })
+  if (!objectRes.ok) {
+    const errText = await objectRes.text()
+    return res.status(500).json({ error: `Failed to fetch document (${objectRes.status}): ${errText}` })
   }
-  const signData = (await signRes.json()) as { signedURL?: string }
-  if (!signData.signedURL) {
-    return res.status(500).json({ error: 'Storage did not return a signed URL.' })
-  }
+  const pdfBytes = Buffer.from(await objectRes.arrayBuffer())
 
-  // Guard: some Supabase versions return an absolute URL; others return a relative path.
-  const url = signData.signedURL.startsWith('http')
-    ? signData.signedURL
-    : `${sb.url}/storage/v1${signData.signedURL}`
-
-  return res.status(200).json({ ok: true, url })
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', 'attachment; filename="Tendwell-Cleaning-Services-Agreement.pdf"')
+  res.setHeader('Content-Length', String(pdfBytes.length))
+  res.setHeader('Cache-Control', 'private, no-store')
+  return res.status(200).send(pdfBytes)
 }
 
 export const config = { runtime: 'nodejs' }

@@ -11,6 +11,11 @@ interface SignaturePadProps {
 
 export function SignaturePad({ onChange, className, height = 180 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // Offscreen ink-only canvas: strokes are mirrored here so the exported PNG
+  // never contains the visible canvas's "Sign here" hint line/text, and so we
+  // can crop the export to the ink's bounding box (deterministic placement on
+  // the PDF regardless of where in the box the user drew).
+  const inkCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDrawing = useRef(false)
   const lastPoint = useRef<{ x: number; y: number } | null>(null)
@@ -34,9 +39,9 @@ export function SignaturePad({ onChange, className, height = 180 }: SignaturePad
     ctx.restore()
   }
 
-  // Scale the canvas for the device pixel ratio and draw the baseline hint.
-  // Clears the canvas as a side effect — callers must call onChange(null) to
-  // keep parent state in sync.
+  // Scale both canvases for the device pixel ratio and draw the baseline hint
+  // on the visible one. Clears both as a side effect — callers must call
+  // onChange(null) to keep parent state in sync.
   const scaleCanvas = useCallback(() => {
     const canvas = canvasRef.current
     const container = containerRef.current
@@ -51,6 +56,15 @@ export function SignaturePad({ onChange, className, height = 180 }: SignaturePad
     if (!ctx) return
     ctx.scale(dpr, dpr)
     drawHint(ctx, cssWidth, height)
+
+    let ink = inkCanvasRef.current
+    if (!ink) {
+      ink = document.createElement('canvas')
+      inkCanvasRef.current = ink
+    }
+    ink.width = cssWidth * dpr
+    ink.height = height * dpr
+    ink.getContext('2d')?.scale(dpr, dpr)
   }, [height])
 
   useEffect(() => {
@@ -83,33 +97,83 @@ export function SignaturePad({ onChange, className, height = 180 }: SignaturePad
     ctx.lineJoin = 'round'
   }
 
+  // Both drawing contexts: the visible canvas and the ink-only export canvas.
+  function eachCtx(fn: (ctx: CanvasRenderingContext2D) => void) {
+    const visible = canvasRef.current?.getContext('2d')
+    const ink = inkCanvasRef.current?.getContext('2d')
+    if (visible) fn(visible)
+    if (ink) fn(ink)
+  }
+
+  // Export the ink-only canvas cropped to the drawn signature's bounding box
+  // (plus padding), so the PDF stamping code positions predictable, tight ink.
+  function exportInk(): string | null {
+    const ink = inkCanvasRef.current
+    const ctx = ink?.getContext('2d')
+    if (!ink || !ctx) return null
+    const { width, height: h } = ink
+    if (width === 0 || h === 0) return null
+    const data = ctx.getImageData(0, 0, width, h).data
+    let minX = width
+    let minY = h
+    let maxX = -1
+    let maxY = -1
+    for (let y = 0; y < h; y++) {
+      const rowStart = y * width
+      for (let x = 0; x < width; x++) {
+        if (data[(rowStart + x) * 4 + 3] > 0) {
+          if (x < minX) minX = x
+          if (x > maxX) maxX = x
+          if (y < minY) minY = y
+          if (y > maxY) maxY = y
+        }
+      }
+    }
+    if (maxX < 0) return null // no ink
+    const pad = 12 // device px of breathing room around the ink
+    minX = Math.max(0, minX - pad)
+    minY = Math.max(0, minY - pad)
+    maxX = Math.min(width - 1, maxX + pad)
+    maxY = Math.min(h - 1, maxY + pad)
+    const w = maxX - minX + 1
+    const cropH = maxY - minY + 1
+    const out = document.createElement('canvas')
+    out.width = w
+    out.height = cropH
+    const outCtx = out.getContext('2d')
+    if (!outCtx) return null
+    outCtx.drawImage(ink, minX, minY, w, cropH, 0, 0, w, cropH)
+    return out.toDataURL('image/png')
+  }
+
   function handlePointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
     e.preventDefault()
     ;(e.target as HTMLCanvasElement).setPointerCapture(e.pointerId)
     isDrawing.current = true
     const pt = getPoint(e)
     lastPoint.current = pt
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
-    setupCtx(ctx)
-    // Draw a dot for tap/click with no movement.
-    ctx.beginPath()
-    ctx.arc(pt.x, pt.y, 1, 0, Math.PI * 2)
-    ctx.fillStyle = '#1e2a4a'
-    ctx.fill()
+    eachCtx(ctx => {
+      setupCtx(ctx)
+      // Draw a dot for tap/click with no movement.
+      ctx.beginPath()
+      ctx.arc(pt.x, pt.y, 1, 0, Math.PI * 2)
+      ctx.fillStyle = '#1e2a4a'
+      ctx.fill()
+    })
   }
 
   function handlePointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
     if (!isDrawing.current || !lastPoint.current) return
     e.preventDefault()
-    const ctx = canvasRef.current?.getContext('2d')
-    if (!ctx) return
-    setupCtx(ctx)
+    const from = lastPoint.current
     const pt = getPoint(e)
-    ctx.beginPath()
-    ctx.moveTo(lastPoint.current.x, lastPoint.current.y)
-    ctx.lineTo(pt.x, pt.y)
-    ctx.stroke()
+    eachCtx(ctx => {
+      setupCtx(ctx)
+      ctx.beginPath()
+      ctx.moveTo(from.x, from.y)
+      ctx.lineTo(pt.x, pt.y)
+      ctx.stroke()
+    })
     lastPoint.current = pt
     if (!hasInk) setHasInk(true)
   }
@@ -120,11 +184,9 @@ export function SignaturePad({ onChange, className, height = 180 }: SignaturePad
     isDrawing.current = false
     lastPoint.current = null
     // Export after every stroke end so the parent always has the latest PNG.
-    const canvas = canvasRef.current
-    if (canvas) {
-      setHasInk(true)
-      onChange(canvas.toDataURL('image/png'))
-    }
+    const exported = exportInk()
+    setHasInk(exported !== null)
+    onChange(exported)
   }
 
   function handleClear() {
@@ -133,6 +195,13 @@ export function SignaturePad({ onChange, className, height = 180 }: SignaturePad
     if (!canvas || !ctx) return
     ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight)
     drawHint(ctx, canvas.clientWidth, canvas.clientHeight)
+    const ink = inkCanvasRef.current
+    const inkCtx = ink?.getContext('2d')
+    if (ink && inkCtx) {
+      // The ink canvas has the same DPR scale transform, so CSS-pixel bounds
+      // (clientWidth of the visible canvas) clear its full drawn area.
+      inkCtx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight)
+    }
     setHasInk(false)
     onChange(null)
   }

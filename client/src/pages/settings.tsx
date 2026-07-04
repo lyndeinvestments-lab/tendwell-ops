@@ -38,7 +38,7 @@ import {
 } from '@/lib/owners'
 import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/components/AddressAutocomplete'
 import { SignaturePad } from '@/components/SignaturePad'
-import { getAgreementDownloadUrl } from '@/lib/agreements'
+import { downloadAgreementPdf } from '@/lib/agreements'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -3000,11 +3000,9 @@ function AgreementsSection() {
   })
 
   async function handleDownload(id: string) {
-    const result = await getAgreementDownloadUrl(id)
-    if (result.ok && result.url) {
-      window.open(result.url, '_blank', 'noopener')
-    } else {
-      toast({ title: 'Could not get download link', description: result.error, variant: 'destructive' })
+    const result = await downloadAgreementPdf(id)
+    if (!result.ok) {
+      toast({ title: 'Could not download', description: result.error, variant: 'destructive' })
     }
   }
 
