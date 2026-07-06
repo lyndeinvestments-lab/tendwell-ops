@@ -1823,7 +1823,7 @@ function describeMapsStatus(s: GoogleMapsRuntimeStatus): string {
     case 'script_error': return 'script failed to load — check Maps JavaScript API enablement, HTTP referrer allowlist, billing, and CSP'
     case 'places_missing': return 'loaded without the Places library — script URL is missing libraries=places'
     case 'timeout': return 'timed out — likely network blocked or CSP rejected maps.googleapis.com'
-    case 'gm_authFailure': return 'Google rejected the key at runtime — fix HTTP referrer allowlist / billing / Maps JS API enablement'
+    case 'gm_authFailure': return `Google rejected the key at runtime for ${window.location.origin} — add ${window.location.origin}/* to the key's HTTP referrer allowlist (then check billing / Maps JS API enablement)`
   }
 }
 
