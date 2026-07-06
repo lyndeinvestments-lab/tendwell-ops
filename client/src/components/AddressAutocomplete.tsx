@@ -188,7 +188,9 @@ export function AddressAutocomplete({
         // (e.g. referrer mismatch). Watch the shared status and reflect it.
         authPoll = window.setInterval(() => {
           if (window.__tendwellGoogleMapsStatus === 'gm_authFailure') {
-            setError('Google rejected the Maps API key at runtime — check HTTP referrer allowlist, Maps JavaScript API enablement, and billing in the GCP console.')
+            // Almost always RefererNotAllowedMapError: the key's HTTP referrer
+            // allowlist is missing the domain the app is being served from.
+            setError(`Google rejected the Maps API key for ${window.location.origin} — add ${window.location.origin}/* to the key's HTTP referrer allowlist in the GCP console (then verify Maps JavaScript API enablement and billing)`)
             setEnabled(false)
             if (authPoll) window.clearInterval(authPoll)
           }
