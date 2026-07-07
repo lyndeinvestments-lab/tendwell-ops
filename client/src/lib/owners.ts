@@ -13,6 +13,12 @@ export const OWNER_FIELD_DEFS = [
   { key: 'door_code',      label: 'Door / access code' },
   { key: 'other_codes',    label: 'Other codes' },
   { key: 'wifi_info',      label: 'Wi-Fi information' },
+  { key: 'bedrooms',       label: 'Bedrooms' },
+  { key: 'baths',          label: 'Bathrooms' },
+  { key: 'amenities',      label: 'Hot tub & pool' },
+  { key: 'check_times',    label: 'Check-in / check-out times' },
+  { key: 'filter_size',    label: 'A/C filter size' },
+  { key: 'ical_url',       label: 'Booking calendar (iCal)' },
 ] as const
 
 export type OwnerFieldKey = (typeof OWNER_FIELD_DEFS)[number]['key']
