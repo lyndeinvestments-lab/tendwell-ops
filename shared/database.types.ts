@@ -1158,6 +1158,101 @@ export type Database = {
         }
         Relationships: []
       }
+      hostaway_listing_snapshot: {
+        Row: {
+          address: string | null
+          bathrooms: number | null
+          bedrooms: number | null
+          beds: number | null
+          city: string | null
+          hostaway_id: number
+          internal_name: string | null
+          matched_property_id: number | null
+          name: string | null
+          person_capacity: number | null
+          raw: Json | null
+          state: string | null
+          synced_at: string
+          zipcode: string | null
+        }
+        Insert: {
+          address?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          beds?: number | null
+          city?: string | null
+          hostaway_id: number
+          internal_name?: string | null
+          matched_property_id?: number | null
+          name?: string | null
+          person_capacity?: number | null
+          raw?: Json | null
+          state?: string | null
+          synced_at?: string
+          zipcode?: string | null
+        }
+        Update: {
+          address?: string | null
+          bathrooms?: number | null
+          bedrooms?: number | null
+          beds?: number | null
+          city?: string | null
+          hostaway_id?: number
+          internal_name?: string | null
+          matched_property_id?: number | null
+          name?: string | null
+          person_capacity?: number | null
+          raw?: Json | null
+          state?: string | null
+          synced_at?: string
+          zipcode?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hostaway_sync_log: {
+        Row: {
+          counts: Json | null
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          requested_by: string | null
+          started_at: string | null
+          status: string
+          trigger: string
+        }
+        Insert: {
+          counts?: Json | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          requested_by?: string | null
+          started_at?: string | null
+          status: string
+          trigger?: string
+        }
+        Update: {
+          counts?: Json | null
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          requested_by?: string | null
+          started_at?: string | null
+          status?: string
+          trigger?: string
+        }
+        Relationships: []
+      }
       incoming_shipments: {
         Row: {
           created_at: string
@@ -5100,6 +5195,42 @@ export type Database = {
           tasks: number | null
         }
         Relationships: []
+      }
+      hostaway_reconciliation: {
+        Row: {
+          address_mismatch: boolean | null
+          bathrooms_mismatch: boolean | null
+          bedrooms_mismatch: boolean | null
+          beds_mismatch: boolean | null
+          guests_mismatch: boolean | null
+          ha_bathrooms: number | null
+          ha_bedrooms: number | null
+          ha_beds: number | null
+          ha_guests: number | null
+          hostaway_address: string | null
+          hostaway_id: number | null
+          hostaway_name: string | null
+          internal_name: string | null
+          match_method: string | null
+          ops_address: string | null
+          ops_bedrooms: number | null
+          ops_beds: number | null
+          ops_full_baths: number | null
+          ops_guests: number | null
+          ops_half_baths: number | null
+          property_id: number | null
+          property_name: string | null
+          synced_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       linen_inventory_latest: {
         Row: {

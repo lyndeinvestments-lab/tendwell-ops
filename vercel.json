@@ -14,6 +14,13 @@
       "includeFiles": "api/trellis/_sync-core.ts",
       "maxDuration": 300
     },
+    "api/hostaway/*.ts": {
+      "includeFiles": "api/hostaway/_sync-core.ts,api/notify/_lib.ts"
+    },
+    "api/cron/hostaway-sync.ts": {
+      "includeFiles": "api/hostaway/_sync-core.ts",
+      "maxDuration": 120
+    },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts"
     },
@@ -34,6 +41,7 @@
   "crons": [
     { "path": "/api/notify/digest", "schedule": "0 12 * * *" },
     { "path": "/api/cron/trellis-sync", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/hostaway-sync", "schedule": "30 3 * * *" },
     { "path": "/api/cron/purge-properties", "schedule": "0 3 * * *" },
     { "path": "/api/cron/purge-laundry-photos", "schedule": "0 4 * * *" },
     { "path": "/api/cron/reconcile-snapshots", "schedule": "0 6 * * *" },

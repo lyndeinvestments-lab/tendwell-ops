@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
+import { HostawaySyncTab } from '@/components/HostawaySyncTab'
 
 function formatEta(seconds: number): string {
   if (seconds <= 0) return ''
@@ -866,6 +867,7 @@ export default function TrellisSyncPage() {
       <Tabs defaultValue="reconciliation" className="w-full">
         <TabsList>
           <TabsTrigger value="reconciliation" data-testid="tab-reconciliation">Reconciliation</TabsTrigger>
+          <TabsTrigger value="hostaway" data-testid="tab-hostaway">Hostaway</TabsTrigger>
           <TabsTrigger value="workflows" data-testid="tab-workflows">Workflows</TabsTrigger>
           <TabsTrigger value="roster" data-testid="tab-roster">Tendwell Roster</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
@@ -887,6 +889,9 @@ export default function TrellisSyncPage() {
             matchBreezeway={matchBreezeway}
             dismissBreezeway={dismissBreezeway}
           />
+        </TabsContent>
+        <TabsContent value="hostaway">
+          <HostawaySyncTab />
         </TabsContent>
         <TabsContent value="workflows">
           <WorkflowsTab />
