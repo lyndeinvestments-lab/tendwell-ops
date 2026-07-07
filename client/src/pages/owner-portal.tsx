@@ -15,6 +15,7 @@ import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine, Plus, Image as ImageIcon } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { thumbUrl } from '@/lib/image'
 import { resizeImageFile } from '@/lib/resize-image'
 import { signAgreement, downloadAgreementPdf } from '@/lib/agreements'
@@ -435,7 +436,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {renderField('address', 'Address', 'address', () => (
-                <Input value={(form.address as string) ?? ''} onChange={e => set('address', e.target.value || null)} />
+                <AddressAutocomplete value={(form.address as string) ?? ''} onChange={next => set('address', next || null)} />
               ), 'sm:col-span-2')}
               {(() => {
                 const p = can('bed_sizes')
