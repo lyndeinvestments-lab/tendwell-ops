@@ -23,8 +23,10 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore, MapPin } from 'lucide-react'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
+import { AddressAutocomplete } from '@/components/AddressAutocomplete'
+import { MapPickerDialog } from '@/components/MapPickerDialog'
 
 // Recharts is heavy — load it only when a chart actually renders inside the
 // modal instead of bundling it with the always-mounted modal shell.
@@ -769,6 +771,11 @@ export function PropertyDetailModal() {
   const [inlineValue, setInlineValue] = useState('')
   const [savingMissing, setSavingMissing] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [mapPickerOpen, setMapPickerOpen] = useState(false)
+  // Guards the inline address editor's delayed blur-commit: clicking a Google
+  // suggestion blurs the input before place_changed fires, so the blur commit
+  // waits 250ms and is cancelled here when a place selection already committed.
+  const addressPlacePickedRef = useRef(false)
   // Controlled tab state so tab-specific queries only run for the active tab
   // (Overview stays eager). Reset whenever a different property is opened.
   const [activeTab, setActiveTab] = useState('overview')
@@ -1017,9 +1024,10 @@ export function PropertyDetailModal() {
     setInlineValue(String(currentValue ?? ''))
   }
 
-  function commitInlineEdit(field: string) {
+  function commitInlineEdit(field: string, valueOverride?: string) {
+    const value = valueOverride ?? inlineValue
     if (field === 'name') {
-      const trimmed = inlineValue.trim()
+      const trimmed = value.trim()
       if (!trimmed) {
         toast({ title: 'Name cannot be blank', variant: 'destructive' })
         setInlineField(null)
@@ -1032,7 +1040,7 @@ export function PropertyDetailModal() {
       saveInlineField({ field, value: trimmed })
       return
     }
-    saveInlineField({ field, value: inlineValue })
+    saveInlineField({ field, value })
   }
 
   const canEditProperty = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser)
@@ -1461,27 +1469,54 @@ export function PropertyDetailModal() {
                 <div>
                   <Label className="text-xs text-muted-foreground">Address</Label>
                   {isEditing && canEditProperty ? (
-                    <Input
-                      value={form.address}
-                      onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
+                    <AddressAutocomplete
+                      value={form.address ?? ''}
+                      onChange={next => setForm(f => ({ ...f, address: next }))}
                       className={`mt-0.5 ${fieldCls('address')}`}
-                      data-testid="modal-input-address"
+                      testId="modal-input-address"
                       autoFocus={highlightFields[0] === 'address'}
                     />
                   ) : inlineField === 'address' ? (
-                    <Input
+                    <AddressAutocomplete
                       autoFocus
                       value={inlineValue}
-                      onChange={e => setInlineValue(e.target.value)}
-                      onBlur={() => commitInlineEdit('address')}
+                      onChange={setInlineValue}
+                      onSelectPlace={place => {
+                        addressPlacePickedRef.current = true
+                        commitInlineEdit('address', place.formattedAddress)
+                      }}
+                      onBlur={() => {
+                        // Delay so a suggestion click (blur → place_changed)
+                        // commits the qualified address, not the typed prefix.
+                        window.setTimeout(() => {
+                          if (!addressPlacePickedRef.current) commitInlineEdit('address')
+                          addressPlacePickedRef.current = false
+                        }, 250)
+                      }}
                       onKeyDown={e => e.key === 'Enter' && commitInlineEdit('address')}
                       className="mt-0.5 h-7 text-xs"
                     />
                   ) : (
-                    <p className={`text-sm mt-0.5 ${canEditProperty ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                       onClick={() => startInlineEdit('address', property.address, canEditProperty)}>
-                      {property.address || '—'}
-                    </p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className={`text-sm min-w-0 flex-1 ${canEditProperty ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : property.address ? 'cursor-pointer' : ''}`}
+                         onClick={() => canEditProperty
+                           ? startInlineEdit('address', property.address, canEditProperty)
+                           : property.address && setMapPickerOpen(true)}>
+                        {property.address || '—'}
+                      </p>
+                      {property.address && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          title="Directions / copy address"
+                          onClick={() => setMapPickerOpen(true)}
+                          data-testid="modal-address-map"
+                        >
+                          <MapPin className="w-3.5 h-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -2110,6 +2145,12 @@ export function PropertyDetailModal() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <MapPickerDialog
+      open={mapPickerOpen}
+      onOpenChange={setMapPickerOpen}
+      address={property?.address ?? ''}
+    />
     </>
   )
 }

@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { MapPin } from 'lucide-react'
+import { Check, Copy, MapPin } from 'lucide-react'
 
 interface MapPickerDialogProps {
   open: boolean
@@ -9,6 +10,13 @@ interface MapPickerDialogProps {
 }
 
 export function MapPickerDialog({ open, onOpenChange, address }: MapPickerDialogProps) {
+  const [copied, setCopied] = useState(false)
+
+  function handleOpenChange(next: boolean) {
+    if (!next) setCopied(false)
+    onOpenChange(next)
+  }
+
   function openMap(provider: 'google' | 'apple') {
     const encoded = encodeURIComponent(address)
     const url =
@@ -19,8 +27,19 @@ export function MapPickerDialog({ open, onOpenChange, address }: MapPickerDialog
     onOpenChange(false)
   }
 
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(address)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard API unavailable (non-secure context) — leave the dialog open
+      // so the user can select the address text above manually.
+    }
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
@@ -28,13 +47,17 @@ export function MapPickerDialog({ open, onOpenChange, address }: MapPickerDialog
             Get Directions
           </DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground -mt-1">{address}</p>
+        <p className="text-sm text-muted-foreground -mt-1 select-all">{address}</p>
         <div className="flex flex-col gap-2">
           <Button className="w-full" onClick={() => openMap('google')}>
             Open in Google Maps
           </Button>
           <Button variant="outline" className="w-full" onClick={() => openMap('apple')}>
             Open in Apple Maps
+          </Button>
+          <Button variant="outline" className="w-full" onClick={copyAddress}>
+            {copied ? <Check className="w-4 h-4 mr-1.5" /> : <Copy className="w-4 h-4 mr-1.5" />}
+            {copied ? 'Copied' : 'Copy address'}
           </Button>
         </div>
       </DialogContent>

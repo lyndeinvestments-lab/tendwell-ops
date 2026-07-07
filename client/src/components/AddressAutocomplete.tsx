@@ -115,6 +115,14 @@ export interface AddressAutocompleteProps {
   testId?: string
   /** Restrict suggestions to a country (ISO 3166-1 alpha-2). Defaults to US. */
   country?: string
+  autoFocus?: boolean
+  /**
+   * Forwarded to the input for inline-edit commit flows. Caution: blur fires
+   * before place_changed when a suggestion is clicked, so callers committing
+   * on blur should delay ~250ms and let onSelectPlace cancel the commit.
+   */
+  onBlur?: () => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }
 
 /**
@@ -133,6 +141,9 @@ export function AddressAutocomplete({
   disabled,
   testId,
   country = 'us',
+  autoFocus,
+  onBlur,
+  onKeyDown,
 }: AddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const autocompleteRef = useRef<any>(null)
@@ -216,10 +227,13 @@ export function AddressAutocomplete({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         className={className}
         disabled={disabled}
         data-testid={testId}
+        autoFocus={autoFocus}
         autoComplete="off"
       />
       {!PLACES_API_KEY && (
