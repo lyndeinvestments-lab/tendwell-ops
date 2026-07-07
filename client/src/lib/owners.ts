@@ -19,6 +19,7 @@ export const OWNER_FIELD_DEFS = [
   { key: 'check_times',    label: 'Check-in / check-out times' },
   { key: 'filter_size',    label: 'A/C filter size' },
   { key: 'ical_url',       label: 'Booking calendar (iCal)' },
+  { key: 'photos',         label: 'Photos' },
 ] as const
 
 export type OwnerFieldKey = (typeof OWNER_FIELD_DEFS)[number]['key']
