@@ -13,8 +13,10 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine, Plus, Image as ImageIcon } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
+import { thumbUrl } from '@/lib/image'
+import { resizeImageFile } from '@/lib/resize-image'
 import { signAgreement, downloadAgreementPdf } from '@/lib/agreements'
 import { SignaturePad } from '@/components/SignaturePad'
 
@@ -63,6 +65,8 @@ const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> 
   check_times: ['check_in_time', 'check_out_time'],
   filter_size: ['filter_size'],
   ical_url: ['ical_url'],
+  // Photos live in property_photos (RLS-scoped), not on the properties row.
+  photos: [],
 }
 
 type FormState = Partial<Record<keyof OwnerProperty, string | number | boolean | null>>
@@ -206,6 +210,101 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
             </li>
           ))}
         </ul>
+      )}
+    </section>
+  )
+}
+
+// ─── Owner photos section ─────────────────────────────────────────────────────
+// Owners can view and add photos for their properties. No delete — staff manage
+// deletions via the staff property modal. RLS scopes reads/inserts to the
+// owner's assigned properties.
+type OwnerPhoto = { id: string; photo_url: string; sort_order: number | null }
+
+function OwnerPhotosSection({ propertyId, canAdd }: { propertyId: number; canAdd: boolean }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [uploading, setUploading] = useState(false)
+
+  const { data: photos, isLoading, isError, refetch } = useQuery({
+    queryKey: ['owner-property-photos', propertyId],
+    queryFn: async (): Promise<OwnerPhoto[]> => {
+      const { data, error } = await supabase
+        .from('property_photos')
+        .select('id, photo_url, sort_order')
+        .eq('property_id', propertyId)
+        .order('sort_order')
+      if (error) throw error
+      return (data ?? []) as OwnerPhoto[]
+    },
+  })
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+    setUploading(true)
+    try {
+      for (const raw of files) {
+        const file = await resizeImageFile(raw)
+        const ext = file.name.split('.').pop()
+        const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+        const path = `${propertyId}/${filename}`
+        const { error: uploadErr } = await supabase.storage.from('property-photos').upload(path, file, { contentType: file.type || 'image/jpeg' })
+        if (uploadErr) throw uploadErr
+        const { data: urlData } = supabase.storage.from('property-photos').getPublicUrl(path)
+        const currentCount = photos?.length ?? 0
+        const { error: insertErr } = await supabase.from('property_photos').insert({
+          property_id: propertyId,
+          photo_url: urlData.publicUrl,
+          sort_order: currentCount,
+        })
+        if (insertErr) throw insertErr
+      }
+      queryClient.invalidateQueries({ queryKey: ['owner-property-photos', propertyId] })
+      toast({ title: `${files.length} photo(s) uploaded` })
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err?.message, variant: 'destructive' })
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
+        <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" /> Photos
+      </h3>
+      {canAdd && (
+        <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+          <input type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" data-testid={`input-owner-photos-${propertyId}`} />
+          <Plus className="w-4 h-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">{uploading ? 'Uploading…' : 'Click to upload photos'}</span>
+        </label>
+      )}
+      {isLoading && (
+        <div className="grid grid-cols-3 gap-2">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="aspect-square rounded-md" />)}
+        </div>
+      )}
+      {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load photos" description="Something went wrong loading photos." />}
+      {!isLoading && !isError && (photos ?? []).length === 0 && (
+        <p className="text-sm text-muted-foreground">No photos yet.</p>
+      )}
+      {!isLoading && !isError && (photos ?? []).length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {photos!.map(p => (
+            <a key={p.id} href={p.photo_url} target="_blank" rel="noopener noreferrer" className="block aspect-square">
+              <img
+                src={thumbUrl(p.photo_url, { width: 300 })}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="w-full h-full object-cover rounded-md border border-border"
+              />
+            </a>
+          ))}
+        </div>
       )}
     </section>
   )
@@ -436,7 +535,8 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                     onChange={e => set(key, e.target.value === '' ? null : e.target.value === 'true')}
                     data-testid={`select-${key.replace('_', '-')}-${property.id}`}
                   >
-                    <option value="">Not set</option>
+                    {/* Placeholder only: once a value exists, owners must pick Yes or No. */}
+                    <option value="" disabled>Not set</option>
                     <option value="true">Yes</option>
                     <option value="false">No</option>
                   </select>
@@ -496,6 +596,11 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                 {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
               </Button>
             </div>
+          )}
+
+          {/* Photos */}
+          {can('photos').visible && (
+            <OwnerPhotosSection propertyId={property.id} canAdd={can('photos').editable} />
           )}
 
           {/* Owner notes */}
