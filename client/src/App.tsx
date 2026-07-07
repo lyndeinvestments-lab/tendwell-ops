@@ -268,7 +268,8 @@ function AppRoutes() {
         <Route path="/report">{() => <Redirect to="/financial-dashboard" />}</Route>
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
-        <Route path="/trellis-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
+        <Route path="/api-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
+        <Route path="/trellis-sync">{() => <Redirect to="/api-sync" />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />

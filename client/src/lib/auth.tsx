@@ -41,7 +41,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'north-star',          label: 'North Star',          group: 'Admin' },
   { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
   { id: 'settings',            label: 'Settings',            group: 'Admin' },
-  { id: 'trellis-sync',        label: 'Trellis Sync',        group: 'Admin' },
+  { id: 'trellis-sync',        label: 'API Sync',            group: 'Admin' },
 ] as const
 
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']

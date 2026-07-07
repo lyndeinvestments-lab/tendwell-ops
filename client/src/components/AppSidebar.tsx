@@ -83,7 +83,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     label: 'Admin',
     items: [
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
-      { title: 'Trellis Sync', href: '/trellis-sync', view: 'trellis-sync', icon: Plug },
+      { title: 'API Sync', href: '/api-sync', view: 'trellis-sync', icon: Plug },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },
