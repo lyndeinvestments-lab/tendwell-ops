@@ -36,6 +36,15 @@ type OwnerProperty = {
   door_code?: string | null
   other_codes?: string | null
   wifi_info?: string | null
+  bedrooms?: number | null
+  full_baths?: number | null
+  half_baths?: number | null
+  hot_tub?: boolean | null
+  pool?: boolean | null
+  check_in_time?: string | null
+  check_out_time?: string | null
+  filter_size?: string | null
+  ical_url?: string | null
 }
 
 // Columns the owner may submit, grouped by permission field key. Used to build
@@ -48,14 +57,20 @@ const EDITABLE_COLUMNS: Record<keyof OwnerPermissions, (keyof OwnerProperty)[]> 
   door_code: ['door_code'],
   other_codes: ['other_codes'],
   wifi_info: ['wifi_info'],
+  bedrooms: ['bedrooms'],
+  baths: ['full_baths', 'half_baths'],
+  amenities: ['hot_tub', 'pool'],
+  check_times: ['check_in_time', 'check_out_time'],
+  filter_size: ['filter_size'],
+  ical_url: ['ical_url'],
 }
 
-type FormState = Partial<Record<keyof OwnerProperty, string | number | null>>
+type FormState = Partial<Record<keyof OwnerProperty, string | number | boolean | null>>
 
 function initialForm(p: OwnerProperty): FormState {
   const form: FormState = {}
   for (const cols of Object.values(EDITABLE_COLUMNS)) {
-    for (const c of cols) form[c] = (p[c] ?? null) as string | number | null
+    for (const c of cols) form[c] = (p[c] ?? null) as string | number | boolean | null
   }
   return form
 }
@@ -227,10 +242,10 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
     [perms],
   )
 
-  const set = (key: keyof OwnerProperty, value: string | number | null) =>
+  const set = (key: keyof OwnerProperty, value: string | number | boolean | null) =>
     setForm(prev => ({ ...prev, [key]: value }))
 
-  const setNum = (key: 'king_beds' | 'queen_beds' | 'full_beds' | 'twin_beds' | 'square_footage', raw: string) => {
+  const setNum = (key: 'king_beds' | 'queen_beds' | 'full_beds' | 'twin_beds' | 'square_footage' | 'bedrooms' | 'full_baths' | 'half_baths', raw: string) => {
     const trimmed = raw.trim()
     set(key, trimmed === '' ? null : Number(trimmed))
   }
@@ -238,10 +253,10 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const save = useMutation({
     mutationFn: async () => {
       // Light validation
-      for (const k of ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'square_footage'] as const) {
+      for (const k of ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'square_footage', 'bedrooms', 'full_baths', 'half_baths'] as const) {
         const v = form[k]
         if (typeof v === 'number' && (isNaN(v) || v < 0)) {
-          throw new Error('Bed sizes and square footage must be positive numbers.')
+          throw new Error('Counts and square footage must be positive numbers.')
         }
       }
       // Build a payload of only the columns this owner may edit. The DB guard
@@ -283,6 +298,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
 
   const detailKeys: (keyof OwnerPermissions)[] = [
     'address', 'bed_sizes', 'square_footage', 'door_code', 'other_codes', 'wifi_info',
+    'bedrooms', 'baths', 'amenities', 'check_times', 'filter_size', 'ical_url',
   ]
   const showDetails = detailKeys.some(k => can(k).visible)
 
@@ -358,6 +374,31 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   </>
                 )
               })()}
+              {renderField('bedrooms', 'Bedrooms', 'bedrooms', () => (
+                <Input type="number" min={0} value={(form.bedrooms as number) ?? ''} onChange={e => setNum('bedrooms', e.target.value)} />
+              ))}
+              {(() => {
+                const p = can('baths')
+                if (!p.visible) return null
+                return (
+                  <>
+                    <Field label="Full baths" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.full_baths as number) ?? ''} onChange={e => setNum('full_baths', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.full_baths} />
+                      )}
+                    </Field>
+                    <Field label="Half baths" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input type="number" min={0} value={(form.half_baths as number) ?? ''} onChange={e => setNum('half_baths', e.target.value)} />
+                      ) : (
+                        <ReadOnlyValue value={property.half_baths} />
+                      )}
+                    </Field>
+                  </>
+                )
+              })()}
               {renderField('square_footage', 'Square footage', 'square_footage', () => (
                 <Input
                   type="number"
@@ -383,6 +424,66 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   value={(form.wifi_info as string) ?? ''}
                   onChange={e => set('wifi_info', e.target.value || null)}
                   placeholder="Network name and password"
+                />
+              ), 'sm:col-span-2')}
+              {(() => {
+                const p = can('amenities')
+                if (!p.visible) return null
+                const boolSelect = (key: 'hot_tub' | 'pool') => (
+                  <select
+                    className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+                    value={form[key] == null ? '' : String(form[key])}
+                    onChange={e => set(key, e.target.value === '' ? null : e.target.value === 'true')}
+                    data-testid={`select-${key.replace('_', '-')}-${property.id}`}
+                  >
+                    <option value="">Not set</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                )
+                const boolLabel = (v: boolean | null | undefined) => (v == null ? null : v ? 'Yes' : 'No')
+                return (
+                  <>
+                    <Field label="Hot tub" locked={!p.editable}>
+                      {p.editable ? boolSelect('hot_tub') : <ReadOnlyValue value={boolLabel(property.hot_tub)} />}
+                    </Field>
+                    <Field label="Pool" locked={!p.editable}>
+                      {p.editable ? boolSelect('pool') : <ReadOnlyValue value={boolLabel(property.pool)} />}
+                    </Field>
+                  </>
+                )
+              })()}
+              {(() => {
+                const p = can('check_times')
+                if (!p.visible) return null
+                return (
+                  <>
+                    <Field label="Check-in time" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input value={(form.check_in_time as string) ?? ''} onChange={e => set('check_in_time', e.target.value || null)} placeholder="4:00 PM" />
+                      ) : (
+                        <ReadOnlyValue value={property.check_in_time} />
+                      )}
+                    </Field>
+                    <Field label="Check-out time" locked={!p.editable}>
+                      {p.editable ? (
+                        <Input value={(form.check_out_time as string) ?? ''} onChange={e => set('check_out_time', e.target.value || null)} placeholder="10:00 AM" />
+                      ) : (
+                        <ReadOnlyValue value={property.check_out_time} />
+                      )}
+                    </Field>
+                  </>
+                )
+              })()}
+              {renderField('filter_size', 'A/C filter size', 'filter_size', () => (
+                <Input value={(form.filter_size as string) ?? ''} onChange={e => set('filter_size', e.target.value || null)} placeholder="20x25x1" />
+              ))}
+              {renderField('ical_url', 'Booking calendar (iCal URL)', 'ical_url', () => (
+                <Input
+                  type="url"
+                  value={(form.ical_url as string) ?? ''}
+                  onChange={e => set('ical_url', e.target.value || null)}
+                  placeholder="https://..."
                 />
               ), 'sm:col-span-2')}
             </div>
