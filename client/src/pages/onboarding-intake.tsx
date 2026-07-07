@@ -14,6 +14,14 @@ const publicSupabase = createClient(supabaseUrl, supabaseAnonKey)
 type YesNo = '' | 'yes' | 'no'
 type IntegrationKind = '' | 'ical' | 'api_key' | 'none'
 
+type BedSize = 'king' | 'queen' | 'full' | 'twin'
+const BED_SIZES: { key: BedSize; label: string }[] = [
+  { key: 'king', label: 'King' },
+  { key: 'queen', label: 'Queen' },
+  { key: 'full', label: 'Full' },
+  { key: 'twin', label: 'Twin' },
+]
+
 interface UploadedPhoto { url: string; path: string; name: string }
 
 export default function OnboardingIntakePage() {
@@ -30,11 +38,11 @@ export default function OnboardingIntakePage() {
   const [address, setAddress] = useState('')
 
   const [bedrooms, setBedrooms] = useState('')
-  const [numberOfBeds, setNumberOfBeds] = useState('')
   const [fullBaths, setFullBaths] = useState('')
   const [halfBaths, setHalfBaths] = useState('')
   const [squareFootage, setSquareFootage] = useState('')
-  const [bedSizes, setBedSizes] = useState('')
+  const [bedCounts, setBedCounts] = useState<Record<BedSize, string>>({ king: '', queen: '', full: '', twin: '' })
+  const [otherBeds, setOtherBeds] = useState('')
 
   const [hotTub, setHotTub] = useState<YesNo>('')
   const [pool, setPool] = useState<YesNo>('')
@@ -111,9 +119,17 @@ export default function OnboardingIntakePage() {
     setError('')
     if (!clientName.trim()) { setError('Please enter your name.'); return }
     if (!address.trim()) { setError('Please enter the property address.'); return }
-    if (!bedSizes.trim()) { setError('Bed sizes are required.'); return }
+    const bedTotal = BED_SIZES.reduce((sum, s) => sum + (parseInt(bedCounts[s.key]) || 0), 0)
+    if (bedTotal === 0) { setError('Please enter a count for at least one bed size.'); return }
 
     setSaving(true)
+    const bedSizesText = [
+      ...BED_SIZES
+        .map(s => ({ label: s.label, count: parseInt(bedCounts[s.key]) || 0 }))
+        .filter(s => s.count > 0)
+        .map(s => `${s.count} ${s.label}`),
+      otherBeds.trim() && `Other: ${otherBeds.trim()}`,
+    ].filter(Boolean).join(', ')
     const wifiCombined = [wifiNetwork.trim() && `Network: ${wifiNetwork.trim()}`, wifiPassword.trim() && `Password: ${wifiPassword.trim()}`].filter(Boolean).join(' / ') || null
     const otherCodesCombined = [
       poolCode.trim() && `Pool: ${poolCode.trim()}`,
@@ -135,11 +151,11 @@ export default function OnboardingIntakePage() {
         property_name: propertyName.trim() || null,
         address: address.trim(),
         bedrooms: bedrooms ? parseInt(bedrooms) : null,
-        number_of_beds: numberOfBeds ? parseInt(numberOfBeds) : null,
+        number_of_beds: bedTotal,
         full_baths: fullBaths ? parseInt(fullBaths) : null,
         half_baths: halfBaths ? parseInt(halfBaths) : null,
         square_footage: squareFootage ? parseFloat(squareFootage) : null,
-        bed_sizes: bedSizes.trim(),
+        bed_sizes: bedSizesText,
         hot_tub: hotTub === 'yes' ? true : hotTub === 'no' ? false : null,
         pool: pool === 'yes' ? true : pool === 'no' ? false : null,
         linen_program: linenProgram === 'yes' ? true : linenProgram === 'no' ? false : null,
@@ -284,21 +300,39 @@ export default function OnboardingIntakePage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div><label className={labelCls}>Bedrooms</label><Input type="number" min="0" value={bedrooms} onChange={e => setBedrooms(e.target.value)} className={inputCls} data-testid="input-bedrooms" /></div>
-              <div><label className={labelCls}>Number of Beds</label><Input type="number" min="0" value={numberOfBeds} onChange={e => setNumberOfBeds(e.target.value)} className={inputCls} data-testid="input-number-of-beds" /></div>
               <div><label className={labelCls}>Square Footage</label><Input type="number" min="0" value={squareFootage} onChange={e => setSquareFootage(e.target.value)} className={inputCls} data-testid="input-square-footage" /></div>
               <div><label className={labelCls}>Full Baths</label><Input type="number" min="0" value={fullBaths} onChange={e => setFullBaths(e.target.value)} className={inputCls} data-testid="input-full-baths" /></div>
               <div><label className={labelCls}>Half Baths</label><Input type="number" min="0" value={halfBaths} onChange={e => setHalfBaths(e.target.value)} className={inputCls} data-testid="input-half-baths" /></div>
             </div>
             <div>
-              <label className={labelCls}>Bed Sizes *</label>
-              <textarea
-                value={bedSizes}
-                onChange={e => setBedSizes(e.target.value)}
-                placeholder="e.g. Master: King · Bedroom 2: Queen · Bedroom 3: 2 Twins · Loft: Queen sleeper sofa"
-                className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                data-testid="input-bed-sizes"
-              />
-              <p className="text-xs text-muted-foreground mt-1">List the bed size for each room so we can stock the right linens.</p>
+              <label className={labelCls}>Beds by Size *</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {BED_SIZES.map(s => (
+                  <div key={s.key}>
+                    <label className={labelCls}>{s.label}</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={bedCounts[s.key]}
+                      onChange={e => setBedCounts(prev => ({ ...prev, [s.key]: e.target.value }))}
+                      placeholder="0"
+                      className={inputCls}
+                      data-testid={`input-beds-${s.key}`}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3">
+                <label className={labelCls}>Other Sleeping Arrangements</label>
+                <Input
+                  value={otherBeds}
+                  onChange={e => setOtherBeds(e.target.value)}
+                  placeholder="e.g. Queen sleeper sofa in loft, twin bunk beds"
+                  className={inputCls}
+                  data-testid="input-other-beds"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">How many beds of each size, so we can stock the right linens.</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
