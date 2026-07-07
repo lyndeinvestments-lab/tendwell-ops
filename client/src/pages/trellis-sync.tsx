@@ -150,7 +150,7 @@ function BreezewayMatchPicker({ propertyRaw, options, disabled, onApply }: {
   )
 }
 
-function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel, breezewayCoverage, breezewayExceptions, opsProperties, matchBreezeway, dismissBreezeway }: {
+function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
   trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
@@ -159,18 +159,11 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   dismissRow: ReturnType<typeof useTrellisSync>['dismissRow']
   restoreRow: ReturnType<typeof useTrellisSync>['restoreRow']
   userLabel: string
-  breezewayCoverage: ReturnType<typeof useTrellisSync>['breezewayCoverage']
-  breezewayExceptions: ReturnType<typeof useTrellisSync>['breezewayExceptions']
-  opsProperties: ReturnType<typeof useTrellisSync>['opsProperties']
-  matchBreezeway: ReturnType<typeof useTrellisSync>['matchBreezeway']
-  dismissBreezeway: ReturnType<typeof useTrellisSync>['dismissBreezeway']
 }) {
   const { toast } = useToast()
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [showDismissed, setShowDismissed] = useState(false)
   const [pendingDismiss, setPendingDismiss] = useState<string | null>(null)
-  const [pendingBzMatch, setPendingBzMatch] = useState<string | null>(null)
-  const [pendingBzDismiss, setPendingBzDismiss] = useState<string | null>(null)
 
   if (recon.error) return <ErrorState onRetry={() => recon.refetch()} />
 
@@ -178,11 +171,6 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   const exRows = exceptions.data ?? []
   const options = trellisProps.data ?? []
   const allDismissals: DismissalRow[] = dismissals.data ?? []
-  const bzExRows: BreezewayExceptionRow[] = breezewayExceptions.data ?? []
-  const bzCoverageMap = new Map<number, BreezewayCoverageRow>(
-    (breezewayCoverage.data ?? []).map(r => [r.property_id, r])
-  )
-  const opsOptions: OpsPropertyOption[] = opsProperties.data ?? []
 
   // Build fast lookup sets
   const dismissedExSet = new Set(
@@ -266,31 +254,6 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
       toast({ title: 'Restore failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     } finally {
       setPendingDismiss(null)
-    }
-  }
-
-  const handleMatchBreezeway = async (propertyRaw: string, propertyId: number) => {
-    setPendingBzMatch(propertyRaw)
-    const opsName = opsOptions.find(o => o.id === propertyId)?.name ?? String(propertyId)
-    try {
-      await matchBreezeway.mutateAsync({ propertyRaw, propertyId, resolvedBy: userLabel })
-      toast({ title: 'Matched', description: `${propertyRaw} → ${opsName}` })
-    } catch (e) {
-      toast({ title: 'Match failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
-    } finally {
-      setPendingBzMatch(null)
-    }
-  }
-
-  const handleDismissBreezeway = async (propertyRaw: string) => {
-    setPendingBzDismiss(propertyRaw)
-    try {
-      await dismissBreezeway.mutateAsync({ propertyRaw, resolvedBy: userLabel })
-      toast({ title: 'Dismissed', description: propertyRaw })
-    } catch (e) {
-      toast({ title: 'Dismiss failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
-    } finally {
-      setPendingBzDismiss(null)
     }
   }
 
@@ -386,6 +349,159 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
         )}
       </div>
 
+      {/* Mapping table */}
+      <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40">
+              <tr className="text-2xs uppercase text-muted-foreground text-left">
+                <th className="py-2 px-3">Ops property</th>
+                <th className="py-2 px-3">Trellis match</th>
+                <th className="py-2 px-3">Workspace</th>
+                <th className="py-2 px-3">Tendwell tasks</th>
+                <th className="py-2 px-3">Status</th>
+                <th className="py-2 px-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recon.isLoading ? (
+                <tr><td colSpan={6} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+              ) : visibleReconRows.length === 0 ? (
+                <tr><td colSpan={6}><EmptyState icon={Inbox} title="No properties" description="Run a sync to populate Trellis data." /></td></tr>
+              ) : visibleReconRows.map(r => {
+                const isDismissed = r.match_status !== 'matched' && dismissedReconSet.has(String(r.ops_property_id))
+                const dismissal = isDismissed ? findReconDismissal(r.ops_property_id) : undefined
+                const canDismiss = r.match_status !== 'matched'
+                return (
+                  <tr key={r.ops_property_id} className={`border-t border-border/50 ${isDismissed ? 'opacity-50' : ''}`}>
+                    <td className={`py-1.5 px-3 font-medium ${isDismissed ? 'line-through text-muted-foreground' : ''}`}>{r.ops_name}</td>
+                    <td className="py-1.5 px-3 text-muted-foreground">
+                      {r.match_status === 'matched' && r.linked_trellis_name}
+                      {r.match_status === 'stale' && <span className="text-warning">link no longer resolves</span>}
+                      {r.match_status === 'suggested' && <span>{r.suggested_trellis_name}</span>}
+                      {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">—</span>}
+                    </td>
+                    <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
+                    <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
+                    <td className="py-1.5 px-3">
+                      <StatusBadge tone={r.match_status === 'matched' ? 'success' : r.match_status === 'suggested' ? 'info' : 'warning'}>
+                        {r.match_status}
+                      </StatusBadge>
+                    </td>
+                    <td className="py-1.5 px-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isDismissed && dismissal ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-2xs"
+                            disabled={pendingDismiss === dismissal.id}
+                            onClick={() => handleRestore(dismissal.id, r.ops_name)}
+                          >
+                            Restore
+                          </Button>
+                        ) : (
+                          <>
+                            {r.match_status === 'suggested' && (
+                              <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
+                                Confirm
+                              </Button>
+                            )}
+                            <MatchPicker
+                              opsId={r.ops_property_id}
+                              opsName={r.ops_name}
+                              currentTrellisId={r.linked_trellis_id}
+                              options={options}
+                              disabled={pendingId === r.ops_property_id}
+                              onApply={applyLink}
+                            />
+                            {canDismiss && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 text-2xs text-muted-foreground hover:text-foreground"
+                                disabled={pendingDismiss === `recon-${r.ops_property_id}`}
+                                onClick={() => handleDismissRecon(r.ops_property_id, r.ops_name)}
+                                title="Dismiss this row"
+                              >
+                                <X className="w-3 h-3 mr-1" />
+                                Dismiss
+                              </Button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BreezewayTab({ recon, breezewayCoverage, breezewayExceptions, opsProperties, matchBreezeway, dismissBreezeway, userLabel }: {
+  recon: ReturnType<typeof useTrellisSync>['recon']
+  breezewayCoverage: ReturnType<typeof useTrellisSync>['breezewayCoverage']
+  breezewayExceptions: ReturnType<typeof useTrellisSync>['breezewayExceptions']
+  opsProperties: ReturnType<typeof useTrellisSync>['opsProperties']
+  matchBreezeway: ReturnType<typeof useTrellisSync>['matchBreezeway']
+  dismissBreezeway: ReturnType<typeof useTrellisSync>['dismissBreezeway']
+  userLabel: string
+}) {
+  const { toast } = useToast()
+  const [pendingBzMatch, setPendingBzMatch] = useState<string | null>(null)
+  const [pendingBzDismiss, setPendingBzDismiss] = useState<string | null>(null)
+
+  if (breezewayCoverage.error) return <ErrorState onRetry={() => breezewayCoverage.refetch()} />
+
+  const coverage: BreezewayCoverageRow[] = breezewayCoverage.data ?? []
+  const bzExRows: BreezewayExceptionRow[] = breezewayExceptions.data ?? []
+  const opsOptions: OpsPropertyOption[] = opsProperties.data ?? []
+  const nameById = new Map<number, string>((recon.data ?? []).map(r => [r.ops_property_id, r.ops_name]))
+  const totalCleans = coverage.reduce((a, r) => a + (r.clean_count ?? 0), 0)
+
+  const handleMatchBreezeway = async (propertyRaw: string, propertyId: number) => {
+    setPendingBzMatch(propertyRaw)
+    const opsName = opsOptions.find(o => o.id === propertyId)?.name ?? String(propertyId)
+    try {
+      await matchBreezeway.mutateAsync({ propertyRaw, propertyId, resolvedBy: userLabel })
+      toast({ title: 'Matched', description: `${propertyRaw} → ${opsName}` })
+    } catch (e) {
+      toast({ title: 'Match failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingBzMatch(null)
+    }
+  }
+
+  const handleDismissBreezeway = async (propertyRaw: string) => {
+    setPendingBzDismiss(propertyRaw)
+    try {
+      await dismissBreezeway.mutateAsync({ propertyRaw, resolvedBy: userLabel })
+      toast({ title: 'Dismissed', description: propertyRaw })
+    } catch (e) {
+      toast({ title: 'Dismiss failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+    } finally {
+      setPendingBzDismiss(null)
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-muted-foreground">
+        Breezeway data comes from the weekly task import (system of record for Haven cleans).
+        Matching fixes here apply immediately; new task data arrives with the next import.
+      </p>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <StatCard title="Properties with cleans" value={coverage.length} icon={CheckCircle2} tone="success" loading={breezewayCoverage.isLoading} />
+        <StatCard title="Total cleans tracked" value={totalCleans.toLocaleString()} icon={Inbox} tone="info" loading={breezewayCoverage.isLoading} />
+        <StatCard title="In Breezeway, not in Ops" value={bzExRows.length} icon={AlertTriangle} tone={bzExRows.length ? 'destructive' : 'success'} loading={breezewayExceptions.isLoading} />
+      </div>
+
       {/* Breezeway exceptions panel — tasks in Breezeway with no matching Ops property */}
       <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -448,100 +564,30 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
         )}
       </div>
 
-      {/* Mapping table */}
+      {/* Coverage table — Ops properties with Breezeway clean history */}
       <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
+        <div className="px-4 py-2 text-2xs text-muted-foreground border-b border-border/50">
+          Ops properties with Breezeway clean coverage.
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-muted/40">
-              <tr className="text-2xs uppercase text-muted-foreground text-left">
-                <th className="py-2 px-3">Ops property</th>
-                <th className="py-2 px-3">Trellis match</th>
-                <th className="py-2 px-3">Workspace</th>
-                <th className="py-2 px-3">Tendwell tasks</th>
-                <th className="py-2 px-3">Breezeway</th>
-                <th className="py-2 px-3">Status</th>
-                <th className="py-2 px-3 text-right">Action</th>
-              </tr>
-            </thead>
+            <thead className="bg-muted/40"><tr className="text-2xs uppercase text-muted-foreground text-left">
+              <th className="py-2 px-3">Ops property</th>
+              <th className="py-2 px-3">Cleans</th>
+              <th className="py-2 px-3">Last clean due</th>
+            </tr></thead>
             <tbody>
-              {recon.isLoading ? (
-                <tr><td colSpan={7} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
-              ) : visibleReconRows.length === 0 ? (
-                <tr><td colSpan={7}><EmptyState icon={Inbox} title="No properties" description="Run a sync to populate Trellis data." /></td></tr>
-              ) : visibleReconRows.map(r => {
-                const isDismissed = r.match_status !== 'matched' && dismissedReconSet.has(String(r.ops_property_id))
-                const dismissal = isDismissed ? findReconDismissal(r.ops_property_id) : undefined
-                const canDismiss = r.match_status !== 'matched'
-                return (
-                  <tr key={r.ops_property_id} className={`border-t border-border/50 ${isDismissed ? 'opacity-50' : ''}`}>
-                    <td className={`py-1.5 px-3 font-medium ${isDismissed ? 'line-through text-muted-foreground' : ''}`}>{r.ops_name}</td>
-                    <td className="py-1.5 px-3 text-muted-foreground">
-                      {r.match_status === 'matched' && r.linked_trellis_name}
-                      {r.match_status === 'stale' && <span className="text-warning">link no longer resolves</span>}
-                      {r.match_status === 'suggested' && <span>{r.suggested_trellis_name}</span>}
-                      {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">—</span>}
-                    </td>
-                    <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
-                    <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
-                    <td className="py-1.5 px-3">
-                      {(() => {
-                        const bz = bzCoverageMap.get(r.ops_property_id)
-                        if (!bz) return <span className="text-muted-foreground/60">—</span>
-                        return <StatusBadge tone="info">{bz.clean_count} cleans</StatusBadge>
-                      })()}
-                    </td>
-                    <td className="py-1.5 px-3">
-                      <StatusBadge tone={r.match_status === 'matched' ? 'success' : r.match_status === 'suggested' ? 'info' : 'warning'}>
-                        {r.match_status}
-                      </StatusBadge>
-                    </td>
-                    <td className="py-1.5 px-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {isDismissed && dismissal ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-2xs"
-                            disabled={pendingDismiss === dismissal.id}
-                            onClick={() => handleRestore(dismissal.id, r.ops_name)}
-                          >
-                            Restore
-                          </Button>
-                        ) : (
-                          <>
-                            {r.match_status === 'suggested' && (
-                              <Button size="sm" variant="outline" onClick={() => applyLink(r.ops_property_id, r.ops_name, r.suggested_trellis_id)} disabled={pendingId === r.ops_property_id}>
-                                Confirm
-                              </Button>
-                            )}
-                            <MatchPicker
-                              opsId={r.ops_property_id}
-                              opsName={r.ops_name}
-                              currentTrellisId={r.linked_trellis_id}
-                              options={options}
-                              disabled={pendingId === r.ops_property_id}
-                              onApply={applyLink}
-                            />
-                            {canDismiss && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-2xs text-muted-foreground hover:text-foreground"
-                                disabled={pendingDismiss === `recon-${r.ops_property_id}`}
-                                onClick={() => handleDismissRecon(r.ops_property_id, r.ops_name)}
-                                title="Dismiss this row"
-                              >
-                                <X className="w-3 h-3 mr-1" />
-                                Dismiss
-                              </Button>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {breezewayCoverage.isLoading ? (
+                <tr><td colSpan={3} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+              ) : coverage.length === 0 ? (
+                <tr><td colSpan={3}><EmptyState icon={Inbox} title="No coverage yet" description="Run the Breezeway import to populate clean history." /></td></tr>
+              ) : [...coverage].sort((a, b) => (b.clean_count ?? 0) - (a.clean_count ?? 0)).map(r => (
+                <tr key={r.property_id} className="border-t border-border/50">
+                  <td className="py-1.5 px-3 font-medium">{nameById.get(r.property_id) ?? `#${r.property_id}`}</td>
+                  <td className="py-1.5 px-3 tabular-nums">{r.clean_count}</td>
+                  <td className="py-1.5 px-3 tabular-nums text-muted-foreground">{r.last_clean_due ?? '—'}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -687,6 +733,9 @@ function HistoryTab({ syncHistory }: { syncHistory: ReturnType<typeof useTrellis
 
   return (
     <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
+      <div className="px-4 py-2 text-2xs text-muted-foreground border-b border-border/50">
+        Trellis sync runs (nightly cron + on-demand). The Hostaway tab shows its own last-sync status.
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-muted/40">
@@ -741,7 +790,7 @@ function HistoryTab({ syncHistory }: { syncHistory: ReturnType<typeof useTrellis
 }
 
 export default function TrellisSyncPage() {
-  usePageTitle('Trellis Sync')
+  usePageTitle('API Sync')
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -818,62 +867,65 @@ export default function TrellisSyncPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Trellis Sync"
-        subtitle={
-          <div className="space-y-1">
-            <span>
-              Last synced {timeAgo(lastDoneSync.data?.finished_at ?? null)}
-              {syncing && (
-                <span className="ml-2 text-warning">
-                  · {liveStatus === 'running' ? 'syncing…' : 'sync queued…'}
-                </span>
-              )}
-            </span>
-            {syncing && liveProgress && (
-              <SyncProgressBar progress={liveProgress} />
-            )}
-          </div>
-        }
-        actions={
-          <div className="flex items-center gap-2">
-            {syncing && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={stopSync}
-                disabled={canceling}
-                className="text-warning border-warning/40 hover:bg-warning/10"
-              >
-                <Square className="w-3.5 h-3.5 mr-1.5" />
-                {canceling ? 'Canceling…' : 'Stop'}
-              </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={refresh} disabled={triggerSync.isPending || syncing}>
-              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
-              Refresh
-            </Button>
-          </div>
-        }
+        title="API Sync"
+        subtitle="Sync and reconcile external systems — Trellis, Breezeway, and Hostaway — against Ops property records."
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <StatCard title="Matched" value={tiles.matched} icon={CheckCircle2} tone="success" loading={recon.isLoading} />
-        <StatCard title="Unmatched in Ops" value={tiles.unmatchedOps} icon={HelpCircle} tone="warning" loading={recon.isLoading} />
-        <StatCard title="In Trellis, not in Ops" value={tiles.unmatchedTrellis} icon={AlertTriangle} tone="destructive" loading={exceptions.isLoading} />
-        <StatCard title="Suggested" value={tiles.suggested} icon={Link2} tone="info" loading={recon.isLoading} />
-        <StatCard title="Stale links" value={tiles.stale} icon={Unlink} tone="warning" loading={recon.isLoading} />
-      </div>
-
-      <Tabs defaultValue="reconciliation" className="w-full">
+      <Tabs defaultValue="trellis" className="w-full">
         <TabsList>
-          <TabsTrigger value="reconciliation" data-testid="tab-reconciliation">Reconciliation</TabsTrigger>
+          <TabsTrigger value="trellis" data-testid="tab-reconciliation">Trellis</TabsTrigger>
+          <TabsTrigger value="breezeway" data-testid="tab-breezeway">Breezeway</TabsTrigger>
           <TabsTrigger value="hostaway" data-testid="tab-hostaway">Hostaway</TabsTrigger>
-          <TabsTrigger value="workflows" data-testid="tab-workflows">Workflows</TabsTrigger>
+          <TabsTrigger value="workflows" data-testid="tab-workflows">Trellis Workflows</TabsTrigger>
           <TabsTrigger value="roster" data-testid="tab-roster">Tendwell Roster</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="reconciliation" className="space-y-5">
+        <TabsContent value="trellis" className="space-y-5">
+          {/* Trellis sync status + controls (nightly cron at 03:00 UTC + on-demand) */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs text-muted-foreground space-y-1 min-w-0 flex-1">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" />
+                Last Trellis sync {timeAgo(lastDoneSync.data?.finished_at ?? null)}
+                {syncing && (
+                  <span className="text-warning">
+                    · {liveStatus === 'running' ? 'syncing…' : 'sync queued…'}
+                  </span>
+                )}
+              </span>
+              {syncing && liveProgress && (
+                <SyncProgressBar progress={liveProgress} />
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {syncing && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={stopSync}
+                  disabled={canceling}
+                  className="text-warning border-warning/40 hover:bg-warning/10"
+                >
+                  <Square className="w-3.5 h-3.5 mr-1.5" />
+                  {canceling ? 'Canceling…' : 'Stop'}
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={refresh} disabled={triggerSync.isPending || syncing}>
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${syncing ? 'animate-spin' : ''}`} />
+                Refresh from Trellis
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <StatCard title="Matched" value={tiles.matched} icon={CheckCircle2} tone="success" loading={recon.isLoading} />
+            <StatCard title="Unmatched in Ops" value={tiles.unmatchedOps} icon={HelpCircle} tone="warning" loading={recon.isLoading} />
+            <StatCard title="In Trellis, not in Ops" value={tiles.unmatchedTrellis} icon={AlertTriangle} tone="destructive" loading={exceptions.isLoading} />
+            <StatCard title="Suggested" value={tiles.suggested} icon={Link2} tone="info" loading={recon.isLoading} />
+            <StatCard title="Stale links" value={tiles.stale} icon={Unlink} tone="warning" loading={recon.isLoading} />
+          </div>
+
           <ReconciliationTab
             recon={recon}
             exceptions={exceptions}
@@ -883,11 +935,17 @@ export default function TrellisSyncPage() {
             dismissRow={dismissRow}
             restoreRow={restoreRow}
             userLabel={user?.label || 'admin'}
+          />
+        </TabsContent>
+        <TabsContent value="breezeway">
+          <BreezewayTab
+            recon={recon}
             breezewayCoverage={breezewayCoverage}
             breezewayExceptions={breezewayExceptions}
             opsProperties={opsProperties}
             matchBreezeway={matchBreezeway}
             dismissBreezeway={dismissBreezeway}
+            userLabel={user?.label || 'admin'}
           />
         </TabsContent>
         <TabsContent value="hostaway">

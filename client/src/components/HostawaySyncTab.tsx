@@ -12,7 +12,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Home, Link2, AlertTriangle, HelpCircle, RefreshCw, Unlink, Clock } from 'lucide-react'
 import { TONE_SOFT } from '@/lib/status-colors'
 
-// Hostaway tab on the admin /trellis-sync page: verifies Hostaway listing
+// Hostaway tab on the admin /api-sync page: verifies Hostaway listing
 // details against Ops property records and flags per-field differences.
 // Data comes from the hostaway_reconciliation view (admin RLS); the sync
 // itself runs nightly (Vercel cron) or via the Refresh button here.
