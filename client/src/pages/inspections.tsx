@@ -17,7 +17,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin } from 'lucide-react'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin, Link2, Check } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
@@ -134,6 +134,7 @@ export default function InspectionsPage() {
   const [pageSize, setPageSize] = useState(50)
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
   const [mapAddress, setMapAddress] = useState<string | null>(null)
+  const [copiedShare, setCopiedShare] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ExistingInspection | null>(null)
   const queryClient = useQueryClient()
@@ -194,6 +195,7 @@ export default function InspectionsPage() {
         linens_score: i.linens_score,
         supplies_score: i.supplies_score,
         exterior_score: i.exterior_score,
+        share_token: i.share_token,
       })
       setFormOpen(true)
     } else {
@@ -656,6 +658,22 @@ export default function InspectionsPage() {
           </SheetHeader>
           {activeDetail && (
             <div className="mt-4 space-y-4">
+              {activeDetail.share_token && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/inspection/${activeDetail.share_token}`
+                    navigator.clipboard.writeText(url).then(() => { setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) })
+                  }}
+                  className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+                >
+                  {copiedShare ? (
+                    <><Check className="w-4 h-4" /> Link copied — anyone can open it, no login needed</>
+                  ) : (
+                    <><Link2 className="w-4 h-4" /> {activeDetail.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
+                  )}
+                </button>
+              )}
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusPill status={activeDetail.status} />
                 {activeDetail.reinspect_urgency !== 'none' && (

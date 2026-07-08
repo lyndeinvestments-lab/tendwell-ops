@@ -1392,6 +1392,7 @@ export type Database = {
           reinspect_by: string | null
           reinspect_urgency: string
           scheduled_for: string | null
+          share_token: string
           status: string
           supplies_score: number | null
         }
@@ -1414,6 +1415,7 @@ export type Database = {
           reinspect_by?: string | null
           reinspect_urgency?: string
           scheduled_for?: string | null
+          share_token?: string
           status?: string
           supplies_score?: number | null
         }
@@ -1436,6 +1438,7 @@ export type Database = {
           reinspect_by?: string | null
           reinspect_urgency?: string
           scheduled_for?: string | null
+          share_token?: string
           status?: string
           supplies_score?: number | null
         }

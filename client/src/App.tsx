@@ -77,6 +77,7 @@ const LaundryWeighInPage = lazyRetry(() => import("@/pages/laundry-weigh-in"));
 const LaundryWeighInsPage = lazyRetry(() => import("@/pages/laundry-weigh-ins"));
 const ShipmentReportPage = lazyRetry(() => import("@/pages/shipment-report"));
 const IssueSharePage = lazyRetry(() => import("@/pages/issue-share"));
+const InspectionSharePage = lazyRetry(() => import("@/pages/inspection-share"));
 const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
@@ -275,6 +276,7 @@ function AppRoutes() {
         <Route path="/weigh-in" component={LaundryWeighInPage} />
         <Route path="/shipment-report" component={ShipmentReportPage} />
         <Route path="/issue/:token" component={IssueSharePage} />
+        <Route path="/inspection/:token" component={InspectionSharePage} />
         <Route path="/no-access" component={NoAccess} />
         <Route component={NotFound} />
       </Switch>
@@ -366,6 +368,14 @@ function AppLayout() {
       return (
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
           <IssueSharePage />
+        </Suspense>
+      );
+    }
+    // Public inspection report share link (no login).
+    if (path.startsWith('/inspection/')) {
+      return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}>
+          <InspectionSharePage />
         </Suspense>
       );
     }

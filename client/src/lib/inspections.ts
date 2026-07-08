@@ -24,12 +24,13 @@ export type Inspection = {
   exterior_score: number | null
   notes: string | null
   photos_url: string[] | null
+  share_token: string | null
   properties?: { name: string; address: string | null } | null
   cleaners?: { full_name: string } | null
   inspectors?: { full_name: string } | null
 }
 
-export const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, properties(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
+export const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, share_token, properties(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
 
 export function scoreColorClass(score: number | null): string {
   if (score == null) return 'bg-muted text-muted-foreground'
