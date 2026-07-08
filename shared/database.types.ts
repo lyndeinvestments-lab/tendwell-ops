@@ -1161,6 +1161,7 @@ export type Database = {
       hostaway_listing_snapshot: {
         Row: {
           address: string | null
+          address_norm: string | null
           bathrooms: number | null
           bedrooms: number | null
           beds: number | null
@@ -3517,6 +3518,7 @@ export type Database = {
       properties: {
         Row: {
           address: string | null
+          address_norm: string | null
           archived_at: string | null
           archived_by: string | null
           archived_reason: string | null
