@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin } from 'lucide-react'
+import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin, Link2, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
@@ -53,6 +53,7 @@ export interface ExistingInspection {
   linens_score: number | null
   supplies_score: number | null
   exterior_score: number | null
+  share_token?: string | null
 }
 
 interface Props {
@@ -94,6 +95,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
   const [urgency, setUrgency] = useState<Urgency>('none')
   const [reinspectBy, setReinspectBy] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [copiedShare, setCopiedShare] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Initialize / reset on open or when `existing` changes
@@ -346,6 +348,26 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-5">
+          {/* Shareable link — available once the inspection exists (scheduled
+              or completed). The same link shows the scheduled state now and
+              the full report once completed; opens for anyone, no login. */}
+          {isEditing && existing?.share_token && (
+            <button
+              type="button"
+              onClick={() => {
+                const url = `${window.location.origin}/inspection/${existing.share_token}`
+                navigator.clipboard.writeText(url).then(() => { setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000) })
+              }}
+              className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
+            >
+              {copiedShare ? (
+                <><Check className="w-4 h-4" /> Link copied — anyone can open it, no login needed</>
+              ) : (
+                <><Link2 className="w-4 h-4" /> {existing.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
+              )}
+            </button>
+          )}
+
           {/* Mode toggle — only for fresh creates */}
           {!isEditing && (
             <div className="grid grid-cols-2 gap-2">
