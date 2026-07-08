@@ -18,16 +18,25 @@ import {
 } from 'lucide-react'
 import { format, isToday, isYesterday, parseISO } from 'date-fns'
 
-type FilterType = 'all' | 'properties' | 'pipeline' | 'inspections' | 'cleaners' | 'contacts'
+type FilterType = 'all' | 'properties' | 'pipeline' | 'inspections' | 'cleaners' | 'contacts' | 'owners'
 
 const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
   { key: 'all', label: 'All' },
+  { key: 'owners', label: 'Owner Portal' },
   { key: 'properties', label: 'Properties' },
   { key: 'pipeline', label: 'Pipeline' },
   { key: 'inspections', label: 'Inspections' },
   { key: 'cleaners', label: 'Cleaners' },
   { key: 'contacts', label: 'Clients' },
 ]
+
+// Owner-portal edits are attributed as "<name> (owner)" by the DB triggers
+// that log them (properties_owner_update_guard, owner_update_self_contact)
+// — this cuts across entity types (property fields AND contact info), so it
+// needs its own predicate rather than an entity_type category match.
+function isOwnerChange(entry: { changed_by?: string | null }): boolean {
+  return !!entry.changed_by && / \(owner\)$/.test(entry.changed_by)
+}
 
 const SYSTEM_ENTITY_TYPES = new Set(['setting', 'role_permissions', 'user_role', 'view_as', 'app_settings'])
 
@@ -250,7 +259,9 @@ export default function ActivityFeedPage() {
       // Financial field gate
       if (!canViewFinancials && entry.field_name && FINANCIAL_FIELDS.has(entry.field_name)) return false
       // Category filter
-      if (filter !== 'all') {
+      if (filter === 'owners') {
+        if (!isOwnerChange(entry)) return false
+      } else if (filter !== 'all') {
         const cat = entry.entity_type
           ? entityTypeToFilter(entry.entity_type)
           : fieldToFilter(entry.field_name ?? '')
@@ -268,7 +279,8 @@ export default function ActivityFeedPage() {
         const oldVal = String(entry.old_value ?? '').toLowerCase()
         const newVal = String(entry.new_value ?? '').toLowerCase()
         const action = (entry.action ?? '').toLowerCase()
-        if (!name.includes(q) && !field.includes(q) && !oldVal.includes(q) && !newVal.includes(q) && !action.includes(q)) return false
+        const changedBy = (entry.changed_by ?? '').toLowerCase()
+        if (!name.includes(q) && !field.includes(q) && !oldVal.includes(q) && !newVal.includes(q) && !action.includes(q) && !changedBy.includes(q)) return false
       }
       return true
     })

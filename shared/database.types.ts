@@ -3978,6 +3978,7 @@ export type Database = {
       property_owners: {
         Row: {
           active: boolean
+          contact_id: string | null
           created_at: string
           email: string
           id: string
@@ -3988,6 +3989,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          contact_id?: string | null
           created_at?: string
           email: string
           id?: string
@@ -3998,6 +4000,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          contact_id?: string | null
           created_at?: string
           email?: string
           id?: string
@@ -4006,7 +4009,15 @@ export type Database = {
           preferred_payment_method?: string | null
           trellis_portal_url?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "property_owners_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       property_photos: {
         Row: {

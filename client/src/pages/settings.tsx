@@ -22,7 +22,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { notifyOwner } from '@/lib/notify'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { useLocation } from 'wouter'
+import { useLocation, Link } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import {
   UserPlus, Trash2, Shield, Users, DollarSign, TrendingUp, Wind, CalendarDays,
@@ -2015,6 +2015,8 @@ type OwnerRow = {
   active: boolean
   created_at: string
   trellis_portal_url: string | null
+  preferred_payment_method: string | null
+  contact_id: string | null
 }
 
 function AssignPropertiesDialog({
@@ -2476,7 +2478,7 @@ function OwnersSection() {
     queryFn: async (): Promise<OwnerRow[]> => {
       const { data, error } = await supabase
         .from('property_owners')
-        .select('id, email, name, phone, active, created_at, trellis_portal_url')
+        .select('id, email, name, phone, active, created_at, trellis_portal_url, preferred_payment_method, contact_id')
         .order('created_at', { ascending: true })
       if (error) throw error
       return (data || []) as OwnerRow[]
@@ -2602,6 +2604,7 @@ function OwnersSection() {
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Owner</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Payment</th>
                   <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Properties</th>
                   <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Active</th>
                   <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
@@ -2611,11 +2614,11 @@ function OwnersSection() {
                 {isLoading ? (
                   [...Array(3)].map((_, i) => (
                     <tr key={i} className="border-b border-border/50">
-                      {[...Array(6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                      {[...Array(7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                     </tr>
                   ))
                 ) : !filtered.length ? (
-                  <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">No owners yet. Click “Add Owner” to create one.</td></tr>
+                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">No owners yet. Click “Add Owner” to create one.</td></tr>
                 ) : (
                   filtered.map(o => (
                     <React.Fragment key={o.id}>
@@ -2649,6 +2652,18 @@ function OwnersSection() {
                               )}
                             </div>
                           )}
+                        </td>
+                        <td className="py-2 px-3 text-xs">
+                          <div className="space-y-0.5">
+                            <div className="text-muted-foreground">{o.preferred_payment_method || <span className="italic">—</span>}</div>
+                            {o.contact_id ? (
+                              <Link href="/contacts" className="inline-flex items-center gap-1 text-2xs text-primary hover:underline" title="This owner's info is synced to a Clients record">
+                                <ExternalLink className="w-3 h-3" /> Synced to Clients
+                              </Link>
+                            ) : (
+                              <span className="text-2xs text-muted-foreground/60 italic">No Clients record linked</span>
+                            )}
+                          </div>
                         </td>
                         <td className="py-2 px-3 text-center">
                           <button
@@ -2711,7 +2726,7 @@ function OwnersSection() {
                       </tr>
                       {editingId === o.id && (
                         <tr className="border-b border-border/50 bg-muted/10">
-                          <td colSpan={6} className="px-3 pb-3 pt-1">
+                          <td colSpan={7} className="px-3 pb-3 pt-1">
                             <label className="block text-2xs text-muted-foreground mb-1">Trellis portal URL</label>
                             <Input
                               value={editTrellisUrl}
