@@ -1158,9 +1158,48 @@ export type Database = {
         }
         Relationships: []
       }
+      hostaway_diff_dismissals: {
+        Row: {
+          created_at: string
+          dismissed_by: string | null
+          field: string
+          ha_value: string | null
+          hostaway_id: number
+          id: string
+          ops_value: string | null
+        }
+        Insert: {
+          created_at?: string
+          dismissed_by?: string | null
+          field: string
+          ha_value?: string | null
+          hostaway_id: number
+          id?: string
+          ops_value?: string | null
+        }
+        Update: {
+          created_at?: string
+          dismissed_by?: string | null
+          field?: string
+          ha_value?: string | null
+          hostaway_id?: number
+          id?: string
+          ops_value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hostaway_diff_dismissals_hostaway_id_fkey"
+            columns: ["hostaway_id"]
+            isOneToOne: false
+            referencedRelation: "hostaway_listing_snapshot"
+            referencedColumns: ["hostaway_id"]
+          },
+        ]
+      }
       hostaway_listing_snapshot: {
         Row: {
           address: string | null
+          address_norm: string | null
           bathrooms: number | null
           bedrooms: number | null
           beds: number | null
@@ -3517,6 +3556,7 @@ export type Database = {
       properties: {
         Row: {
           address: string | null
+          address_norm: string | null
           archived_at: string | null
           archived_by: string | null
           archived_reason: string | null
