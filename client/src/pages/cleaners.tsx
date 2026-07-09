@@ -19,7 +19,7 @@ import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
-import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2 } from 'lucide-react'
+import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2, Pencil } from 'lucide-react'
 import { sendInviteEmail } from '@/lib/notify'
 import { roleBadgeClasses } from '@/lib/role-colors'
 import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
@@ -100,6 +100,10 @@ export default function CleanersPage() {
   })
   const [newForm, setNewForm] = useState({ full_name: '', phone: '', email: '', pay_rate: '', notes: '', app_role: 'cleaning' as 'cleaning' | 'inspector' })
   const [invitingSendingId, setInvitingSendingId] = useState<string | null>(null)
+
+  // Inline rename on the roster table's name cell
+  const [editingNameId, setEditingNameId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
 
   // Assign dialog state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
@@ -193,6 +197,37 @@ export default function CleanersPage() {
     },
     onError: (error: any) => toast({ title: 'Failed to add cleaner', description: error?.message, variant: 'destructive' }),
   })
+
+  const { mutate: renameCleaner } = useGuardedMutation('cleaners', {
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const { error } = await supabase.from('cleaners').update({ full_name: name }).eq('id', id)
+      if (error) throw error
+      return { id, name }
+    },
+    onSuccess: ({ id, name }: { id: string; name: string }) => {
+      const oldName = (cleaners || []).find((c: any) => c.id === id)?.full_name ?? null
+      qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
+      logActivity({
+        entity_type: 'cleaner',
+        entity_id: id,
+        entity_name: name,
+        action: 'update',
+        field_name: 'full_name',
+        old_value: oldName,
+        new_value: name,
+        changed_by: user?.label ?? null,
+      })
+      toast({ title: 'Name updated' })
+      setEditingNameId(null)
+    },
+    onError: (error: any) => toast({ title: 'Failed to rename', description: error?.message, variant: 'destructive' }),
+  })
+
+  const commitRename = (id: string, currentName: string) => {
+    const next = nameDraft.trim()
+    if (!next || next === currentName) { setEditingNameId(null); return }
+    renameCleaner({ id, name: next })
+  }
 
   const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
@@ -453,7 +488,33 @@ export default function CleanersPage() {
                   const avgPay = stats.total > 0 ? stats.totalPay / stats.total : 0
                   return (
                     <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer group" onClick={() => setDetailCleaner(c)}>
-                      <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
+                      <td className="py-2 px-3 font-medium text-xs" onClick={e => e.stopPropagation()}>
+                        {editingNameId === c.id ? (
+                          <Input
+                            value={nameDraft}
+                            autoFocus
+                            onChange={e => setNameDraft(e.target.value)}
+                            onBlur={() => commitRename(c.id, c.full_name)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') commitRename(c.id, c.full_name)
+                              if (e.key === 'Escape') setEditingNameId(null)
+                            }}
+                            className="h-6 text-xs w-40"
+                            data-testid={`input-rename-cleaner-${c.id}`}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 group/name text-left"
+                            onClick={() => { setEditingNameId(c.id); setNameDraft(c.full_name ?? '') }}
+                            title="Click to rename"
+                            data-testid={`button-rename-cleaner-${c.id}`}
+                          >
+                            {c.full_name}
+                            <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
                       <td className="py-2 px-3">
