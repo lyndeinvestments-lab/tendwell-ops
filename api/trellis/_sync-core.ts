@@ -30,7 +30,11 @@ export interface SyncCounts {
 }
 
 export interface SyncOptions {
-  trigger: 'nightly' | 'manual' | 'on-demand'
+  trigger: 'nightly' | 'manual' | 'on-demand' | 'hourly'
+  /** Refresh only the task snapshot (skip roster + property phases). The
+   *  workspace-A roster ids are read from the trellis_roster table (kept
+   *  current by the nightly full sync) instead of re-pulled from Trellis. */
+  tasksOnly?: boolean
   /** Existing log row id to claim. If omitted a new row is inserted. */
   logId?: string
   requestedBy?: string
@@ -242,34 +246,53 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   }
 
   // ── Workspace A: Roster ──────────────────────────────────────────────────
-  await emit('roster', 0, estimatedTotal, 'Loading Workspace A roster…')
-  await checkCancel()
-  const wf = await callTool(A, 'read_workforce', { limit: 100 }) as { data?: { members?: Array<Record<string, unknown>> }; members?: Array<Record<string, unknown>> }
-  const members = wf.data?.members || wf.members || []
   const rosterMap = new Map<unknown, Record<string, unknown>>()
-  for (const m of members) {
-    if (!m.user_id) continue
-    rosterMap.set(m.user_id, {
-      user_id: m.user_id, member_id: m.member_id ?? null, workspace: 'A',
-      name: m.name ?? null, email: m.email ?? null, role: m.role ?? null,
-      departments: m.departments ?? [], is_active: m.is_active ?? true, synced_at: now(),
-    })
+  if (opts.tasksOnly) {
+    // Tasks-only refresh: reuse the roster already in the DB (the nightly
+    // full sync keeps it current) instead of re-pulling from Trellis.
+    await emit('roster', 0, estimatedTotal, 'Loading roster from DB…')
+    await checkCancel()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: dbRoster, error: rosterErr } = await (supabase as any)
+      .from('trellis_roster').select('user_id').eq('workspace', 'A').eq('is_active', true)
+    if (rosterErr) throw new Error(`trellis_roster read: ${rosterErr.message}`)
+    for (const r of (dbRoster ?? []) as Array<{ user_id: string }>) {
+      rosterMap.set(r.user_id, { user_id: r.user_id })
+    }
+    await emit('roster', 0, estimatedTotal, `Roster loaded from DB (${rosterMap.size} members)`)
+    await checkCancel()
+  } else {
+    await emit('roster', 0, estimatedTotal, 'Loading Workspace A roster…')
+    await checkCancel()
+    const wf = await callTool(A, 'read_workforce', { limit: 100 }) as { data?: { members?: Array<Record<string, unknown>> }; members?: Array<Record<string, unknown>> }
+    const members = wf.data?.members || wf.members || []
+    for (const m of members) {
+      if (!m.user_id) continue
+      rosterMap.set(m.user_id, {
+        user_id: m.user_id, member_id: m.member_id ?? null, workspace: 'A',
+        name: m.name ?? null, email: m.email ?? null, role: m.role ?? null,
+        departments: m.departments ?? [], is_active: m.is_active ?? true, synced_at: now(),
+      })
+    }
+    await upsert(supabase, 'trellis_roster', [...rosterMap.values()], 'user_id')
+    processed += rosterMap.size
+    estimatedTotal = Math.max(estimatedTotal, processed + 730)
+    await emit('roster', processed, estimatedTotal, `Roster loaded (${rosterMap.size} members)`)
+    await checkCancel()
   }
-  await upsert(supabase, 'trellis_roster', [...rosterMap.values()], 'user_id')
-  processed += rosterMap.size
-  estimatedTotal = Math.max(estimatedTotal, processed + 730)
-  await emit('roster', processed, estimatedTotal, `Roster loaded (${rosterMap.size} members)`)
-  await checkCancel()
 
   // ── Workspace A: Properties ──────────────────────────────────────────────
-  await emit('props_a', processed, estimatedTotal, 'Pulling Workspace A properties…')
-  await checkCancel()
-  const propsA = await queryAll(A, 'properties', PROP_SELECT, null, 100)
-  await upsert(supabase, 'trellis_property_snapshot', propsA.map(p => propRow(p, 'A')), 'trellis_id')
-  processed += propsA.length
-  estimatedTotal = Math.max(estimatedTotal, processed + 650)
-  await emit('props_a', processed, estimatedTotal, `Workspace A properties done (${propsA.length})`)
-  await checkCancel()
+  let propsA: Array<Record<string, unknown>> = []
+  if (!opts.tasksOnly) {
+    await emit('props_a', processed, estimatedTotal, 'Pulling Workspace A properties…')
+    await checkCancel()
+    propsA = await queryAll(A, 'properties', PROP_SELECT, null, 100)
+    await upsert(supabase, 'trellis_property_snapshot', propsA.map(p => propRow(p, 'A')), 'trellis_id')
+    processed += propsA.length
+    estimatedTotal = Math.max(estimatedTotal, processed + 650)
+    await emit('props_a', processed, estimatedTotal, `Workspace A properties done (${propsA.length})`)
+    await checkCancel()
+  }
 
   // ── Workspace A: Tasks ───────────────────────────────────────────────────
   await emit('tasks_a', processed, estimatedTotal, 'Pulling Workspace A tasks…')
@@ -282,14 +305,17 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   await checkCancel()
 
   // ── Workspace B: Properties ──────────────────────────────────────────────
-  await emit('props_b', processed, estimatedTotal, 'Pulling Workspace B properties…')
-  await checkCancel()
-  const propsB = await queryAll(B, 'properties', PROP_SELECT, null, 50)
-  await upsert(supabase, 'trellis_property_snapshot', propsB.map(p => propRow(p, 'B')), 'trellis_id')
-  processed += propsB.length
-  estimatedTotal = Math.max(estimatedTotal, processed + 400)
-  await emit('props_b', processed, estimatedTotal, `Workspace B properties done (${propsB.length})`)
-  await checkCancel()
+  let propsB: Array<Record<string, unknown>> = []
+  if (!opts.tasksOnly) {
+    await emit('props_b', processed, estimatedTotal, 'Pulling Workspace B properties…')
+    await checkCancel()
+    propsB = await queryAll(B, 'properties', PROP_SELECT, null, 50)
+    await upsert(supabase, 'trellis_property_snapshot', propsB.map(p => propRow(p, 'B')), 'trellis_id')
+    processed += propsB.length
+    estimatedTotal = Math.max(estimatedTotal, processed + 400)
+    await emit('props_b', processed, estimatedTotal, `Workspace B properties done (${propsB.length})`)
+    await checkCancel()
+  }
 
   // ── Workspace B: Tasks ───────────────────────────────────────────────────
   await emit('tasks_b', processed, estimatedTotal, 'Pulling Workspace B tasks…')
@@ -324,7 +350,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   await (supabase as any).from('trellis_task_snapshot').delete().eq('workspace', 'B').lt('synced_at', runStartIso)
 
   const counts: SyncCounts = {
-    roster: rosterMap.size,
+    roster: opts.tasksOnly ? 0 : rosterMap.size,
     props_a: propsA.length,
     props_b: propsB.length,
     tasks_a: tasksA.length,
