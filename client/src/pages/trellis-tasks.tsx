@@ -16,7 +16,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { Link } from 'wouter'
 import {
   AlertTriangle, CalendarClock, CheckCircle2, ClipboardCheck, Clock,
   RefreshCw, Search, UserPlus,
@@ -32,10 +31,20 @@ interface SnapshotTask {
   department_name: string | null
   status: string | null
   priority: string | null
+  assigned_to_id: string | null
   assigned_to_name: string | null
   scheduled_date: string | null
   completed_at: string | null
   synced_at: string
+}
+
+const VENDOR_ENTITY = 'Tendwell Cleaning Co.'
+
+// Trellis's own Overdue tab only counts tasks assigned to a person; tasks
+// held by the vendor entity or nobody sit in its "Unassigned" bucket. Mirror
+// that so our Overdue number matches what Jordan sees in Trellis.
+function isAssignedToPerson(t: SnapshotTask): boolean {
+  return t.assigned_to_id != null && t.assigned_to_name !== VENDOR_ENTITY
 }
 
 interface RosterMember {
@@ -88,6 +97,8 @@ export default function TrellisTasksPage() {
   const [tab, setTab] = useState<TabId>('overdue')
   const [search, setSearch] = useState('')
   const [turnOnly, setTurnOnly] = useState(false)
+  const [includeUnassigned, setIncludeUnassigned] = useState(false)
+  const [showDismissed, setShowDismissed] = useState(false)
 
   // All tasks scheduled up to today within the snapshot window (-30d). Covers
   // overdue (open, < today), due today, and completed today in one query.
@@ -96,7 +107,7 @@ export default function TrellisTasksPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('trellis_task_snapshot')
-        .select('trellis_task_id, workspace, property_name, title, department_name, status, priority, assigned_to_name, scheduled_date, completed_at, synced_at')
+        .select('trellis_task_id, workspace, property_name, title, department_name, status, priority, assigned_to_id, assigned_to_name, scheduled_date, completed_at, synced_at')
         .lte('scheduled_date', today)
         .order('scheduled_date', { ascending: true })
         .limit(2000)
@@ -109,15 +120,17 @@ export default function TrellisTasksPage() {
 
   const { data: tileData } = useTrellisTasksToday()
 
-  // Roster gap (admin only — trellis_roster RLS is admin-only).
-  const rosterGapQuery = useQuery<RosterMember[]>({
+  // Roster gap (admin only — trellis_roster RLS is admin-only). Returns both
+  // the open gap list and the dismissed list so the panel can restore.
+  const rosterGapQuery = useQuery<{ gap: RosterMember[]; dismissed: RosterMember[] }>({
     queryKey: ['/supabase/trellis-roster-gap'],
     enabled: isAdmin,
     queryFn: async () => {
-      const [rosterRes, cleanersRes, usersRes] = await Promise.all([
+      const [rosterRes, cleanersRes, usersRes, dismissRes] = await Promise.all([
         supabase.from('trellis_roster').select('user_id, name, email, role, workspace, is_active').eq('is_active', true),
         supabase.from('cleaners').select('email'),
         supabase.from('app_users').select('google_email'),
+        supabase.from('trellis_roster_dismissals').select('user_id'),
       ])
       if (rosterRes.error) throw rosterRes.error
       const known = new Set<string>()
@@ -127,13 +140,62 @@ export default function TrellisTasksPage() {
       for (const u of (usersRes.data ?? []) as Array<{ google_email: string | null }>) {
         if (u.google_email) known.add(u.google_email.toLowerCase())
       }
-      return ((rosterRes.data ?? []) as RosterMember[])
+      const dismissedIds = new Set(((dismissRes.data ?? []) as Array<{ user_id: string }>).map(d => d.user_id))
+      const missing = ((rosterRes.data ?? []) as RosterMember[])
         .filter(m => !isIgnorableRosterMember(m))
         .filter(m => !m.email || !known.has(m.email.toLowerCase()))
         .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+      return {
+        gap: missing.filter(m => !dismissedIds.has(m.user_id)),
+        dismissed: missing.filter(m => dismissedIds.has(m.user_id)),
+      }
     },
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
+  })
+
+  const invalidateRosterGap = () => qc.invalidateQueries({ queryKey: ['/supabase/trellis-roster-gap'] })
+
+  // Add a roster member to the Ops cleaners list (matched back by email, so
+  // they drop out of the gap list on the next refetch).
+  const addCleaner = useMutation({
+    mutationFn: async (m: RosterMember) => {
+      const { error } = await supabase.from('cleaners').insert({
+        full_name: m.name ?? m.email ?? 'Unknown',
+        email: m.email,
+        is_active: true,
+      } as any)
+      if (error) throw error
+      return m
+    },
+    onSuccess: (m) => {
+      toast({ title: `${m.name ?? m.email} added to Cleaners`, description: 'Set pay rate and send an app invite from the Cleaners page.' })
+      invalidateRosterGap()
+      qc.invalidateQueries({ queryKey: ['cleaners'] })
+    },
+    onError: (e: any) => toast({ title: 'Could not add cleaner', description: e?.message, variant: 'destructive' }),
+  })
+
+  const dismissMember = useMutation({
+    mutationFn: async (m: RosterMember) => {
+      const { error } = await supabase.from('trellis_roster_dismissals').insert({
+        user_id: m.user_id, name: m.name, email: m.email, dismissed_by: effectiveUser?.label ?? null,
+      } as any)
+      if (error) throw error
+      return m
+    },
+    onSuccess: (m) => { toast({ title: `${m.name ?? m.email} dismissed` }); invalidateRosterGap() },
+    onError: (e: any) => toast({ title: 'Could not dismiss', description: e?.message, variant: 'destructive' }),
+  })
+
+  const restoreMember = useMutation({
+    mutationFn: async (m: RosterMember) => {
+      const { error } = await supabase.from('trellis_roster_dismissals').delete().eq('user_id', m.user_id)
+      if (error) throw error
+      return m
+    },
+    onSuccess: (m) => { toast({ title: `${m.name ?? m.email} restored` }); invalidateRosterGap() },
+    onError: (e: any) => toast({ title: 'Could not restore', description: e?.message, variant: 'destructive' }),
   })
 
   // Refresh: trigger the on-demand server-side sync (same endpoint as API Sync).
@@ -166,16 +228,20 @@ export default function TrellisTasksPage() {
   const buckets = useMemo(() => {
     const isOpen = (t: SnapshotTask) => OPEN_STATUSES.includes(t.status ?? '')
     const isTurn = (t: SnapshotTask) => (t.title ?? '').trim().toLowerCase() === TURN_CLEAN_TITLE
-    const overdue = tasks.filter(t => isOpen(t) && (t.scheduled_date ?? '') < today)
+    const pastDue = tasks.filter(t => isOpen(t) && (t.scheduled_date ?? '') < today)
+    // Overdue mirrors Trellis's Overdue tab: person-assigned only. The rest
+    // (vendor-entity or nobody) is Trellis's "Unassigned" bucket.
+    const overdue = pastDue.filter(isAssignedToPerson)
+    const overdueUnassigned = pastDue.filter(t => !isAssignedToPerson(t))
     const dueToday = tasks.filter(t => isOpen(t) && t.scheduled_date === today)
     const completedToday = tasks.filter(t => t.status === 'COMPLETED' && t.scheduled_date === today)
     const turnToday = tasks.filter(t => isTurn(t) && t.scheduled_date === today)
-    return { overdue, dueToday, completedToday, turnToday, isTurn }
+    return { overdue, overdueUnassigned, dueToday, completedToday, turnToday, isTurn }
   }, [tasks, today])
 
   const visible = useMemo(() => {
     let rows: SnapshotTask[] =
-      tab === 'overdue' ? buckets.overdue
+      tab === 'overdue' ? (includeUnassigned ? [...buckets.overdue, ...buckets.overdueUnassigned] : buckets.overdue)
       : tab === 'today' ? [...buckets.dueToday, ...buckets.completedToday]
       : tab === 'completed' ? tasks.filter(t => t.status === 'COMPLETED')
       : tasks
@@ -191,7 +257,7 @@ export default function TrellisTasksPage() {
     // Completed lists read best newest-first; open lists oldest-first (most overdue on top).
     if (tab === 'completed') rows = [...rows].reverse()
     return rows
-  }, [tab, tasks, buckets, turnOnly, search])
+  }, [tab, tasks, buckets, turnOnly, search, includeUnassigned])
 
   const lastSynced = tileData?.syncedAt ?? tasks[0]?.synced_at ?? null
 
@@ -228,7 +294,7 @@ export default function TrellisTasksPage() {
         <StatCard
           title="Overdue"
           value={buckets.overdue.length}
-          subtitle="open, past due date"
+          subtitle={buckets.overdueUnassigned.length > 0 ? `+${buckets.overdueUnassigned.length} unassigned past due` : 'assigned, past due'}
           icon={AlertTriangle}
           tone={buckets.overdue.length > 0 ? 'destructive' : 'success'}
           loading={tasksQuery.isLoading}
@@ -268,26 +334,88 @@ export default function TrellisTasksPage() {
       </div>
 
       {/* Roster gap — admin only */}
-      {isAdmin && (rosterGapQuery.data?.length ?? 0) > 0 && (
+      {isAdmin && ((rosterGapQuery.data?.gap.length ?? 0) > 0 || (rosterGapQuery.data?.dismissed.length ?? 0) > 0) && (
         <Card className="rounded-2xl border-card-border shadow-sm">
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-3">
               <UserPlus className="w-4 h-4 text-warning" />
               <span className="text-sm font-medium">In Trellis, not in Ops</span>
-              <span className="text-xs text-muted-foreground">{rosterGapQuery.data!.length} people</span>
-              <Link href="/cleaners" className="ml-auto text-xs text-primary hover:underline">Add on Cleaners page →</Link>
+              <span className="text-xs text-muted-foreground">{rosterGapQuery.data!.gap.length} people</span>
+              {(rosterGapQuery.data?.dismissed.length ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowDismissed(v => !v)}
+                  className="ml-auto text-xs text-muted-foreground hover:text-foreground hover:underline"
+                  data-testid="toggle-show-dismissed"
+                >
+                  {showDismissed ? 'Hide dismissed' : `Show dismissed (${rosterGapQuery.data!.dismissed.length})`}
+                </button>
+              )}
             </div>
             <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
-              {rosterGapQuery.data!.map(m => (
+              {rosterGapQuery.data!.gap.map(m => (
                 <div key={m.user_id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 min-w-0" data-testid={`roster-gap-${m.user_id}`}>
                   <div className="min-w-0">
                     <p className="text-xs font-medium truncate">{m.name ?? '(no name)'}</p>
-                    <p className="text-2xs text-muted-foreground truncate">{m.email ?? 'no email'}</p>
+                    <p className="text-2xs text-muted-foreground truncate">{m.email ?? 'no email'} · {(m.role ?? '').toLowerCase()}</p>
                   </div>
-                  <StatusBadge tone="neutral" className="ml-auto shrink-0">{(m.role ?? '').toLowerCase()}</StatusBadge>
+                  <div className="ml-auto flex items-center gap-1 shrink-0">
+                    {m.email && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-2xs"
+                        disabled={addCleaner.isPending}
+                        onClick={() => addCleaner.mutate(m)}
+                        title="Add to the Ops cleaners list"
+                        data-testid={`roster-add-${m.user_id}`}
+                      >
+                        <UserPlus className="w-3 h-3 mr-1" /> Add
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-2xs text-muted-foreground"
+                      disabled={dismissMember.isPending}
+                      onClick={() => dismissMember.mutate(m)}
+                      title="Dismiss — hide this person from the list"
+                      data-testid={`roster-dismiss-${m.user_id}`}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
                 </div>
               ))}
+              {rosterGapQuery.data!.gap.length === 0 && (
+                <p className="text-xs text-muted-foreground col-span-full">Everyone left is dismissed — nothing to review.</p>
+              )}
             </div>
+            {showDismissed && rosterGapQuery.data!.dismissed.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border/60">
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground mb-1.5">Dismissed</p>
+                <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {rosterGapQuery.data!.dismissed.map(m => (
+                    <div key={m.user_id} className="flex items-center gap-2 rounded-md border border-border/50 px-2.5 py-1.5 min-w-0 opacity-70" data-testid={`roster-dismissed-${m.user_id}`}>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{m.name ?? '(no name)'}</p>
+                        <p className="text-2xs text-muted-foreground truncate">{m.email ?? 'no email'}</p>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto h-6 px-2 text-2xs shrink-0"
+                        disabled={restoreMember.isPending}
+                        onClick={() => restoreMember.mutate(m)}
+                        data-testid={`roster-restore-${m.user_id}`}
+                      >
+                        Restore
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -321,6 +449,20 @@ export default function TrellisTasksPage() {
         >
           Turn cleans only
         </button>
+        {tab === 'overdue' && (
+          <button
+            type="button"
+            onClick={() => setIncludeUnassigned(v => !v)}
+            data-testid="toggle-include-unassigned"
+            title="Trellis buckets vendor-held and unassigned tasks separately from Overdue — toggle to see them here too."
+            className={cn(
+              'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
+              includeUnassigned ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
+            )}
+          >
+            Include unassigned ({buckets.overdueUnassigned.length})
+          </button>
+        )}
         <div className="relative ml-auto w-full sm:w-64">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
