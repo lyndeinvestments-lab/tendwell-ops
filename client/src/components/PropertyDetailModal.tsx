@@ -995,6 +995,30 @@ export function PropertyDetailModal() {
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
   })
 
+  // "Mark done" for follow-ups: clearing the date removes the property from
+  // the dashboard Today's Actions list (which derives from follow_up_date).
+  const { mutate: clearFollowUp } = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.from('properties').update({ follow_up_date: null }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      if (error) throw error
+      return { row: data }
+    },
+    onSuccess: ({ row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
+      logPropertyEdit(
+        propertyId!,
+        'follow_up_date',
+        String(property?.follow_up_date ?? ''),
+        '',
+        property?.name ?? null,
+        user?.label ?? null,
+      )
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
+      toast({ title: 'Follow-up cleared' })
+    },
+    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+  })
+
   const { mutate: toggleInspectionExempt } = useMutation({
     mutationFn: async (next: boolean) => {
       const { data, error } = await supabase.from('properties').update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
@@ -1657,8 +1681,19 @@ export function PropertyDetailModal() {
                     Inspection exempt: <span className="tabular-nums">{(property as any).exempt_from_inspections ? 'Yes' : 'No'}</span>
                   </button>
                   {property.follow_up_date && (
-                    <span className="px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-warning/10 text-warning">
                       Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
+                      {canEditProperty && (
+                        <button
+                          type="button"
+                          onClick={() => clearFollowUp()}
+                          title="Mark follow-up done (clears the date)"
+                          className="ml-0.5 rounded-sm p-0.5 hover:bg-warning/25 transition-colors"
+                          data-testid="chip-clear-follow-up"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
                     </span>
                   )}
                 </div>
