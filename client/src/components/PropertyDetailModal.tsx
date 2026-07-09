@@ -686,6 +686,13 @@ const LINEN_FIELD_KEYS = [
   'bath_towels', 'washcloths', 'hand_towels', 'bathmats', 'pool_towels',
 ] as const
 const ACCESS_FIELD_KEYS = ['door_code', 'other_codes', 'wifi_info'] as const
+
+// Select string for the modal's property-detail query. Reused by every write
+// mutation's `.select(...).single()` so the returned representation (read back
+// from the write's own transaction on the primary — never a lagging replica)
+// has the exact same shape as the cached detail row, and can be dropped
+// straight into the cache with setQueryData.
+const PROPERTY_DETAIL_SELECT = '*, pipeline_stages!properties_stage_id_fkey(id, name, color)'
 const AC_FIELD_KEYS = ['filter_size', 'last_filter_changed'] as const
 
 function buildPropertyCopyText(property: any, includeFinancials: boolean, autoCodeValue: string): string {
@@ -789,7 +796,7 @@ export function PropertyDetailModal() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('*, pipeline_stages!properties_stage_id_fkey(id, name, color)')
+        .select(PROPERTY_DETAIL_SELECT)
         .eq('id', Number(propertyId!))
         .single()
       if (error) throw error
@@ -817,14 +824,19 @@ export function PropertyDetailModal() {
 
   const { mutate: linkContact } = useMutation({
     mutationFn: async (contactId: string | null) => {
-      const { error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
+      return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Write the fresh row from the update's own representation so the modal
+      // reflects it immediately (avoids the read-after-write replica lag).
+      qc.setQueryData(['/supabase/property-detail', propertyId], data)
       // Setting/clearing contact_id flips dashboard-unassigned and shifts
       // contact-properties / previous-properties caches too — broad
-      // invalidation via the registry is the right call here.
-      invalidateAllPropertyQueries(qc)
+      // invalidation via the registry is the right call here (but leave the
+      // detail row we just set intact).
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       toast({ title: 'Client updated' })
       setContactPopoverOpen(false)
@@ -877,11 +889,16 @@ export function PropertyDetailModal() {
         updates.filter_size = form.filter_size || null
         updates.last_filter_changed = form.last_filter_changed || null
       }
-      if (Object.keys(updates).length === 0) return
-      const { error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!))
+      if (Object.keys(updates).length === 0) return null
+      const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
+      return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      // Drop the write's own representation into the detail cache (captures
+      // trigger-recomputed fields like towel pars/financials) so the modal
+      // updates immediately instead of racing a stale re-read.
+      if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
       // Log each changed field to activity_log
       const changedFields: string[] = []
       if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'number_of_beds', 'kitchens', 'hot_tub', 'check_in_time', 'check_out_time')
@@ -899,8 +916,9 @@ export function PropertyDetailModal() {
       // Bulk edit can touch any property field — including financials, bedroom
       // count, stage_id, etc. Invalidate every property-derived cache so
       // dashboard KPIs, master list, pipeline, pro-forma, revenue, and
-      // previous-properties all reflect the change immediately.
-      invalidateAllPropertyQueries(qc)
+      // previous-properties all reflect the change immediately (but keep the
+      // detail row we set above from the write representation).
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: 'Saved' })
       setIsEditing(false)
     },
@@ -912,12 +930,14 @@ export function PropertyDetailModal() {
     mutationFn: async ({ field, value }: { field: string; value: any }) => {
       const numFields = ['bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', ...LINEN_FIELD_KEYS]
       const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
-      const { error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return { field, dbValue }
+      return { field, dbValue, row: data }
     },
     onSuccess: (result) => {
-      const { field, dbValue } = result as { field: string; dbValue: any }
+      const { field, dbValue, row } = result as { field: string; dbValue: any; row: any }
+      // Fresh row from the write's representation — immediate, consistent.
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(
         propertyId!,
         field,
@@ -928,8 +948,9 @@ export function PropertyDetailModal() {
       )
       // Inline single-field edit — same broad scope as the bulk edit; the
       // edited field could be a financial, the address, or anything else
-      // that the dashboards/master list/pipeline derive from.
-      invalidateAllPropertyQueries(qc)
+      // that the dashboards/master list/pipeline derive from. Keep the detail
+      // row we set above from the write representation.
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       toast({ title: 'Saved' })
       setInlineField(null)
@@ -939,11 +960,12 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleHotTub } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.from('properties').update({ hot_tub: next }).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ hot_tub: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return next
+      return { next, row: data }
     },
-    onSuccess: (next: boolean) => {
+    onSuccess: ({ next, row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(
         propertyId!,
         'hot_tub',
@@ -952,7 +974,7 @@ export function PropertyDetailModal() {
         property?.name ?? null,
         user?.label ?? null,
       )
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: next ? 'Hot tub: Yes' : 'Hot tub: No' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
@@ -960,13 +982,14 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleAutoCode } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.from('properties').update({ has_auto_code: next } as any).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ has_auto_code: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return next
+      return { next, row: data }
     },
-    onSuccess: (next: boolean) => {
+    onSuccess: ({ next, row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(propertyId!, 'has_auto_code', String((property as any)?.has_auto_code ?? false), String(next), property?.name ?? null, user?.label ?? null)
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: next ? 'Auto code: Yes' : 'Auto code: No' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
@@ -974,11 +997,12 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleInspectionExempt } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.from('properties').update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return next
+      return { next, row: data }
     },
-    onSuccess: (next: boolean) => {
+    onSuccess: ({ next, row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(
         propertyId!,
         'exempt_from_inspections',
@@ -987,7 +1011,7 @@ export function PropertyDetailModal() {
         property?.name ?? null,
         user?.label ?? null,
       )
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
       toast({ title: next ? 'Inspection exempt enabled' : 'Inspection exempt removed' })
@@ -997,11 +1021,12 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleLinenProgram } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!))
+      const { data, error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return next
+      return { next, row: data }
     },
-    onSuccess: (next: boolean) => {
+    onSuccess: ({ next, row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(
         propertyId!,
         'linen_program',
@@ -1012,7 +1037,7 @@ export function PropertyDetailModal() {
       )
       // Linen program flag affects operational reports, the master list,
       // and any property-derived caches that filter by program enrollment.
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: next ? 'Linen program enabled' : 'Linen program disabled' })
     },
     onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
@@ -1084,12 +1109,27 @@ export function PropertyDetailModal() {
         changedBy: user?.label || (user as any)?.google_email || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
+      return toStage
     },
-    onSuccess: () => {
+    onSuccess: (toStage) => {
+      // executeStageTransition does not return the row, so optimistically
+      // merge the known new stage into the detail cache (the stage badge reads
+      // stage_id + the joined pipeline_stages). Avoids the read-after-write
+      // race; the broad invalidation below refreshes the derived views.
+      const stageMeta = (allStages || []).find((s: any) => String(s.id) === String(toStage.id))
+      qc.setQueryData(['/supabase/property-detail', propertyId], (prev: any) =>
+        prev
+          ? {
+              ...prev,
+              stage_id: Number(toStage.id),
+              pipeline_stages: { id: Number(toStage.id), name: toStage.name, color: stageMeta?.color ?? prev.pipeline_stages?.color ?? null },
+            }
+          : prev,
+      )
       // Stage transitions affect every property-derived cache: pipeline,
       // dashboard counts/velocity, master list, pro-forma, revenue,
       // previous-properties (a move to Offboarded shows it there), etc.
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: 'Stage updated' })
       setStagePopoverOpen(false)
     },
@@ -1098,7 +1138,7 @@ export function PropertyDetailModal() {
 
   const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
     mutationFn: async (reason: string) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('properties')
         .update({
           archived_at: new Date().toISOString(),
@@ -1106,13 +1146,16 @@ export function PropertyDetailModal() {
           archived_by: effectiveUser?.label ?? null,
         })
         .eq('id', Number(propertyId!))
+        .select(PROPERTY_DETAIL_SELECT)
+        .single()
       if (error) throw error
+      return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
       toast({ title: 'Quote archived' })
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
       setArchiveOpen(false)
       setArchiveReason('')
     },
@@ -1121,17 +1164,20 @@ export function PropertyDetailModal() {
 
   const { mutate: restoreQuote, isPending: restorePending } = useGuardedMutation('quote-sheet', {
     mutationFn: async () => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('properties')
         .update({ archived_at: null, archived_reason: null, archived_by: null })
         .eq('id', Number(propertyId!))
+        .select(PROPERTY_DETAIL_SELECT)
+        .single()
       if (error) throw error
+      return data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
       toast({ title: 'Quote restored' })
-      invalidateAllPropertyQueries(qc)
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
     },
     onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
   })
@@ -1367,16 +1413,18 @@ export function PropertyDetailModal() {
                     }
                   }
                   if (Object.keys(updates).length === 0) { setSavingMissing(false); return }
-                  const { error } = await supabase.from('properties').update(updates).eq('id', property.id)
+                  const { data, error } = await supabase.from('properties').update(updates).eq('id', property.id).select(PROPERTY_DETAIL_SELECT).single()
                   setSavingMissing(false)
                   if (error) {
                     toast({ title: 'Save failed', description: error.message, variant: 'destructive' })
                   } else {
+                    if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
                     toast({ title: 'Missing data filled in' })
                     // "Fill missing data" can write to financials, bedrooms,
                     // square footage — every property-derived cache should
-                    // refresh so the previously-missing values populate.
-                    invalidateAllPropertyQueries(qc)
+                    // refresh so the previously-missing values populate (keep
+                    // the detail row we just set from the write representation).
+                    invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
                     closePropertyModal()
                   }
                 }}
