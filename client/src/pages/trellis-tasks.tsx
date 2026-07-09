@@ -128,14 +128,15 @@ export default function TrellisTasksPage() {
     queryFn: async () => {
       const [rosterRes, cleanersRes, usersRes, dismissRes] = await Promise.all([
         supabase.from('trellis_roster').select('user_id, name, email, role, workspace, is_active').eq('is_active', true),
-        supabase.from('cleaners').select('email'),
+        supabase.from('cleaners').select('email, alt_email'),
         supabase.from('app_users').select('google_email'),
         supabase.from('trellis_roster_dismissals').select('user_id'),
       ])
       if (rosterRes.error) throw rosterRes.error
       const known = new Set<string>()
-      for (const c of (cleanersRes.data ?? []) as Array<{ email: string | null }>) {
+      for (const c of (cleanersRes.data ?? []) as Array<{ email: string | null; alt_email: string | null }>) {
         if (c.email) known.add(c.email.toLowerCase())
+        if (c.alt_email) known.add(c.alt_email.toLowerCase())
       }
       for (const u of (usersRes.data ?? []) as Array<{ google_email: string | null }>) {
         if (u.google_email) known.add(u.google_email.toLowerCase())

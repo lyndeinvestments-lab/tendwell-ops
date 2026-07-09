@@ -19,6 +19,7 @@ export interface Cleaner {
   full_name: string
   phone: string | null
   email: string | null
+  alt_email: string | null
   pay_rate: number | null
   notes: string | null
   created_at: string | null

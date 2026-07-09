@@ -105,6 +105,10 @@ export default function CleanersPage() {
   const [editingNameId, setEditingNameId] = useState<string | null>(null)
   const [nameDraft, setNameDraft] = useState('')
 
+  // Inline alt-email edit (secondary email used in Trellis)
+  const [editingAltId, setEditingAltId] = useState<string | null>(null)
+  const [altDraft, setAltDraft] = useState('')
+
   // Assign dialog state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
 
@@ -229,6 +233,37 @@ export default function CleanersPage() {
     renameCleaner({ id, name: next })
   }
 
+  const { mutate: updateAltEmail } = useGuardedMutation('cleaners', {
+    mutationFn: async ({ id, alt }: { id: string; alt: string | null }) => {
+      const { error } = await supabase.from('cleaners').update({ alt_email: alt }).eq('id', id)
+      if (error) throw error
+      return { id, alt }
+    },
+    onSuccess: ({ id, alt }: { id: string; alt: string | null }) => {
+      const row = (cleaners || []).find((c: any) => c.id === id)
+      qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
+      logActivity({
+        entity_type: 'cleaner',
+        entity_id: id,
+        entity_name: row?.full_name ?? null,
+        action: 'update',
+        field_name: 'alt_email',
+        old_value: row?.alt_email ?? null,
+        new_value: alt,
+        changed_by: user?.label ?? null,
+      })
+      toast({ title: alt ? 'Alt email saved' : 'Alt email cleared' })
+      setEditingAltId(null)
+    },
+    onError: (error: any) => toast({ title: 'Failed to save alt email', description: error?.message, variant: 'destructive' }),
+  })
+
+  const commitAltEmail = (id: string, current: string | null) => {
+    const next = altDraft.trim() || null
+    if (next === (current ?? null)) { setEditingAltId(null); return }
+    updateAltEmail({ id, alt: next })
+  }
+
   const { mutate: addAssignment, isPending: assigning } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
       // NOTE: `pay_amount` is collected from the UI but isn't a column on
@@ -317,7 +352,7 @@ export default function CleanersPage() {
     if (!cleaners) return []
     if (!search.trim()) return cleaners
     const q = search.toLowerCase()
-    return cleaners.filter((c: any) => c.full_name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))
+    return cleaners.filter((c: any) => c.full_name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.alt_email?.toLowerCase().includes(q))
   }, [cleaners, search])
 
   // Color map: cleaner index → color
@@ -467,6 +502,7 @@ export default function CleanersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Alt Email</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Pay Rate</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Assignments</th>
@@ -477,9 +513,9 @@ export default function CleanersPage() {
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={9}>
+                <tr><td colSpan={10}>
                   <EmptyState icon={Users2} title="No cleaners" description={`Add your first cleaner to get started.${suggestedCleaners.length > 0 ? ` ${suggestedCleaners.length} active properties have cleaner pay set but no assignments.` : ''}`} />
                 </td></tr>
               ) : (
@@ -517,6 +553,34 @@ export default function CleanersPage() {
                       </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">{c.email || '—'}</td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground" onClick={e => e.stopPropagation()}>
+                        {editingAltId === c.id ? (
+                          <Input
+                            value={altDraft}
+                            autoFocus
+                            placeholder="alt@email.com"
+                            onChange={e => setAltDraft(e.target.value)}
+                            onBlur={() => commitAltEmail(c.id, c.alt_email ?? null)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') commitAltEmail(c.id, c.alt_email ?? null)
+                              if (e.key === 'Escape') setEditingAltId(null)
+                            }}
+                            className="h-6 text-xs w-44"
+                            data-testid={`input-alt-email-${c.id}`}
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            className="flex items-center gap-1 group/alt text-left"
+                            onClick={() => { setEditingAltId(c.id); setAltDraft(c.alt_email ?? '') }}
+                            title="Secondary email (e.g. the one used in Trellis). Click to edit."
+                            data-testid={`button-alt-email-${c.id}`}
+                          >
+                            {c.alt_email || '—'}
+                            <Pencil className="w-3 h-3 opacity-0 group-hover/alt:opacity-100 transition-opacity" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-2 px-3">
                         {c.app_role ? (
                           <span className={`text-xs px-1.5 py-0.5 rounded ${roleBadgeClasses(c.app_role === 'inspector' ? 'inspector' : 'cleaner')}`}>
@@ -851,6 +915,7 @@ export default function CleanersPage() {
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span className="text-muted-foreground block">Phone</span>{detailCleaner.phone || '—'}</div>
                 <div><span className="text-muted-foreground block">Email</span>{detailCleaner.email || '—'}</div>
+                <div><span className="text-muted-foreground block">Alt Email (Trellis)</span>{detailCleaner.alt_email || '—'}</div>
                 <div><span className="text-muted-foreground block">Pay Rate</span>{detailCleaner.pay_rate ? fmt(detailCleaner.pay_rate) : '—'}</div>
                 <div><span className="text-muted-foreground block">Status</span>{detailCleaner.is_active ? 'Active' : 'Inactive'}</div>
               </div>

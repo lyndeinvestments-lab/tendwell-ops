@@ -580,6 +580,7 @@ export type Database = {
       }
       cleaners: {
         Row: {
+          alt_email: string | null
           app_role: string | null
           created_at: string | null
           email: string | null
@@ -592,6 +593,7 @@ export type Database = {
           phone: string | null
         }
         Insert: {
+          alt_email?: string | null
           app_role?: string | null
           created_at?: string | null
           email?: string | null
@@ -604,6 +606,7 @@ export type Database = {
           phone?: string | null
         }
         Update: {
+          alt_email?: string | null
           app_role?: string | null
           created_at?: string | null
           email?: string | null
