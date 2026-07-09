@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText
+  ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -51,6 +51,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
       { title: 'Property Verifications', href: '/property-verifications', view: 'property-verifications', icon: ClipboardCheck },
       { title: 'Inspections', href: '/inspections', view: 'inspections', icon: Star },
+      { title: 'Trellis Tasks', href: '/trellis-tasks', view: 'trellis-tasks', icon: ListChecks },
       { title: 'Reviews', href: '/reviews', view: 'reviews', icon: MessageSquareText },
       { title: 'Lost Items', href: '/lost-items', view: 'lost-items', icon: PackageSearch },
       { title: 'Incoming Shipments', href: '/incoming-shipments', view: 'incoming-shipments', icon: PackagePlus },
