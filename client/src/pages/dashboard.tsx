@@ -749,13 +749,19 @@ export default function DashboardPage() {
         <KpiCard
           title="Trellis Tasks Today"
           value={trellisError ? '—' : (trellisTasks?.count ?? 0)}
-          subtitle={trellisError ? 'Not configured' : `due ${trellisTasks?.date ?? 'today'}`}
+          subtitle={
+            trellisError ? 'Unavailable'
+            : trellisTasks?.syncedAt
+              ? `as of ${new Date(trellisTasks.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+              : `due ${trellisTasks?.date ?? 'today'}`
+          }
           icon={ClipboardCheck}
           loading={trellisLoading}
+          onClick={() => navigate('/trellis-tasks')}
           hint={
             trellisError
-              ? `Couldn't reach Trellis: ${trellisError instanceof Error ? trellisError.message : String(trellisError)}`
-              : 'Open Trellis tasks with a due date of today (America/Chicago). Pulled live from api.trellistech.com via the server-side proxy.'
+              ? `Couldn't load Trellis snapshot: ${trellisError instanceof Error ? trellisError.message : String(trellisError)}`
+              : 'Open Trellis tasks due today (America/Chicago), counted from the synced snapshot. Click for the full task tracker.'
           }
         />
       </div>

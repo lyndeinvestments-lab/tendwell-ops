@@ -590,7 +590,7 @@ export default function ForecasterPage() {
               <Upload className="w-4 h-4 text-muted-foreground" /> Upload completed tasks for {selectedMonth}
             </div>
             <p className="text-xs text-muted-foreground">
-              Quick entry — type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&amp;L gives the actual cost; the variance below shows the gap. CSV import will be wired to <code>/api/trellis/tasks-today</code> for live sync once Trellis is in production.
+              Quick entry — type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&amp;L gives the actual cost; the variance below shows the gap. Trellis task counts sync hourly into the snapshot tables (see the Trellis Tasks page).
             </p>
             <div className="flex items-center gap-2">
               <Input
