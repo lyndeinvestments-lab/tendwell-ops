@@ -61,11 +61,17 @@ type TabId = 'overdue' | 'today' | 'completed' | 'all'
 const OPEN_STATUSES = ['SCHEDULED', 'OPEN']
 const TURN_CLEAN_TITLE = 'turn clean'
 
-// Deep-link to a task in the Trellis web app. Both workspaces (Tendwell +
-// Haven) live under the same host and use the task UUID with no workspace in
-// the path (confirmed with Jordan 2026-07-10). trellis_task_id is that UUID.
-function trellisTaskUrl(id: string): string {
-  return `https://app.trellistech.com/tasks/${id}`
+// Deep-link to a task in the Trellis web app's authenticated task list, which
+// opens the task's detail panel via the ?taskId query param. Confirmed with
+// Jordan 2026-07-10: he operates in the Tendwell (vendor) workspace, which
+// surfaces both Tendwell-direct and Haven-assigned cleaning tasks — a
+// Haven-property task opened under /tendwell-cleaning/. `taskId` is the
+// canonical task id we already store as trellis_task_id. (The /task/<id> path
+// is Trellis's separate, expiring share-link feature and is NOT usable here.)
+const TRELLIS_WORKSPACE_SLUG = 'tendwell-cleaning'
+function trellisTaskUrl(id: string, status: string | null): string {
+  const tab = status && ['SCHEDULED', 'OPEN', 'COMPLETED'].includes(status) ? status : 'SCHEDULED'
+  return `https://app.trellistech.com/${TRELLIS_WORKSPACE_SLUG}/tasks/list/all?taskId=${id}&tab=${tab}`
 }
 
 // Trellis-internal / test accounts that should never show as "missing from Ops".
@@ -518,7 +524,7 @@ export default function TrellisTasksPage() {
                       <tr key={t.trellis_task_id} className="border-t border-border/60 hover:bg-muted/30" data-testid={`row-task-${t.trellis_task_id}`}>
                         <td className="px-3 py-2 font-medium max-w-56 truncate">
                           <a
-                            href={trellisTaskUrl(t.trellis_task_id)}
+                            href={trellisTaskUrl(t.trellis_task_id, t.status)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:text-primary hover:underline"
@@ -544,7 +550,7 @@ export default function TrellisTasksPage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           <a
-                            href={trellisTaskUrl(t.trellis_task_id)}
+                            href={trellisTaskUrl(t.trellis_task_id, t.status)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex text-muted-foreground hover:text-primary transition-colors"
@@ -569,7 +575,7 @@ export default function TrellisTasksPage() {
               return (
                 <a
                   key={t.trellis_task_id}
-                  href={trellisTaskUrl(t.trellis_task_id)}
+                  href={trellisTaskUrl(t.trellis_task_id, t.status)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block"
