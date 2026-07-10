@@ -18,7 +18,7 @@ import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import {
   AlertTriangle, CalendarClock, CheckCircle2, ClipboardCheck, Clock,
-  RefreshCw, Search, UserPlus,
+  RefreshCw, Search, UserPlus, ExternalLink,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,6 +60,13 @@ type TabId = 'overdue' | 'today' | 'completed' | 'all'
 
 const OPEN_STATUSES = ['SCHEDULED', 'OPEN']
 const TURN_CLEAN_TITLE = 'turn clean'
+
+// Deep-link to a task in the Trellis web app. Both workspaces (Tendwell +
+// Haven) live under the same host and use the task UUID with no workspace in
+// the path (confirmed with Jordan 2026-07-10). trellis_task_id is that UUID.
+function trellisTaskUrl(id: string): string {
+  return `https://app.trellistech.com/tasks/${id}`
+}
 
 // Trellis-internal / test accounts that should never show as "missing from Ops".
 function isIgnorableRosterMember(m: RosterMember): boolean {
@@ -501,6 +508,7 @@ export default function TrellisTasksPage() {
                     <th className="px-3 py-2 font-medium">Due</th>
                     <th className="px-3 py-2 font-medium">Assignee</th>
                     <th className="px-3 py-2 font-medium">Source</th>
+                    <th className="px-3 py-2 font-medium w-10" />
                   </tr>
                 </thead>
                 <tbody>
@@ -508,7 +516,18 @@ export default function TrellisTasksPage() {
                     const od = OPEN_STATUSES.includes(t.status ?? '') ? daysOverdue(t.scheduled_date, today) : 0
                     return (
                       <tr key={t.trellis_task_id} className="border-t border-border/60 hover:bg-muted/30" data-testid={`row-task-${t.trellis_task_id}`}>
-                        <td className="px-3 py-2 font-medium max-w-56 truncate">{t.property_name ?? '—'}</td>
+                        <td className="px-3 py-2 font-medium max-w-56 truncate">
+                          <a
+                            href={trellisTaskUrl(t.trellis_task_id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-primary hover:underline"
+                            title="Open this task in Trellis"
+                            data-testid={`link-task-${t.trellis_task_id}`}
+                          >
+                            {t.property_name ?? '—'}
+                          </a>
+                        </td>
                         <td className="px-3 py-2 max-w-64 truncate">{t.title ?? '—'}</td>
                         <td className="px-3 py-2">
                           <StatusBadge tone={t.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
@@ -523,6 +542,18 @@ export default function TrellisTasksPage() {
                         <td className="px-3 py-2">
                           <StatusBadge tone="neutral">{t.workspace === 'A' ? 'Tendwell' : 'Haven'}</StatusBadge>
                         </td>
+                        <td className="px-3 py-2 text-right">
+                          <a
+                            href={trellisTaskUrl(t.trellis_task_id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex text-muted-foreground hover:text-primary transition-colors"
+                            title="Open this task in Trellis"
+                            aria-label="Open in Trellis"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </td>
                       </tr>
                     )
                   })}
@@ -536,23 +567,35 @@ export default function TrellisTasksPage() {
             {visible.map(t => {
               const od = OPEN_STATUSES.includes(t.status ?? '') ? daysOverdue(t.scheduled_date, today) : 0
               return (
-                <Card key={t.trellis_task_id} className="border-card-border">
-                  <CardContent className="p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">{t.property_name ?? '—'}</p>
-                        <p className="text-xs text-muted-foreground truncate">{t.title ?? '—'} · {t.assigned_to_name ?? 'unassigned'}</p>
+                <a
+                  key={t.trellis_task_id}
+                  href={trellisTaskUrl(t.trellis_task_id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block"
+                  data-testid={`card-task-${t.trellis_task_id}`}
+                >
+                  <Card className="border-card-border active:bg-muted/40 transition-colors">
+                    <CardContent className="p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate flex items-center gap-1">
+                            {t.property_name ?? '—'}
+                            <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">{t.title ?? '—'} · {t.assigned_to_name ?? 'unassigned'}</p>
+                        </div>
+                        <StatusBadge tone={t.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
+                          {(t.status ?? 'unknown').toLowerCase()}
+                        </StatusBadge>
                       </div>
-                      <StatusBadge tone={t.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
-                        {(t.status ?? 'unknown').toLowerCase()}
-                      </StatusBadge>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
-                      Due {formatDay(t.scheduled_date)}
-                      {od > 0 && <span className="ml-1.5 font-medium text-destructive">{od}d late</span>}
-                    </p>
-                  </CardContent>
-                </Card>
+                      <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
+                        Due {formatDay(t.scheduled_date)}
+                        {od > 0 && <span className="ml-1.5 font-medium text-destructive">{od}d late</span>}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </a>
               )
             })}
           </div>
