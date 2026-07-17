@@ -22,6 +22,8 @@ import { IssueCard } from '@/components/issues/IssueCard'
 import { IssueFilters } from '@/components/issues/IssueFilters'
 import { IssueSummaryStrip } from '@/components/issues/IssueSummaryStrip'
 import { AddIssueSheet, type NewIssueForm } from '@/components/issues/AddIssueSheet'
+import { CatchUpButton } from '@/components/issues/CatchUpButton'
+import { CatchUpFlow } from '@/components/issues/CatchUpFlow'
 import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, type Issue } from '@/lib/issues'
 import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
@@ -47,6 +49,7 @@ export default function IssuesPage() {
   const [pageSize, setPageSize] = useState(50)
   const [detailIssue, setDetailIssue] = useState<Issue | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+  const [catchUpOpen, setCatchUpOpen] = useState(false)
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [importData, setImportData] = useState<any[] | null>(null)
   const [importRunning, setImportRunning] = useState(false)
@@ -112,19 +115,22 @@ export default function IssuesPage() {
   // reconciles with the category tiles.
   const stats = useMemo(() => {
     if (!issues) return {
-      total: 0, inProgress: 0, completed: 0,
+      total: 0, inProgress: 0, completed: 0, unread: 0,
       byCategory: {} as Record<string, number>,
     }
     const byStatus: Record<string, number> = {}
     const byCategory: Record<string, number> = {}
+    let unread = 0
     for (const i of issues) {
       byStatus[i.status] = (byStatus[i.status] || 0) + 1
       byCategory[i.category] = (byCategory[i.category] || 0) + 1
+      if (i.is_unread) unread++
     }
     return {
       total: issues.length,
       inProgress: byStatus['In Progress'] || 0,
       completed: byStatus['Completed'] || 0,
+      unread,
       byCategory,
     }
   }, [issues])
@@ -383,6 +389,7 @@ export default function IssuesPage() {
         subtitle={
           <>
             {stats.total} total · <span className="text-warning">{stats.inProgress} in progress</span> · {stats.completed} completed
+            {stats.unread > 0 && <> · <span className="text-primary">{stats.unread} unread</span></>}
           </>
         }
         actions={
@@ -390,6 +397,7 @@ export default function IssuesPage() {
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
               <Download className="w-3.5 h-3.5" /> Export CSV
             </Button>
+            <CatchUpButton issues={issues || []} onClick={() => setCatchUpOpen(true)} />
             {canEdit && (
               <Button
                 variant="outline"
@@ -522,6 +530,14 @@ export default function IssuesPage() {
         canEdit={canEdit}
         onClose={() => setDetailIssue(null)}
         onChanged={() => qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })}
+      />
+
+      {/* Slack-style Catch-up: steps through unread/overdue/unacked issues */}
+      <CatchUpFlow
+        open={catchUpOpen}
+        onOpenChange={setCatchUpOpen}
+        issues={issues || []}
+        canEdit={canEdit}
       />
 
       {/* Import Preview Sheet */}
