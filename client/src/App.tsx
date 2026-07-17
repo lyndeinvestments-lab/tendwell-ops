@@ -58,6 +58,7 @@ const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"))
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overview"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
+const NotificationsPage = lazyRetry(() => import("@/pages/notifications"));
 // RevenueReportPage retired — /revenue-report now redirects to /pro-forma (Pro Forma wrapper; By Client available as a tab)
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
@@ -256,6 +257,10 @@ function AppRoutes() {
         <Route path="/forecaster">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
+        {/* Personal notification prefs — reachable by any staff member (owners
+            never load this shell). Not view-gated: the toggles inside are
+            gated per-user by resolvedViews instead. */}
+        <Route path="/notifications">{() => <NotificationsPage />}</Route>
         <Route path="/revenue-report">{() => <Redirect to="/pro-forma" />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
