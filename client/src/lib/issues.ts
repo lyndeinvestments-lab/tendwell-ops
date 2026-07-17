@@ -141,3 +141,43 @@ export function overdueLabel(dueDate: string): string {
 export function dueLabel(dueDate: string): string {
   return `Due ${format(parseISO(dueDate), 'MMM d')}`
 }
+
+/**
+ * True if an issue belongs in the Catch-up queue: unread (per
+ * `issue_catchup_feed.is_unread`), an open needs_attention issue that's
+ * overdue, or an unacknowledged guest_feedback issue.
+ */
+export function isInCatchUpQueue(issue: Issue): boolean {
+  return !!issue.is_unread
+    || (issue.status !== 'Completed' && isOverdue(issue))
+    || (issue.issue_type === 'guest_feedback' && !issue.acknowledged_at)
+}
+
+/**
+ * Builds the Catch-up queue from the full issues array: filters to
+ * `isInCatchUpQueue`, then sorts unread first → overdue first → priority
+ * (urgent→low) → oldest (due_date ?? report_date) first. Shared by
+ * `CatchUpButton` (count/tone) and `CatchUpFlow` (frozen queue on open) so
+ * they never disagree on what's in the queue.
+ */
+export function catchUpQueue(issues: Issue[]): Issue[] {
+  return issues
+    .filter(isInCatchUpQueue)
+    .slice()
+    .sort((a, b) => {
+      const aUnread = a.is_unread ? 0 : 1
+      const bUnread = b.is_unread ? 0 : 1
+      if (aUnread !== bUnread) return aUnread - bUnread
+
+      const aOverdue = isOverdue(a) ? 0 : 1
+      const bOverdue = isOverdue(b) ? 0 : 1
+      if (aOverdue !== bOverdue) return aOverdue - bOverdue
+
+      const rankDiff = priorityRank(a.priority) - priorityRank(b.priority)
+      if (rankDiff !== 0) return rankDiff
+
+      const aDate = a.due_date ?? a.report_date
+      const bDate = b.due_date ?? b.report_date
+      return aDate < bDate ? -1 : aDate > bDate ? 1 : 0
+    })
+}
