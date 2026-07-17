@@ -20,6 +20,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'property-verifications', label: 'Property Verifications', group: 'Operations' },
   { id: 'inspections',            label: 'Inspections',            group: 'Operations' },
   { id: 'reviews',                label: 'Reviews',                 group: 'Operations' },
+  { id: 'trellis-tasks',          label: 'Trellis Tasks',           group: 'Operations' },
   { id: 'lost-items',             label: 'Lost Items',              group: 'Operations' },
   { id: 'incoming-shipments',     label: 'Incoming Shipments',      group: 'Operations' },
   { id: 'laundry-weigh-ins',      label: 'Laundry Weigh-Ins',       group: 'Operations' },
@@ -102,6 +103,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'revenue-report', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
     'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue', 'trellis-sync',
+    'trellis-tasks',
   ],
   operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
@@ -112,7 +114,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'forecaster',
     'revenue-report', 'property-verifications', 'inspections', 'reviews', 'alerts',
-    'activity', 'financial-dashboard', 'lost-items',
+    'activity', 'financial-dashboard', 'lost-items', 'trellis-tasks',
   ],
 }
 

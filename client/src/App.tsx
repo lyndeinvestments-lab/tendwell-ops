@@ -81,6 +81,7 @@ const IssueSharePage = lazyRetry(() => import("@/pages/issue-share"));
 const InspectionSharePage = lazyRetry(() => import("@/pages/inspection-share"));
 const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
+const TrellisTasksPage = lazyRetry(() => import("@/pages/trellis-tasks"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
 const ResetPasswordPage = lazyRetry(() => import("@/pages/reset-password"));
 
@@ -276,6 +277,7 @@ function AppRoutes() {
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
         <Route path="/api-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
         <Route path="/trellis-sync">{() => <Redirect to="/api-sync" />}</Route>
+        <Route path="/trellis-tasks">{() => <GuardedRoute viewId="trellis-tasks" component={TrellisTasksPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />

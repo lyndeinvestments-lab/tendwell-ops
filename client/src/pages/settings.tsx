@@ -953,6 +953,40 @@ function UsersSection() {
 
   const [pendingRoleUpdate, setPendingRoleUpdate] = useState<string | null>(null)
 
+  // Inline rename on the Name cell
+  const [editingLabelId, setEditingLabelId] = useState<string | null>(null)
+  const [labelDraft, setLabelDraft] = useState('')
+
+  const { mutate: renameUser } = useMutation({
+    mutationFn: async ({ id, label }: { id: string; label: string }) => {
+      const { error } = await supabase.from('app_users').update({ label }).eq('id', Number(id))
+      if (error) throw error
+      return { id, label }
+    },
+    onSuccess: ({ id, label }) => {
+      const oldLabel = users?.find((u: any) => u.id === id)?.label ?? null
+      qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      logActivity({
+        entity_type: 'other',
+        action: 'update',
+        entity_name: 'user_label',
+        field_name: oldLabel ?? String(id),
+        old_value: oldLabel,
+        new_value: label,
+        changed_by: user?.label ?? null,
+      })
+      toast({ title: 'Name updated' })
+      setEditingLabelId(null)
+    },
+    onError: (e: any) => toast({ title: 'Failed to rename', description: e?.message, variant: 'destructive' }),
+  })
+
+  const commitUserRename = (id: string, currentLabel: string) => {
+    const next = labelDraft.trim()
+    if (!next || next === currentLabel) { setEditingLabelId(null); return }
+    renameUser({ id, label: next })
+  }
+
   const { mutateAsync: updateRoleAsync } = useMutation({
     mutationFn: async ({ id, role }: { id: string; role: string }) => {
       const { error } = await supabase.from('app_users').update({ role }).eq('id', Number(id))
@@ -1104,7 +1138,31 @@ function UsersSection() {
                     <tr key={u.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-user-${u.id}`}>
                       <td className="py-2 px-3 font-medium text-xs">
                         <span className="flex items-center gap-1.5">
-                          {u.label}
+                          {editingLabelId === u.id ? (
+                            <Input
+                              value={labelDraft}
+                              autoFocus
+                              onChange={e => setLabelDraft(e.target.value)}
+                              onBlur={() => commitUserRename(u.id, u.label)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') commitUserRename(u.id, u.label)
+                                if (e.key === 'Escape') setEditingLabelId(null)
+                              }}
+                              className="h-6 text-xs w-40"
+                              data-testid={`input-rename-user-${u.id}`}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 group/name text-left"
+                              onClick={() => { setEditingLabelId(u.id); setLabelDraft(u.label ?? '') }}
+                              title="Click to rename"
+                              data-testid={`button-rename-user-${u.id}`}
+                            >
+                              {u.label}
+                              <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                            </button>
+                          )}
                           {hasCustom && (
                             <span className={`text-2xs font-medium px-1 py-0.5 rounded border ${TONE_SOFT.warning}`}>
                               Custom

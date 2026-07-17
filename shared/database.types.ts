@@ -580,6 +580,7 @@ export type Database = {
       }
       cleaners: {
         Row: {
+          alt_email: string | null
           app_role: string | null
           created_at: string | null
           email: string | null
@@ -592,6 +593,7 @@ export type Database = {
           phone: string | null
         }
         Insert: {
+          alt_email?: string | null
           app_role?: string | null
           created_at?: string | null
           email?: string | null
@@ -604,6 +606,7 @@ export type Database = {
           phone?: string | null
         }
         Update: {
+          alt_email?: string | null
           app_role?: string | null
           created_at?: string | null
           email?: string | null
@@ -1194,6 +1197,13 @@ export type Database = {
             referencedRelation: "hostaway_listing_snapshot"
             referencedColumns: ["hostaway_id"]
           },
+          {
+            foreignKeyName: "hostaway_diff_dismissals_hostaway_id_fkey"
+            columns: ["hostaway_id"]
+            isOneToOne: false
+            referencedRelation: "hostaway_reconciliation"
+            referencedColumns: ["hostaway_id"]
+          },
         ]
       }
       hostaway_listing_snapshot: {
@@ -1216,6 +1226,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_norm?: string | null
           bathrooms?: number | null
           bedrooms?: number | null
           beds?: number | null
@@ -1232,6 +1243,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_norm?: string | null
           bathrooms?: number | null
           bedrooms?: number | null
           beds?: number | null
@@ -1251,8 +1263,43 @@ export type Database = {
             foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
             columns: ["matched_property_id"]
             isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
             referencedRelation: "properties"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -3598,6 +3645,7 @@ export type Database = {
           hand_towels: number | null
           has_auto_code: boolean
           hot_tub: boolean | null
+          ical_url: string | null
           id: number
           inspection_cost: number | null
           king_beds: number | null
@@ -3618,6 +3666,7 @@ export type Database = {
           onboarding_date: string | null
           other_codes: string | null
           pet_friendly: string | null
+          pool: boolean | null
           pool_towels: number | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
@@ -3640,6 +3689,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          address_norm?: string | null
           archived_at?: string | null
           archived_by?: string | null
           archived_reason?: string | null
@@ -3678,6 +3728,7 @@ export type Database = {
           hand_towels?: number | null
           has_auto_code?: boolean
           hot_tub?: boolean | null
+          ical_url?: string | null
           id?: number
           inspection_cost?: number | null
           king_beds?: number | null
@@ -3698,6 +3749,7 @@ export type Database = {
           onboarding_date?: string | null
           other_codes?: string | null
           pet_friendly?: string | null
+          pool?: boolean | null
           pool_towels?: number | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
@@ -3720,6 +3772,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          address_norm?: string | null
           archived_at?: string | null
           archived_by?: string | null
           archived_reason?: string | null
@@ -3758,6 +3811,7 @@ export type Database = {
           hand_towels?: number | null
           has_auto_code?: boolean
           hot_tub?: boolean | null
+          ical_url?: string | null
           id?: number
           inspection_cost?: number | null
           king_beds?: number | null
@@ -3778,6 +3832,7 @@ export type Database = {
           onboarding_date?: string | null
           other_codes?: string | null
           pet_friendly?: string | null
+          pool?: boolean | null
           pool_towels?: number | null
           price_per_sq_foot?: number | null
           profit_deep_clean?: number | null
@@ -4985,6 +5040,30 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_roster_dismissals: {
+        Row: {
+          dismissed_at: string
+          dismissed_by: string | null
+          email: string | null
+          name: string | null
+          user_id: string
+        }
+        Insert: {
+          dismissed_at?: string
+          dismissed_by?: string | null
+          email?: string | null
+          name?: string | null
+          user_id: string
+        }
+        Update: {
+          dismissed_at?: string
+          dismissed_by?: string | null
+          email?: string | null
+          name?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       trellis_sync_log: {
         Row: {
           cancel_requested: boolean
@@ -5276,15 +5355,7 @@ export type Database = {
           property_name: string | null
           synced_at: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       linen_inventory_latest: {
         Row: {
@@ -5610,6 +5681,7 @@ export type Database = {
         Args: never
         Returns: {
           address: string | null
+          address_norm: string | null
           archived_at: string | null
           archived_by: string | null
           archived_reason: string | null
@@ -5648,6 +5720,7 @@ export type Database = {
           hand_towels: number | null
           has_auto_code: boolean
           hot_tub: boolean | null
+          ical_url: string | null
           id: number
           inspection_cost: number | null
           king_beds: number | null
@@ -5668,6 +5741,7 @@ export type Database = {
           onboarding_date: string | null
           other_codes: string | null
           pet_friendly: string | null
+          pool: boolean | null
           pool_towels: number | null
           price_per_sq_foot: number | null
           profit_deep_clean: number | null
@@ -5839,6 +5913,7 @@ export type Database = {
         }[]
       }
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
+      tendwell_normalize_street: { Args: { p: string }; Returns: string }
     }
     Enums: {
       portal_booking_calendar_kind: "ical" | "api" | "none"
