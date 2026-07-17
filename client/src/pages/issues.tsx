@@ -22,7 +22,9 @@ import { IssueCard } from '@/components/issues/IssueCard'
 import { IssueFilters } from '@/components/issues/IssueFilters'
 import { IssueSummaryStrip } from '@/components/issues/IssueSummaryStrip'
 import { AddIssueSheet, type NewIssueForm } from '@/components/issues/AddIssueSheet'
-import { ISSUE_STATUS_TONES, floatsToTop, type Issue } from '@/lib/issues'
+import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, type Issue } from '@/lib/issues'
+import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
+import { cn } from '@/lib/utils'
 import {
   AlertTriangle, Download, Upload, MessageSquare,
 } from 'lucide-react'
@@ -52,6 +54,7 @@ export default function IssuesPage() {
     report_date: new Date().toISOString().split('T')[0],
     issue_type: 'needs_attention',
     priority: 'normal',
+    due_date: '',
     property_id: '',
     property_name: '',
     category: 'Cleaning Not As Expected',
@@ -126,6 +129,26 @@ export default function IssuesPage() {
     }
   }, [issues])
 
+  // ─── Section tab counts ───────────────────────────────────────────────────
+  // Independent of the active `section`/filters — always reflect the whole
+  // (unfiltered) `issues` array so switching tabs doesn't change the other
+  // tab's own count.
+  const sectionCounts = useMemo(() => {
+    if (!issues) return { needsAttentionOpen: 0, needsAttentionOverdue: false, feedbackUnacked: 0 }
+    let needsAttentionOpen = 0
+    let needsAttentionOverdue = false
+    let feedbackUnacked = 0
+    for (const i of issues) {
+      if (i.issue_type === 'guest_feedback') {
+        if (!i.acknowledged_at) feedbackUnacked++
+      } else {
+        if (i.status !== 'Completed') needsAttentionOpen++
+        if (isOverdue(i)) needsAttentionOverdue = true
+      }
+    }
+    return { needsAttentionOpen, needsAttentionOverdue, feedbackUnacked }
+  }, [issues])
+
   // ─── Filtering & sorting ──────────────────────────────────────────────────
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -163,6 +186,9 @@ export default function IssuesPage() {
         report_date: newForm.report_date,
         issue_type: newForm.issue_type,
         priority: newForm.priority,
+        // Blank → null; the DB trigger auto-derives a due date from priority
+        // for needs_attention rows (guest_feedback stays null, by design).
+        due_date: newForm.due_date || null,
         property_id: newForm.property_id ? Number(newForm.property_id) : null,
         property_name: newForm.property_name,
         category: newForm.category,
@@ -217,7 +243,7 @@ export default function IssuesPage() {
       setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
       setNewPhoto(null)
-      setNewForm(f => ({ ...f, property_id: '', property_name: '', priority: 'normal', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' }))
+      setNewForm(f => ({ ...f, property_id: '', property_name: '', priority: 'normal', due_date: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' }))
     },
     onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
   })
@@ -232,6 +258,23 @@ export default function IssuesPage() {
       toast({ title: 'Status updated' })
     },
     onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+  })
+
+  // Same mutation the detail sheet uses, lifted here so the mobile IssueCard
+  // rows can acknowledge guest feedback inline without opening the sheet.
+  const { mutate: acknowledgeIssue } = useGuardedMutation('issues', {
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('cleaning_issues').update({
+        acknowledged_at: new Date().toISOString(),
+        acknowledged_by: effectiveUser?.label || null,
+      }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
+      toast({ title: 'Acknowledged' })
+    },
+    onError: (error: any) => toast({ title: 'Acknowledge failed', description: error?.message, variant: 'destructive' }),
   })
 
   function exportCsv() {
@@ -383,18 +426,36 @@ export default function IssuesPage() {
       {/* Summary cards */}
       <IssueSummaryStrip byCategory={stats.byCategory} onSelectCategory={(cat) => { setCategoryFilter(cat); setPage(1) }} />
 
-      {/* Section tabs — Guest Feedback vs Needs Attention */}
+      {/* Section tabs — Guest Feedback vs Needs Attention, with live counts */}
       <div className="flex gap-2">
         {([
-          { key: 'needs_attention', label: 'Needs Attention' },
-          { key: 'guest_feedback', label: 'Guest Feedback' },
-        ] as const).map(t => (
+          {
+            key: 'needs_attention' as const,
+            label: 'Needs Attention',
+            count: sectionCounts.needsAttentionOpen,
+            tone: (sectionCounts.needsAttentionOverdue ? 'destructive' : 'neutral') as StatusTone,
+          },
+          {
+            key: 'guest_feedback' as const,
+            label: 'Guest Feedback',
+            count: sectionCounts.feedbackUnacked,
+            tone: (sectionCounts.feedbackUnacked > 0 ? 'info' : 'neutral') as StatusTone,
+          },
+        ]).map(t => (
           <button
             key={t.key}
             onClick={() => { setSection(t.key); setPage(1) }}
-            className={`px-3 h-8 rounded-md border text-sm transition-colors ${section === t.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+            className={`px-3 h-8 rounded-md border text-sm transition-colors flex items-center gap-1.5 ${section === t.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
           >
             {t.label}
+            <span
+              className={cn(
+                'text-2xs font-semibold px-1.5 py-0.5 rounded-full tabular-nums',
+                section === t.key ? 'bg-primary-foreground/20' : TONE_SOFT[t.tone],
+              )}
+            >
+              {t.count}
+            </span>
           </button>
         ))}
       </div>
@@ -427,6 +488,7 @@ export default function IssuesPage() {
                   canEdit={canEdit}
                   onOpen={setDetailIssue}
                   onStatusChange={updateStatus}
+                  onAcknowledge={acknowledgeIssue}
                 />
               ))
             )}

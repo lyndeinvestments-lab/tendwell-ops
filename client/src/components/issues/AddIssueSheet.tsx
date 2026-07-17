@@ -4,12 +4,13 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Cleaner } from '@/hooks/use-cleaners'
-import { CATEGORIES, STATUSES } from '@/lib/issues'
+import { CATEGORIES, PRIORITIES, STATUSES } from '@/lib/issues'
 
 export interface NewIssueForm {
   report_date: string
   issue_type: string
   priority: string
+  due_date: string
   property_id: string
   property_name: string
   category: string
@@ -30,7 +31,8 @@ interface PropertyOption {
 
 /**
  * The "Log Issue" / "Log Guest Feedback" sheet — extracted verbatim from
- * `issues.tsx`. The urgent checkbox stays for now (priority select is PR 3).
+ * `issues.tsx`. PR 3 swapped the urgent checkbox for a full Priority select
+ * and added an optional Due Date input (needs_attention only).
  */
 export function AddIssueSheet({
   open,
@@ -84,11 +86,28 @@ export function AddIssueSheet({
             </div>
           </div>
           {newForm.issue_type === 'needs_attention' && (
-            <label className="flex items-center gap-2 text-sm rounded-md border border-warning/25 bg-warning/5 px-3 h-10 cursor-pointer">
-              <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
-              <span className="font-medium">Mark urgent</span>
-              <span className="text-xs text-muted-foreground">— needs fixing right away</span>
-            </label>
+            <div className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 space-y-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Priority</label>
+                <select
+                  value={newForm.priority}
+                  onChange={e => setNewForm(f => ({ ...f, priority: e.target.value }))}
+                  className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background capitalize"
+                >
+                  {PRIORITIES.map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">Due date — optional</label>
+                <Input
+                  type="date"
+                  value={newForm.due_date}
+                  onChange={e => setNewForm(f => ({ ...f, due_date: e.target.value }))}
+                  className="h-8 text-sm"
+                />
+                <p className="text-2xs text-muted-foreground mt-1">Leave blank to auto-set from priority.</p>
+              </div>
+            </div>
           )}
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>

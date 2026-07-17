@@ -30,11 +30,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return r.json()
     }
 
-    const [tasks, properties, contacts] = await Promise.all([
+    const [tasks, properties, contacts, overdueIssuesRaw, unackedFeedback] = await Promise.all([
       fetchTbl(`tasks?select=id,title,due_date,status,priority,assignee_name&status=neq.Done&due_date=lte.${today}`),
       fetchTbl(`operational_properties?select=id,name,stage_name`).catch(() => []),
       fetchTbl(`contacts?select=id,name,follow_up_date&follow_up_date=lte.${today}`).catch(() => []),
+      fetchTbl(`cleaning_issues?select=id,property_name,category,priority,due_date&issue_type=eq.needs_attention&status=neq.Completed&due_date=lte.${today}&order=due_date.asc&limit=50`).catch(() => []),
+      fetchTbl(`cleaning_issues?select=id,property_name,category,report_date&issue_type=eq.guest_feedback&acknowledged_at=is.null&order=report_date.asc&limit=50`).catch(() => []),
     ])
+
+    // Urgent-first within the overdue list (due_date.asc from the fetch is the
+    // secondary sort key — Postgres doesn't do priority enums as an ordering
+    // key, so re-rank client-side).
+    const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 }
+    const overdueIssues = [...(overdueIssuesRaw as any[])].sort(
+      (a, b) => (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2),
+    )
 
     // Verifications due — properties not verified in 6 months (best-effort)
     let verificationsDue: any[] = []
@@ -81,6 +91,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (p.notify_follow_up_due && u.allowedViews.includes('contacts') && contacts.length > 0) {
         sections.push(sectionHtml('Follow-ups due', contacts.slice(0, 15).map((c: any) =>
           `${escapeHtml(c.name)} <span style="color:#64748b;">— ${c.follow_up_date}</span>`)))
+      }
+      if (p.notify_issue_overdue && u.allowedViews.includes('issues') && overdueIssues.length > 0) {
+        sections.push(sectionHtml('Overdue issues', overdueIssues.slice(0, 15).map((i: any) =>
+          `${escapeHtml(i.property_name || '(no property)')} — ${escapeHtml(i.category || '')} <span style="color:#64748b;">— due ${i.due_date || '—'} (${escapeHtml(i.priority || 'normal')})</span>`)))
+      }
+      if (p.notify_feedback_unacknowledged && u.allowedViews.includes('issues') && unackedFeedback.length > 0) {
+        sections.push(sectionHtml('Guest feedback awaiting acknowledgment', (unackedFeedback as any[]).slice(0, 15).map((i: any) =>
+          `${escapeHtml(i.property_name || '(no property)')} — ${escapeHtml(i.category || '')} <span style="color:#64748b;">— reported ${i.report_date || '—'}</span>`)))
       }
 
       if (sections.length === 0) continue // nothing to send today

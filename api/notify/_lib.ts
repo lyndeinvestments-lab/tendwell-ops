@@ -156,6 +156,8 @@ export interface NotifPrefs {
   notify_property_note_mention: boolean
   notify_contact_note_mention: boolean
   notify_agreement_signed: boolean
+  notify_issue_overdue: boolean
+  notify_feedback_unacknowledged: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
 }
 
@@ -177,6 +179,8 @@ export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   notify_property_note_mention: true,
   notify_contact_note_mention: true,
   notify_agreement_signed: true,
+  notify_issue_overdue: true,
+  notify_feedback_unacknowledged: true,
   digest_frequency: 'instant',
 }
 
