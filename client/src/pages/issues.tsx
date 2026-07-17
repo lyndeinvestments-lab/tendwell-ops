@@ -104,12 +104,15 @@ function IssuesPageContent() {
   const { data: properties } = useQuery({
     queryKey: ['/supabase/issues-properties'],
     queryFn: async () => {
+      // Exclude pre-service (Quote) and post-service (Offboarded) properties —
+      // cleaning issues only make sense for properties we actively touch.
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name')
+        .select('id, name, pipeline_stages!inner(name)')
+        .not('pipeline_stages.name', 'in', '("Quote","Offboarded")')
         .order('name')
       if (error) throw error
-      return data || []
+      return (data || []).map(({ id, name }) => ({ id, name }))
     },
     enabled: addOpen,
   })
