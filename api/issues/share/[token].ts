@@ -37,9 +37,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     // Resolve the issue by its share token. Service role bypasses RLS.
-    const rows = await sb(`cleaning_issues?share_token=eq.${encodeURIComponent(token)}&select=id,property_name,category,issue_type,priority,details,status,report_date,completed_at&limit=1`)
+    const rows = await sb(`cleaning_issues?share_token=eq.${encodeURIComponent(token)}&select=id,property_name,category,issue_type,priority,details,status,report_date,completed_at,due_date,acknowledged_at,share_link_disabled&limit=1`)
     const issue = Array.isArray(rows) ? rows[0] : null
     if (!issue) return res.status(404).json({ error: 'Issue not found' })
+    // Staff kill switch: a disabled link stops working without rotating the
+    // token. Default false — every pre-existing link is unaffected.
+    if (issue.share_link_disabled) return res.status(410).json({ error: 'This link has been disabled' })
+    delete issue.share_link_disabled
 
     if (req.method === 'GET') {
       const comments = await sb(`issue_comments?issue_id=eq.${issue.id}&select=id,content,author_name,author_type,created_at&order=created_at.asc`)
@@ -86,8 +90,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('Allow', 'GET, POST')
     return res.status(405).json({ error: `Method ${req.method} not allowed` })
   } catch (err: any) {
+    // Log the detail server-side only — err.message can carry Supabase REST
+    // internals that don't belong in an unauthenticated response.
     console.error('issue share error:', err)
-    return res.status(500).json({ error: err?.message || 'Server error' })
+    return res.status(500).json({ error: 'Server error' })
   }
 }
 

@@ -692,6 +692,8 @@ export type Database = {
       }
       cleaning_issues: {
         Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
           assessment: string | null
           category: string
           completed_at: string | null
@@ -699,8 +701,9 @@ export type Database = {
           created_at: string
           created_by: string | null
           details: string | null
+          due_date: string | null
           id: string
-          issue_type: string | null
+          issue_type: string
           last_touch: string | null
           priority: string
           property_id: number | null
@@ -709,12 +712,15 @@ export type Database = {
           remarks: string | null
           report_date: string
           resolution: string | null
+          share_link_disabled: boolean
           share_token: string | null
           slack_link: string | null
           status: string
           updated_at: string
         }
         Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           assessment?: string | null
           category?: string
           completed_at?: string | null
@@ -722,8 +728,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           details?: string | null
+          due_date?: string | null
           id?: string
-          issue_type?: string | null
+          issue_type: string
           last_touch?: string | null
           priority?: string
           property_id?: number | null
@@ -732,12 +739,15 @@ export type Database = {
           remarks?: string | null
           report_date?: string
           resolution?: string | null
+          share_link_disabled?: boolean
           share_token?: string | null
           slack_link?: string | null
           status?: string
           updated_at?: string
         }
         Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
           assessment?: string | null
           category?: string
           completed_at?: string | null
@@ -745,8 +755,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           details?: string | null
+          due_date?: string | null
           id?: string
-          issue_type?: string | null
+          issue_type?: string
           last_touch?: string | null
           priority?: string
           property_id?: number | null
@@ -755,6 +766,7 @@ export type Database = {
           remarks?: string | null
           report_date?: string
           resolution?: string | null
+          share_link_disabled?: boolean
           share_token?: string | null
           slack_link?: string | null
           status?: string
@@ -1620,6 +1632,13 @@ export type Database = {
             referencedRelation: "cleaning_issues"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "issue_comments_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "issue_catchup_feed"
+            referencedColumns: ["id"]
+          },
         ]
       }
       issue_photos: {
@@ -1661,7 +1680,93 @@ export type Database = {
             referencedRelation: "cleaning_issues"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "issue_photos_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "issue_catchup_feed"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      issue_reads: {
+        Row: {
+          issue_id: string
+          last_read_at: string
+          marked_unread: boolean
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          issue_id: string
+          last_read_at?: string
+          marked_unread?: boolean
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          issue_id?: string
+          last_read_at?: string
+          marked_unread?: boolean
+          updated_at?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "issue_reads_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "cleaning_issues"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "issue_reads_issue_id_fkey"
+            columns: ["issue_id"]
+            isOneToOne: false
+            referencedRelation: "issue_catchup_feed"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "issue_reads_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "app_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      issue_translations: {
+        Row: {
+          created_at: string
+          id: string
+          source_field: string
+          source_hash: string
+          source_id: string
+          source_table: string
+          target_lang: string
+          translated_text: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          source_field: string
+          source_hash: string
+          source_id: string
+          source_table: string
+          target_lang: string
+          translated_text: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          source_field?: string
+          source_hash?: string
+          source_id?: string
+          source_table?: string
+          target_lang?: string
+          translated_text?: string
+        }
+        Relationships: []
       }
       laundry_weigh_ins: {
         Row: {
@@ -2219,8 +2324,10 @@ export type Database = {
           email_enabled: boolean
           notify_agreement_signed: boolean
           notify_contact_note_mention: boolean
+          notify_feedback_unacknowledged: boolean
           notify_follow_up_due: boolean
           notify_issue_logged: boolean
+          notify_issue_overdue: boolean
           notify_list_added: boolean
           notify_onboarding_submitted: boolean
           notify_property_note_mention: boolean
@@ -2238,8 +2345,10 @@ export type Database = {
           email_enabled?: boolean
           notify_agreement_signed?: boolean
           notify_contact_note_mention?: boolean
+          notify_feedback_unacknowledged?: boolean
           notify_follow_up_due?: boolean
           notify_issue_logged?: boolean
+          notify_issue_overdue?: boolean
           notify_list_added?: boolean
           notify_onboarding_submitted?: boolean
           notify_property_note_mention?: boolean
@@ -2257,8 +2366,10 @@ export type Database = {
           email_enabled?: boolean
           notify_agreement_signed?: boolean
           notify_contact_note_mention?: boolean
+          notify_feedback_unacknowledged?: boolean
           notify_follow_up_due?: boolean
           notify_issue_logged?: boolean
+          notify_issue_overdue?: boolean
           notify_list_added?: boolean
           notify_onboarding_submitted?: boolean
           notify_property_note_mention?: boolean
@@ -5357,6 +5468,83 @@ export type Database = {
         }
         Relationships: []
       }
+      issue_catchup_feed: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          activity_at: string | null
+          assessment: string | null
+          category: string | null
+          completed_at: string | null
+          coverage: string | null
+          created_at: string | null
+          created_by: string | null
+          details: string | null
+          due_date: string | null
+          id: string | null
+          is_unread: boolean | null
+          issue_type: string | null
+          last_read_at: string | null
+          last_touch: string | null
+          marked_unread: boolean | null
+          priority: string | null
+          property_id: number | null
+          property_name: string | null
+          reference: string | null
+          remarks: string | null
+          report_date: string | null
+          resolution: string | null
+          share_link_disabled: boolean | null
+          share_token: string | null
+          slack_link: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+        ]
+      }
       linen_inventory_latest: {
         Row: {
           bath_towels: number | null
@@ -5784,6 +5972,7 @@ export type Database = {
           per_property: Json
         }[]
       }
+      current_app_user_id: { Args: never; Returns: number }
       current_auth_email: { Args: never; Returns: string }
       current_owner_id: { Args: never; Returns: string }
       current_user_role: { Args: never; Returns: string }

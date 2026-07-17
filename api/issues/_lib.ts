@@ -24,7 +24,29 @@ export const WRITABLE_FIELDS = new Set([
   'remarks',
   'created_by',
   'slack_link',
+  'issue_type',
+  'priority',
+  'due_date',
 ])
+
+// Enum vocabularies enforced by DB CHECK constraints (20260717 migration).
+// Validated here too so bots get a specific 400 instead of an opaque 500.
+export const VALID_ISSUE_TYPES = new Set(['needs_attention', 'guest_feedback'])
+export const VALID_PRIORITIES = new Set(['low', 'normal', 'high', 'urgent'])
+export const VALID_STATUSES = new Set(['Needs Attention', 'In Progress', 'Completed'])
+
+// Returns an error message, or null when the payload is valid.
+export function validateIssuePayload(payload: Record<string, unknown>): string | null {
+  if (payload.issue_type !== undefined && !VALID_ISSUE_TYPES.has(String(payload.issue_type)))
+    return `issue_type must be one of: ${[...VALID_ISSUE_TYPES].join(', ')}`
+  if (payload.priority !== undefined && payload.priority !== null && !VALID_PRIORITIES.has(String(payload.priority)))
+    return `priority must be one of: ${[...VALID_PRIORITIES].join(', ')}`
+  if (payload.status !== undefined && payload.status !== null && !VALID_STATUSES.has(String(payload.status)))
+    return `status must be one of: ${[...VALID_STATUSES].join(', ')}`
+  if (payload.due_date !== undefined && payload.due_date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(payload.due_date)))
+    return 'due_date must be YYYY-MM-DD'
+  return null
+}
 
 // Filters allowed on the list endpoint. Mirrors how the in-app /issues page
 // queries — keeps the surface small and predictable.
@@ -36,6 +58,11 @@ export const LIST_FILTERS = new Set([
   'since',         // report_date >= since (YYYY-MM-DD)
   'until',         // report_date <= until (YYYY-MM-DD)
   'search',        // ilike on details + property_name
+  'issue_type',    // needs_attention | guest_feedback
+  'priority',      // low | normal | high | urgent
+  'due_before',    // due_date <= (YYYY-MM-DD) — overdue queries
+  'due_after',     // due_date >= (YYYY-MM-DD)
+  'acknowledged',  // true | false — guest-feedback ack state
 ])
 
 interface SupabaseConfig {
@@ -131,6 +158,12 @@ export function buildListQuery(query: Record<string, string | string[] | undefin
       params.append('report_date', `gte.${v}`)
     } else if (k === 'until') {
       params.append('report_date', `lte.${v}`)
+    } else if (k === 'due_before') {
+      params.append('due_date', `lte.${v}`)
+    } else if (k === 'due_after') {
+      params.append('due_date', `gte.${v}`)
+    } else if (k === 'acknowledged') {
+      params.append('acknowledged_at', v === 'true' ? 'not.is.null' : 'is.null')
     } else if (k === 'search') {
       // Escape PostgREST `,` and `*` characters in the user input
       const safe = v.replace(/[,*]/g, ' ')

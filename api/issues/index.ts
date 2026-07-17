@@ -14,7 +14,55 @@ import {
   requireApiKey,
   sanitizeIssueBody,
   sbFetch,
+  validateIssuePayload,
 } from './_lib.js'
+import {
+  composeBodyHtml,
+  filterRecipients,
+  getAllPreferences,
+  getAllUsersWithViews,
+  getSupabaseConfig,
+  logNotification,
+  renderEmailLayout,
+  sendEmail,
+} from '../notify/_lib.js'
+
+// Best-effort "issue logged" email to opted-in staff. Bot-created issues used
+// to be silent (only the in-app form notified); this closes that gap. Never
+// throws — a notify failure must not fail the 201.
+async function notifyIssueLogged(issue: Record<string, unknown>): Promise<void> {
+  try {
+    const sb = getSupabaseConfig()
+    const [users, prefs] = await Promise.all([getAllUsersWithViews(sb), getAllPreferences(sb)])
+    const eventType = 'issue_logged'
+    const recipients = filterRecipients(users, prefs, eventType)
+    if (recipients.length === 0) return
+    const title = `New issue logged: ${issue.property_name || 'Unknown property'}`
+    const lines = [
+      `Category: ${issue.category || '—'}`,
+      `Type: ${issue.issue_type === 'guest_feedback' ? 'Guest Feedback' : 'Needs Attention'}`,
+      `Priority: ${issue.priority || 'normal'}`,
+      ...(issue.due_date ? [`Due: ${issue.due_date}`] : []),
+      `Source: API (${issue.created_by || 'api'})`,
+    ]
+    const bodyHtml = composeBodyHtml({ lines, quote: typeof issue.details === 'string' ? issue.details : null })
+    const html = renderEmailLayout({ title, bodyHtml, ctaUrl: 'https://app.tendwellcleaningco.com/issues', ctaLabel: 'Open Issues Tracker' })
+    for (const r of recipients) {
+      const result = await sendEmail({ to: r.google_email, subject: title, html })
+      await logNotification(sb, {
+        recipient_email: r.google_email,
+        recipient_user_id: r.id,
+        event_type: eventType,
+        subject: title,
+        status: result.ok ? 'sent' : 'failed',
+        error: result.ok ? undefined : result.error,
+        meta: { source: 'api', property: issue.property_name ?? null, category: issue.category ?? null },
+      })
+    }
+  } catch (e) {
+    console.error('notifyIssueLogged failed (non-fatal):', e)
+  }
+}
 
 const DEFAULT_LIMIT = 100
 const MAX_LIMIT = 500
@@ -44,21 +92,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payload = sanitizeIssueBody(req.body)
     // Required columns from the table definition. Default report_date to
     // today (UTC) so bots don't have to compute it themselves; status
-    // defaults to "Open" because that's the only sensible state for a new
-    // issue. Category has no sensible default — bots must pass one.
+    // defaults to "Needs Attention" (the UI's open state — 'Open' is not in
+    // the status vocabulary). Category has no sensible default — bots must
+    // pass one. issue_type defaults to needs_attention (actionable) —
+    // guest feedback must be flagged explicitly.
     if (!payload.category || typeof payload.category !== 'string') {
       jsonError(res, 400, 'category is required (e.g. "Damage", "Missing Item", "Maintenance")')
       return
     }
     if (!payload.report_date) payload.report_date = new Date().toISOString().slice(0, 10)
-    if (!payload.status) payload.status = 'Open'
+    if (!payload.status) payload.status = 'Needs Attention'
+    if (!payload.issue_type) payload.issue_type = 'needs_attention'
     if (!payload.created_by) payload.created_by = 'api'
+    const invalid = validateIssuePayload(payload)
+    if (invalid) {
+      jsonError(res, 400, invalid)
+      return
+    }
     try {
       const inserted = await sbFetch<unknown[]>(ISSUES_TABLE, {
         method: 'POST',
         body: JSON.stringify(payload),
       })
       const row = Array.isArray(inserted) ? inserted[0] : inserted
+      if (row) await notifyIssueLogged(row as Record<string, unknown>)
       res.status(201).json({ data: row })
     } catch (e) {
       const err = e as Error & { status?: number; body?: string }

@@ -12,6 +12,7 @@ import {
   requireApiKey,
   sanitizeIssueBody,
   sbFetch,
+  validateIssuePayload,
 } from './_lib.js'
 
 // Loose UUID v4-ish check — same length/dash positions as Postgres uuid.
@@ -48,6 +49,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const payload = sanitizeIssueBody(req.body)
     if (Object.keys(payload).length === 0) {
       jsonError(res, 400, 'No writable fields in body')
+      return
+    }
+    const invalid = validateIssuePayload(payload)
+    if (invalid) {
+      jsonError(res, 400, invalid)
       return
     }
     // Bump updated_at server-side so the in-app UI's "last modified" sort
