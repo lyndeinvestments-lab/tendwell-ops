@@ -7,7 +7,6 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { useCleaners } from '@/hooks/use-cleaners'
 import { resizeImageFile } from '@/lib/resize-image'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
@@ -15,48 +14,19 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatusBadge } from '@/components/StatusBadge'
-import { StatusTone } from '@/lib/status-colors'
 import { TablePagination } from '@/components/TablePagination'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { Card, CardContent } from '@/components/ui/card'
 import { IssueDetailSheet } from '@/components/IssueDetailSheet'
+import { IssuesTable, type SortKey } from '@/components/issues/IssuesTable'
+import { IssueCard } from '@/components/issues/IssueCard'
+import { IssueFilters } from '@/components/issues/IssueFilters'
+import { IssueSummaryStrip } from '@/components/issues/IssueSummaryStrip'
+import { AddIssueSheet, type NewIssueForm } from '@/components/issues/AddIssueSheet'
+import { ISSUE_STATUS_TONES, floatsToTop, type Issue } from '@/lib/issues'
 import {
-  Search, X, AlertTriangle, Plus, Download, Upload, ArrowUpDown, ArrowUp, ArrowDown, ExternalLink, MessageSquare,
+  AlertTriangle, Download, Upload, MessageSquare,
 } from 'lucide-react'
-import { format } from 'date-fns'
 import Papa from 'papaparse'
-
-const CATEGORIES = [
-  'Cleaning Not As Expected',
-  'Missed Clean',
-  'Service Not As Expected',
-  'Linen/Towel issue',
-  'Foul Smell / Odor',
-  'Damage/Loss',
-  'Guest Related',
-  'Trash Pick Up Request',
-  'Hot Tub Servicing',
-  'Touch-Up Clean',
-  'Other',
-]
-
-const STATUSES = ['Needs Attention', 'In Progress', 'Completed']
-
-type SortKey = 'report_date' | 'property_name' | 'category' | 'status'
-
-const ISSUE_STATUS_TONES: Record<string, StatusTone> = {
-  'Needs Attention': 'destructive',
-  'Completed': 'success',
-  'In Progress': 'warning',
-}
-
-function IssueStatusBadge({ status }: { status: string }) {
-  return <StatusBadge status={status} tone={ISSUE_STATUS_TONES[status] ?? 'neutral'} />
-}
-
-function CategoryBadge({ category }: { category: string }) {
-  return <span className="text-xs text-muted-foreground">{category}</span>
-}
 
 export default function IssuesPage() {
   usePageTitle('Issues')
@@ -73,12 +43,12 @@ export default function IssuesPage() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
-  const [detailIssue, setDetailIssue] = useState<any>(null)
+  const [detailIssue, setDetailIssue] = useState<Issue | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [newPhoto, setNewPhoto] = useState<File | null>(null)
   const [importData, setImportData] = useState<any[] | null>(null)
   const [importRunning, setImportRunning] = useState(false)
-  const [newForm, setNewForm] = useState({
+  const [newForm, setNewForm] = useState<NewIssueForm>({
     report_date: new Date().toISOString().split('T')[0],
     issue_type: 'needs_attention',
     priority: 'normal',
@@ -96,15 +66,18 @@ export default function IssuesPage() {
   })
 
   // ─── Queries ──────────────────────────────────────────────────────────────
+  // Reads go through the `issue_catchup_feed` view (same columns as
+  // `cleaning_issues` + activity_at/is_unread/last_read_at/marked_unread).
+  // Writes (insert/update below) still go to `cleaning_issues` directly.
   const { data: issues, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/cleaning-issues'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('cleaning_issues')
+        .from('issue_catchup_feed')
         .select('*')
         .order('report_date', { ascending: false })
       if (error) throw error
-      return data || []
+      return (data || []) as unknown as Issue[]
     },
   })
 
@@ -133,11 +106,10 @@ export default function IssuesPage() {
 
   // ─── Summary stats ────────────────────────────────────────────────────────
   // All counters derive from the same `issues` array so the header subtitle
-  // reconciles with the category tiles. Every status is counted so the user
-  // can see why total ≠ in_progress + completed.
+  // reconciles with the category tiles.
   const stats = useMemo(() => {
     if (!issues) return {
-      total: 0, inProgress: 0, completed: 0, fyi: 0, disregarded: 0,
+      total: 0, inProgress: 0, completed: 0,
       byCategory: {} as Record<string, number>,
     }
     const byStatus: Record<string, number> = {}
@@ -150,8 +122,6 @@ export default function IssuesPage() {
       total: issues.length,
       inProgress: byStatus['In Progress'] || 0,
       completed: byStatus['Completed'] || 0,
-      fyi: byStatus['Just FYI'] || 0,
-      disregarded: byStatus['Disregard'] || 0,
       byCategory,
     }
   }, [issues])
@@ -162,28 +132,23 @@ export default function IssuesPage() {
     else { setSortKey(key); setSortDir(key === 'report_date' ? 'desc' : 'asc') }
   }
 
-  function SortIcon({ col }: { col: SortKey }) {
-    if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />
-    return sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline ml-1" /> : <ArrowDown className="w-3 h-3 inline ml-1" />
-  }
-
   const filtered = useMemo(() => {
     if (!issues) return []
-    let result = issues.filter((i: any) => {
+    let result = issues.filter((i) => {
       const matchSection = (i.issue_type || 'needs_attention') === section
       const matchSearch = !search.trim() || [i.property_name, i.details, i.last_touch].some(v => v?.toLowerCase().includes(search.toLowerCase()))
       const matchStatus = statusFilter === 'all' || i.status === statusFilter
       const matchCategory = categoryFilter === 'all' || i.category === categoryFilter
       return matchSection && matchSearch && matchStatus && matchCategory
     })
-    result = [...result].sort((a: any, b: any) => {
-      // Open urgent issues float to the top of the list.
-      const aU = a.priority === 'urgent' && a.status !== 'Completed' ? 0 : 1
-      const bU = b.priority === 'urgent' && b.status !== 'Completed' ? 0 : 1
-      if (aU !== bU) return aU - bU
+    result = [...result].sort((a, b) => {
+      // Open urgent/high issues float to the top of the list.
+      const aTop = floatsToTop(a) ? 0 : 1
+      const bTop = floatsToTop(b) ? 0 : 1
+      if (aTop !== bTop) return aTop - bTop
       const dir = sortDir === 'asc' ? 1 : -1
-      const av = a[sortKey] || ''
-      const bv = b[sortKey] || ''
+      const av = (a as any)[sortKey] || ''
+      const bv = (b as any)[sortKey] || ''
       return av.localeCompare(bv) * dir
     })
     return result
@@ -271,7 +236,7 @@ export default function IssuesPage() {
 
   function exportCsv() {
     if (!filtered.length) return
-    const rows = filtered.map((i: any) => ({
+    const rows = filtered.map((i) => ({
       'Report Date': i.report_date,
       'Property': i.property_name,
       'Category': i.category,
@@ -367,8 +332,6 @@ export default function IssuesPage() {
     setImportRunning(false)
   }
 
-  const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
-
   return (
     <PageContainer className="md:h-full md:flex md:flex-col">
       {/* Header */}
@@ -377,8 +340,6 @@ export default function IssuesPage() {
         subtitle={
           <>
             {stats.total} total · <span className="text-warning">{stats.inProgress} in progress</span> · {stats.completed} completed
-            {stats.fyi > 0 && <> · {stats.fyi} FYI</>}
-            {stats.disregarded > 0 && <> · {stats.disregarded} disregarded</>}
           </>
         }
         actions={
@@ -420,16 +381,7 @@ export default function IssuesPage() {
       />
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {Object.entries(stats.byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([cat, count]) => (
-          <Card key={cat} className="cursor-pointer shadow-xs hover:bg-muted/30 hover:shadow-sm transition-all" onClick={() => { setCategoryFilter(cat); setPage(1) }}>
-            <CardContent className="p-3">
-              <p className="text-xs text-muted-foreground truncate">{cat}</p>
-              <p className="text-lg font-semibold">{count}</p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <IssueSummaryStrip byCategory={stats.byCategory} onSelectCategory={(cat) => { setCategoryFilter(cat); setPage(1) }} />
 
       {/* Section tabs — Guest Feedback vs Needs Attention */}
       <div className="flex gap-2">
@@ -448,83 +400,54 @@ export default function IssuesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded-md px-2 bg-background">
-          <option value="all">All Statuses</option>
-          {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={categoryFilter} onChange={e => { setCategoryFilter(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded-md px-2 bg-background">
-          <option value="all">All Categories</option>
-          {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <div className="relative ml-auto">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input type="search" placeholder="Search…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm" />
-          {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
-        </div>
-      </div>
+      <IssueFilters
+        search={search}
+        onSearchChange={v => { setSearch(v); setPage(1) }}
+        statusFilter={statusFilter}
+        onStatusChange={v => { setStatusFilter(v); setPage(1) }}
+        categoryFilter={categoryFilter}
+        onCategoryChange={v => { setCategoryFilter(v); setPage(1) }}
+      />
 
-      {/* Table */}
+      {/* Mobile/desktop dual render — same `filtered`/`paged` arrays, no useIsMobile branching. */}
       {isError ? (
         <ErrorState onRetry={() => refetch()} />
       ) : (
-      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
-            <tr>
-              <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('property_name')}>Property <SortIcon col="property_name" /></th>
-              <th className={thCls} onClick={() => toggleSort('report_date')}>Date <SortIcon col="report_date" /></th>
-              <th className={thCls} onClick={() => toggleSort('category')}>Category <SortIcon col="category" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Touch</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap min-w-[250px]">Details</th>
-              <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Slack</th>
-              {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>}
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          <div className="md:hidden space-y-3">
             {isLoading ? (
-              [...Array(8)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+              [...Array(6)].map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={canEdit ? 8 : 7}><EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} /></td></tr>
-            ) : paged.map((issue: any) => (
-              <tr
-                key={issue.id}
-                className={`border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer ${issue.status === 'In Progress' ? 'bg-warning/5' : ''}`}
-                onClick={() => setDetailIssue(issue)}
-              >
-                <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
-                  {issue.priority === 'urgent' && issue.status !== 'Completed' && <span className="mr-1 text-2xs font-semibold text-destructive">⚠ URGENT</span>}
-                  {issue.property_name}
-                </td>
-                <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
-                <td className="py-2 px-3"><CategoryBadge category={issue.category} /></td>
-                <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
-                <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
-                <td className="py-2 px-3"><IssueStatusBadge status={issue.status} /></td>
-                <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
-                  {issue.slack_link ? (
-                    <a href={issue.slack_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
-                      <ExternalLink className="w-3 h-3" /> Link
-                    </a>
-                  ) : <span className="text-muted-foreground text-xs">—</span>}
-                </td>
-                {canEdit && (
-                  <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
-                    <select
-                      value={issue.status}
-                      onChange={e => updateStatus({ id: issue.id, status: e.target.value })}
-                      className="h-6 text-xs border border-input rounded px-1 bg-background"
-                    >
-                      {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+              <EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} />
+            ) : (
+              paged.map((issue) => (
+                <IssueCard
+                  key={issue.id}
+                  issue={issue}
+                  canEdit={canEdit}
+                  onOpen={setDetailIssue}
+                  onStatusChange={updateStatus}
+                />
+              ))
+            )}
+          </div>
+
+          <div className="hidden md:flex md:flex-col md:flex-1 md:min-h-0">
+            <IssuesTable
+              issues={paged}
+              isLoading={isLoading}
+              canEdit={canEdit}
+              search={search}
+              statusFilter={statusFilter}
+              categoryFilter={categoryFilter}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={toggleSort}
+              onRowClick={setDetailIssue}
+              onStatusChange={updateStatus}
+            />
+          </div>
+        </>
       )}
 
       {!isLoading && filtered.length > 0 && (
@@ -552,7 +475,7 @@ export default function IssuesPage() {
                   <div className="font-medium">{row.property_name}</div>
                   <div className="text-muted-foreground truncate">{row.details}</div>
                   <div className="flex gap-2 mt-1">
-                    <IssueStatusBadge status={row.status} />
+                    <StatusBadge status={row.status} tone={ISSUE_STATUS_TONES[row.status] ?? 'neutral'} />
                     <span className="text-muted-foreground">{row.category}</span>
                   </div>
                 </div>
@@ -569,125 +492,18 @@ export default function IssuesPage() {
       )}
 
       {/* Add Issue Sheet */}
-      <Sheet open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
-        <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle className="text-base flex items-center gap-2">
-              {newForm.issue_type === 'guest_feedback'
-                ? <><MessageSquare className="w-4 h-4 text-info" /> Log Guest Feedback</>
-                : <><AlertTriangle className="w-4 h-4 text-warning" /> Log Issue</>}
-            </SheetTitle>
-            <p className="text-xs text-muted-foreground mt-1">
-              {newForm.issue_type === 'guest_feedback'
-                ? 'Retroactive guest feedback for the record — document what was reported, found, and resolved.'
-                : 'Something that needs fixing. After saving, copy the share link to send it to a cleaner.'}
-            </p>
-          </SheetHeader>
-          <div className="mt-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Report Date</label>
-                <Input type="date" value={newForm.report_date} onChange={e => setNewForm(f => ({ ...f, report_date: e.target.value }))} className="h-8 text-sm" />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Status</label>
-                <select value={newForm.status} onChange={e => setNewForm(f => ({ ...f, status: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-            {newForm.issue_type === 'needs_attention' && (
-              <label className="flex items-center gap-2 text-sm rounded-md border border-warning/25 bg-warning/5 px-3 h-10 cursor-pointer">
-                <input type="checkbox" checked={newForm.priority === 'urgent'} onChange={e => setNewForm(f => ({ ...f, priority: e.target.checked ? 'urgent' : 'normal' }))} className="h-4 w-4 rounded border-input" />
-                <span className="font-medium">Mark urgent</span>
-                <span className="text-xs text-muted-foreground">— needs fixing right away</span>
-              </label>
-            )}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>
-              <select value={newForm.property_id} onChange={e => {
-                const id = e.target.value
-                const name = (properties || []).find((p: any) => String(p.id) === id)?.name || ''
-                setNewForm(f => ({ ...f, property_id: id, property_name: name }))
-              }} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                <option value="">Select property…</option>
-                {(properties || []).map((p: any) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
-              <select value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Last Touch (person responsible) — optional</label>
-              <select
-                value={newForm.last_touch}
-                onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))}
-                className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
-              >
-                <option value="">Select cleaner…</option>
-                {(cleaners || []).map((c: any) => (
-                  <option key={c.id} value={c.full_name}>{c.full_name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Details</label>
-              <textarea value={newForm.details} onChange={e => setNewForm(f => ({ ...f, details: e.target.value }))} className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Describe the issue…" />
-            </div>
-            {newForm.issue_type === 'guest_feedback' && (
-              <>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Assessment</label>
-                  <textarea value={newForm.assessment} onChange={e => setNewForm(f => ({ ...f, assessment: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="What was found…" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Resolution</label>
-                  <textarea value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="How was it resolved…" />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1">Coverage</label>
-                  <select value={newForm.coverage} onChange={e => setNewForm(f => ({ ...f, coverage: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                    <option value="">N/A</option>
-                    <option value="Yes">Yes</option>
-                    <option value="No">No</option>
-                  </select>
-                </div>
-              </>
-            )}
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Remarks</label>
-              <Input value={newForm.remarks} onChange={e => setNewForm(f => ({ ...f, remarks: e.target.value }))} className="h-8 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Slack Link</label>
-              <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder="https://tendwell.slack.com/..." />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Initial photo (optional)</label>
-              {newPhoto ? (
-                <div className="flex items-center gap-2 text-sm rounded-md border border-border px-3 h-9">
-                  <span className="truncate flex-1">{newPhoto.name}</span>
-                  <button type="button" onClick={() => setNewPhoto(null)} className="text-muted-foreground hover:text-destructive"><X className="w-4 h-4" /></button>
-                </div>
-              ) : (
-                <Button type="button" variant="outline" size="sm" className="h-9 text-xs gap-1.5 w-full" onClick={() => {
-                  const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*'
-                  input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) setNewPhoto(f) }
-                  input.click()
-                }}>
-                  <Upload className="w-3.5 h-3.5" /> Add a photo (e.g. the dirty hot tub)
-                </Button>
-              )}
-            </div>
-            <Button className="w-full h-10" disabled={!newForm.property_name || !newForm.details || adding} onClick={() => addIssue()}>
-              {adding ? 'Saving…' : (newForm.issue_type === 'guest_feedback' ? 'Save Feedback' : 'Log Issue')}
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <AddIssueSheet
+        open={addOpen}
+        onOpenChange={v => !v && setAddOpen(false)}
+        newForm={newForm}
+        setNewForm={setNewForm}
+        properties={properties as any}
+        cleaners={cleaners}
+        newPhoto={newPhoto}
+        setNewPhoto={setNewPhoto}
+        adding={adding}
+        onSubmit={() => addIssue()}
+      />
     </PageContainer>
   )
 }
