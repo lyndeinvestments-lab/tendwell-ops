@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import type { Cleaner } from '@/hooks/use-cleaners'
 import { CATEGORIES, PRIORITIES, STATUSES, categoryLabel, priorityLabel, statusLabel } from '@/lib/issues'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { SearchSelect } from './SearchSelect'
 
 export interface NewIssueForm {
   report_date: string
@@ -111,14 +112,14 @@ export function AddIssueSheet({
           )}
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.property')}</label>
-            <select value={newForm.property_id} onChange={e => {
-              const id = e.target.value
-              const name = (properties || []).find((p) => String(p.id) === id)?.name || ''
-              setNewForm(f => ({ ...f, property_id: id, property_name: name }))
-            }} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-              <option value="">{t('addSheet.selectProperty')}</option>
-              {(properties || []).map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
-            </select>
+            <SearchSelect
+              value={newForm.property_id}
+              onSelect={(id, name) => setNewForm(f => ({ ...f, property_id: id, property_name: name }))}
+              options={(properties || []).map((p) => ({ value: String(p.id), label: p.name }))}
+              placeholder={t('addSheet.selectProperty')}
+              searchPlaceholder={t('addSheet.searchProperties')}
+              emptyText={t('addSheet.noMatches')}
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.category')}</label>
@@ -128,16 +129,14 @@ export function AddIssueSheet({
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.lastTouchOptional')}</label>
-            <select
+            <SearchSelect
               value={newForm.last_touch}
-              onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))}
-              className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
-            >
-              <option value="">{t('addSheet.selectCleaner')}</option>
-              {(cleaners || []).map((c) => (
-                <option key={c.id} value={c.full_name}>{c.full_name}</option>
-              ))}
-            </select>
+              onSelect={(name) => setNewForm(f => ({ ...f, last_touch: name }))}
+              options={(cleaners || []).filter(c => c.full_name).map((c) => ({ value: c.full_name as string, label: c.full_name as string }))}
+              placeholder={t('addSheet.selectCleaner')}
+              searchPlaceholder={t('addSheet.searchCleaners')}
+              emptyText={t('addSheet.noMatches')}
+            />
           </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.details')}</label>
