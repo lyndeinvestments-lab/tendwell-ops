@@ -26,6 +26,7 @@ import {
   renderEmailLayout,
   sendEmail,
 } from '../notify/_lib.js'
+import { ensureIssueSpanish, withSoftBudget } from './_translate-core.js'
 
 // Best-effort "issue logged" email to opted-in staff. Bot-created issues used
 // to be silent (only the in-app form notified); this closes that gap. Never
@@ -115,7 +116,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body: JSON.stringify(payload),
       })
       const row = Array.isArray(inserted) ? inserted[0] : inserted
-      if (row) await notifyIssueLogged(row as Record<string, unknown>)
+      if (row) {
+        await notifyIssueLogged(row as Record<string, unknown>)
+        // Warm the ES translation cache before responding (soft-budgeted —
+        // never adds more than ~10s, and never fails the create). Bot/API
+        // creates have no other path to trigger this, unlike in-app creates
+        // which fire the client-side equivalent (`triggerIssueTranslate`).
+        const rowId = (row as Record<string, unknown>).id
+        if (typeof rowId === 'string') {
+          await withSoftBudget(() => ensureIssueSpanish(getSupabaseConfig(), rowId), 10_000)
+        }
+      }
       res.status(201).json({ data: row })
     } catch (e) {
       const err = e as Error & { status?: number; body?: string }

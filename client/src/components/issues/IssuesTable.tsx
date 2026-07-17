@@ -31,6 +31,7 @@ export function IssuesTable({
   onSort,
   onRowClick,
   onStatusChange,
+  translate,
 }: {
   issues: Issue[]
   isLoading: boolean
@@ -43,6 +44,8 @@ export function IssuesTable({
   onSort: (key: SortKey) => void
   onRowClick: (issue: Issue) => void
   onStatusChange: (args: { id: string; status: string }) => void
+  /** ES overlay lookup from `useIssueTranslations`, lifted from the page — a no-op passthrough when the UI isn't in Spanish. */
+  translate: (sourceId: string, field: string, original: string | null | undefined) => string | null | undefined
 }) {
   const { t, locale } = useLocale()
 
@@ -86,7 +89,7 @@ export function IssuesTable({
               <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy', { locale: locale === 'es' ? dateFnsEs : undefined })}</td>
               <td className="py-2 px-3"><span className="text-xs text-muted-foreground">{categoryLabel(issue.category, t)}</span></td>
               <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
-              <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
+              <td className="py-2 px-3 text-xs max-w-[300px] truncate">{translate(issue.id, 'details', issue.details) || '—'}</td>
               <td className="py-2 px-3"><StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'}>{statusLabel(issue.status, t)}</StatusBadge></td>
               <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                 {issue.slack_link ? (

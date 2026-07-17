@@ -17,6 +17,7 @@ export function IssueCard({
   onOpen,
   onStatusChange,
   onAcknowledge,
+  translate,
 }: {
   issue: Issue
   canEdit: boolean
@@ -24,6 +25,8 @@ export function IssueCard({
   onStatusChange: (args: { id: string; status: string }) => void
   /** Lifted from the page — same acknowledge mutation the detail sheet uses. */
   onAcknowledge: (id: string) => void
+  /** ES overlay lookup from `useIssueTranslations`, lifted from the page — a no-op passthrough when the UI isn't in Spanish. */
+  translate: (sourceId: string, field: string, original: string | null | undefined) => string | null | undefined
 }) {
   const { t, locale } = useLocale()
   return (
@@ -66,7 +69,7 @@ export function IssueCard({
         )}
       </div>
 
-      {issue.details && <p className="mt-2 text-sm text-foreground/90 line-clamp-2">{issue.details}</p>}
+      {issue.details && <p className="mt-2 text-sm text-foreground/90 line-clamp-2">{translate(issue.id, 'details', issue.details)}</p>}
 
       {canEdit && issue.issue_type === 'guest_feedback' && !issue.acknowledged_at && (
         <div className="mt-2 flex justify-end">

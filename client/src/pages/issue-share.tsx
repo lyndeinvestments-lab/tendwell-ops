@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,6 @@ import { categoryLabel, dueLabel, isOverdue, statusLabel } from '@/lib/issues'
 import { LocaleProvider, useLocale } from '@/lib/i18n/LocaleProvider'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import { IssueBadges } from '@/components/issues/IssueBadges'
-import { useIssueTranslation, type TranslateFetcher } from '@/hooks/use-issue-translation'
 
 // Public, no-login page reached via the shareable issue link. The unguessable
 // token in the URL is the credential; all reads/writes go through the
@@ -31,18 +30,20 @@ export default function IssueSharePage() {
   )
 }
 
+type ShareTranslations = Record<string, { es?: string; en?: string }>
+
 // Unauthenticated — calls the token endpoint's `translate` action (no
-// session; the token itself is the credential).
-function makeShareTranslateFetcher(token: string): TranslateFetcher {
-  return async (targetLang, items) => {
-    const res = await fetch(`/api/issues/share/${encodeURIComponent(token)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'translate', targetLang, items }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Translation failed')
-    return res.json()
-  }
+// session; the token itself is the credential). Used only for the lazy
+// backfill below — the GET response's `translations` blob is the primary,
+// instant path.
+async function requestShareTranslate(token: string, targetLang: 'es' | 'en', items: Array<{ id: string }>) {
+  const res = await fetch(`/api/issues/share/${encodeURIComponent(token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'translate', targetLang, items }),
+  })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Translation failed')
+  return res.json()
 }
 
 function IssueSharePageContent() {
@@ -109,31 +110,42 @@ function IssueSharePageContent() {
     finally { setBusy(null) }
   }
 
-  // Translate affordance — batches `details` + all comments (the only
-  // translatable content this public endpoint exposes; assessment/
-  // resolution/remarks are staff-internal and not part of the share GET
-  // whitelist). Hooks run unconditionally, above the loading/error guards.
-  const translateItems = useMemo(() => {
-    if (!data?.issue) return []
-    const items: Array<{ id: string; text: string }> = []
-    if (data.issue.details) items.push({ id: 'details', text: data.issue.details })
-    for (const c of data.comments || []) items.push({ id: `comment:${c.id}`, text: c.content })
-    return items
-  }, [data])
+  // Translate overlay — the GET response already carries every cached
+  // translation for this issue's fields + comments (both langs), so the
+  // page shows translated content instantly with no on-demand click. `tr()`
+  // falls back to the original text on a miss. `showOriginal` is purely a
+  // local spot-check toggle, not a translate trigger.
+  const translations: ShareTranslations = data?.translations || {}
+  const [showOriginal, setShowOriginal] = useState(false)
+  useEffect(() => { setShowOriginal(false) }, [data?.issue?.id])
 
-  const shareTranslateFetcher = useMemo(() => token ? makeShareTranslateFetcher(token) : null, [token])
-
-  const { showTranslated, toggle: toggleTranslate, text: translated, isTranslating, hasContent: canTranslate } = useIssueTranslation({
-    issueId: data?.issue?.id,
-    targetLang: locale,
-    items: translateItems,
-    fetcher: shareTranslateFetcher || (async () => ({ translations: {} })),
-  })
-
-  async function handleToggleTranslate() {
-    try { await toggleTranslate() }
-    catch (e: any) { alert(e?.message || t('translate.failed')) }
+  function trShare(sourceId: string | undefined, field: string, original: string | null | undefined) {
+    if (!sourceId || showOriginal) return original
+    return translations[`${sourceId}:${field}`]?.[locale] ?? original
   }
+
+  // Lazy backfill for whatever the write-time hooks (`ensureIssueSpanish`,
+  // the comment action's dual es/en translate) didn't warm — old content,
+  // or a race right after a fresh comment. One attempt per (issue, locale);
+  // on success the server has already persisted the new cache rows, so
+  // refetching the GET picks them up in `translations` with no extra logic.
+  const backfillAttempted = useRef<string | null>(null)
+  useEffect(() => {
+    if (!token || !data?.issue) return
+    const attemptKey = `${data.issue.id}:${locale}`
+    if (backfillAttempted.current === attemptKey) return
+    const items: Array<{ id: string }> = []
+    if (data.issue.details && !translations[`${data.issue.id}:details`]?.[locale]) items.push({ id: 'details' })
+    for (const c of (data.comments || [])) {
+      if (c.content && !translations[`${c.id}:content`]?.[locale]) items.push({ id: `comment:${c.id}` })
+    }
+    if (items.length === 0) return
+    backfillAttempted.current = attemptKey
+    requestShareTranslate(token, locale, items)
+      .then(() => qc.invalidateQueries({ queryKey }))
+      .catch(e => console.warn('share translate backfill failed:', e))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, data, locale])
 
   if (!token) return <Centered><p className="text-sm text-muted-foreground">{t('share.invalidLink')}</p></Centered>
   if (isLoading) return <Centered><div className="w-full max-w-lg space-y-3"><Skeleton className="h-8 w-2/3" /><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div></Centered>
@@ -141,10 +153,10 @@ function IssueSharePageContent() {
 
   const issue = data.issue
   const rawComments = data.comments || []
-  const displayComments = showTranslated
-    ? rawComments.map((c: any) => ({ ...c, content: translated(`comment:${c.id}`, c.content) || c.content }))
-    : rawComments
+  const displayComments = rawComments.map((c: any) => ({ ...c, content: trShare(c.id, 'content', c.content) }))
   const photos = data.photos || []
+  const canToggleTranslation = !!translations[`${issue.id}:details`]?.[locale]
+    || rawComments.some((c: any) => !!translations[`${c.id}:content`]?.[locale])
   const completed = issue.status === 'Completed'
   const overdue = isOverdue(issue)
   const showBanner = (issue.priority === 'urgent' || overdue) && !completed
@@ -177,25 +189,20 @@ function IssueSharePageContent() {
           <h2 className="text-lg font-semibold">{issue.property_name || 'Property'}</h2>
           {issue.category && <p className="text-xs text-muted-foreground mt-0.5">{categoryLabel(issue.category, t)}</p>}
           {issue.due_date && !completed && <p className="text-xs text-muted-foreground mt-0.5">{dueLabel(issue.due_date, t, locale)}</p>}
-          {issue.details && <p className="text-sm whitespace-pre-wrap mt-3">{translated('details', issue.details)}</p>}
-          {canTranslate && (
+          {issue.details && <p className="text-sm whitespace-pre-wrap mt-3">{trShare(issue.id, 'details', issue.details)}</p>}
+          {canToggleTranslation && (
             <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/60">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="h-8 text-xs gap-1.5"
-                onClick={handleToggleTranslate}
-                disabled={isTranslating}
+                onClick={() => setShowOriginal(v => !v)}
               >
                 <Languages className="w-3.5 h-3.5" />
-                {isTranslating
-                  ? t('translate.translating')
-                  : showTranslated
-                    ? t('translate.showOriginal')
-                    : (locale === 'es' ? t('translate.toSpanish') : t('translate.toEnglish'))}
+                {showOriginal ? t('translate.showTranslation') : t('translate.showOriginal')}
               </Button>
-              {showTranslated && <span className="text-2xs text-muted-foreground italic">{t('translate.machineTranslated')}</span>}
+              {!showOriginal && <span className="text-2xs text-muted-foreground italic">{t('translate.machineTranslated')}</span>}
             </div>
           )}
         </div>

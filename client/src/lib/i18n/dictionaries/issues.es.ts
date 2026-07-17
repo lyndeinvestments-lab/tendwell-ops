@@ -239,6 +239,7 @@ export const issuesEs: typeof issuesEn = {
     toSpanish: 'Traducir al español',
     toEnglish: 'Traducir al inglés',
     showOriginal: 'Ver original',
+    showTranslation: 'Mostrar traducción',
     translating: 'Traduciendo…',
     machineTranslated: 'Traducción automática',
     failed: 'Error de traducción',
