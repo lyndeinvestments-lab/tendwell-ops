@@ -25,6 +25,8 @@ export const DEFAULT_NOTIF_PREFS = {
   notify_property_note_mention: true,
   notify_contact_note_mention: true,
   notify_agreement_signed: true,
+  notify_issue_overdue: true,
+  notify_feedback_unacknowledged: true,
 } as const
 
 // Each notification event maps to the view a user must have access to for the
@@ -50,4 +52,6 @@ export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
   { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
   { field: 'notify_contact_note_mention',  label: 'Mentioned in a contact note',  view: 'contacts' },
   { field: 'notify_agreement_signed',      label: 'Agreement signed by owner',    view: 'settings' },
+  { field: 'notify_issue_overdue',           label: 'Overdue issues (daily digest)',                view: 'issues' },
+  { field: 'notify_feedback_unacknowledged', label: 'Unacknowledged guest feedback (daily digest)', view: 'issues' },
 ]

@@ -73,6 +73,44 @@ export function useAlerts() {
     staleTime: 30_000,
   })
 
+  // In-app mirror of the two email-digest sections (api/notify/digest.ts) —
+  // same filter contract: overdue needs_attention issues, unacked guest
+  // feedback. Kept as separate lightweight queries (not the full-fat
+  // `issue_catchup_feed` the Issues page reads) since alerts only need a
+  // handful of display fields.
+  const { data: overdueIssues } = useQuery({
+    queryKey: ['/supabase/alerts-issues-overdue'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cleaning_issues')
+        .select('id, property_name, category, priority, due_date')
+        .eq('issue_type', 'needs_attention')
+        .neq('status', 'Completed')
+        .lte('due_date', new Date().toISOString().split('T')[0])
+        .order('due_date', { ascending: true })
+        .limit(50)
+      if (error) return []
+      return data || []
+    },
+    staleTime: 60_000,
+  })
+
+  const { data: unackedFeedback } = useQuery({
+    queryKey: ['/supabase/alerts-issues-unacked'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cleaning_issues')
+        .select('id, property_name, category, report_date')
+        .eq('issue_type', 'guest_feedback')
+        .is('acknowledged_at', null)
+        .order('report_date', { ascending: true })
+        .limit(50)
+      if (error) return []
+      return data || []
+    },
+    staleTime: 60_000,
+  })
+
   const { data: dismissals } = useQuery({
     queryKey: ['/supabase/alert-dismissals'],
     queryFn: async () => {
@@ -187,6 +225,32 @@ export function useAlerts() {
       }
     }
 
+    // Warning/Critical: Overdue Needs-Attention issues (mirrors the email digest)
+    for (const i of (overdueIssues || [])) {
+      result.push({
+        id: `issue-overdue-${i.id}`,
+        severity: i.priority === 'urgent' ? 'critical' : 'warning',
+        category: 'Issues',
+        title: `Overdue Issue: ${i.property_name || '(no property)'}`,
+        description: `${i.category || ''} — due ${i.due_date || '—'} (${i.priority || 'normal'})`,
+        actionRoute: '/issues',
+        requiredView: 'issues',
+      })
+    }
+
+    // Info: Unacknowledged guest feedback (mirrors the email digest)
+    for (const i of (unackedFeedback || [])) {
+      result.push({
+        id: `issue-feedback-${i.id}`,
+        severity: 'info',
+        category: 'Issues',
+        title: `Unacknowledged Feedback: ${i.property_name || '(no property)'}`,
+        description: `${i.category || ''} — reported ${i.report_date || '—'}`,
+        actionRoute: '/issues',
+        requiredView: 'issues',
+      })
+    }
+
     // Info: New Contact Unlinked
     if (contacts) {
       for (const c of contacts) {
@@ -209,7 +273,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()
@@ -408,7 +472,7 @@ export default function AlertsPage() {
       {/* Category filter tabs */}
       <div className="flex items-center gap-1.5 flex-wrap -mt-1">
         <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Category</span>
-        {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM']
+        {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM', 'Issues']
           .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
           .map(cat => (
             <button

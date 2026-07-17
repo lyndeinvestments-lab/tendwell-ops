@@ -1,6 +1,7 @@
 import { format } from 'date-fns'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, UserCheck } from 'lucide-react'
 import { StatusBadge } from '@/components/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { ISSUE_STATUS_TONES, STATUSES, type Issue } from '@/lib/issues'
 import { IssueBadges } from './IssueBadges'
 
@@ -13,11 +14,14 @@ export function IssueCard({
   canEdit,
   onOpen,
   onStatusChange,
+  onAcknowledge,
 }: {
   issue: Issue
   canEdit: boolean
   onOpen: (issue: Issue) => void
   onStatusChange: (args: { id: string; status: string }) => void
+  /** Lifted from the page — same acknowledge mutation the detail sheet uses. */
+  onAcknowledge: (id: string) => void
 }) {
   return (
     <div
@@ -60,6 +64,19 @@ export function IssueCard({
       </div>
 
       {issue.details && <p className="mt-2 text-sm text-foreground/90 line-clamp-2">{issue.details}</p>}
+
+      {canEdit && issue.issue_type === 'guest_feedback' && !issue.acknowledged_at && (
+        <div className="mt-2 flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1.5"
+            onClick={e => { e.stopPropagation(); onAcknowledge(issue.id) }}
+          >
+            <UserCheck className="w-3.5 h-3.5" /> Acknowledge
+          </Button>
+        </div>
+      )}
 
       <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between gap-2">
         <StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'} />
