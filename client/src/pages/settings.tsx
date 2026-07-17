@@ -21,6 +21,7 @@ import { roleBadgeClasses } from '@/lib/role-colors'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { notifyOwner } from '@/lib/notify'
+import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS } from '@/lib/notif-prefs'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation, Link } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -1286,27 +1287,8 @@ function UsersSection() {
 // ─── Settings Page ───────────────────────────────────────────────────────────
 
 // ─── Notifications Section ───────────────────────────────────────────────────
-
-// Effective defaults for a user with no notification_preferences row. Mirrors
-// the notification_preferences column defaults (and DEFAULT_NOTIF_PREFS in
-// api/notify/_lib.ts) so the UI shows exactly the state the server will apply
-// when no explicit row exists. verification_due / follow_up_due are opt-in.
-const DEFAULT_NOTIF_PREFS = {
-  email_enabled: true,
-  digest_frequency: 'instant',
-  notify_task_assigned: true,
-  notify_task_overdue: true,
-  notify_task_mention: true,
-  notify_watcher_update: true,
-  notify_list_added: true,
-  notify_issue_logged: true,
-  notify_verification_due: false,
-  notify_onboarding_submitted: true,
-  notify_follow_up_due: false,
-  notify_property_note_mention: true,
-  notify_contact_note_mention: true,
-  notify_agreement_signed: true,
-}
+// DEFAULT_NOTIF_PREFS and NOTIF_EVENT_DEFS are shared with the self-service
+// /notifications page — see @/lib/notif-prefs.
 
 function NotificationsSection() {
   const { user } = useAuth()
@@ -1394,20 +1376,7 @@ function NotificationsSection() {
   const isAdmin = user?.role === 'admin'
   const visibleUsers = isAdmin ? (users || []) : (users || []).filter((u: any) => u.id === user?.id)
 
-  const EVENT_DEFS: Array<{ field: string; label: string; view: string }> = [
-    { field: 'notify_task_assigned',        label: 'Task assigned',          view: 'tasks' },
-    { field: 'notify_task_mention',         label: 'Mentioned in comment',   view: 'tasks' },
-    { field: 'notify_task_overdue',         label: 'Task overdue (digest)',  view: 'tasks' },
-    { field: 'notify_watcher_update',       label: 'Watcher updates',        view: 'tasks' },
-    { field: 'notify_list_added',           label: 'Added to a task list',   view: 'tasks' },
-    { field: 'notify_issue_logged',         label: 'New issue logged',       view: 'issues' },
-    { field: 'notify_verification_due',     label: 'Verification due',       view: 'property-verifications' },
-    { field: 'notify_onboarding_submitted', label: 'Onboarding submitted',   view: 'master-list' },
-    { field: 'notify_follow_up_due',        label: 'Follow-up due',          view: 'contacts' },
-    { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
-    { field: 'notify_contact_note_mention',  label: 'Mentioned in a contact note',  view: 'contacts' },
-    { field: 'notify_agreement_signed',      label: 'Agreement signed by owner',    view: 'settings' },
-  ]
+  const EVENT_DEFS = NOTIF_EVENT_DEFS
 
   return (
     <div className="rounded-lg border border-border p-5 space-y-4">

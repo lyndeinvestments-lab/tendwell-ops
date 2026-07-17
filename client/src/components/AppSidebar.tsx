@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  ClipboardCheck, Users2, Bell, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText
+  ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -24,6 +24,9 @@ interface NavItem {
   // legacy custom-role users that only have `master-list` permission.
   view: string | string[]
   icon: React.ComponentType<{ className?: string }>
+  // Personal/account items (e.g. Notifications) that every staff member can
+  // reach regardless of their granted views. Bypasses the canAccessView filter.
+  alwaysShow?: boolean
 }
 
 const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
@@ -85,6 +88,13 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'API Sync', href: '/api-sync', view: 'trellis-sync', icon: Plug },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      // Personal notification preferences — visible to every staff member.
+      { title: 'Notifications', href: '/notifications', view: 'notifications', icon: BellRing, alwaysShow: true },
     ],
   },
 ]
@@ -151,6 +161,7 @@ export function AppSidebar() {
       <SidebarContent className="py-2 relative">
         {NAV_SECTIONS.map((section) => {
           const visibleItems = section.items.filter(item => {
+            if (item.alwaysShow) return true
             const ids = Array.isArray(item.view) ? item.view : [item.view]
             return ids.some(v => canAccessView(v, effectiveUser))
           })
