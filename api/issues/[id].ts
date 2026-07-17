@@ -14,6 +14,8 @@ import {
   sbFetch,
   validateIssuePayload,
 } from './_lib.js'
+import { getSupabaseConfig } from '../notify/_lib.js'
+import { ensureIssueSpanish, ISSUE_TRANSLATABLE_FIELDS, withSoftBudget } from './_translate-core.js'
 
 // Loose UUID v4-ish check — same length/dash positions as Postgres uuid.
 // Strict-enough to reject obviously bad inputs without coupling to a regex
@@ -69,6 +71,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!row) {
         jsonError(res, 404, 'Issue not found')
         return
+      }
+      // Re-warm the ES cache when a translatable field changed — the new
+      // content hash is automatically a cache miss, so this is a fresh
+      // translation, not a no-op. Soft-budgeted; never fails the update.
+      const touchedTranslatable = Object.keys(payload).some(k => ISSUE_TRANSLATABLE_FIELDS.has(k))
+      if (touchedTranslatable) {
+        await withSoftBudget(() => ensureIssueSpanish(getSupabaseConfig(), id), 10_000)
       }
       res.status(200).json({ data: row })
     } catch (e) {

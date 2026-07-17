@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
-import { useIssueTranslation, type TranslateFetcher } from '@/hooks/use-issue-translation'
+import { useIssueTranslations, type TranslatableCandidate } from '@/hooks/use-issue-translations'
+import { triggerIssueTranslate } from '@/lib/issue-translate'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button } from '@/components/ui/button'
@@ -17,23 +18,7 @@ import { IssueBadges } from '@/components/issues/IssueBadges'
 import { IssueCommentsList } from '@/components/issues/IssueCommentsList'
 import { IssuePhotoGrid } from '@/components/issues/IssuePhotoGrid'
 
-// Staff-session translate call — mirrors client/src/lib/notify.ts's pattern
-// of attaching the Supabase session access token as a Bearer header.
-// Curried on `issueId` since the batched contract needs it alongside items.
-function makeStaffTranslateFetcher(issueId: string): TranslateFetcher {
-  return async (targetLang, items) => {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (!token) throw new Error('Not signed in')
-    const res = await fetch('/api/issues/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ issueId, targetLang, items }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Translation failed')
-    return res.json()
-  }
-}
+const TRANSLATABLE_ISSUE_FIELDS = ['details', 'assessment', 'resolution', 'remarks', 'coverage'] as const
 
 export function IssueDetailSheet({
   issue,
@@ -87,52 +72,49 @@ export function IssueDetailSheet({
     },
   })
 
-  // Batches details/assessment/resolution/remarks + all comments into one
-  // /api/issues/translate call, translating INTO whatever locale the staff
-  // member currently has the UI in (so an English-UI viewer translates
-  // cleaner Spanish comments to English, and vice versa).
-  const translateItems = useMemo(() => {
+  // Candidates for the ES overlay: every translatable field on this issue +
+  // every loaded comment. `useIssueTranslations` is a no-op when the UI
+  // locale isn't Spanish (no query, `tr()` returns the original), so this
+  // is always safe to build.
+  const translationCandidates = useMemo<TranslatableCandidate[]>(() => {
     if (!view) return []
-    const items: Array<{ id: string; text: string }> = []
-    if (view.details) items.push({ id: 'details', text: view.details })
-    if (view.assessment) items.push({ id: 'assessment', text: view.assessment })
-    if (view.resolution) items.push({ id: 'resolution', text: view.resolution })
-    if (view.remarks) items.push({ id: 'remarks', text: view.remarks })
-    for (const c of comments || []) items.push({ id: `comment:${c.id}`, text: c.content })
+    const items: TranslatableCandidate[] = TRANSLATABLE_ISSUE_FIELDS.map(field => ({
+      issueId: view.id, sourceId: view.id, field, text: view[field],
+    }))
+    for (const c of comments || []) items.push({ issueId: view.id, sourceId: c.id, field: 'content', text: c.content })
     return items
   }, [view, comments])
 
-  const staffTranslateFetcher = useMemo(() => issueId ? makeStaffTranslateFetcher(issueId) : null, [issueId])
+  const { tr, isSpanish } = useIssueTranslations(translationCandidates)
+  const hasTranslatableContent = translationCandidates.some(c => c.text && c.text.trim())
 
-  const { showTranslated, toggle: toggleTranslate, text: translated, isTranslating, hasContent: canTranslate } = useIssueTranslation({
-    issueId,
-    targetLang: locale,
-    items: translateItems,
-    fetcher: staffTranslateFetcher || (async () => ({ translations: {} })),
-  })
-
-  async function handleToggleTranslate() {
-    try {
-      await toggleTranslate()
-    } catch (e: any) {
-      toast({ title: t('translate.failed'), description: e?.message, variant: 'destructive' })
-    }
-  }
+  // "Ver original / Mostrar traducción" — spot-check toggle. Content is
+  // auto-translated by default whenever the UI is in Spanish; this just lets
+  // staff peek at the original. Resets whenever a different issue opens.
+  const [showOriginal, setShowOriginal] = useState(false)
+  useEffect(() => { setShowOriginal(false) }, [issueId])
 
   const displayComments = useMemo(() => {
-    if (!showTranslated || !comments) return comments
-    return comments.map(c => ({ ...c, content: translated(`comment:${c.id}`, c.content) || c.content }))
-  }, [comments, showTranslated, translated])
+    if (!comments) return comments
+    return comments.map(c => ({ ...c, content: (showOriginal ? c.content : tr(c.id, 'content', c.content)) ?? c.content }))
+  }, [comments, showOriginal, tr])
 
   const addComment = useMutation({
     mutationFn: async () => {
-      const { error } = await (supabase as any).from('issue_comments').insert({
+      const { data, error } = await (supabase as any).from('issue_comments').insert({
         issue_id: issueId, content: comment.trim(),
         author_name: effectiveUser?.label || null, author_type: 'staff',
-      })
+      }).select('id').single()
       if (error) throw error
+      return data as { id: string }
     },
-    onSuccess: () => { setComment(''); qc.invalidateQueries({ queryKey: ['/supabase/issue-comments', issueId] }) },
+    onSuccess: (data) => {
+      setComment('')
+      qc.invalidateQueries({ queryKey: ['/supabase/issue-comments', issueId] })
+      // Fire-and-forget: warms the ES cache for this comment so the overlay
+      // doesn't have to wait for the lazy backfill pass. Never awaited.
+      if (issueId && data?.id) void triggerIssueTranslate(issueId, [{ id: `comment:${data.id}` }], 'es')
+    },
     onError: (e: any) => toast({ title: t('detail.toastCommentFailed'), description: e?.message, variant: 'destructive' }),
   })
 
@@ -238,14 +220,17 @@ export function IssueDetailSheet({
     }
   }
 
+  const trField = (field: typeof TRANSLATABLE_ISSUE_FIELDS[number], original: string | null) =>
+    view ? ((showOriginal ? original : tr(view.id, field, original)) ?? original) : original
+
   const infoRows = view ? [
     { id: null, label: t('detail.category'), value: view.category },
     { id: null, label: t('detail.lastTouch'), value: view.last_touch },
-    { id: 'details', label: t('detail.details'), value: translated('details', view.details) },
-    { id: 'assessment', label: t('detail.assessment'), value: translated('assessment', view.assessment) },
-    { id: 'resolution', label: t('detail.resolution'), value: translated('resolution', view.resolution) },
-    { id: null, label: t('detail.coverage'), value: view.coverage },
-    { id: 'remarks', label: t('detail.remarks'), value: translated('remarks', view.remarks) },
+    { id: 'details', label: t('detail.details'), value: trField('details', view.details) },
+    { id: 'assessment', label: t('detail.assessment'), value: trField('assessment', view.assessment) },
+    { id: 'resolution', label: t('detail.resolution'), value: trField('resolution', view.resolution) },
+    { id: 'coverage', label: t('detail.coverage'), value: trField('coverage', view.coverage) },
+    { id: 'remarks', label: t('detail.remarks'), value: trField('remarks', view.remarks) },
     { id: null, label: t('detail.slackLink'), value: view.slack_link, isLink: true },
   ] : []
 
@@ -271,26 +256,22 @@ export function IssueDetailSheet({
             </SheetHeader>
 
             <div className="mt-4 space-y-4">
-              {/* Translate — batches details/assessment/resolution/remarks +
-                  comments into one call, direction = the current UI locale. */}
-              {canTranslate && (
+              {/* Content is auto-translated whenever the UI is in Spanish
+                  (write-time + lazy-backfill cache, see use-issue-translations)
+                  — this is just a spot-check toggle, not a translate trigger. */}
+              {isSpanish && hasTranslatableContent && (
                 <div className="flex items-center justify-between">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
                     className="h-8 text-xs gap-1.5"
-                    onClick={handleToggleTranslate}
-                    disabled={isTranslating}
+                    onClick={() => setShowOriginal(v => !v)}
                   >
                     <Languages className="w-3.5 h-3.5" />
-                    {isTranslating
-                      ? t('translate.translating')
-                      : showTranslated
-                        ? t('translate.showOriginal')
-                        : (locale === 'es' ? t('translate.toSpanish') : t('translate.toEnglish'))}
+                    {showOriginal ? t('translate.showTranslation') : t('translate.showOriginal')}
                   </Button>
-                  {showTranslated && <span className="text-2xs text-muted-foreground italic">{t('translate.machineTranslated')}</span>}
+                  {!showOriginal && <span className="text-2xs text-muted-foreground italic">{t('translate.machineTranslated')}</span>}
                 </div>
               )}
 
@@ -411,7 +392,7 @@ export function IssueDetailSheet({
                   ) : (
                     <>
                       <p className="text-sm whitespace-pre-wrap">{row.value}</p>
-                      {showTranslated && row.id && <p className="text-2xs text-muted-foreground italic mt-0.5">{t('translate.machineTranslated')}</p>}
+                      {isSpanish && !showOriginal && row.id && <p className="text-2xs text-muted-foreground italic mt-0.5">{t('translate.machineTranslated')}</p>}
                     </>
                   )}
                 </div>

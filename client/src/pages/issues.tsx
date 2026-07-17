@@ -27,6 +27,8 @@ import { CatchUpFlow } from '@/components/issues/CatchUpFlow'
 import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, issueTypeLabel, statusLabel, type Issue } from '@/lib/issues'
 import { LocaleProvider, useLocale } from '@/lib/i18n/LocaleProvider'
 import { LanguageToggle } from '@/components/LanguageToggle'
+import { useIssueTranslations, type TranslatableCandidate } from '@/hooks/use-issue-translations'
+import { triggerIssueTranslate } from '@/lib/issue-translate'
 import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
 import {
@@ -197,6 +199,15 @@ function IssuesPageContent() {
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
+  // ES overlay for the list view — only the `details` snippet is shown here
+  // (property_name stays untranslated); the detail sheet/catch-up flow do
+  // their own richer overlay over every field + comments.
+  const listTranslationCandidates = useMemo<TranslatableCandidate[]>(
+    () => paged.map(i => ({ issueId: i.id, sourceId: i.id, field: 'details', text: i.details })),
+    [paged],
+  )
+  const { tr: translateListDetails } = useIssueTranslations(listTranslationCandidates)
+
   // ─── Mutations ────────────────────────────────────────────────────────────
   const { mutate: addIssue, isPending: adding } = useGuardedMutation('issues', {
     mutationFn: async () => {
@@ -254,13 +265,23 @@ function IssuesPageContent() {
           meta: { property: newForm.property_name, category: newForm.category },
         })
       } catch { /* ignore */ }
+      return created as { id: string } | null
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
       toast({ title: newForm.issue_type === 'guest_feedback' ? t('page.toastFeedbackLogged') : t('page.toastIssueLogged') })
       setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
       setNewPhoto(null)
+      // Fire-and-forget: warms the ES cache for whatever translatable fields
+      // were filled in, so the overlay doesn't have to wait for the lazy
+      // backfill pass. Never awaited — doesn't block the UI reset below.
+      if (created?.id) {
+        const items = (['details', 'assessment', 'resolution', 'coverage', 'remarks'] as const)
+          .filter(field => newForm[field])
+          .map(id => ({ id }))
+        if (items.length > 0) void triggerIssueTranslate(created.id, items, 'es')
+      }
       setNewForm(f => ({ ...f, property_id: '', property_name: '', priority: 'normal', due_date: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' }))
     },
     onError: (error: any) => toast({ title: t('page.toastSaveFailed'), description: error?.message, variant: 'destructive' }),
@@ -381,11 +402,21 @@ function IssuesPageContent() {
     setImportRunning(true)
     let imported = 0
     for (const row of importData) {
-      const { error } = await supabase.from('cleaning_issues').insert({
+      const { data, error } = await supabase.from('cleaning_issues').insert({
         ...row,
         created_by: effectiveUser?.label || null,
-      })
-      if (!error) imported++
+      }).select('id').single()
+      if (!error) {
+        imported++
+        // Fire-and-forget per row — never awaited, so a slow/failed
+        // translation never slows down the rest of the import loop.
+        if (data?.id) {
+          const items = (['details', 'assessment', 'resolution', 'coverage', 'remarks'] as const)
+            .filter(field => (row as any)[field])
+            .map(id => ({ id }))
+          if (items.length > 0) void triggerIssueTranslate(data.id, items, 'es')
+        }
+      }
     }
     qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
     toast({ title: t('page.toastImported', { count: imported }) })
@@ -510,6 +541,7 @@ function IssuesPageContent() {
                   onOpen={setDetailIssue}
                   onStatusChange={updateStatus}
                   onAcknowledge={acknowledgeIssue}
+                  translate={translateListDetails}
                 />
               ))
             )}
@@ -528,6 +560,7 @@ function IssuesPageContent() {
               onSort={toggleSort}
               onRowClick={setDetailIssue}
               onStatusChange={updateStatus}
+              translate={translateListDetails}
             />
           </div>
         </>

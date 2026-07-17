@@ -245,6 +245,7 @@ export const issuesEn = {
     toSpanish: 'Translate to Spanish',
     toEnglish: 'Translate to English',
     showOriginal: 'Show original',
+    showTranslation: 'Show translation',
     translating: 'Translating…',
     machineTranslated: 'Machine translated',
     failed: 'Translation failed',

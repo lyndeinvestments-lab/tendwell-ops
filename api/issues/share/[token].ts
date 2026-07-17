@@ -41,6 +41,15 @@ function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex')
 }
 
+/** Races `fn` against a `ms` timeout so a slow/hung translation call never adds more than that to the response. Swallows timeouts and thrown errors — a best-effort cache warm must never fail the cleaner's comment/photo/complete action. Duplicated from api/issues/_translate-core.ts (self-contained file, see header comment). */
+async function withSoftBudget(fn: () => Promise<void>, ms: number): Promise<void> {
+  try {
+    await Promise.race([fn(), new Promise<void>(resolve => setTimeout(resolve, ms))])
+  } catch (e) {
+    console.error('withSoftBudget task failed (non-fatal):', e)
+  }
+}
+
 /** Numbers each text segment, sends one Anthropic call, and defensively parses the JSON mapping back. Falls back to the original text per-item on any parse failure. Duplicated from api/issues/translate.ts — this file must stay self-contained (no _lib import; the cleaner share link has no session). */
 async function translateBatch(texts: string[], targetLang: 'es' | 'en'): Promise<string[]> {
   const apiKey = process.env.ANTHROPIC_API_KEY
@@ -138,6 +147,28 @@ async function translateIssueItems(issueId: string, itemIds: string[], targetLan
   return translations
 }
 
+/**
+ * Loads every cached translation (both langs) for this issue's own fields
+ * plus its comments, shaped `{ "<source_id>:<field>": { es?, en? } }` so the
+ * page can overlay instantly without an extra round trip. Rows are read in
+ * ascending `created_at` order and later rows simply overwrite earlier ones
+ * in the same slot, so a re-translated (edited) row's newer value always
+ * wins without any extra bookkeeping.
+ */
+async function loadShareTranslations(issueId: string, comments: Array<{ id: string }>): Promise<Record<string, { es?: string; en?: string }>> {
+  const sourceIds = [issueId, ...comments.map(c => c.id)]
+  if (sourceIds.length === 0) return {}
+  const inList = sourceIds.map(id => `"${id}"`).join(',')
+  const rows = await sb(`issue_translations?source_id=in.(${inList})&select=source_id,source_field,target_lang,translated_text,created_at&order=created_at.asc`)
+  const out: Record<string, { es?: string; en?: string }> = {}
+  for (const row of (rows || []) as Array<{ source_id: string; source_field: string; target_lang: string; translated_text: string }>) {
+    const key = `${row.source_id}:${row.source_field}`
+    if (!out[key]) out[key] = {}
+    if (row.target_lang === 'es' || row.target_lang === 'en') out[key][row.target_lang] = row.translated_text
+  }
+  return out
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const token = Array.isArray(req.query.token) ? req.query.token[0] : req.query.token
   if (!token || token.length < 10) return res.status(400).json({ error: 'Invalid link' })
@@ -155,7 +186,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'GET') {
       const comments = await sb(`issue_comments?issue_id=eq.${issue.id}&select=id,content,author_name,author_type,created_at&order=created_at.asc`)
       const photos = await sb(`issue_photos?issue_id=eq.${issue.id}&select=id,photo_url,phase,created_at&order=created_at.asc`)
-      return res.json({ issue, comments: comments || [], photos: photos || [] })
+      const translations = await loadShareTranslations(issue.id, comments || [])
+      return res.json({ issue, comments: comments || [], photos: photos || [], translations })
     }
 
     if (req.method === 'POST') {
@@ -165,7 +197,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'comment') {
         const content = String(body.content || '').trim()
         if (!content) return res.status(400).json({ error: 'Comment is empty' })
-        await sb('issue_comments', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, content, author_name: author, author_type: 'cleaner' }) })
+        const insertedRows = await sb('issue_comments', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, content, author_name: author, author_type: 'cleaner' }) })
+        const insertedId = Array.isArray(insertedRows) ? insertedRows[0]?.id : undefined
+        if (insertedId) {
+          // Cleaner comments are frequently already Spanish; pre-translating
+          // to BOTH directions means an es-locale viewer (another cleaner
+          // reopening the link) and an en-locale staff member both get an
+          // instant overlay with no on-demand click. Soft-budgeted +
+          // swallowed so a slow/failed translation never blocks the
+          // cleaner's comment post.
+          await withSoftBudget(async () => {
+            await translateIssueItems(issue.id, [`comment:${insertedId}`], 'es')
+            await translateIssueItems(issue.id, [`comment:${insertedId}`], 'en')
+          }, 10_000)
+        }
         return res.json({ ok: true })
       }
 

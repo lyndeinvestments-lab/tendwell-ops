@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { es as dateFnsEs } from 'date-fns/locale'
@@ -12,6 +12,8 @@ import { useToast } from '@/hooks/use-toast'
 import { resizeImageFile } from '@/lib/resize-image'
 import { catchUpQueue, STATUSES, categoryLabel, statusLabel, type Issue, type IssueComment, type IssuePhoto } from '@/lib/issues'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useIssueTranslations, type TranslatableCandidate } from '@/hooks/use-issue-translations'
+import { triggerIssueTranslate } from '@/lib/issue-translate'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
@@ -109,15 +111,41 @@ export function CatchUpFlow({
     },
   })
 
+  // ES overlay for the current step: every translatable field + comment on
+  // `current`. No-op when the UI isn't in Spanish. Only the current issue's
+  // items are ever candidates — the frozen queue's other entries aren't
+  // rendered, so there's nothing to overlay for them yet.
+  const translationCandidates = useMemo<TranslatableCandidate[]>(() => {
+    if (!current) return []
+    const items: TranslatableCandidate[] = [
+      { issueId: current.id, sourceId: current.id, field: 'details', text: current.details },
+      ...INFO_ROWS.map(({ key }) => ({ issueId: current.id, sourceId: current.id, field: key as string, text: current[key] as string | null })),
+    ]
+    for (const c of comments || []) items.push({ issueId: current.id, sourceId: c.id, field: 'content', text: c.content })
+    return items
+  }, [current, comments])
+  const { tr } = useIssueTranslations(translationCandidates)
+
+  const displayComments = useMemo(() => {
+    if (!comments) return comments
+    return comments.map(c => ({ ...c, content: tr(c.id, 'content', c.content) ?? c.content }))
+  }, [comments, tr])
+
   const addComment = useMutation({
     mutationFn: async () => {
-      const { error } = await (supabase as any).from('issue_comments').insert({
+      const { data, error } = await (supabase as any).from('issue_comments').insert({
         issue_id: issueId, content: comment.trim(),
         author_name: effectiveUser?.label || null, author_type: 'staff',
-      })
+      }).select('id').single()
       if (error) throw error
+      return data as { id: string }
     },
-    onSuccess: () => { setComment(''); qc.invalidateQueries({ queryKey: ['/supabase/issue-comments', issueId] }) },
+    onSuccess: (data) => {
+      setComment('')
+      qc.invalidateQueries({ queryKey: ['/supabase/issue-comments', issueId] })
+      // Fire-and-forget: never awaited, doesn't block the flow's UI.
+      if (issueId && data?.id) void triggerIssueTranslate(issueId, [{ id: `comment:${data.id}` }], 'es')
+    },
     onError: (e: any) => toast({ title: t('detail.toastCommentFailed'), description: e?.message, variant: 'destructive' }),
   })
 
@@ -252,7 +280,7 @@ export function CatchUpFlow({
           {current.details && (
             <div>
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{t('common.details')}</span>
-              <p className={cn('text-sm whitespace-pre-wrap', !detailsExpanded && 'line-clamp-3')}>{current.details}</p>
+              <p className={cn('text-sm whitespace-pre-wrap', !detailsExpanded && 'line-clamp-3')}>{tr(current.id, 'details', current.details)}</p>
               {current.details.length > 160 && (
                 <button type="button" className="text-xs text-primary hover:underline mt-1" onClick={() => setDetailsExpanded(v => !v)}>
                   {detailsExpanded ? t('catchUp.showLess') : t('catchUp.showMore')}
@@ -266,7 +294,7 @@ export function CatchUpFlow({
             return value ? (
               <div key={key}>
                 <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{t(labelKey)}</span>
-                <p className="text-sm whitespace-pre-wrap">{value}</p>
+                <p className="text-sm whitespace-pre-wrap">{tr(current.id, key as string, value)}</p>
               </div>
             ) : null
           })}
@@ -274,7 +302,7 @@ export function CatchUpFlow({
           <IssuePhotoGrid photos={photos} canEdit={canEdit} uploading={uploading} onUpload={handleUpload} />
 
           <IssueCommentsList
-            comments={comments}
+            comments={displayComments}
             isLoading={commentsLoading}
             canEdit={canEdit}
             comment={comment}

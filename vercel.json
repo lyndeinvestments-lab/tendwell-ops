@@ -26,7 +26,7 @@
       "maxDuration": 120
     },
     "api/issues/*.ts": {
-      "includeFiles": "api/issues/_lib.ts,api/notify/_lib.ts"
+      "includeFiles": "api/issues/_lib.ts,api/issues/_translate-core.ts,api/notify/_lib.ts"
     },
     "api/qbo/*.ts": {
       "includeFiles": "api/qbo/_lib.ts"
