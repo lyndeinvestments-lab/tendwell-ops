@@ -1,7 +1,9 @@
 import { format } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import { StatusBadge } from '@/components/StatusBadge'
 import { TONE_SOFT, TONE_TEXT } from '@/lib/status-colors'
-import { ISSUE_STATUS_TONES, dueLabel, isOverdue, overdueLabel, priorityTone, type Issue } from '@/lib/issues'
+import { ISSUE_STATUS_TONES, dueLabel, isOverdue, overdueLabel, priorityTone, statusLabel, type Issue } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { cn } from '@/lib/utils'
 
 type BadgeIssue = Pick<
@@ -30,6 +32,7 @@ export function IssueBadges({
   variant?: 'compact' | 'full'
   className?: string
 }) {
+  const { t, locale } = useLocale()
   const showPriority = issue.priority === 'high' || issue.priority === 'urgent'
   const overdue = isOverdue(issue)
   const showDue = !!issue.due_date && issue.status !== 'Completed'
@@ -38,7 +41,7 @@ export function IssueBadges({
   return (
     <div className={cn('flex flex-col gap-1', className)}>
       <div className="flex items-center gap-1.5 flex-wrap">
-        {issue.is_unread && <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" aria-label="Unread" />}
+        {issue.is_unread && <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" aria-label={t('badges.unread')} />}
         {showPriority && (
           <span
             className={cn(
@@ -46,21 +49,26 @@ export function IssueBadges({
               TONE_SOFT[priorityTone(issue.priority)],
             )}
           >
-            {issue.priority === 'urgent' ? 'Urgent' : 'High'}
+            {issue.priority === 'urgent' ? t('badges.urgent') : t('badges.high')}
           </span>
         )}
         {variant === 'full' && (
-          <StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'} />
+          <StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'}>
+            {statusLabel(issue.status, t)}
+          </StatusBadge>
         )}
         {showDue && (
           <span className={cn('text-2xs font-medium whitespace-nowrap', overdue ? TONE_TEXT.destructive : TONE_TEXT.neutral)}>
-            {overdue ? overdueLabel(issue.due_date!) : dueLabel(issue.due_date!)}
+            {overdue ? overdueLabel(issue.due_date!, t) : dueLabel(issue.due_date!, t, locale)}
           </span>
         )}
       </div>
       {showAcknowledged && (
         <p className={cn('text-xs', TONE_TEXT.neutral)}>
-          ✓ Acknowledged by {issue.acknowledged_by || 'someone'} · {format(new Date(issue.acknowledged_at!), 'MMM d, yyyy h:mm a')}
+          {t('badges.acknowledgedBy', {
+            name: issue.acknowledged_by || t('badges.someone'),
+            time: format(new Date(issue.acknowledged_at!), 'MMM d, yyyy h:mm a', { locale: locale === 'es' ? dateFnsEs : undefined }),
+          })}
         </p>
       )}
     </div>

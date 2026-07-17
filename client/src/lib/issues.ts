@@ -1,5 +1,41 @@
 import { format, parseISO } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import type { StatusTone } from '@/lib/status-colors'
+
+/**
+ * Local, minimal translator shape (matches `TFunc` from `lib/i18n/t.ts`)
+ * so this domain file doesn't need to import the i18n module — the
+ * dependency direction stays one-way (i18n dictionaries reference nothing
+ * here; components wire the two together via `useLocale()`).
+ */
+type TFunc = (key: string, vars?: Record<string, string | number>, fallback?: string) => string
+type LocaleCode = 'en' | 'es'
+
+/** `'Needs Attention'` → `'needs_attention'`; used to look up `status.*`/`priority.*`/`category.*` dictionary keys. */
+export function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/** Translated status display name, falling back to the raw DB value if no dictionary key matches. */
+export function statusLabel(status: string, t: TFunc): string {
+  return t(`status.${slugify(status)}`, undefined, status)
+}
+
+/** Translated priority display name, falling back to the raw DB value if no dictionary key matches. */
+export function priorityLabel(priority: string, t: TFunc): string {
+  return t(`priority.${slugify(priority)}`, undefined, priority)
+}
+
+/** Translated category display name, falling back to the raw DB value if no dictionary key matches. */
+export function categoryLabel(category: string, t: TFunc): string {
+  return t(`category.${slugify(category)}`, undefined, category)
+}
+
+/** Translated issue-type display name ("Needs Attention" / "Guest Feedback"). */
+export function issueTypeLabel(issueType: string, t: TFunc): string {
+  const fallback = issueType === 'guest_feedback' ? 'Guest Feedback' : 'Needs Attention'
+  return t(`issueType.${issueType}`, undefined, fallback)
+}
 
 /**
  * Shared Issues domain types + constants + helpers.
@@ -128,18 +164,19 @@ export function priorityTone(priority: string | null | undefined): StatusTone {
   }
 }
 
-/** "3 days overdue" / "Due today" for a due_date already known to be overdue. */
-export function overdueLabel(dueDate: string): string {
+/** "3 days overdue" / "Due today" for a due_date already known to be overdue. Localized via the caller's `t()`. */
+export function overdueLabel(dueDate: string, t: TFunc): string {
   const due = parseISO(dueDate)
   const today = parseISO(todayStr())
   const days = Math.round((today.getTime() - due.getTime()) / 86_400_000)
-  if (days <= 0) return 'Due today'
-  return `${days} day${days === 1 ? '' : 's'} overdue`
+  if (days <= 0) return t('badges.dueToday', undefined, 'Due today')
+  return t('badges.overdueDays', { count: days }, `${days} day${days === 1 ? '' : 's'} overdue`)
 }
 
-/** "Due Jul 20" for a due_date that isn't overdue (yet). */
-export function dueLabel(dueDate: string): string {
-  return `Due ${format(parseISO(dueDate), 'MMM d')}`
+/** "Due Jul 20" for a due_date that isn't overdue (yet). Localized via the caller's `t()`/`locale`. */
+export function dueLabel(dueDate: string, t: TFunc, locale: LocaleCode = 'en'): string {
+  const dateStr = format(parseISO(dueDate), 'MMM d', { locale: locale === 'es' ? dateFnsEs : undefined })
+  return t('badges.dueOn', { date: dateStr }, `Due ${dateStr}`)
 }
 
 /**

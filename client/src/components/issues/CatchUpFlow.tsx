@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import { Check, PartyPopper, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
@@ -9,7 +10,8 @@ import { useIssueReads } from '@/hooks/use-issue-reads'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { useToast } from '@/hooks/use-toast'
 import { resizeImageFile } from '@/lib/resize-image'
-import { catchUpQueue, STATUSES, type Issue, type IssueComment, type IssuePhoto } from '@/lib/issues'
+import { catchUpQueue, STATUSES, categoryLabel, statusLabel, type Issue, type IssueComment, type IssuePhoto } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
@@ -20,11 +22,11 @@ import { IssueCommentsList } from '@/components/issues/IssueCommentsList'
 import { IssuePhotoGrid } from '@/components/issues/IssuePhotoGrid'
 import { cn } from '@/lib/utils'
 
-const INFO_ROWS: Array<{ key: keyof Issue; label: string }> = [
-  { key: 'assessment', label: 'Assessment' },
-  { key: 'resolution', label: 'Resolution' },
-  { key: 'coverage', label: 'Coverage' },
-  { key: 'remarks', label: 'Remarks' },
+const INFO_ROWS: Array<{ key: keyof Issue; labelKey: 'common.assessment' | 'common.resolution' | 'common.coverage' | 'common.remarks' }> = [
+  { key: 'assessment', labelKey: 'common.assessment' },
+  { key: 'resolution', labelKey: 'common.resolution' },
+  { key: 'coverage', labelKey: 'common.coverage' },
+  { key: 'remarks', labelKey: 'common.remarks' },
 ]
 
 /**
@@ -45,6 +47,7 @@ export function CatchUpFlow({
   canEdit: boolean
 }) {
   const isMobile = useIsMobile()
+  const { t, locale } = useLocale()
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -115,7 +118,7 @@ export function CatchUpFlow({
       if (error) throw error
     },
     onSuccess: () => { setComment(''); qc.invalidateQueries({ queryKey: ['/supabase/issue-comments', issueId] }) },
-    onError: (e: any) => toast({ title: 'Comment failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('detail.toastCommentFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   // Mirrors IssueDetailSheet's acknowledge/status mutations exactly, but
@@ -131,9 +134,9 @@ export function CatchUpFlow({
     },
     onSuccess: ({ id, acknowledged_at, acknowledged_by }) => {
       setOverlays(o => ({ ...o, [id]: { ...o[id], acknowledged_at, acknowledged_by } }))
-      toast({ title: 'Acknowledged' })
+      toast({ title: t('detail.toastAcknowledged') })
     },
-    onError: (e: any) => toast({ title: 'Acknowledge failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('detail.toastAcknowledgeFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const setStatus = useGuardedMutation('issues', {
@@ -148,9 +151,9 @@ export function CatchUpFlow({
     },
     onSuccess: ({ id, status }) => {
       setOverlays(o => ({ ...o, [id]: { ...o[id], status } }))
-      toast({ title: 'Status updated' })
+      toast({ title: t('detail.toastStatusUpdated') })
     },
-    onError: (e: any) => toast({ title: 'Update failed', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('detail.toastUpdateFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   async function handleUpload(raw: File, phase: 'initial' | 'completion') {
@@ -170,7 +173,7 @@ export function CatchUpFlow({
       if (error) throw error
       qc.invalidateQueries({ queryKey: ['/supabase/issue-photos', issueId] })
     } catch (e: any) {
-      toast({ title: 'Photo upload failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('detail.toastPhotoFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setUploading(false)
     }
@@ -222,25 +225,25 @@ export function CatchUpFlow({
       {isDone ? (
         <EmptyState
           icon={PartyPopper}
-          title="You're all caught up"
-          description={total === 0 ? "No unread, overdue, or unacknowledged issues right now." : `You've been through all ${total} issue${total === 1 ? '' : 's'}.`}
-          action={{ label: 'Done', onClick: () => handleOpenChange(false) }}
+          title={t('catchUp.allCaughtUp')}
+          description={total === 0 ? t('catchUp.noneRemaining') : t('catchUp.steppedThrough', { count: total })}
+          action={{ label: t('catchUp.doneAction'), onClick: () => handleOpenChange(false) }}
         />
       ) : current && (
         <>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{index + 1} of {total}</span>
+              <span>{t('catchUp.progress', { index: index + 1, total })}</span>
             </div>
             <Progress value={((index + 1) / total) * 100} className="h-1" />
           </div>
 
           <div className="space-y-1.5">
-            <h3 className="text-base font-semibold truncate">{current.property_name || '(no property)'}</h3>
+            <h3 className="text-base font-semibold truncate">{current.property_name || t('common.noProperty')}</h3>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-              <span>{current.category}</span>
+              <span>{categoryLabel(current.category, t)}</span>
               <span>·</span>
-              <span>{format(new Date(current.report_date), 'MMM d, yyyy')}</span>
+              <span>{format(new Date(current.report_date), 'MMM d, yyyy', { locale: locale === 'es' ? dateFnsEs : undefined })}</span>
               {current.last_touch && (<><span>·</span><span>{current.last_touch}</span></>)}
             </div>
             <IssueBadges issue={current} variant="full" />
@@ -248,21 +251,21 @@ export function CatchUpFlow({
 
           {current.details && (
             <div>
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">Details</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{t('common.details')}</span>
               <p className={cn('text-sm whitespace-pre-wrap', !detailsExpanded && 'line-clamp-3')}>{current.details}</p>
               {current.details.length > 160 && (
                 <button type="button" className="text-xs text-primary hover:underline mt-1" onClick={() => setDetailsExpanded(v => !v)}>
-                  {detailsExpanded ? 'Show less' : 'Show more'}
+                  {detailsExpanded ? t('catchUp.showLess') : t('catchUp.showMore')}
                 </button>
               )}
             </div>
           )}
 
-          {INFO_ROWS.map(({ key, label }) => {
+          {INFO_ROWS.map(({ key, labelKey }) => {
             const value = current[key] as string | null
             return value ? (
               <div key={key}>
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{label}</span>
+                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{t(labelKey)}</span>
                 <p className="text-sm whitespace-pre-wrap">{value}</p>
               </div>
             ) : null
@@ -288,7 +291,7 @@ export function CatchUpFlow({
     <div className="flex flex-col gap-2 p-4 border-t border-border">
       {canEdit && current.issue_type === 'guest_feedback' && !current.acknowledged_at && (
         <Button type="button" className="w-full h-9 gap-2" onClick={handleAcknowledge} disabled={acknowledge.isPending}>
-          <UserCheck className="w-4 h-4" /> {acknowledge.isPending ? 'Acknowledging…' : 'Acknowledge'}
+          <UserCheck className="w-4 h-4" /> {acknowledge.isPending ? t('common.acknowledging') : t('common.acknowledge')}
         </Button>
       )}
       {canEdit && current.issue_type === 'needs_attention' && current.status !== 'Completed' && (
@@ -299,16 +302,16 @@ export function CatchUpFlow({
             className="h-9 text-sm border border-input rounded-md px-2 bg-background flex-1"
             disabled={setStatus.isPending}
           >
-            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+            {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s, t)}</option>)}
           </select>
           <Button type="button" size="sm" className="h-9 text-xs gap-1.5 flex-shrink-0" onClick={handleMarkComplete} disabled={setStatus.isPending}>
-            <Check className="w-3.5 h-3.5" /> Mark Complete
+            <Check className="w-3.5 h-3.5" /> {t('common.markComplete')}
           </Button>
         </div>
       )}
       <div className="flex items-center gap-2">
-        <Button type="button" variant="ghost" className="flex-1 h-9" onClick={advance}>Leave unread</Button>
-        <Button type="button" className="flex-1 h-9" onClick={handleMarkRead}>Mark as read</Button>
+        <Button type="button" variant="ghost" className="flex-1 h-9" onClick={advance}>{t('catchUp.leaveUnread')}</Button>
+        <Button type="button" className="flex-1 h-9" onClick={handleMarkRead}>{t('catchUp.markAsRead')}</Button>
       </div>
     </div>
   )
@@ -318,7 +321,7 @@ export function CatchUpFlow({
       <Drawer open={open} onOpenChange={handleOpenChange}>
         <DrawerContent className="h-[92dvh] max-h-[92dvh] mt-0 flex flex-col rounded-t-2xl overflow-hidden">
           <DrawerHeader className="text-left pb-2">
-            <DrawerTitle>Catch up</DrawerTitle>
+            <DrawerTitle>{t('catchUp.title')}</DrawerTitle>
           </DrawerHeader>
           {body}
           {footer}
@@ -331,7 +334,7 @@ export function CatchUpFlow({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="text-left px-4 pt-4 pb-2">
-          <DialogTitle>Catch up</DialogTitle>
+          <DialogTitle>{t('catchUp.title')}</DialogTitle>
         </DialogHeader>
         {body}
         {footer}

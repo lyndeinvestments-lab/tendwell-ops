@@ -1,9 +1,11 @@
 import { format } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, ExternalLink } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/StatusBadge'
-import { ISSUE_STATUS_TONES, STATUSES, type Issue } from '@/lib/issues'
+import { ISSUE_STATUS_TONES, STATUSES, categoryLabel, statusLabel, type Issue } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { IssueBadges } from './IssueBadges'
 
 export type SortKey = 'report_date' | 'property_name' | 'category' | 'status'
@@ -42,6 +44,8 @@ export function IssuesTable({
   onRowClick: (issue: Issue) => void
   onStatusChange: (args: { id: string; status: string }) => void
 }) {
+  const { t, locale } = useLocale()
+
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />
     return sortDir === 'asc' ? <ArrowUp className="w-3 h-3 inline ml-1" /> : <ArrowDown className="w-3 h-3 inline ml-1" />
@@ -52,21 +56,21 @@ export function IssuesTable({
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
           <tr>
-            <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => onSort('property_name')}>Property <SortIcon col="property_name" /></th>
-            <th className={thCls} onClick={() => onSort('report_date')}>Date <SortIcon col="report_date" /></th>
-            <th className={thCls} onClick={() => onSort('category')}>Category <SortIcon col="category" /></th>
-            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Touch</th>
-            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap min-w-[250px]">Details</th>
-            <th className={thCls} onClick={() => onSort('status')}>Status <SortIcon col="status" /></th>
-            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Slack</th>
-            {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>}
+            <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => onSort('property_name')}>{t('table.property')} <SortIcon col="property_name" /></th>
+            <th className={thCls} onClick={() => onSort('report_date')}>{t('table.date')} <SortIcon col="report_date" /></th>
+            <th className={thCls} onClick={() => onSort('category')}>{t('table.category')} <SortIcon col="category" /></th>
+            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.lastTouch')}</th>
+            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap min-w-[250px]">{t('table.details')}</th>
+            <th className={thCls} onClick={() => onSort('status')}>{t('table.status')} <SortIcon col="status" /></th>
+            <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.slack')}</th>
+            {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.action')}</th>}
           </tr>
         </thead>
         <tbody>
           {isLoading ? (
             [...Array(8)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 7)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
           ) : issues.length === 0 ? (
-            <tr><td colSpan={canEdit ? 8 : 7}><EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} /></td></tr>
+            <tr><td colSpan={canEdit ? 8 : 7}><EmptyState icon={AlertTriangle} title={t('page.emptyTitle')} description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? t('page.emptyFiltered') : t('page.emptyDefault')} /></td></tr>
           ) : issues.map((issue) => (
             <tr
               key={issue.id}
@@ -79,15 +83,15 @@ export function IssuesTable({
                   <span className="truncate">{issue.property_name}</span>
                 </div>
               </td>
-              <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy')}</td>
-              <td className="py-2 px-3"><span className="text-xs text-muted-foreground">{issue.category}</span></td>
+              <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(issue.report_date), 'MMM d, yyyy', { locale: locale === 'es' ? dateFnsEs : undefined })}</td>
+              <td className="py-2 px-3"><span className="text-xs text-muted-foreground">{categoryLabel(issue.category, t)}</span></td>
               <td className="py-2 px-3 text-xs text-muted-foreground">{issue.last_touch || '—'}</td>
               <td className="py-2 px-3 text-xs max-w-[300px] truncate">{issue.details || '—'}</td>
-              <td className="py-2 px-3"><StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'} /></td>
+              <td className="py-2 px-3"><StatusBadge status={issue.status} tone={ISSUE_STATUS_TONES[issue.status] ?? 'neutral'}>{statusLabel(issue.status, t)}</StatusBadge></td>
               <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                 {issue.slack_link ? (
                   <a href={issue.slack_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
-                    <ExternalLink className="w-3 h-3" /> Link
+                    <ExternalLink className="w-3 h-3" /> {t('table.link')}
                   </a>
                 ) : <span className="text-muted-foreground text-xs">—</span>}
               </td>
@@ -98,7 +102,7 @@ export function IssuesTable({
                     onChange={e => onStatusChange({ id: issue.id, status: e.target.value })}
                     className="h-6 text-xs border border-input rounded px-1 bg-background"
                   >
-                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s, t)}</option>)}
                   </select>
                 </td>
               )}

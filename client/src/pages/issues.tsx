@@ -24,7 +24,9 @@ import { IssueSummaryStrip } from '@/components/issues/IssueSummaryStrip'
 import { AddIssueSheet, type NewIssueForm } from '@/components/issues/AddIssueSheet'
 import { CatchUpButton } from '@/components/issues/CatchUpButton'
 import { CatchUpFlow } from '@/components/issues/CatchUpFlow'
-import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, type Issue } from '@/lib/issues'
+import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, issueTypeLabel, statusLabel, type Issue } from '@/lib/issues'
+import { LocaleProvider, useLocale } from '@/lib/i18n/LocaleProvider'
+import { LanguageToggle } from '@/components/LanguageToggle'
 import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
 import {
@@ -32,8 +34,18 @@ import {
 } from 'lucide-react'
 import Papa from 'papaparse'
 
+/** Mounts the locale context locally — see `LocaleProvider`'s doc comment. */
 export default function IssuesPage() {
+  return (
+    <LocaleProvider>
+      <IssuesPageContent />
+    </LocaleProvider>
+  )
+}
+
+function IssuesPageContent() {
   usePageTitle('Issues')
+  const { t } = useLocale()
   const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const qc = useQueryClient()
@@ -245,13 +257,13 @@ export default function IssuesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
-      toast({ title: newForm.issue_type === 'guest_feedback' ? 'Guest feedback logged' : 'Issue logged' })
+      toast({ title: newForm.issue_type === 'guest_feedback' ? t('page.toastFeedbackLogged') : t('page.toastIssueLogged') })
       setSection(newForm.issue_type === 'guest_feedback' ? 'guest_feedback' : 'needs_attention')
       setAddOpen(false)
       setNewPhoto(null)
       setNewForm(f => ({ ...f, property_id: '', property_name: '', priority: 'normal', due_date: '', details: '', assessment: '', resolution: '', coverage: '', remarks: '', last_touch: '', slack_link: '' }))
     },
-    onError: (error: any) => toast({ title: 'Failed to save', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('page.toastSaveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: updateStatus } = useGuardedMutation('issues', {
@@ -261,9 +273,9 @@ export default function IssuesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
-      toast({ title: 'Status updated' })
+      toast({ title: t('page.toastStatusUpdated') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('page.toastUpdateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Same mutation the detail sheet uses, lifted here so the mobile IssueCard
@@ -278,9 +290,9 @@ export default function IssuesPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
-      toast({ title: 'Acknowledged' })
+      toast({ title: t('page.toastAcknowledged') })
     },
-    onError: (error: any) => toast({ title: 'Acknowledge failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('page.toastAcknowledgeFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function exportCsv() {
@@ -312,7 +324,7 @@ export default function IssuesPage() {
       skipEmptyLines: true,
       complete: (result) => {
         if (!result.data?.length) {
-          toast({ title: 'No data found in CSV', variant: 'destructive' })
+          toast({ title: t('page.toastCsvEmpty'), variant: 'destructive' })
           return
         }
         const unmatchedCleaners = new Set<string>()
@@ -348,19 +360,19 @@ export default function IssuesPage() {
         }).filter(r => r.property_name && r.details)
 
         if (rows.length === 0) {
-          toast({ title: 'No valid issues found in CSV', variant: 'destructive' })
+          toast({ title: t('page.toastCsvNoValid'), variant: 'destructive' })
           return
         }
         if (unmatchedCleaners.size > 0) {
           const sample = Array.from(unmatchedCleaners).slice(0, 5).join(', ')
           toast({
-            title: `${unmatchedCleaners.size} unmatched ${unmatchedCleaners.size === 1 ? 'cleaner' : 'cleaners'} in CSV`,
-            description: `These names were preserved as-is: ${sample}${unmatchedCleaners.size > 5 ? '…' : ''}. Add them to the cleaners list so metrics count them.`,
+            title: t('page.toastCsvUnmatchedCleaners', { count: unmatchedCleaners.size }),
+            description: t('page.toastCsvUnmatchedDescription', { sample: `${sample}${unmatchedCleaners.size > 5 ? '…' : ''}` }),
           })
         }
         setImportData(rows)
       },
-      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+      error: () => toast({ title: t('page.toastCsvParseFailed'), variant: 'destructive' }),
     })
   }
 
@@ -376,7 +388,7 @@ export default function IssuesPage() {
       if (!error) imported++
     }
     qc.invalidateQueries({ queryKey: ['/supabase/cleaning-issues'] })
-    toast({ title: `Imported ${imported} issues` })
+    toast({ title: t('page.toastImported', { count: imported }) })
     setImportData(null)
     setImportRunning(false)
   }
@@ -385,17 +397,18 @@ export default function IssuesPage() {
     <PageContainer className="md:h-full md:flex md:flex-col">
       {/* Header */}
       <PageHeader
-        title="Issues Tracker"
+        title={t('page.title')}
         subtitle={
           <>
-            {stats.total} total · <span className="text-warning">{stats.inProgress} in progress</span> · {stats.completed} completed
-            {stats.unread > 0 && <> · <span className="text-primary">{stats.unread} unread</span></>}
+            {t('page.subtitleTotal', { count: stats.total })} · <span className="text-warning">{t('page.subtitleInProgress', { count: stats.inProgress })}</span> · {t('page.subtitleCompleted', { count: stats.completed })}
+            {stats.unread > 0 && <> · <span className="text-primary">{t('page.subtitleUnread', { count: stats.unread })}</span></>}
           </>
         }
         actions={
           <>
+            <LanguageToggle />
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
-              <Download className="w-3.5 h-3.5" /> Export CSV
+              <Download className="w-3.5 h-3.5" /> {t('page.exportCsv')}
             </Button>
             <CatchUpButton issues={issues || []} onClick={() => setCatchUpOpen(true)} />
             {canEdit && (
@@ -414,16 +427,16 @@ export default function IssuesPage() {
                   input.click()
                 }}
               >
-                <Upload className="w-3.5 h-3.5" /> Import CSV
+                <Upload className="w-3.5 h-3.5" /> {t('page.importCsv')}
               </Button>
             )}
             {canEdit && (
               <>
                 <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'guest_feedback', priority: 'normal' })); setAddOpen(true) }}>
-                  <MessageSquare className="w-3.5 h-3.5" /> Guest Feedback
+                  <MessageSquare className="w-3.5 h-3.5" /> {t('page.logGuestFeedback')}
                 </Button>
                 <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setNewForm(f => ({ ...f, issue_type: 'needs_attention' })); setAddOpen(true) }}>
-                  <AlertTriangle className="w-3.5 h-3.5" /> Log Issue
+                  <AlertTriangle className="w-3.5 h-3.5" /> {t('page.logIssue')}
                 </Button>
               </>
             )}
@@ -439,30 +452,30 @@ export default function IssuesPage() {
         {([
           {
             key: 'needs_attention' as const,
-            label: 'Needs Attention',
+            label: issueTypeLabel('needs_attention', t),
             count: sectionCounts.needsAttentionOpen,
             tone: (sectionCounts.needsAttentionOverdue ? 'destructive' : 'neutral') as StatusTone,
           },
           {
             key: 'guest_feedback' as const,
-            label: 'Guest Feedback',
+            label: issueTypeLabel('guest_feedback', t),
             count: sectionCounts.feedbackUnacked,
             tone: (sectionCounts.feedbackUnacked > 0 ? 'info' : 'neutral') as StatusTone,
           },
-        ]).map(t => (
+        ]).map(tab => (
           <button
-            key={t.key}
-            onClick={() => { setSection(t.key); setPage(1) }}
-            className={`px-3 h-8 rounded-md border text-sm transition-colors flex items-center gap-1.5 ${section === t.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+            key={tab.key}
+            onClick={() => { setSection(tab.key); setPage(1) }}
+            className={`px-3 h-8 rounded-md border text-sm transition-colors flex items-center gap-1.5 ${section === tab.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
           >
-            {t.label}
+            {tab.label}
             <span
               className={cn(
                 'text-2xs font-semibold px-1.5 py-0.5 rounded-full tabular-nums',
-                section === t.key ? 'bg-primary-foreground/20' : TONE_SOFT[t.tone],
+                section === tab.key ? 'bg-primary-foreground/20' : TONE_SOFT[tab.tone],
               )}
             >
-              {t.count}
+              {tab.count}
             </span>
           </button>
         ))}
@@ -487,7 +500,7 @@ export default function IssuesPage() {
             {isLoading ? (
               [...Array(6)].map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
             ) : filtered.length === 0 ? (
-              <EmptyState icon={AlertTriangle} title="No issues" description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? 'No issues match your filters.' : 'No cleaning issues logged yet.'} />
+              <EmptyState icon={AlertTriangle} title={t('page.emptyTitle')} description={search || statusFilter !== 'all' || categoryFilter !== 'all' ? t('page.emptyFiltered') : t('page.emptyDefault')} />
             ) : (
               paged.map((issue) => (
                 <IssueCard
@@ -545,7 +558,7 @@ export default function IssuesPage() {
         <Sheet open={true} onOpenChange={v => !v && !importRunning && setImportData(null)}>
           <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
             <SheetHeader>
-              <SheetTitle>Import {importData.length} Issues</SheetTitle>
+              <SheetTitle>{t('page.importPreviewTitle', { count: importData.length })}</SheetTitle>
             </SheetHeader>
             <div className="mt-4 space-y-2 max-h-[60vh] overflow-y-auto">
               {importData.map((row, i) => (
@@ -553,16 +566,16 @@ export default function IssuesPage() {
                   <div className="font-medium">{row.property_name}</div>
                   <div className="text-muted-foreground truncate">{row.details}</div>
                   <div className="flex gap-2 mt-1">
-                    <StatusBadge status={row.status} tone={ISSUE_STATUS_TONES[row.status] ?? 'neutral'} />
+                    <StatusBadge status={row.status} tone={ISSUE_STATUS_TONES[row.status] ?? 'neutral'}>{statusLabel(row.status, t)}</StatusBadge>
                     <span className="text-muted-foreground">{row.category}</span>
                   </div>
                 </div>
               ))}
             </div>
             <div className="flex gap-2 mt-4">
-              <Button variant="outline" onClick={() => setImportData(null)} disabled={importRunning}>Cancel</Button>
+              <Button variant="outline" onClick={() => setImportData(null)} disabled={importRunning}>{t('common.cancel')}</Button>
               <Button className="flex-1" onClick={executeImport} disabled={importRunning}>
-                {importRunning ? 'Importing…' : `Import ${importData.length} Issues`}
+                {importRunning ? t('page.importSubmitting') : t('page.importSubmit', { count: importData.length })}
               </Button>
             </div>
           </SheetContent>

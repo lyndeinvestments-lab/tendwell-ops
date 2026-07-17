@@ -4,7 +4,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import type { Cleaner } from '@/hooks/use-cleaners'
-import { CATEGORIES, PRIORITIES, STATUSES } from '@/lib/issues'
+import { CATEGORIES, PRIORITIES, STATUSES, categoryLabel, priorityLabel, statusLabel } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 
 export interface NewIssueForm {
   report_date: string
@@ -57,122 +58,121 @@ export function AddIssueSheet({
   adding: boolean
   onSubmit: () => void
 }) {
+  const { t } = useLocale()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
         <SheetHeader>
           <SheetTitle className="text-base flex items-center gap-2">
             {newForm.issue_type === 'guest_feedback'
-              ? <><MessageSquare className="w-4 h-4 text-info" /> Log Guest Feedback</>
-              : <><AlertTriangle className="w-4 h-4 text-warning" /> Log Issue</>}
+              ? <><MessageSquare className="w-4 h-4 text-info" /> {t('addSheet.titleGuestFeedback')}</>
+              : <><AlertTriangle className="w-4 h-4 text-warning" /> {t('addSheet.titleIssue')}</>}
           </SheetTitle>
           <p className="text-xs text-muted-foreground mt-1">
-            {newForm.issue_type === 'guest_feedback'
-              ? 'Retroactive guest feedback for the record — document what was reported, found, and resolved.'
-              : 'Something that needs fixing. After saving, copy the share link to send it to a cleaner.'}
+            {newForm.issue_type === 'guest_feedback' ? t('addSheet.descriptionGuestFeedback') : t('addSheet.descriptionIssue')}
           </p>
         </SheetHeader>
         <div className="mt-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Report Date</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.reportDate')}</label>
               <Input type="date" value={newForm.report_date} onChange={e => setNewForm(f => ({ ...f, report_date: e.target.value }))} className="h-8 text-sm" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Status</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.status')}</label>
               <select value={newForm.status} onChange={e => setNewForm(f => ({ ...f, status: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                {STATUSES.map(s => <option key={s} value={s}>{statusLabel(s, t)}</option>)}
               </select>
             </div>
           </div>
           {newForm.issue_type === 'needs_attention' && (
             <div className="rounded-md border border-warning/25 bg-warning/5 px-3 py-2 space-y-2">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Priority</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.priority')}</label>
                 <select
                   value={newForm.priority}
                   onChange={e => setNewForm(f => ({ ...f, priority: e.target.value }))}
-                  className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background capitalize"
+                  className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
                 >
-                  {PRIORITIES.map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
+                  {PRIORITIES.map(p => <option key={p} value={p}>{priorityLabel(p, t)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Due date — optional</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.dueDateOptional')}</label>
                 <Input
                   type="date"
                   value={newForm.due_date}
                   onChange={e => setNewForm(f => ({ ...f, due_date: e.target.value }))}
                   className="h-8 text-sm"
                 />
-                <p className="text-2xs text-muted-foreground mt-1">Leave blank to auto-set from priority.</p>
+                <p className="text-2xs text-muted-foreground mt-1">{t('addSheet.dueDateHint')}</p>
               </div>
             </div>
           )}
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.property')}</label>
             <select value={newForm.property_id} onChange={e => {
               const id = e.target.value
               const name = (properties || []).find((p) => String(p.id) === id)?.name || ''
               setNewForm(f => ({ ...f, property_id: id, property_name: name }))
             }} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-              <option value="">Select property…</option>
+              <option value="">{t('addSheet.selectProperty')}</option>
               {(properties || []).map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.category')}</label>
             <select value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {CATEGORIES.map(c => <option key={c} value={c}>{categoryLabel(c, t)}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Last Touch (person responsible) — optional</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.lastTouchOptional')}</label>
             <select
               value={newForm.last_touch}
               onChange={e => setNewForm(f => ({ ...f, last_touch: e.target.value }))}
               className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background"
             >
-              <option value="">Select cleaner…</option>
+              <option value="">{t('addSheet.selectCleaner')}</option>
               {(cleaners || []).map((c) => (
                 <option key={c.id} value={c.full_name}>{c.full_name}</option>
               ))}
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Details</label>
-            <textarea value={newForm.details} onChange={e => setNewForm(f => ({ ...f, details: e.target.value }))} className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Describe the issue…" />
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.details')}</label>
+            <textarea value={newForm.details} onChange={e => setNewForm(f => ({ ...f, details: e.target.value }))} className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder={t('addSheet.detailsPlaceholder')} />
           </div>
           {newForm.issue_type === 'guest_feedback' && (
             <>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Assessment</label>
-                <textarea value={newForm.assessment} onChange={e => setNewForm(f => ({ ...f, assessment: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="What was found…" />
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.assessment')}</label>
+                <textarea value={newForm.assessment} onChange={e => setNewForm(f => ({ ...f, assessment: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder={t('addSheet.assessmentPlaceholder')} />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Resolution</label>
-                <textarea value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="How was it resolved…" />
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.resolution')}</label>
+                <textarea value={newForm.resolution} onChange={e => setNewForm(f => ({ ...f, resolution: e.target.value }))} className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder={t('addSheet.resolutionPlaceholder')} />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Coverage</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.coverage')}</label>
                 <select value={newForm.coverage} onChange={e => setNewForm(f => ({ ...f, coverage: e.target.value }))} className="w-full h-8 text-sm border border-input rounded-md px-2 bg-background">
-                  <option value="">N/A</option>
-                  <option value="Yes">Yes</option>
-                  <option value="No">No</option>
+                  <option value="">{t('addSheet.coverageNA')}</option>
+                  <option value="Yes">{t('addSheet.coverageYes')}</option>
+                  <option value="No">{t('addSheet.coverageNo')}</option>
                 </select>
               </div>
             </>
           )}
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Remarks</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.remarks')}</label>
             <Input value={newForm.remarks} onChange={e => setNewForm(f => ({ ...f, remarks: e.target.value }))} className="h-8 text-sm" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Slack Link</label>
-            <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder="https://tendwell.slack.com/..." />
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.slackLink')}</label>
+            <Input value={newForm.slack_link} onChange={e => setNewForm(f => ({ ...f, slack_link: e.target.value }))} className="h-8 text-sm" placeholder={t('addSheet.slackLinkPlaceholder')} />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1">Initial photo (optional)</label>
+            <label className="text-xs font-medium text-muted-foreground block mb-1">{t('addSheet.photoOptional')}</label>
             {newPhoto ? (
               <div className="flex items-center gap-2 text-sm rounded-md border border-border px-3 h-9">
                 <span className="truncate flex-1">{newPhoto.name}</span>
@@ -184,12 +184,12 @@ export function AddIssueSheet({
                 input.onchange = e => { const f = (e.target as HTMLInputElement).files?.[0]; if (f) setNewPhoto(f) }
                 input.click()
               }}>
-                <Upload className="w-3.5 h-3.5" /> Add a photo (e.g. the dirty hot tub)
+                <Upload className="w-3.5 h-3.5" /> {t('addSheet.addPhoto')}
               </Button>
             )}
           </div>
           <Button className="w-full h-10" disabled={!newForm.property_name || !newForm.details || adding} onClick={onSubmit}>
-            {adding ? 'Saving…' : (newForm.issue_type === 'guest_feedback' ? 'Save Feedback' : 'Log Issue')}
+            {adding ? t('addSheet.saving') : (newForm.issue_type === 'guest_feedback' ? t('addSheet.saveFeedback') : t('addSheet.saveIssue'))}
           </Button>
         </div>
       </SheetContent>
