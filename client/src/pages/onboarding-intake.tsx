@@ -96,7 +96,7 @@ export default function OnboardingIntakePage() {
     const next: UploadedPhoto[] = []
     for (const file of Array.from(files)) {
       if (file.size > 20 * 1024 * 1024) {
-        setError(`${file.name} is over 20 MB — please resize and try again.`)
+        setError(`${file.name} is over 20 MB - please resize and try again.`)
         continue
       }
       const result = await uploadFile(file)

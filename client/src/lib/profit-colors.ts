@@ -21,7 +21,7 @@ export function configureProfitThresholds(high?: number, mid?: number): void {
   if (typeof high === 'number' && !Number.isNaN(high) && high > 0) PROFIT_THRESHOLDS.high = high
   if (typeof mid === 'number' && !Number.isNaN(mid) && mid > 0) PROFIT_THRESHOLDS.mid = mid
   PROFIT_TIER_LABELS.high = `High (≥${PROFIT_THRESHOLDS.high}%)`
-  PROFIT_TIER_LABELS.mid = `Mid (${PROFIT_THRESHOLDS.mid}–${PROFIT_THRESHOLDS.high}%)`
+  PROFIT_TIER_LABELS.mid = `Mid (${PROFIT_THRESHOLDS.mid}-${PROFIT_THRESHOLDS.high}%)`
   PROFIT_TIER_LABELS.low = `Low (<${PROFIT_THRESHOLDS.mid}%)`
 }
 
@@ -51,6 +51,6 @@ export const PROFIT_COLOR_HEX = {
 // Mutable (updated by configureProfitThresholds when thresholds are hydrated).
 export const PROFIT_TIER_LABELS = {
   high: `High (≥${PROFIT_THRESHOLDS.high}%)`,
-  mid: `Mid (${PROFIT_THRESHOLDS.mid}–${PROFIT_THRESHOLDS.high}%)`,
+  mid: `Mid (${PROFIT_THRESHOLDS.mid}-${PROFIT_THRESHOLDS.high}%)`,
   low: `Low (<${PROFIT_THRESHOLDS.mid}%)`,
 }

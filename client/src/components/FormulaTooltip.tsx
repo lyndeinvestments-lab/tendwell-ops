@@ -56,7 +56,7 @@ export function LaundryFormulaTooltip({
             {isOverride && (
               <div className="pt-1 mt-1 border-t border-border">
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                  Stored value differs (${Number(override).toFixed(2)}) — likely a manual override.
+                  Stored value differs (${Number(override).toFixed(2)}) - likely a manual override.
                 </p>
               </div>
             )}
@@ -124,7 +124,7 @@ export function ConsumablesFormulaTooltip({
             {isOverride && (
               <div className="pt-1 mt-1 border-t border-border">
                 <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                  Stored value differs (${Number(override).toFixed(2)}) — likely a manual override.
+                  Stored value differs (${Number(override).toFixed(2)}) - likely a manual override.
                 </p>
               </div>
             )}

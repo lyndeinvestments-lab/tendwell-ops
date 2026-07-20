@@ -258,7 +258,7 @@ export function IssueDetailSheet({
             <div className="mt-4 space-y-4">
               {/* Content is auto-translated whenever the UI is in Spanish
                   (write-time + lazy-backfill cache, see use-issue-translations)
-                  — this is just a spot-check toggle, not a translate trigger. */}
+                  - this is just a spot-check toggle, not a translate trigger. */}
               {isSpanish && hasTranslatableContent && (
                 <div className="flex items-center justify-between">
                   <Button

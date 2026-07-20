@@ -303,7 +303,7 @@ export default function LaundryWeighInsPage() {
             {pageCount > 1 && (
               <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">
-                  Showing {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of {filtered.length.toLocaleString()}
+                  Showing {firstShown.toLocaleString()}-{lastShown.toLocaleString()} of {filtered.length.toLocaleString()}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button

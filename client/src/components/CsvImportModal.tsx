@@ -645,7 +645,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               {unmatchedCount > 0 && (
                 <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  {unmatchedCount} unmatched — assign, create new, or skip
+                  {unmatchedCount} unmatched - assign, create new, or skip
                 </span>
               )}
             </div>

@@ -207,7 +207,7 @@ export default function LostItemDetailPage() {
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
                 data-testid="select-detail-assignee"
               >
-                <option value="">— Unassigned</option>
+                <option value="">- Unassigned</option>
                 {team.map(u => (
                   <option key={u.id} value={u.id}>{u.label} · {u.role}</option>
                 ))}
@@ -319,7 +319,7 @@ function ActivityFeed({
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit()
             }}
             rows={2}
-            placeholder="Add a comment for the team — context, next steps, what the guest said…"
+            placeholder="Add a comment for the team - context, next steps, what the guest said…"
             className="text-sm"
             data-testid="input-comment"
           />
@@ -507,7 +507,7 @@ function DetailsCard({
             onChange={e => setDraft({ ...draft, return_method: e.target.value })}
             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
           >
-            <option value="">— unset —</option>
+            <option value="">- unset -</option>
             {RETURN_METHODS.map(r => (
               <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
             ))}
@@ -567,7 +567,7 @@ function LinkRow({ icon, label, url }: { icon: React.ReactNode; label: string; u
     return (
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">{icon}{label}</span>
-        <span className="text-muted-foreground/60">—</span>
+        <span className="text-muted-foreground/60">-</span>
       </div>
     )
   }

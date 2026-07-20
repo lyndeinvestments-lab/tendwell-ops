@@ -44,7 +44,7 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
     })
   }
 
-  if (!value) return <span className="text-muted-foreground text-xs">—</span>
+  if (!value) return <span className="text-muted-foreground text-xs">-</span>
 
   return (
     <div className="flex items-center gap-1.5">
@@ -1533,7 +1533,7 @@ export function PropertyDetailModal() {
                       </PopoverContent>
                     </Popover>
                   ) : (
-                    <span className="text-sm text-muted-foreground">—</span>
+                    <span className="text-sm text-muted-foreground">-</span>
                   )}
                 </div>
               </div>
@@ -1795,7 +1795,7 @@ export function PropertyDetailModal() {
                           {pricePerSqft != null
                             ? `$${pricePerSqft.toFixed(3)}/sqft · target $${row.target.toFixed(2)}`
                             : sqft > 0
-                              ? `— · target $${row.target.toFixed(2)}/sqft`
+                              ? `- · target $${row.target.toFixed(2)}/sqft`
                               : `target $${row.target.toFixed(2)}/sqft (set sqft)`}
                         </p>
                         {row.field === 'cleaner_pay' && (() => {
@@ -2035,7 +2035,7 @@ export function PropertyDetailModal() {
                           <div className="font-medium">Auto Code (smart lock)</div>
                           <div className="text-muted-foreground">
                             {property.has_auto_code
-                              ? (autoCodeValue ? <>Yes — code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared)</> : <>Yes — set in Settings</>)
+                              ? (autoCodeValue ? <>Yes - code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared)</> : <>Yes - set in Settings</>)
                               : 'No auto code'}
                           </div>
                         </div>
@@ -2097,7 +2097,7 @@ export function PropertyDetailModal() {
                         <div className="font-medium">Auto Code (smart lock)</div>
                         <div className="text-muted-foreground">
                           {property.has_auto_code
-                            ? (autoCodeValue ? <>Yes — code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared, managed in Settings)</> : <>Yes — set the shared code in Settings</>)
+                            ? (autoCodeValue ? <>Yes - code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared, managed in Settings)</> : <>Yes - set the shared code in Settings</>)
                             : 'No auto code on this property'}
                         </div>
                       </div>

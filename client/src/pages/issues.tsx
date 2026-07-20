@@ -257,9 +257,9 @@ function IssuesPageContent() {
         ].filter(Boolean) as string[]
         notify({
           eventType: 'issue_logged',
-          subject: `New issue: ${newForm.property_name} — ${newForm.category}`,
+          subject: `New issue: ${newForm.property_name} - ${newForm.category}`,
           bodyLines: [
-            `${newForm.property_name} — ${newForm.category}`,
+            `${newForm.property_name} - ${newForm.category}`,
             ...(newForm.details ? [newForm.details] : []),
             trailing.join(' · '),
           ],

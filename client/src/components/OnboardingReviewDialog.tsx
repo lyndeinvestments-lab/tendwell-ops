@@ -266,7 +266,7 @@ export function OnboardingReviewDialog({
           <DialogTitle>{isMerge ? 'Review & merge into existing listing' : 'Review & create new property'}</DialogTitle>
           <DialogDescription>
             {isMerge
-              ? 'Choose which value to keep for each field — the current listing or the submitted questionnaire. Nothing changes until you save.'
+              ? 'Choose which value to keep for each field - the current listing or the submitted questionnaire. Nothing changes until you save.'
               : 'Confirm the details from the questionnaire and set the structured bed counts before creating the property.'}
           </DialogDescription>
         </DialogHeader>
@@ -348,7 +348,7 @@ export function OnboardingReviewDialog({
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground">Counts are pre-filled from the typed text — adjust as needed. Saved to the structured King/Queen/Full/Twin columns.</p>
+              <p className="text-[11px] text-muted-foreground">Counts are pre-filled from the typed text - adjust as needed. Saved to the structured King/Queen/Full/Twin columns.</p>
             </div>
 
             {/* Auto code (smart lock) — admin sets; the code value lives in Settings */}

@@ -107,7 +107,7 @@ export default function FinancialOverviewPage() {
       <PageContainer width="full" className="md:h-full md:flex md:flex-col">
         <PageHeader
           title="Financial Overview"
-          subtitle="QuickBooks actuals, clean throughput, and card spend — last 12 months."
+          subtitle="QuickBooks actuals, clean throughput, and card spend - last 12 months."
         />
         <ErrorState
           title="Failed to load financial data"
@@ -123,7 +123,7 @@ export default function FinancialOverviewPage() {
       {/* ── Header ── */}
       <PageHeader
         title="Financial Overview"
-        subtitle="QuickBooks actuals, clean throughput, and card spend — last 12 months."
+        subtitle="QuickBooks actuals, clean throughput, and card spend - last 12 months."
         actions={
           o.isLoading ? (
             <Skeleton className="h-7 w-48" />
@@ -138,7 +138,7 @@ export default function FinancialOverviewPage() {
         <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
           <span>
-            QuickBooks data not connected or stale — financial figures unavailable.
+            QuickBooks data not connected or stale - financial figures unavailable.
             Throughput and card spend sections are still shown below.
           </span>
         </div>
@@ -245,7 +245,7 @@ export default function FinancialOverviewPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-primary" />
-              Margin Trend — Last 12 Months
+              Margin Trend - Last 12 Months
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
@@ -304,7 +304,7 @@ export default function FinancialOverviewPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-info" />
-              Throughput — Cleans &amp; Revenue per Clean
+              Throughput - Cleans &amp; Revenue per Clean
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
@@ -368,7 +368,7 @@ export default function FinancialOverviewPage() {
         </CardHeader>
         <CardContent className="pt-0 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Ramp card spend — already included within QuickBooks expenses; shown here by category.
+            Ramp card spend - already included within QuickBooks expenses; shown here by category.
           </p>
           {o.isLoading ? (
             <div className="space-y-2">

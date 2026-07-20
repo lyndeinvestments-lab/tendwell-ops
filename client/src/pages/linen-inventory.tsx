@@ -302,7 +302,7 @@ export default function LinenInventoryPage() {
                 <p className="text-sm font-medium text-foreground">No on-hand counts yet</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xl">
                   Record your first inventory count to see variance vs the company-wide requirement on this page. Until then,
-                  the “On Hand” and “Variance” columns will show <span className="font-mono">—</span>.
+                  the “On Hand” and “Variance” columns will show <span className="font-mono">-</span>.
                 </p>
               </div>
               <button
@@ -356,7 +356,7 @@ export default function LinenInventoryPage() {
                         </td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right">{row.required}</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>
-                        <td className="py-2 px-3 text-right">{row.variance != null ? <VarianceBadge value={row.variance} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                        <td className="py-2 px-3 text-right">{row.variance != null ? <VarianceBadge value={row.variance} /> : <span className="text-xs text-muted-foreground">-</span>}</td>
                       </tr>
                     ))}
                     {/* Encasements & pillows — on-hand only, no required target */}
@@ -366,9 +366,9 @@ export default function LinenInventoryPage() {
                     {onHandRows.map(row => (
                       <tr key={row.key} className="border-b border-border/50">
                         <td className="py-2 px-3 text-xs font-medium">{row.label}</td>
-                        <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">—</td>
+                        <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">-</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>
-                        <td className="py-2 px-3 text-right text-muted-foreground text-xs">—</td>
+                        <td className="py-2 px-3 text-right text-muted-foreground text-xs">-</td>
                       </tr>
                     ))}
                     {/* Extras section */}
@@ -380,9 +380,9 @@ export default function LinenInventoryPage() {
                         {extraRows.map(row => (
                           <tr key={row.key} className="border-b border-border/50">
                             <td className="py-2 px-3 text-xs">{row.label}</td>
-                            <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">—</td>
+                            <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">-</td>
                             <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand}</td>
-                            <td className="py-2 px-3 text-right text-muted-foreground text-xs">—</td>
+                            <td className="py-2 px-3 text-right text-muted-foreground text-xs">-</td>
                           </tr>
                         ))}
                       </>
@@ -392,7 +392,7 @@ export default function LinenInventoryPage() {
                       <td className="py-2 px-3 text-xs uppercase tracking-wide">Total</td>
                       <td className="py-2 px-3 text-xs tabular-nums text-right">{totalRequired.toLocaleString()}</td>
                       <td className="py-2 px-3 text-xs tabular-nums text-right">{latestCount ? totalOnHand.toLocaleString() : '—'}</td>
-                      <td className="py-2 px-3 text-right">{totalVariance != null ? <VarianceBadge value={totalVariance} /> : <span className="text-xs text-muted-foreground">—</span>}</td>
+                      <td className="py-2 px-3 text-right">{totalVariance != null ? <VarianceBadge value={totalVariance} /> : <span className="text-xs text-muted-foreground">-</span>}</td>
                     </tr>
                   </>
                 )}
@@ -636,13 +636,13 @@ export default function LinenInventoryPage() {
         <Dialog open={!!detailCount} onOpenChange={(o) => { if (!o) setDetailCount(null) }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Count detail — {format(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a')}</DialogTitle>
+              <DialogTitle>Count detail - {format(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a')}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 text-sm">
               <div className="text-xs text-muted-foreground">Counted by {detailCount.counted_by || '—'}</div>
               {[
                 { title: 'Sheets, Towels & Kitchen', items: STANDARD_ITEMS },
-                { title: 'On Hand — Encasements & Pillows', items: ON_HAND_ITEMS },
+                { title: 'On Hand - Encasements & Pillows', items: ON_HAND_ITEMS },
                 { title: 'Extras', items: EXTRA_ITEMS },
               ].map(group => (
                 <div key={group.title}>

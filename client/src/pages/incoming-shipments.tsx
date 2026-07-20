@@ -272,7 +272,7 @@ export default function IncomingShipmentsPage() {
             <Textarea
               value={receivingNotes}
               onChange={e => setReceivingNotes(e.target.value)}
-              placeholder="Anything worth recording — damage, location, who handed it off…"
+              placeholder="Anything worth recording - damage, location, who handed it off…"
               rows={3}
             />
           </div>

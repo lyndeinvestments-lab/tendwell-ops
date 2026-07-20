@@ -586,7 +586,7 @@ export default function CleanersPage() {
                           <span className={`text-xs px-1.5 py-0.5 rounded ${roleBadgeClasses(c.app_role === 'inspector' ? 'inspector' : 'cleaner')}`}>
                             {c.app_role === 'inspector' ? 'Inspector' : 'Cleaner'}
                           </span>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                        ) : <span className="text-xs text-muted-foreground">-</span>}
                       </td>
                       <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
                       <td className="py-2 px-3 text-xs tabular-nums">{stats.total}</td>
@@ -645,7 +645,7 @@ export default function CleanersPage() {
         <div className="overflow-auto flex-1">
           <div className="flex items-center justify-between mb-3">
             <Button variant="outline" size="sm" onClick={() => setWeekOffset(w => w - 1)}><ChevronLeft className="w-4 h-4" /></Button>
-            <span className="text-sm font-medium">{format(weekStart, 'MMM d')} — {format(addDays(weekStart, 6), 'MMM d, yyyy')}</span>
+            <span className="text-sm font-medium">{format(weekStart, 'MMM d')} - {format(addDays(weekStart, 6), 'MMM d, yyyy')}</span>
             <Button variant="outline" size="sm" onClick={() => setWeekOffset(w => w + 1)}><ChevronRight className="w-4 h-4" /></Button>
           </div>
 

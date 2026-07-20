@@ -423,7 +423,7 @@ function PermissionsSection() {
           {deleteBlockedUsers.length > 0 ? (
             <div className="space-y-2">
               <p className="text-sm text-destructive">
-                Cannot delete — {deleteBlockedUsers.length} user{deleteBlockedUsers.length !== 1 ? 's' : ''} have this role:
+                Cannot delete - {deleteBlockedUsers.length} user{deleteBlockedUsers.length !== 1 ? 's' : ''} have this role:
               </p>
               <ul className="text-sm list-disc pl-5 space-y-0.5">
                 {deleteBlockedUsers.map((u: any) => (
@@ -570,7 +570,7 @@ function AppSettingsSection() {
           <KeyRound className="w-4 h-4" />
           Smart-Lock Access
         </h2>
-        <p className="text-xs text-muted-foreground">The shared smart-lock auto code. Every property marked as having an auto code uses this value — changing it here updates it everywhere.</p>
+        <p className="text-xs text-muted-foreground">The shared smart-lock auto code. Every property marked as having an auto code uses this value - changing it here updates it everywhere.</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {ACCESS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -1278,7 +1278,7 @@ function UsersSection() {
             <DialogTitle>Add Staff User</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">
-            For staff/internal accounts. Enter the account email — staff sign in with Google using
+            For staff/internal accounts. Enter the account email - staff sign in with Google using
             this email and can access immediately. (Property owners are added in the Owners tab and
             sign in with email/password.)
           </p>
@@ -1522,7 +1522,7 @@ function NotificationsSection() {
                       <div className="space-y-2">
                         {!emailActive && (
                           <p className="text-2xs text-muted-foreground">
-                            {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} — these events won’t send. Your selections are kept for when you re-enable.
+                            {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} - these events won’t send. Your selections are kept for when you re-enable.
                           </p>
                         )}
                         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>
@@ -1847,10 +1847,10 @@ function describeMapsStatus(s: GoogleMapsRuntimeStatus): string {
     case 'no_key': return 'no key on this build'
     case 'loading': return 'not loaded yet (open a form with an address field)'
     case 'ready': return 'loaded and active'
-    case 'script_error': return 'script failed to load — check Maps JavaScript API enablement, HTTP referrer allowlist, billing, and CSP'
-    case 'places_missing': return 'loaded without the Places library — script URL is missing libraries=places'
-    case 'timeout': return 'timed out — likely network blocked or CSP rejected maps.googleapis.com'
-    case 'gm_authFailure': return `Google rejected the key at runtime for ${window.location.origin} — add ${window.location.origin}/* to the key's HTTP referrer allowlist (then check billing / Maps JS API enablement)`
+    case 'script_error': return 'script failed to load - check Maps JavaScript API enablement, HTTP referrer allowlist, billing, and CSP'
+    case 'places_missing': return 'loaded without the Places library - script URL is missing libraries=places'
+    case 'timeout': return 'timed out - likely network blocked or CSP rejected maps.googleapis.com'
+    case 'gm_authFailure': return `Google rejected the key at runtime for ${window.location.origin} - add ${window.location.origin}/* to the key's HTTP referrer allowlist (then check billing / Maps JS API enablement)`
   }
 }
 
@@ -1925,7 +1925,7 @@ function IntegrationsSection() {
       name: 'Supabase',
       description: 'Primary database & authentication.',
       status: (supabaseUrl ? 'connected' : 'not_configured') as Status,
-      detail: supabaseUrl ? `Project URL configured` : 'VITE_SUPABASE_URL is missing — sign-in will fail.',
+      detail: supabaseUrl ? `Project URL configured` : 'VITE_SUPABASE_URL is missing - sign-in will fail.',
     },
     {
       icon: MapPin,
@@ -1941,7 +1941,7 @@ function IntegrationsSection() {
       name: 'QuickBooks Online',
       description: 'Pulls actual P&L into the Live Pro Forma.',
       status: 'configured' as Status,
-      detail: 'Connection is managed server-side. Actuals refresh nightly via a scheduled QBO import — no manual pull needed.',
+      detail: 'Connection is managed server-side. Actuals refresh nightly via a scheduled QBO import - no manual pull needed.',
       action: isAdmin ? (
         <Button
           size="sm"
@@ -1961,8 +1961,8 @@ function IntegrationsSection() {
       description: 'Powers the in-app AI chat.',
       status: (anthropicKeyPresent ? 'configured' : 'unknown') as Status,
       detail: anthropicKeyPresent
-        ? 'Public client key present — usually keys are kept server-side. Verify this is intended.'
-        : 'No public client key is exposed — the assistant calls the server-side handler.',
+        ? 'Public client key present - usually keys are kept server-side. Verify this is intended.'
+        : 'No public client key is exposed - the assistant calls the server-side handler.',
     },
   ]
 
@@ -1974,7 +1974,7 @@ function IntegrationsSection() {
       </h2>
       <p className="text-xs text-muted-foreground">
         Status of external services this Tendwell Ops install talks to. Keys are configured via Vercel/CI environment variables
-        (read-only here — never displayed).
+        (read-only here - never displayed).
       </p>
       <div className="rounded-lg border border-border divide-y divide-border">
         {integrations.map((it) => {
@@ -2004,8 +2004,8 @@ function IntegrationsSection() {
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   admin: 'Full access to every page, can edit users, roles, and global app settings. Use sparingly.',
-  supervisor: 'Field/team supervisor — manages linen, access codes, inspections, tasks, cleaners, and operational alerts. No access to financial, admin, or QBO settings unless explicitly granted in the matrix.',
-  operations: 'Day-to-day operations team — sees properties, linens, AC filters, inspections, tasks, and cleaners.',
+  supervisor: 'Field/team supervisor - manages linen, access codes, inspections, tasks, cleaners, and operational alerts. No access to financial, admin, or QBO settings unless explicitly granted in the matrix.',
+  operations: 'Day-to-day operations team - sees properties, linens, AC filters, inspections, tasks, and cleaners.',
   cleaning: 'Linen-focused role for cleaning vendors. Read-only access to linen requirements and inventory.',
   viewer: 'Read-only access to most operational pages. Cannot edit data.',
 }
@@ -2018,7 +2018,7 @@ function RoleDescriptions() {
         Role Reference
       </h2>
       <p className="text-xs text-muted-foreground">
-        Quick descriptions of the built-in roles. Custom roles you create above inherit no defaults — set their views in the matrix.
+        Quick descriptions of the built-in roles. Custom roles you create above inherit no defaults - set their views in the matrix.
       </p>
       <div className="rounded-lg border border-border divide-y divide-border">
         {Object.entries(ROLE_DESCRIPTIONS).map(([role, desc]) => (
@@ -2436,7 +2436,7 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         title: 'Owner created',
         description: prov.created
           ? `${cleanEmail} can now sign in. Assign properties to grant access.`
-          : `Login already existed — owner record linked. Assign properties to grant access.`,
+          : `Login already existed - owner record linked. Assign properties to grant access.`,
       })
       reset()
       onOpenChange(false)
@@ -2663,7 +2663,7 @@ function OwnersSection() {
                             <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder="Phone" />
                           ) : (
                             <div className="space-y-0.5">
-                              <div>{o.phone || <span className="italic">—</span>}</div>
+                              <div>{o.phone || <span className="italic">-</span>}</div>
                               {o.trellis_portal_url ? (
                                 <a
                                   href={o.trellis_portal_url.startsWith('http') ? o.trellis_portal_url : undefined}
@@ -2682,7 +2682,7 @@ function OwnersSection() {
                         </td>
                         <td className="py-2 px-3 text-xs">
                           <div className="space-y-0.5">
-                            <div className="text-muted-foreground">{o.preferred_payment_method || <span className="italic">—</span>}</div>
+                            <div className="text-muted-foreground">{o.preferred_payment_method || <span className="italic">-</span>}</div>
                             {o.contact_id ? (
                               <Link href="/contacts" className="inline-flex items-center gap-1 text-2xs text-primary hover:underline" title="This owner's info is synced to a Clients record">
                                 <ExternalLink className="w-3 h-3" /> Synced to Clients

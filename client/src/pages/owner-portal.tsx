@@ -1096,7 +1096,7 @@ function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
       </CardHeader>
       <CardContent className="space-y-3 pb-5">
         <p className="text-sm text-muted-foreground">
-          We're getting {onboarding.length === 1 ? 'your property' : 'your properties'} ready. Please make sure the details below (access codes, Wi-Fi, bed sizes) are complete — it helps us start clean.
+          We're getting {onboarding.length === 1 ? 'your property' : 'your properties'} ready. Please make sure the details below (access codes, Wi-Fi, bed sizes) are complete - it helps us start clean.
         </p>
         <ul className="space-y-1">
           {onboarding.map(p => (

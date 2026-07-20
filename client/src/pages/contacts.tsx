@@ -339,10 +339,10 @@ export default function ContactsPage() {
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                   <td className="py-2 px-3 text-xs">
-                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">—</span>}
+                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className="py-2 px-3 text-xs">
-                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">—</span>}
+                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
                   <td className="py-2 px-3 text-xs">

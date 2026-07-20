@@ -377,7 +377,7 @@ export function HostawaySyncTab() {
           <Clock className="w-3.5 h-3.5" />
           Last sync: {lastSyncLabel}
           {lastSync?.status === 'error' && (
-            <span className="text-destructive">— failed: {lastSync.error?.slice(0, 120)}</span>
+            <span className="text-destructive">- failed: {lastSync.error?.slice(0, 120)}</span>
           )}
         </p>
         <Button size="sm" variant="outline" onClick={syncNow} disabled={syncing} data-testid="hostaway-sync-now">
@@ -416,12 +416,12 @@ export function HostawaySyncTab() {
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-sm font-medium flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-warning" />
-              Differences — Hostaway vs Ops ({mismatched.length})
+              Differences - Hostaway vs Ops ({mismatched.length})
             </h3>
             <p className="text-2xs text-muted-foreground mt-0.5">
               Per difference: <Check className="w-3 h-3 inline -mt-0.5" /> applies the Hostaway value to the Ops property (audit-logged),
               {' '}<X className="w-3 h-3 inline -mt-0.5" /> accepts the difference as intentional (re-flags if either side changes).
-              Address differences are accept-only — fix addresses on the property itself. Click a property name to open it.
+              Address differences are accept-only - fix addresses on the property itself. Click a property name to open it.
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -514,7 +514,7 @@ export function HostawaySyncTab() {
           <div className="px-4 py-3 border-b border-border">
             <h3 className="text-sm font-medium">Accepted differences ({acceptedActive.length})</h3>
             <p className="text-2xs text-muted-foreground mt-0.5">
-              Marked intentional — hidden from the differences list until Hostaway or Ops changes. Restore to flag again.
+              Marked intentional - hidden from the differences list until Hostaway or Ops changes. Restore to flag again.
             </p>
           </div>
           <ul className="divide-y divide-border/60">
@@ -522,7 +522,7 @@ export function HostawaySyncTab() {
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2">
                 <div className="text-xs min-w-0">
                   <span className="font-medium">{r.property_name ?? r.hostaway_name}</span>
-                  <span className="text-muted-foreground"> — {f.label}: {d.ha_value} → {d.ops_value}</span>
+                  <span className="text-muted-foreground"> - {f.label}: {d.ha_value} → {d.ops_value}</span>
                   {d.dismissed_by && <span className="text-2xs text-muted-foreground/70"> · accepted by {d.dismissed_by}</span>}
                 </div>
                 <Button
@@ -550,7 +550,7 @@ export function HostawaySyncTab() {
             </h3>
             <p className="text-2xs text-muted-foreground mt-0.5">
               Operational properties (Onboarding / Active / Offboarding) that no Hostaway listing matched.
-              Haven Vacation Rentals properties are expected in Hostaway — those gaps need a look; other clients aren't on Hostaway.
+              Haven Vacation Rentals properties are expected in Hostaway - those gaps need a look; other clients aren't on Hostaway.
             </p>
           </div>
           <div className="overflow-x-auto">

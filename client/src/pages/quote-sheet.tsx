@@ -810,7 +810,7 @@ export default function QuoteSheetPage() {
                         return (
                           <span
                             className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap"
-                            title={stale ? `Quote is ${days} days old — eligible for auto-archive (>90d)` : `${days} days old`}
+                            title={stale ? `Quote is ${days} days old - eligible for auto-archive (>90d)` : `${days} days old`}
                           >
                             {new Date(p.created_at).toLocaleDateString()}
                             <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{days}d</span>
@@ -902,7 +902,7 @@ export default function QuoteSheetPage() {
                               className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
                               onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
                               data-testid={`button-archive-${p.id}`}
-                              title="Archive — quote didn't pan out"
+                              title="Archive - quote didn't pan out"
                             >
                               Archive
                             </Button>
@@ -912,7 +912,7 @@ export default function QuoteSheetPage() {
                       {p.archived_at && viewMode !== 'active' ? (
                         <div className="mt-1 text-2xs text-muted-foreground italic">
                           Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
-                          {p.archived_reason ? <> — {p.archived_reason}</> : null}
+                          {p.archived_reason ? <> - {p.archived_reason}</> : null}
                         </div>
                       ) : null}
                     </td>

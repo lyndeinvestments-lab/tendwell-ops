@@ -275,7 +275,7 @@ export default function AcFiltersPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="AC Filters"
-        subtitle="Track filter sizes and change schedules — click cells to edit"
+        subtitle="Track filter sizes and change schedules - click cells to edit"
         actions={
           <>
             <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
@@ -539,7 +539,7 @@ export default function AcFiltersPage() {
                 {csvData.slice(0, 10).map((row, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="font-medium">{row.Property || row.property || row.Name || row.name}</span>
-                    <span className="text-muted-foreground">—</span>
+                    <span className="text-muted-foreground">-</span>
                     <span>{row['Filter Size'] || row.filter_size || '—'}</span>
                   </div>
                 ))}

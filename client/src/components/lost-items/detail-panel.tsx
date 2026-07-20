@@ -242,7 +242,7 @@ function InlineText({
   if (!editing) {
     return (
       <FieldShell label={label} canEdit={canEdit} onEditClick={() => setEditing(true)}>
-        <span className="text-foreground tabular-nums break-words">{value || <span className="text-muted-foreground/60">—</span>}</span>
+        <span className="text-foreground tabular-nums break-words">{value || <span className="text-muted-foreground/60">-</span>}</span>
       </FieldShell>
     )
   }
@@ -288,7 +288,7 @@ function InlineDate({
   if (!editing) {
     return (
       <FieldShell label={label} canEdit={canEdit} onEditClick={() => setEditing(true)}>
-        <span className="text-foreground tabular-nums">{value || <span className="text-muted-foreground/60">—</span>}</span>
+        <span className="text-foreground tabular-nums">{value || <span className="text-muted-foreground/60">-</span>}</span>
       </FieldShell>
     )
   }
@@ -321,7 +321,7 @@ function InlineSelect({
   if (!canEdit) {
     return (
       <FieldShell label={label}>
-        <span className="text-foreground tabular-nums">{value || <span className="text-muted-foreground/60">—</span>}</span>
+        <span className="text-foreground tabular-nums">{value || <span className="text-muted-foreground/60">-</span>}</span>
       </FieldShell>
     )
   }
@@ -332,7 +332,7 @@ function InlineSelect({
           <SelectValue placeholder="—" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__none">—</SelectItem>
+          <SelectItem value="__none">-</SelectItem>
           {options.filter(o => o.v).map(o => (
             <SelectItem key={o.v} value={o.v}>{o.label}</SelectItem>
           ))}
@@ -440,7 +440,7 @@ function AssignmentField({
           <SelectValue placeholder="Pick someone" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__unassigned">— Unassigned</SelectItem>
+          <SelectItem value="__unassigned">- Unassigned</SelectItem>
           {team.map(u => (
             <SelectItem key={u.id} value={String(u.id)}>{u.label} <span className="text-muted-foreground">· {u.role}</span></SelectItem>
           ))}

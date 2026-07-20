@@ -59,19 +59,19 @@ function loadGoogleMapsScript(apiKey: string): Promise<void> {
       fn()
     }
     const timeoutId = window.setTimeout(() => {
-      settle(() => reject(new Error('Google Maps script load timed out — check Maps JavaScript API enablement, HTTP referrer restrictions, or billing.')), 'timeout')
+      settle(() => reject(new Error('Google Maps script load timed out - check Maps JavaScript API enablement, HTTP referrer restrictions, or billing.')), 'timeout')
     }, SCRIPT_LOAD_TIMEOUT_MS)
     const onLoad = () => {
       window.clearTimeout(timeoutId)
       if (!window.google?.maps?.places) {
-        settle(() => reject(new Error('Google Maps loaded but Places library is missing — verify the script URL includes libraries=places.')), 'places_missing')
+        settle(() => reject(new Error('Google Maps loaded but Places library is missing - verify the script URL includes libraries=places.')), 'places_missing')
         return
       }
       settle(() => resolve(), 'ready')
     }
     const onError = () => {
       window.clearTimeout(timeoutId)
-      settle(() => reject(new Error('Google Maps script failed to load — verify Maps JavaScript API is enabled, HTTP referrer allowlist includes this domain, billing is active, and CSP allows maps.googleapis.com.')), 'script_error')
+      settle(() => reject(new Error('Google Maps script failed to load - verify Maps JavaScript API is enabled, HTTP referrer allowlist includes this domain, billing is active, and CSP allows maps.googleapis.com.')), 'script_error')
     }
     const existing = document.querySelector<HTMLScriptElement>('script[data-tendwell-google-maps]')
     if (existing) {
@@ -201,7 +201,7 @@ export function AddressAutocomplete({
           if (window.__tendwellGoogleMapsStatus === 'gm_authFailure') {
             // Almost always RefererNotAllowedMapError: the key's HTTP referrer
             // allowlist is missing the domain the app is being served from.
-            setError(`Google rejected the Maps API key for ${window.location.origin} — add ${window.location.origin}/* to the key's HTTP referrer allowlist in the GCP console (then verify Maps JavaScript API enablement and billing)`)
+            setError(`Google rejected the Maps API key for ${window.location.origin} - add ${window.location.origin}/* to the key's HTTP referrer allowlist in the GCP console (then verify Maps JavaScript API enablement and billing)`)
             setEnabled(false)
             if (authPoll) window.clearInterval(authPoll)
           }
@@ -242,7 +242,7 @@ export function AddressAutocomplete({
         </p>
       )}
       {PLACES_API_KEY && error && (
-        <p className="text-[10px] text-amber-600 dark:text-amber-400">{error} — using plain text.</p>
+        <p className="text-[10px] text-amber-600 dark:text-amber-400">{error} - using plain text.</p>
       )}
       {PLACES_API_KEY && !error && !enabled && (
         <p className="text-[10px] text-muted-foreground">Loading address suggestions…</p>
