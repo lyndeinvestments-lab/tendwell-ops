@@ -94,7 +94,7 @@ export default function InspectionSharePage() {
     <div className="min-h-dvh bg-muted/30 py-6 px-4">
       <div className="max-w-lg mx-auto space-y-4">
         <div className="text-center">
-          <h1 className="text-sm font-semibold text-muted-foreground">Tendwell Cleaning — Inspection</h1>
+          <h1 className="text-sm font-semibold text-muted-foreground">Tendwell Cleaning - Inspection</h1>
         </div>
 
         {/* Header card */}

@@ -64,7 +64,7 @@ function monthBounds(yyyymm: string): { start: string; end: string } {
 
 export default function ForecasterPage() {
   const inWrapper = useInProFormaWrapper()
-  usePageTitle(inWrapper ? 'Pro Forma — Live' : 'Forecaster')
+  usePageTitle(inWrapper ? 'Pro Forma - Live' : 'Forecaster')
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -546,7 +546,7 @@ export default function ForecasterPage() {
       {!inWrapper ? (
         <PageHeader
           title="Forecaster"
-          subtitle="Live proforma — actuals from completed tasks & QBO compared to estimated cost formulas."
+          subtitle="Live proforma - actuals from completed tasks & QBO compared to estimated cost formulas."
           actions={controls}
         />
       ) : (
@@ -590,7 +590,7 @@ export default function ForecasterPage() {
               <Upload className="w-4 h-4 text-muted-foreground" /> Upload completed tasks for {selectedMonth}
             </div>
             <p className="text-xs text-muted-foreground">
-              Quick entry — type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&amp;L gives the actual cost; the variance below shows the gap. Trellis task counts sync hourly into the snapshot tables (see the Trellis Tasks page).
+              Quick entry - type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&amp;L gives the actual cost; the variance below shows the gap. Trellis task counts sync hourly into the snapshot tables (see the Trellis Tasks page).
             </p>
             <div className="flex items-center gap-2">
               <Input
@@ -613,7 +613,7 @@ export default function ForecasterPage() {
 
       {actualsSource === 'qbo' && (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="actuals-source-banner">
-          Showing QuickBooks actuals for {selectedMonth} — the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
+          Showing QuickBooks actuals for {selectedMonth} - the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
         </div>
       )}
       {actualsSource === 'estimate' && (
@@ -621,7 +621,7 @@ export default function ForecasterPage() {
           className="rounded-md border border-info/25 bg-info/10 px-3 py-2 text-xs text-info"
           data-testid="actuals-source-banner-estimate"
         >
-          Showing <strong>live estimate</strong> for {selectedMonth} — derived from scheduled Breezeway tasks × per-property rates.
+          Showing <strong>live estimate</strong> for {selectedMonth} - derived from scheduled Breezeway tasks × per-property rates.
           QuickBooks actuals haven't posted yet; KPIs below will switch to QBO automatically once the next nightly import lands.
         </div>
       )}
@@ -705,7 +705,7 @@ export default function ForecasterPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">Estimated vs Actual — {selectedMonth}</h3>
+                  <h3 className="text-sm font-semibold">Estimated vs Actual - {selectedMonth}</h3>
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {totalPeriodTasks} completed task{totalPeriodTasks === 1 ? '' : 's'} · {activePropsInPeriod} active propert{activePropsInPeriod === 1 ? 'y' : 'ies'}

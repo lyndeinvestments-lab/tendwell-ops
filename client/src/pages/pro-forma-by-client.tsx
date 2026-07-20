@@ -18,7 +18,7 @@ import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 // ---------------------------------------------------------------------------
 
 function ProfitBadge({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-muted-foreground">—</span>
+  if (pct == null) return <span className="text-muted-foreground">-</span>
   const t = profitTier(pct)
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
   const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
@@ -59,7 +59,7 @@ type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'profit' | 'profit_pct'
 
 export default function ProFormaByClientPage() {
   const inWrapper = useInProFormaWrapper()
-  usePageTitle(inWrapper ? 'Pro Forma — By Client' : 'Pro Forma by Client')
+  usePageTitle(inWrapper ? 'Pro Forma - By Client' : 'Pro Forma by Client')
 
   const { openPropertyModal } = usePropertyModal()
   const [sortKey, setSortKey] = useState<SortKey>('ce_charged')

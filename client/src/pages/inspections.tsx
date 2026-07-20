@@ -100,7 +100,7 @@ function ScorePill({ label, score }: { label: string; score: number | null }) {
   if (score == null) return (
     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
       <span className="text-2xs uppercase tracking-wide">{label}</span>
-      <span>—</span>
+      <span>-</span>
     </span>
   )
   return (
@@ -348,7 +348,7 @@ export default function InspectionsPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col overflow-x-hidden">
       <PageHeader
         title="Inspections"
-        subtitle="Cleaning-quality scores logged after each clean · scores 1–5"
+        subtitle="Cleaning-quality scores logged after each clean · scores 1-5"
         actions={
           <>
             {canEdit && (
@@ -605,7 +605,7 @@ export default function InspectionsPage() {
                           <span className={`inline-flex items-center gap-1 text-sm px-2 py-0.5 rounded font-semibold tabular-nums ${scoreColorClass(i.overall_score)}`}>
                             <Star className="w-3 h-3" /> {i.overall_score}
                           </span>
-                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                        ) : <span className="text-muted-foreground text-xs">-</span>}
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex flex-wrap gap-1">
@@ -668,7 +668,7 @@ export default function InspectionsPage() {
                   className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
                 >
                   {copiedShare ? (
-                    <><Check className="w-4 h-4" /> Link copied — anyone can open it, no login needed</>
+                    <><Check className="w-4 h-4" /> Link copied - anyone can open it, no login needed</>
                   ) : (
                     <><Link2 className="w-4 h-4" /> {activeDetail.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
                   )}

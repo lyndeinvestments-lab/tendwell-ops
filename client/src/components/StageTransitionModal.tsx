@@ -42,7 +42,7 @@ export function StageTransitionModal({
             ))}
           </ul>
           <p className="text-xs text-muted-foreground mt-3">
-            You can still move this property — fill in the missing fields later.
+            You can still move this property - fill in the missing fields later.
           </p>
         </div>
         <DialogFooter className="gap-2">

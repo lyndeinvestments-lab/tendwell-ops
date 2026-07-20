@@ -47,7 +47,7 @@ const STAGE_DOT: Record<string, string> = {
 }
 
 function ProfitBadge({ pct }: { pct: number | null }) {
-  if (pct == null) return <span className="text-muted-foreground">—</span>
+  if (pct == null) return <span className="text-muted-foreground">-</span>
   const t = profitTier(pct)
   const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
   const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
@@ -62,7 +62,7 @@ function ProfitBadge({ pct }: { pct: number | null }) {
 }
 
 function StageBadge({ stage }: { stage: string | null }) {
-  if (!stage) return <span className="text-muted-foreground text-xs">—</span>
+  if (!stage) return <span className="text-muted-foreground text-xs">-</span>
   // Map pipeline stages to semantic tones; Active→success, Onboarding→info,
   // Offboarding→warning, Lead/Quote→neutral, Offboarded→neutral.
   const toneMap: Record<string, 'success' | 'info' | 'warning' | 'neutral' | 'primary'> = {
@@ -94,7 +94,7 @@ function fmtCompact(n: number | null | undefined) {
 // Profit % rendered as number + a thin tier-colored meter bar (0–30% scale).
 // Replaces the plain ProfitBadge in the Profit % column for the redesign look.
 function MarginMeter({ pct }: { pct: number | null | undefined }) {
-  if (pct == null) return <span className="text-muted-foreground text-xs">—</span>
+  if (pct == null) return <span className="text-muted-foreground text-xs">-</span>
   const t = profitTier(pct)
   const barColor = t === 'high' ? 'bg-success' : t === 'mid' ? 'bg-warning' : 'bg-destructive'
   const width = Math.max(4, Math.min(100, (pct / 30) * 100))
@@ -257,7 +257,7 @@ function EditSelect({
             <SelectValue placeholder={placeholder} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__null__" className="text-xs italic text-muted-foreground">— None —</SelectItem>
+            <SelectItem value="__null__" className="text-xs italic text-muted-foreground">- None -</SelectItem>
             {options.map(o => (
               <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
             ))}
@@ -1460,7 +1460,7 @@ export default function CostTrackingPage() {
                         {p.half_baths ? <span className="text-muted-foreground">+{p.half_baths}½</span> : null}
                         {p.square_footage ? <span className="text-muted-foreground"> · {Number(p.square_footage).toLocaleString()} sf</span> : null}
                       </span>
-                    ) : <span className="text-muted-foreground">—</span>}
+                    ) : <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className={`py-2 px-3 transition-all duration-300 ${flashedCells.has(`${p.id}-ce_charged`) ? 'ring-2 ring-green-400 rounded' : ''}`}>
                     <InlineEdit
@@ -1610,7 +1610,7 @@ export default function CostTrackingPage() {
                                     <SelectValue placeholder="—">{clientLabel || '—'}</SelectValue>
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="__unlinked__" className="text-xs italic text-muted-foreground">— Unlinked —</SelectItem>
+                                    <SelectItem value="__unlinked__" className="text-xs italic text-muted-foreground">- Unlinked -</SelectItem>
                                     {(allContacts || []).map((c: any) => (
                                       <SelectItem key={c.id} value={String(c.id)} className="text-xs">
                                         {c.full_name}{c.company && c.company !== c.full_name ? ` (${c.company})` : ''}
@@ -1848,7 +1848,7 @@ export default function CostTrackingPage() {
       {/* Admin archive confirmation. Soft-delete sets deleted_at; the row stays
           recoverable for 30 days from the Master List archive panel and is then
           purged by the scheduled cleanup. Hard delete is intentionally not
-          exposed here — admins must use the archive panel. */}
+          exposed here - admins must use the archive panel. */}
       <Dialog
         open={!!confirmArchiveId}
         onOpenChange={v => { if (!v && !archivePending) setConfirmArchiveId(null) }}
@@ -1866,7 +1866,7 @@ export default function CostTrackingPage() {
                   will be removed from active lists. It stays recoverable for 30 days from the Master List archive panel, then is purged automatically.
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  This is a soft delete — historical financial records remain intact.
+                  This is a soft delete - historical financial records remain intact.
                 </p>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button

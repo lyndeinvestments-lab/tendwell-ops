@@ -237,7 +237,7 @@ export default function AccessCodesPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Access Codes"
-        subtitle="Click any field to edit — use copy icon for clipboard"
+        subtitle="Click any field to edit - use copy icon for clipboard"
         actions={
           <>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
@@ -403,7 +403,7 @@ export default function AccessCodesPage() {
                       </div>
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name || '—'}</td>
-                    <td className="py-2 px-3 text-xs whitespace-nowrap">{p.has_auto_code ? <span className="font-mono">{autoCodeValue || 'Yes'}</span> : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-3 text-xs whitespace-nowrap">{p.has_auto_code ? <span className="font-mono">{autoCodeValue || 'Yes'}</span> : <span className="text-muted-foreground">-</span>}</td>
                     {ACCESS_COLS.map(c => {
                       const isEmpty = c.sensitive && (!p[c.key] || p[c.key].trim() === '')
                       return (
@@ -425,7 +425,7 @@ export default function AccessCodesPage() {
                       p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
                         ? 'text-warning font-medium'
                         : 'text-muted-foreground'
-                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago — codes may have changed' : undefined}>
+                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago - codes may have changed' : undefined}>
                       {p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'}
                     </td>
                     <td className="py-2 px-3">

@@ -361,7 +361,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
             >
               {copiedShare ? (
-                <><Check className="w-4 h-4" /> Link copied — anyone can open it, no login needed</>
+                <><Check className="w-4 h-4" /> Link copied - anyone can open it, no login needed</>
               ) : (
                 <><Link2 className="w-4 h-4" /> {existing.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
               )}
@@ -475,7 +475,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 onChange={e => setCleanerId(e.target.value || null)}
                 className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">— Not specified —</option>
+                <option value="">- Not specified -</option>
                 {cleaners.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}
@@ -488,7 +488,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 onChange={e => setInspectorId(e.target.value || null)}
                 className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">— Not specified —</option>
+                <option value="">- Not specified -</option>
                 {cleaners.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}

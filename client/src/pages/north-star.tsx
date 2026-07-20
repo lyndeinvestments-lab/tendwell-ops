@@ -271,7 +271,7 @@ export default function NorthStarPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col md:overflow-auto">
       <PageHeader
         title="North Star"
-        subtitle={`KPI scorecard — ${monthLabel}`}
+        subtitle={`KPI scorecard - ${monthLabel}`}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1">

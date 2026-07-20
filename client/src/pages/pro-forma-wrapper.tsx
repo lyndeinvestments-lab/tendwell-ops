@@ -32,11 +32,11 @@ function defaultTabFromLocation(loc: string): TabValue {
 const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
   'live': {
     title: 'Live Pro Forma',
-    subtitle: 'Actuals from completed tasks & QBO compared to estimated cost formulas — month-by-month variance and 12-month forecast.',
+    subtitle: 'Actuals from completed tasks & QBO compared to estimated cost formulas - month-by-month variance and 12-month forecast.',
   },
   'per-property': {
     title: 'Per-Property Pro Forma',
-    subtitle: 'Estimated monthly revenue, cost, and profit per property — with CSV import.',
+    subtitle: 'Estimated monthly revenue, cost, and profit per property - with CSV import.',
   },
   'by-client': {
     title: 'Pro Forma by Client',

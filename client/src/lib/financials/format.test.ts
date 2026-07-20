@@ -15,7 +15,7 @@ describe('format', () => {
     expect(fmtDelta(90, 100).dir).toBe('down')
     expect(fmtDelta(100, null).dir).toBe('flat')
   })
-  it('returns — for NaN inputs', () => {
+  it('returns - for NaN inputs', () => {
     expect(fmtCurrency(NaN)).toBe('—')
     expect(fmtPct(NaN)).toBe('—')
   })

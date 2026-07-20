@@ -379,7 +379,7 @@ export default function ReviewsPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Reviews"
-        subtitle="Live Hostaway guest feedback from Haven — cleanliness, ratings, and response status by property."
+        subtitle="Live Hostaway guest feedback from Haven - cleanliness, ratings, and response status by property."
         actions={
           <>
             <div className="relative">
@@ -611,7 +611,7 @@ export default function ReviewsPage() {
                               {formatFiveStar(clean)}
                             </span>
                           ) : (
-                            <span className="text-2xs text-muted-foreground">—</span>
+                            <span className="text-2xs text-muted-foreground">-</span>
                           )}
                         </td>
                         <td className="px-3 py-3">
@@ -810,7 +810,7 @@ function ReviewDrawer({
                   review.revieweeResponse
                 ) : (
                   <span className="text-muted-foreground">
-                    No response yet — this review needs a reply on Hostaway.
+                    No response yet - this review needs a reply on Hostaway.
                   </span>
                 )}
               </Section>

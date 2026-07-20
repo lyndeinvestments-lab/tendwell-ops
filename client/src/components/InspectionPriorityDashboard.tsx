@@ -270,7 +270,7 @@ export function InspectionPriorityDashboard() {
     <div className="space-y-4 flex flex-col flex-1 min-h-0">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <SummaryCard label="Critical" value={summary.critical} hint="Priority ≥ 85" tone="critical" icon={<AlertTriangle className="w-4 h-4" />} />
-        <SummaryCard label="High" value={summary.high} hint="Priority 65–84" tone="high" icon={<Sparkles className="w-4 h-4" />} />
+        <SummaryCard label="High" value={summary.high} hint="Priority 65-84" tone="high" icon={<Sparkles className="w-4 h-4" />} />
         <SummaryCard label="Overdue" value={summary.overdue} hint="60+ days since last" tone="medium" icon={<Clock className="w-4 h-4" />} />
         <SummaryCard label="Never inspected" value={summary.neverInspected} hint="No completed inspections" tone="info" icon={<Calendar className="w-4 h-4" />} />
       </div>

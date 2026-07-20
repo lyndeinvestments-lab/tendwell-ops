@@ -95,7 +95,7 @@ export default function DashboardPage() {
         : new Date().toISOString()
       const label =
         customFrom && customTo
-          ? `${format(new Date(customFrom), 'MMM d')}–${format(new Date(customTo), 'MMM d')}`
+          ? `${format(new Date(customFrom), 'MMM d')}-${format(new Date(customTo), 'MMM d')}`
           : '30 days'
       return { sinceDate: since, untilDate: until, periodLabel: label }
     }
@@ -577,7 +577,7 @@ export default function DashboardPage() {
         )}
         {preset === 'custom' && customFrom && customTo && (
           <span className="text-xs text-primary font-medium">
-            Showing {format(new Date(customFrom), 'MMM d')}–{format(new Date(customTo), 'MMM d, yyyy')}
+            Showing {format(new Date(customFrom), 'MMM d')}-{format(new Date(customTo), 'MMM d, yyyy')}
           </span>
         )}
       </div>
@@ -596,7 +596,7 @@ export default function DashboardPage() {
                 )}
               </div>
               {actionItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground">All caught up — nothing needs action today.</p>
+                <p className="text-xs text-muted-foreground">All caught up - nothing needs action today.</p>
               ) : (
                 <div className="space-y-1 max-h-72 overflow-y-auto">
                   {actionItems.map((it) => (
@@ -635,7 +635,7 @@ export default function DashboardPage() {
                   )}
                 </div>
                 {negativeProfit.length === 0 && missingData.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No data issues — all active properties look healthy.</p>
+                  <p className="text-xs text-muted-foreground">No data issues - all active properties look healthy.</p>
                 ) : (
                   <div className="space-y-3 max-h-72 overflow-y-auto">
                     {negativeProfit.length > 0 && (
@@ -742,7 +742,7 @@ export default function DashboardPage() {
             onboardingVelocity?.avgDays != null
               ? "Average days from Onboarding to Active stage for conversions in the selected period."
               : onboardingVelocity?.currentAvgDays != null
-                ? "No conversions in the selected period — showing how long properties currently in Onboarding have been there."
+                ? "No conversions in the selected period - showing how long properties currently in Onboarding have been there."
                 : "No onboarding activity recorded. A property needs at least one stage_transitions row to appear here."
           }
         />

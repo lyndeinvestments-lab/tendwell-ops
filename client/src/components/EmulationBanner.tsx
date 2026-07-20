@@ -30,7 +30,7 @@ export function EmulationBanner() {
             Custom Access
           </span>
         )}
-        {' '}· Read-only — all edits blocked
+        {' '}· Read-only - all edits blocked
       </span>
       <Button
         variant="outline"

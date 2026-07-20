@@ -288,7 +288,7 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
           </h2>
         </div>
         {exceptions.error ? (
-          <p className="text-xs text-destructive">Failed to load exceptions — <button className="underline" onClick={() => exceptions.refetch()}>retry</button>.</p>
+          <p className="text-xs text-destructive">Failed to load exceptions - <button className="underline" onClick={() => exceptions.refetch()}>retry</button>.</p>
         ) : exceptions.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : visibleExRows.length === 0 ? (
@@ -379,7 +379,7 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                       {r.match_status === 'matched' && r.linked_trellis_name}
                       {r.match_status === 'stale' && <span className="text-warning">link no longer resolves</span>}
                       {r.match_status === 'suggested' && <span>{r.suggested_trellis_name}</span>}
-                      {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">—</span>}
+                      {r.match_status === 'unmatched' && <span className="text-muted-foreground/60">-</span>}
                     </td>
                     <td className="py-1.5 px-3">{workspaceBadge(r.linked_workspace ?? r.suggested_workspace)}</td>
                     <td className="py-1.5 px-3 tabular-nums">{r.tendwell_task_count ?? 0}</td>
@@ -511,7 +511,7 @@ function BreezewayTab({ recon, breezewayCoverage, breezewayExceptions, opsProper
           </h2>
         </div>
         {breezewayExceptions.error ? (
-          <p className="text-xs text-destructive">Failed to load Breezeway exceptions — <button className="underline" onClick={() => breezewayExceptions.refetch()}>retry</button>.</p>
+          <p className="text-xs text-destructive">Failed to load Breezeway exceptions - <button className="underline" onClick={() => breezewayExceptions.refetch()}>retry</button>.</p>
         ) : breezewayExceptions.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : bzExRows.length === 0 ? (
@@ -533,7 +533,7 @@ function BreezewayTab({ recon, breezewayCoverage, breezewayExceptions, opsProper
                     <td className="py-1.5 pr-3 tabular-nums">{e.clean_count}</td>
                     <td className="py-1.5 pr-3 tabular-nums">{e.task_count}</td>
                     <td className="py-1.5 pr-3 tabular-nums text-muted-foreground">
-                      {e.first_due && e.last_due ? `${e.first_due} – ${e.last_due}` : e.first_due ?? e.last_due ?? '—'}
+                      {e.first_due && e.last_due ? `${e.first_due} - ${e.last_due}` : e.first_due ?? e.last_due ?? '-'}
                     </td>
                     <td className="py-1.5 pr-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -603,7 +603,7 @@ const WORKFLOWS: { id: string; label: string; description: string; run: () => Pr
     run: () => fetchTasks({ tendwellOnly: true, scheduledFrom: todayISO(), scheduledTo: plusDaysISO(7) }) },
   { id: 'selfinspections', label: 'Cleaner self-inspections due', description: 'Open Cleaner Self-Inspection tasks.',
     run: () => fetchTasks({ tendwellOnly: true, titleILike: 'Self-Inspection', openOnly: true }) },
-  { id: 'unassigned', label: 'Unassigned Tendwell work', description: 'B tasks still on "Tendwell Cleaning Co." — not yet dispatched to a person.',
+  { id: 'unassigned', label: 'Unassigned Tendwell work', description: 'B tasks still on "Tendwell Cleaning Co." - not yet dispatched to a person.',
     run: () => fetchTasks({ unassignedTendwellCo: true, openOnly: true }) },
   { id: 'airfilters', label: 'Air-filter changes scheduled', description: 'Upcoming Air Filter Change tasks.',
     run: () => fetchTasks({ tendwellOnly: true, titleILike: 'Air Filter', scheduledFrom: todayISO(), scheduledTo: plusDaysISO(60) }) },
@@ -667,7 +667,7 @@ function RosterTab({ roster }: { roster: ReturnType<typeof useTrellisSync>['rost
   return (
     <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
       <div className="px-4 py-2 text-2xs text-muted-foreground border-b border-border/50">
-        Workspace A members — the canonical "is this person Tendwell?" list used for task attribution.
+        Workspace A members - the canonical "is this person Tendwell?" list used for task attribution.
       </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -868,7 +868,7 @@ export default function TrellisSyncPage() {
     <PageContainer>
       <PageHeader
         title="API Sync"
-        subtitle="Sync and reconcile external systems — Trellis, Breezeway, and Hostaway — against Ops property records."
+        subtitle="Sync and reconcile external systems - Trellis, Breezeway, and Hostaway - against Ops property records."
       />
 
       <Tabs defaultValue="trellis" className="w-full">

@@ -227,7 +227,7 @@ export default function TrellisTasksPage() {
       return res.json()
     },
     onSuccess: () => {
-      toast({ title: 'Sync started', description: 'Tasks refresh in a minute or two — data updates automatically.' })
+      toast({ title: 'Sync started', description: 'Tasks refresh in a minute or two - data updates automatically.' })
       // Re-pull after the sync has had time to finish.
       setTimeout(() => {
         qc.invalidateQueries({ queryKey: ['/supabase/trellis-tasks'] })
@@ -286,7 +286,7 @@ export default function TrellisTasksPage() {
     <PageContainer className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Trellis Tasks"
-        subtitle="Cleaning and ops tasks from the Trellis snapshot — synced hourly."
+        subtitle="Cleaning and ops tasks from the Trellis snapshot - synced hourly."
         actions={
           <div className="flex items-center gap-2">
             <span className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -393,7 +393,7 @@ export default function TrellisTasksPage() {
                       className="h-6 px-2 text-2xs text-muted-foreground"
                       disabled={dismissMember.isPending}
                       onClick={() => dismissMember.mutate(m)}
-                      title="Dismiss — hide this person from the list"
+                      title="Dismiss - hide this person from the list"
                       data-testid={`roster-dismiss-${m.user_id}`}
                     >
                       Dismiss
@@ -402,7 +402,7 @@ export default function TrellisTasksPage() {
                 </div>
               ))}
               {rosterGapQuery.data!.gap.length === 0 && (
-                <p className="text-xs text-muted-foreground col-span-full">Everyone left is dismissed — nothing to review.</p>
+                <p className="text-xs text-muted-foreground col-span-full">Everyone left is dismissed - nothing to review.</p>
               )}
             </div>
             {showDismissed && rosterGapQuery.data!.dismissed.length > 0 && (
@@ -468,7 +468,7 @@ export default function TrellisTasksPage() {
             type="button"
             onClick={() => setIncludeUnassigned(v => !v)}
             data-testid="toggle-include-unassigned"
-            title="Trellis buckets vendor-held and unassigned tasks separately from Overdue — toggle to see them here too."
+            title="Trellis buckets vendor-held and unassigned tasks separately from Overdue - toggle to see them here too."
             className={cn(
               'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
               includeUnassigned ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
@@ -498,7 +498,7 @@ export default function TrellisTasksPage() {
         <EmptyState
           icon={ClipboardCheck}
           title="No tasks here"
-          description={tab === 'overdue' ? 'Nothing overdue — all caught up.' : 'No tasks match the current filters.'}
+          description={tab === 'overdue' ? 'Nothing overdue - all caught up.' : 'No tasks match the current filters.'}
         />
       ) : (
         <>

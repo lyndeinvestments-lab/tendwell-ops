@@ -96,7 +96,7 @@ export function IssuesTable({
                   <a href={issue.slack_link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1 text-xs">
                     <ExternalLink className="w-3 h-3" /> {t('table.link')}
                   </a>
-                ) : <span className="text-muted-foreground text-xs">—</span>}
+                ) : <span className="text-muted-foreground text-xs">-</span>}
               </td>
               {canEdit && (
                 <td className="py-2 px-3" onClick={e => e.stopPropagation()}>

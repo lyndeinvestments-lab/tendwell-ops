@@ -507,7 +507,7 @@ export default function InspectionsPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Property Verification"
-        subtitle="Verify property details every 6 months — click a property to start walkthrough"
+        subtitle="Verify property details every 6 months - click a property to start walkthrough"
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {dueCount > 0 && (
@@ -662,8 +662,8 @@ export default function InspectionsPage() {
                     </td>
                     <td className="py-2 px-3 font-medium text-xs sticky left-8 z-10 bg-background cursor-pointer" onClick={() => openWalkthrough(p)}>{p.name}</td>
                     <td className="py-2 px-3 cursor-pointer" onClick={() => openWalkthrough(p)}><StatusBadge status={status} /></td>
-                    <td className="py-2 px-3 text-xs">{v?.assignee_name || <span className="text-muted-foreground">—</span>}</td>
-                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-destructive font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">—</span>}</td>
+                    <td className="py-2 px-3 text-xs">{v?.assignee_name || <span className="text-muted-foreground">-</span>}</td>
+                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-destructive font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">-</span>}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground cursor-pointer" onClick={() => openWalkthrough(p)}>
                       {v?.verified_at ? (
                         <span>

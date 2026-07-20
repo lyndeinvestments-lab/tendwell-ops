@@ -84,7 +84,7 @@ function SelectField({
           <SelectValue placeholder="Select..." />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="_none">—</SelectItem>
+          <SelectItem value="_none">-</SelectItem>
           {options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
         </SelectContent>
       </Select>

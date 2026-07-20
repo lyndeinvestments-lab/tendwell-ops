@@ -129,7 +129,7 @@ export default function LinenTrackerPage() {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      if (r.changed === 0) toast({ title: 'Nothing to fill — all towel fields already set' })
+      if (r.changed === 0) toast({ title: 'Nothing to fill - all towel fields already set' })
       else toast({ title: `Auto-filled ${r.changed} field${r.changed === 1 ? '' : 's'} (sleep count ${r.sleep})` })
     },
     onError: (error: any) => toast({ title: 'Auto-fill failed', description: error?.message, variant: 'destructive' }),
@@ -360,7 +360,7 @@ export default function LinenTrackerPage() {
     <PageContainer className="md:h-full md:flex md:flex-col">
       <PageHeader
         title="Linen Requirements"
-        subtitle="Active & onboarding properties — required quantities for one full set"
+        subtitle="Active & onboarding properties - required quantities for one full set"
         actions={
           <>
           {incompleteCount > 0 && (
@@ -524,7 +524,7 @@ export default function LinenTrackerPage() {
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <div className="flex items-center gap-1.5">
                         {incomplete && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" title="No linen data — all fields are zero" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" title="No linen data - all fields are zero" />
                         )}
                         <button
                           onClick={() => openPropertyModal(p.id, 'linen-tracker')}
@@ -637,7 +637,7 @@ export default function LinenTrackerPage() {
                 >
                   <span className="font-medium">{s.name}</span>
                   <span className="text-muted-foreground ml-2 text-xs">
-                    {s.bedrooms}BR — {NUMERIC_KEYS.filter(k => s[k] > 0).length}/{NUMERIC_KEYS.length} fields
+                    {s.bedrooms}BR - {NUMERIC_KEYS.filter(k => s[k] > 0).length}/{NUMERIC_KEYS.length} fields
                   </span>
                 </button>
               ))}
@@ -649,7 +649,7 @@ export default function LinenTrackerPage() {
       <Dialog open={!!importData} onOpenChange={v => !v && !importing && setImportData(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Import Linen Data — Preview</DialogTitle>
+            <DialogTitle>Import Linen Data - Preview</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground">
             {importData?.filter(r => r.matchedProperty).length} of {importData?.length} rows matched to existing properties.

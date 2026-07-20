@@ -18,10 +18,10 @@ import { Users, AlertTriangle, TrendingUp, CheckSquare, Flag } from 'lucide-reac
 function payRecommendation(m: { totalCleans: number; issueRate: number; resolutionRate: number }):
   { label: string; tone: 'good' | 'bad'; title: string } | null {
   if (m.totalCleans >= 5 && m.issueRate >= 20) {
-    return { label: 'Review pay / coach', tone: 'bad', title: `High issue rate (${m.issueRate.toFixed(1)}%) over ${m.totalCleans} cleans — recommend a coaching + pay review.` }
+    return { label: 'Review pay / coach', tone: 'bad', title: `High issue rate (${m.issueRate.toFixed(1)}%) over ${m.totalCleans} cleans - recommend a coaching + pay review.` }
   }
   if (m.totalCleans >= 10 && m.issueRate <= 3 && m.resolutionRate >= 90) {
-    return { label: 'Raise candidate', tone: 'good', title: `Low issue rate (${m.issueRate.toFixed(1)}%) over ${m.totalCleans} cleans with strong resolution — consider for a raise.` }
+    return { label: 'Raise candidate', tone: 'good', title: `Low issue rate (${m.issueRate.toFixed(1)}%) over ${m.totalCleans} cleans with strong resolution - consider for a raise.` }
   }
   return null
 }
@@ -177,7 +177,7 @@ export default function CleanerMetricsPage() {
           <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
           <p className="text-xs text-warning">
             <strong>{cleanerWithMostIssues.full_name}</strong> has the highest issue rate at {cleanerWithMostIssues.issueRate.toFixed(1)}% ({cleanerWithMostIssues.issueCount} issues / {cleanerWithMostIssues.totalCleans} cleans)
-            {cleanerWithMostIssues.topIssueCategory && <span> — most common: {cleanerWithMostIssues.topIssueCategory}</span>}
+            {cleanerWithMostIssues.topIssueCategory && <span> - most common: {cleanerWithMostIssues.topIssueCategory}</span>}
           </p>
         </div>
       )}
@@ -217,7 +217,7 @@ export default function CleanerMetricsPage() {
                 <td className="py-2 px-3 text-xs">
                   {(() => {
                     const rec = payRecommendation(m)
-                    if (!rec) return <span className="text-muted-foreground">—</span>
+                    if (!rec) return <span className="text-muted-foreground">-</span>
                     return (
                       <span
                         title={rec.title}
@@ -247,7 +247,7 @@ export default function CleanerMetricsPage() {
                       <Button size="sm" variant="ghost" className="h-6 px-2 text-xs gap-1 hover:text-warning" onClick={() => flagMut.mutate(m)} disabled={flagMut.isPending} data-testid={`button-flag-${m.id}`}>
                         <Flag className="w-3 h-3" /> Flag
                       </Button>
-                    ) : <span className="text-muted-foreground">—</span>
+                    ) : <span className="text-muted-foreground">-</span>
                   })()}
                 </td>
               </tr>

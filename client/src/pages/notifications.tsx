@@ -141,7 +141,7 @@ export default function NotificationsPage() {
               </p>
               {!emailActive && (
                 <p className="text-2xs text-muted-foreground">
-                  {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} — these events won’t send. Your selections are kept for when you re-enable.
+                  {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} - these events won’t send. Your selections are kept for when you re-enable.
                 </p>
               )}
               <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>

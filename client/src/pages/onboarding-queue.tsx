@@ -216,7 +216,7 @@ export default function OnboardingQueuePage() {
                     {expanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-sm font-medium truncate">
-                        {r.property_name || r.address || '(no name)'} <span className="text-muted-foreground font-normal">— {r.client_name || 'Unknown'}</span>
+                        {r.property_name || r.address || '(no name)'} <span className="text-muted-foreground font-normal">- {r.client_name || 'Unknown'}</span>
                       </CardTitle>
                       <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(r.submitted_at)}</p>
                     </div>
@@ -419,7 +419,7 @@ function MergePropertyDialog({
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder={initialQuery ? `Searching for "${initialQuery}" — refine here` : 'Search by name or address'}
+            placeholder={initialQuery ? `Searching for "${initialQuery}" - refine here` : 'Search by name or address'}
             className="pl-8 h-9 text-sm"
             data-testid="input-merge-search"
           />

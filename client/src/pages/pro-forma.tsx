@@ -218,7 +218,7 @@ export default function ProFormaPage() {
   const inWrapper = useInProFormaWrapper()
   const { toast } = useToast()
   const qc = useQueryClient()
-  usePageTitle(inWrapper ? 'Pro Forma — Per-Property' : 'Pro Forma')
+  usePageTitle(inWrapper ? 'Pro Forma - Per-Property' : 'Pro Forma')
   const { getNumber } = useAppSettings()
   const breakEvenMargin = getNumber('break_even_target_margin', BREAK_EVEN_MARGIN_DEFAULT)
   const [search, setSearch] = useState('')
@@ -656,7 +656,7 @@ export default function ProFormaPage() {
             <SelectContent>
               <SelectItem value="all" className="text-xs">All</SelectItem>
               <SelectItem value="profitable" className="text-xs">Profitable (&gt;{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
-              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (0–{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
+              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (0-{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
               <SelectItem value="unprofitable" className="text-xs">Unprofitable</SelectItem>
             </SelectContent>
           </Select>
@@ -755,13 +755,13 @@ export default function ProFormaPage() {
                       .from('alert_dismissals')
                       .upsert({ alert_key: `duplicate-pair::${pair.key}` }, { onConflict: 'alert_key' })
                     if (error) {
-                      toast({ title: 'Saved locally — sync failed', description: error.message, variant: 'destructive' })
+                      toast({ title: 'Saved locally - sync failed', description: error.message, variant: 'destructive' })
                     } else {
                       qc.invalidateQueries({ queryKey: ['/supabase/alert-dismissals/duplicate-pair'] })
                       toast({ title: 'Marked as intentionally separate' })
                     }
                   }}
-                  title="These are distinct units — suppress this alert for everyone on the team"
+                  title="These are distinct units - suppress this alert for everyone on the team"
                 >
                   Intentionally separate
                 </button>
@@ -928,7 +928,7 @@ export default function ProFormaPage() {
                     <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate sticky left-[44px] z-10 bg-card">
                       <button
                         className="text-left hover:underline truncate max-w-full"
-                        title={`${p.name} — click to view cleaning history`}
+                        title={`${p.name} - click to view cleaning history`}
                         onClick={() => setHistoryProperty({ id: p.id, name: p.name })}
                         data-testid={`btn-cleaning-history-${p.id}`}
                       >
@@ -966,7 +966,7 @@ export default function ProFormaPage() {
                       className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`}
                       title={
                         (p.avg_cleans_per_month ?? 0) > 10
-                          ? 'Unusually high — verify cleaning history'
+                          ? 'Unusually high - verify cleaning history'
                           : p._manual_avg_cleans != null && p._manual_avg_cleans !== p.avg_cleans_per_month
                             ? `Manual: ${p._manual_avg_cleans} · Breezeway: ${p.avg_cleans_per_month}`
                             : undefined
@@ -1126,7 +1126,7 @@ export default function ProFormaPage() {
       <Sheet open={!!historyProperty} onOpenChange={open => { if (!open) setHistoryProperty(null) }}>
         <SheetContent side="right" className="w-full sm:w-[480px] flex flex-col">
           <SheetHeader>
-            <SheetTitle className="text-base truncate">{historyProperty?.name} — Cleaning History</SheetTitle>
+            <SheetTitle className="text-base truncate">{historyProperty?.name} - Cleaning History</SheetTitle>
           </SheetHeader>
           <p className="text-xs text-muted-foreground mt-1">
             Individual clean records imported from CSV. Duplicates are blocked at the database level.

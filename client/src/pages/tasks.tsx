@@ -347,7 +347,7 @@ function ReparentPopover({
               autoFocus
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
-              placeholder="e.g. Onboarding — 123 Main St"
+              placeholder="e.g. Onboarding - 123 Main St"
               className="h-8 text-xs"
               onKeyDown={e => { if (e.key === 'Enter' && newTitle.trim()) onCreateParent(newTitle.trim()) }}
             />
@@ -1262,7 +1262,7 @@ export default function TasksPage() {
                               })
                             }}
                             aria-label={`Select ${task.title}`}
-                            title={!eligible ? (hasSubs ? 'Has subtasks — cannot become a subtask' : 'Already a subtask') : undefined}
+                            title={!eligible ? (hasSubs ? 'Has subtasks - cannot become a subtask' : 'Already a subtask') : undefined}
                           />
                         </td>
                       )}

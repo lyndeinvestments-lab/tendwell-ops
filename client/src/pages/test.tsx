@@ -19,7 +19,7 @@ export default function TestPage() {
         <EmptyState
           icon={FlaskConical}
           title="Nothing staged"
-          description="This route is where in-progress redesign previews go before they're applied to a real page. It's currently empty — the last proposal (Property List) has shipped."
+          description="This route is where in-progress redesign previews go before they're applied to a real page. It's currently empty - the last proposal (Property List) has shipped."
         />
       </div>
     </PageContainer>
