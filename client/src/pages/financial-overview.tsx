@@ -6,6 +6,8 @@ import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
 import { ErrorState } from '@/components/ErrorState'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
@@ -35,6 +37,7 @@ import {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function DeltaChip({ curr, prev }: { curr: number | null; prev: number | null }) {
+  const { t } = useLocale('financials')
   const d = fmtDelta(curr, prev)
   if (d.text === '—') return <span className="text-muted-foreground">{d.text}</span>
   return (
@@ -44,7 +47,7 @@ function DeltaChip({ curr, prev }: { curr: number | null; prev: number | null })
         d.dir === 'up' ? 'text-success' : d.dir === 'down' ? 'text-destructive' : 'text-muted-foreground',
       )}
     >
-      {d.text} MoM
+      {d.text} {t('overview.kpi.mom')}
     </span>
   )
 }
@@ -56,25 +59,21 @@ function FreshnessChip({
   qboUpdatedAt: string | null
   qboConnected: boolean
 }) {
+  const { t } = useLocale('financials')
+  const { format } = useDateFormat()
   if (!qboConnected) {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-warning/10 text-warning border border-warning/25">
         <AlertCircle className="w-3 h-3" />
-        QuickBooks not connected
+        {t('overview.freshness.notConnected')}
       </span>
     )
   }
-  const dateStr = qboUpdatedAt
-    ? new Date(qboUpdatedAt).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      })
-    : null
+  const dateStr = qboUpdatedAt ? format(new Date(qboUpdatedAt), 'MMM d, yyyy') : null
   return (
     <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-success/10 text-success border border-success/25">
       <CheckCircle2 className="w-3 h-3" />
-      QBO synced{dateStr ? ` · ${dateStr}` : ''}
+      {t('overview.freshness.synced')}{dateStr ? ` · ${dateStr}` : ''}
     </span>
   )
 }
@@ -88,30 +87,33 @@ const tooltipStyle: React.CSSProperties = {
 }
 const tooltipLabelStyle: React.CSSProperties = { color: 'hsl(var(--foreground))' }
 
-const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-function ymToAbbr(v: string): string {
-  const [, m] = v.split('-')
-  return MONTH_ABBR[Number(m) - 1] ?? v
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function FinancialOverviewPage() {
-  usePageTitle('Financial Overview')
+  const { t } = useLocale('financials')
+  const { format } = useDateFormat()
+  usePageTitle(t('overview.page.title', undefined, 'Financial Overview'))
   const o = useFinancialOverview()
   const { curr, prev } = lastTwo(o.series)
+
+  function ymToAbbr(v: string): string {
+    const [y, m] = v.split('-')
+    const monthIdx = Number(m) - 1
+    if (!y || Number.isNaN(monthIdx)) return v
+    return format(new Date(Number(y), monthIdx, 1), 'MMM')
+  }
 
   // ── Error state ──
   if (o.isError) {
     return (
       <PageContainer width="full" className="md:h-full md:flex md:flex-col">
         <PageHeader
-          title="Financial Overview"
-          subtitle="QuickBooks actuals, clean throughput, and card spend - last 12 months."
+          title={t('overview.page.title')}
+          subtitle={t('overview.page.subtitle')}
         />
         <ErrorState
-          title="Failed to load financial data"
-          description="Something went wrong fetching the financial overview. Check your connection and try again."
+          title={t('overview.error.title')}
+          description={t('overview.error.description')}
           onRetry={o.refetch}
         />
       </PageContainer>
@@ -122,8 +124,8 @@ export default function FinancialOverviewPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       {/* ── Header ── */}
       <PageHeader
-        title="Financial Overview"
-        subtitle="QuickBooks actuals, clean throughput, and card spend - last 12 months."
+        title={t('overview.page.title')}
+        subtitle={t('overview.page.subtitle')}
         actions={
           o.isLoading ? (
             <Skeleton className="h-7 w-48" />
@@ -137,10 +139,7 @@ export default function FinancialOverviewPage() {
       {!o.qboConnected && !o.isLoading && (
         <div className="flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm text-warning">
           <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <span>
-            QuickBooks data not connected or stale - financial figures unavailable.
-            Throughput and card spend sections are still shown below.
-          </span>
+          <span>{t('overview.banner.qboDisconnected')}</span>
         </div>
       )}
 
@@ -152,7 +151,7 @@ export default function FinancialOverviewPage() {
           <>
             {/* Revenue */}
             <StatCard
-              title="Revenue"
+              title={t('overview.kpi.revenue')}
               value={fmtCurrency(curr?.income ?? null)}
               subtitle={<DeltaChip curr={curr?.income ?? null} prev={prev?.income ?? null} />}
               icon={DollarSign}
@@ -161,7 +160,7 @@ export default function FinancialOverviewPage() {
 
             {/* Expenses */}
             <StatCard
-              title="Expenses"
+              title={t('overview.kpi.expenses')}
               value={fmtCurrency(curr?.totalExpenses ?? null)}
               subtitle={<DeltaChip curr={curr?.totalExpenses ?? null} prev={prev?.totalExpenses ?? null} />}
               icon={TrendingDown}
@@ -170,7 +169,7 @@ export default function FinancialOverviewPage() {
 
             {/* Net Income */}
             <StatCard
-              title="Net Income"
+              title={t('overview.kpi.netIncome')}
               value={fmtCurrency(curr?.netIncome ?? null)}
               subtitle={<DeltaChip curr={curr?.netIncome ?? null} prev={prev?.netIncome ?? null} />}
               icon={TrendingUp}
@@ -185,7 +184,7 @@ export default function FinancialOverviewPage() {
 
             {/* Margin */}
             <StatCard
-              title="Margin"
+              title={t('overview.kpi.margin')}
               value={fmtPct(curr?.marginPct ?? null)}
               subtitle={<DeltaChip curr={curr?.marginPct ?? null} prev={prev?.marginPct ?? null} />}
               icon={Percent}
@@ -202,7 +201,7 @@ export default function FinancialOverviewPage() {
 
             {/* Cleans */}
             <StatCard
-              title="Cleans"
+              title={t('overview.kpi.cleans')}
               value={curr?.cleans != null ? String(curr.cleans) : '—'}
               subtitle={<DeltaChip curr={curr?.cleans ?? null} prev={prev?.cleans ?? null} />}
               icon={Sparkles}
@@ -211,7 +210,7 @@ export default function FinancialOverviewPage() {
 
             {/* Revenue / Clean */}
             <StatCard
-              title="Revenue / Clean"
+              title={t('overview.kpi.revenuePerClean')}
               value={fmtCurrency(curr?.revPerClean ?? null)}
               subtitle={<DeltaChip curr={curr?.revPerClean ?? null} prev={prev?.revPerClean ?? null} />}
               icon={BarChart3}
@@ -228,9 +227,9 @@ export default function FinancialOverviewPage() {
             <Skeleton className="h-24 rounded-xl" />
           ) : o.taskLoad ? (
             <StatCard
-              title="Tasks Due"
+              title={t('overview.tasksDue.title')}
               value={String(o.taskLoad.today + o.taskLoad.overdue)}
-              subtitle={`${o.taskLoad.overdue} overdue`}
+              subtitle={t('overview.tasksDue.overdue', { count: o.taskLoad.overdue })}
               icon={CalendarClock}
               tone={o.taskLoad.overdue > 0 ? 'destructive' : 'success'}
             />
@@ -245,14 +244,14 @@ export default function FinancialOverviewPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-primary" />
-              Margin Trend - Last 12 Months
+              {t('overview.chart1.title')}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {o.isLoading ? (
               <Skeleton className="h-[280px] w-full" />
             ) : o.series.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-12 text-center">No QuickBooks data available</p>
+              <p className="text-xs text-muted-foreground py-12 text-center">{t('overview.chart1.empty')}</p>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={o.series} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
@@ -285,14 +284,14 @@ export default function FinancialOverviewPage() {
                     labelStyle={tooltipLabelStyle}
                     formatter={(val: unknown, name: string) => {
                       const n = typeof val === 'number' ? val : null
-                      if (name === 'Margin %') return [fmtPct(n), name]
+                      if (name === t('overview.chart1.marginPct')) return [fmtPct(n), name]
                       return [fmtCurrency(n), name]
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey="income" name="Revenue" fill="#3b82f6" fillOpacity={0.85} radius={[3, 3, 0, 0] as [number, number, number, number]} />
-                  <Bar yAxisId="left" dataKey="totalExpenses" name="Expenses" fill="#ef4444" fillOpacity={0.75} radius={[3, 3, 0, 0] as [number, number, number, number]} />
-                  <Line yAxisId="right" type="monotone" dataKey="marginPct" name="Margin %" stroke="#22c55e" strokeWidth={2} dot={false} />
+                  <Bar yAxisId="left" dataKey="income" name={t('overview.chart1.revenue')} fill="#3b82f6" fillOpacity={0.85} radius={[3, 3, 0, 0] as [number, number, number, number]} />
+                  <Bar yAxisId="left" dataKey="totalExpenses" name={t('overview.chart1.expenses')} fill="#ef4444" fillOpacity={0.75} radius={[3, 3, 0, 0] as [number, number, number, number]} />
+                  <Line yAxisId="right" type="monotone" dataKey="marginPct" name={t('overview.chart1.marginPct')} stroke="#22c55e" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
@@ -304,14 +303,14 @@ export default function FinancialOverviewPage() {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-info" />
-              Throughput - Cleans &amp; Revenue per Clean
+              {t('overview.chart2.title')}
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {o.isLoading ? (
               <Skeleton className="h-[280px] w-full" />
             ) : o.series.length === 0 ? (
-              <p className="text-xs text-muted-foreground py-12 text-center">No data available</p>
+              <p className="text-xs text-muted-foreground py-12 text-center">{t('overview.chart2.empty')}</p>
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 <ComposedChart data={o.series} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
@@ -344,13 +343,13 @@ export default function FinancialOverviewPage() {
                     labelStyle={tooltipLabelStyle}
                     formatter={(val: unknown, name: string): [string, string] => {
                       const n = typeof val === 'number' ? val : null
-                      if (name === 'Rev/Clean') return [fmtCurrency(n), name]
+                      if (name === t('overview.chart2.revPerClean')) return [fmtCurrency(n), name]
                       return [String(val ?? '—'), name]
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: 11 }} />
-                  <Bar yAxisId="left" dataKey="cleans" name="Cleans" fill="#8b5cf6" fillOpacity={0.85} radius={[3, 3, 0, 0] as [number, number, number, number]} />
-                  <Line yAxisId="right" type="monotone" dataKey="revPerClean" name="Rev/Clean" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                  <Bar yAxisId="left" dataKey="cleans" name={t('overview.chart2.cleans')} fill="#8b5cf6" fillOpacity={0.85} radius={[3, 3, 0, 0] as [number, number, number, number]} />
+                  <Line yAxisId="right" type="monotone" dataKey="revPerClean" name={t('overview.chart2.revPerClean')} stroke="#f59e0b" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
             )}
@@ -363,25 +362,25 @@ export default function FinancialOverviewPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <CreditCard className="w-4 h-4 text-primary" />
-            Ramp Card Spend
+            {t('overview.ramp.title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="pt-0 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Ramp card spend - already included within QuickBooks expenses; shown here by category.
+            {t('overview.ramp.description')}
           </p>
           {o.isLoading ? (
             <div className="space-y-2">
               {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
             </div>
           ) : !o.ramp ? (
-            <p className="text-xs text-muted-foreground py-3 text-center">Ramp not connected</p>
+            <p className="text-xs text-muted-foreground py-3 text-center">{t('overview.ramp.notConnected')}</p>
           ) : (
             <div className="space-y-1.5">
               {/* Total spend summary */}
               {(o.ramp as any).totalSpend != null && (
                 <div className="flex items-center justify-between pb-2 border-b border-border/40">
-                  <span className="text-xs font-medium text-foreground">Total Spend</span>
+                  <span className="text-xs font-medium text-foreground">{t('overview.ramp.totalSpend')}</span>
                   <span className="text-sm font-semibold tabular-nums">
                     {fmtCurrency((o.ramp as any).totalSpend)}
                   </span>
@@ -391,7 +390,7 @@ export default function FinancialOverviewPage() {
               {o.ramp.byCategory && o.ramp.byCategory.length > 0 ? (
                 <>
                   <p className="text-2xs text-muted-foreground uppercase tracking-wide font-medium pt-1">
-                    By Category
+                    {t('overview.ramp.byCategory')}
                   </p>
                   {o.ramp.byCategory.map((c: { category: string; total: number }) => (
                     <div key={c.category} className="flex items-center justify-between text-xs">
@@ -402,13 +401,13 @@ export default function FinancialOverviewPage() {
                 </>
               ) : (
                 <p className="text-xs text-muted-foreground py-2 text-center">
-                  No category breakdown available
+                  {t('overview.ramp.noCategoryBreakdown')}
                 </p>
               )}
               {/* Window info */}
               {o.ramp.windowMonths != null && (
                 <p className="text-2xs text-muted-foreground pt-2">
-                  Window: last {o.ramp.windowMonths} month{o.ramp.windowMonths !== 1 ? 's' : ''}
+                  {t('overview.ramp.window', { count: o.ramp.windowMonths })}
                 </p>
               )}
             </div>
@@ -418,7 +417,7 @@ export default function FinancialOverviewPage() {
 
       {/* ── Footnote ── */}
       <p className="text-2xs text-muted-foreground">
-        Clean &amp; task counts are de-duplicated across Breezeway and Trellis (one source per property).
+        {t('overview.footnote')}
       </p>
     </PageContainer>
   )

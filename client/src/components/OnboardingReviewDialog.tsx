@@ -9,43 +9,46 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Bed } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import type { TFunc } from '@/lib/i18n/t'
 
 const ONBOARDING_STAGE_ID = 3
 
 // Fields the questionnaire collects that map 1:1 onto a properties column.
-// `key` is the submission field, `prop` is the properties column.
+// `key` is the submission field, `prop` is the properties column. `labelKey`
+// resolves under the `onboarding.review.fields.*` dictionary namespace.
 type FieldType = 'text' | 'number' | 'bool'
-const FIELDS: { key: string; prop: string; label: string; type: FieldType }[] = [
-  { key: 'property_name', prop: 'name', label: 'Property Name', type: 'text' },
-  { key: 'address', prop: 'address', label: 'Address', type: 'text' },
-  { key: 'bedrooms', prop: 'bedrooms', label: 'Bedrooms', type: 'number' },
-  { key: 'number_of_beds', prop: 'number_of_beds', label: 'Number of Beds', type: 'number' },
-  { key: 'full_baths', prop: 'full_baths', label: 'Full Baths', type: 'number' },
-  { key: 'half_baths', prop: 'half_baths', label: 'Half Baths', type: 'number' },
-  { key: 'square_footage', prop: 'square_footage', label: 'Square Footage', type: 'number' },
-  { key: 'hot_tub', prop: 'hot_tub', label: 'Hot Tub', type: 'bool' },
-  { key: 'linen_program', prop: 'linen_program', label: 'Linen Program', type: 'bool' },
-  { key: 'door_code', prop: 'door_code', label: 'Front Door Code', type: 'text' },
-  { key: 'other_codes', prop: 'other_codes', label: 'Other Codes', type: 'text' },
-  { key: 'wifi_info', prop: 'wifi_info', label: 'Wi-Fi', type: 'text' },
-  { key: 'filter_size', prop: 'filter_size', label: 'A/C Filter Size', type: 'text' },
-  { key: 'check_in_time', prop: 'check_in_time', label: 'Check-in Time', type: 'text' },
-  { key: 'check_out_time', prop: 'check_out_time', label: 'Check-out Time', type: 'text' },
+const FIELDS: { key: string; prop: string; labelKey: string; type: FieldType }[] = [
+  { key: 'property_name', prop: 'name', labelKey: 'propertyName', type: 'text' },
+  { key: 'address', prop: 'address', labelKey: 'address', type: 'text' },
+  { key: 'bedrooms', prop: 'bedrooms', labelKey: 'bedrooms', type: 'number' },
+  { key: 'number_of_beds', prop: 'number_of_beds', labelKey: 'numberOfBeds', type: 'number' },
+  { key: 'full_baths', prop: 'full_baths', labelKey: 'fullBaths', type: 'number' },
+  { key: 'half_baths', prop: 'half_baths', labelKey: 'halfBaths', type: 'number' },
+  { key: 'square_footage', prop: 'square_footage', labelKey: 'squareFootage', type: 'number' },
+  { key: 'hot_tub', prop: 'hot_tub', labelKey: 'hotTub', type: 'bool' },
+  { key: 'linen_program', prop: 'linen_program', labelKey: 'linenProgram', type: 'bool' },
+  { key: 'door_code', prop: 'door_code', labelKey: 'frontDoorCode', type: 'text' },
+  { key: 'other_codes', prop: 'other_codes', labelKey: 'otherCodes', type: 'text' },
+  { key: 'wifi_info', prop: 'wifi_info', labelKey: 'wifi', type: 'text' },
+  { key: 'filter_size', prop: 'filter_size', labelKey: 'acFilterSize', type: 'text' },
+  { key: 'check_in_time', prop: 'check_in_time', labelKey: 'checkInTime', type: 'text' },
+  { key: 'check_out_time', prop: 'check_out_time', labelKey: 'checkOutTime', type: 'text' },
 ]
 
 const BED_COLS = [
-  { key: 'king', col: 'king_beds', label: 'King' },
-  { key: 'queen', col: 'queen_beds', label: 'Queen' },
-  { key: 'full', col: 'full_beds', label: 'Full' },
-  { key: 'twin', col: 'twin_beds', label: 'Twin' },
+  { key: 'king', col: 'king_beds', labelKey: 'king' },
+  { key: 'queen', col: 'queen_beds', labelKey: 'queen' },
+  { key: 'full', col: 'full_beds', labelKey: 'full' },
+  { key: 'twin', col: 'twin_beds', labelKey: 'twin' },
 ] as const
 
 type Beds = { king: number; queen: number; full: number; twin: number }
 
 const isBlank = (v: any) => v == null || v === ''
 
-function fmt(v: any, type: FieldType): string {
-  if (type === 'bool') return v === true ? 'Yes' : v === false ? 'No' : '—'
+function fmt(v: any, type: FieldType, t: TFunc): string {
+  if (type === 'bool') return v === true ? t('common.actions.yes') : v === false ? t('common.actions.no') : '—'
   return isBlank(v) ? '—' : String(v)
 }
 
@@ -81,6 +84,7 @@ export function OnboardingReviewDialog({
   onClose: () => void
   onDone: () => void
 }) {
+  const { t } = useLocale('onboarding')
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -246,16 +250,20 @@ export function OnboardingReviewDialog({
     },
     onSuccess: (res) => {
       toast({
-        title: res.mode === 'create' ? 'Property created' : 'Merged',
+        title: res.mode === 'create' ? t('toasts.propertyCreated') : t('toasts.merged'),
         description: res.mode === 'create'
-          ? `Created property #${res.propertyId} in Onboarding.`
-          : `Updated ${res.filled} field${res.filled === 1 ? '' : 's'} on property #${res.propertyId}.`,
+          ? t('toasts.createdDescription', { id: res.propertyId })
+          : t('toasts.mergedDescription', {
+              count: res.filled,
+              fieldWord: t(res.filled === 1 ? 'toasts.fieldSingular' : 'toasts.fieldPlural'),
+              id: res.propertyId,
+            }),
       })
       qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
       qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
       onDone()
     },
-    onError: (e: any) => toast({ title: 'Save failed', description: e?.message || 'Try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.saveFailed'), description: e?.message || t('toasts.tryAgain'), variant: 'destructive' }),
   })
 
   const open = !!submission
@@ -263,11 +271,9 @@ export function OnboardingReviewDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!o && !apply.isPending) onClose() }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isMerge ? 'Review & merge into existing listing' : 'Review & create new property'}</DialogTitle>
+          <DialogTitle>{isMerge ? t('review.title.merge') : t('review.title.create')}</DialogTitle>
           <DialogDescription>
-            {isMerge
-              ? 'Choose which value to keep for each field - the current listing or the submitted questionnaire. Nothing changes until you save.'
-              : 'Confirm the details from the questionnaire and set the structured bed counts before creating the property.'}
+            {isMerge ? t('review.description.merge') : t('review.description.create')}
           </DialogDescription>
         </DialogHeader>
 
@@ -279,19 +285,20 @@ export function OnboardingReviewDialog({
             <div className="rounded-lg border border-border overflow-hidden">
               {isMerge && (
                 <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-muted/60 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <span>Field</span><span>Current listing</span><span>Submitted</span>
+                  <span>{t('review.table.field')}</span><span>{t('review.table.currentListing')}</span><span>{t('review.table.submitted')}</span>
                 </div>
               )}
               {FIELDS.map((f, idx) => {
                 const subVal = submission[f.key]
+                const fieldLabel = t(`review.fields.${f.labelKey}`)
                 if (!isMerge) {
                   return (
                     <div key={f.prop} className={`grid grid-cols-[1fr_2fr] gap-2 items-center px-3 py-1.5 ${idx % 2 ? 'bg-muted/10' : ''}`}>
-                      <label className="text-xs text-muted-foreground">{f.label}</label>
+                      <label className="text-xs text-muted-foreground">{fieldLabel}</label>
                       {f.type === 'bool' ? (
                         <div className="flex gap-1">
-                          {[{ v: true, l: 'Yes' }, { v: false, l: 'No' }].map(o => (
-                            <button key={o.l} type="button"
+                          {[{ v: true, l: t('common.actions.yes') }, { v: false, l: t('common.actions.no') }].map(o => (
+                            <button key={String(o.v)} type="button"
                               onClick={() => setCreateVals(p => ({ ...p, [f.prop]: o.v }))}
                               className={`h-7 px-3 text-xs rounded border ${createVals[f.prop] === o.v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-input hover:bg-muted'}`}>
                               {o.l}
@@ -316,14 +323,14 @@ export function OnboardingReviewDialog({
                 const choice = choices[f.prop] ?? 'current'
                 return (
                   <div key={f.prop} className={`grid grid-cols-[1fr_1fr_1fr] gap-2 items-start px-3 py-2 border-t border-border ${conflict ? 'bg-amber-50/40 dark:bg-amber-900/10' : idx % 2 ? 'bg-muted/10' : ''}`}>
-                    <span className="text-xs text-muted-foreground">{f.label}{conflict && <span className="ml-1 text-amber-600 dark:text-amber-400" title="Values differ">⚠</span>}</span>
+                    <span className="text-xs text-muted-foreground">{fieldLabel}{conflict && <span className="ml-1 text-amber-600 dark:text-amber-400" title={t('review.table.valuesDiffer')}>⚠</span>}</span>
                     <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'current' }))}
                       className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'current' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
-                      {fmt(curVal, f.type)}
+                      {fmt(curVal, f.type, t)}
                     </button>
                     <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'submitted' }))}
                       className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'submitted' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
-                      {fmt(subVal, f.type)}
+                      {fmt(subVal, f.type, t)}
                     </button>
                   </div>
                 )
@@ -332,31 +339,31 @@ export function OnboardingReviewDialog({
 
             {/* Bed sizes — free text in, structured out */}
             <div className="rounded-lg border border-border p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold"><Bed className="w-3.5 h-3.5" /> Bed sizes</div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold"><Bed className="w-3.5 h-3.5" /> {t('review.bedSection.title')}</div>
               {submission.bed_sizes && (
                 <p className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Client typed:</span> {submission.bed_sizes}
+                  <span className="font-medium text-foreground">{t('review.bedSection.clientTyped')}</span> {submission.bed_sizes}
                 </p>
               )}
               <div className="grid grid-cols-4 gap-2">
                 {BED_COLS.map(b => (
                   <div key={b.key}>
-                    <label className="text-[11px] text-muted-foreground">{b.label}</label>
+                    <label className="text-[11px] text-muted-foreground">{t(`review.bedSizes.${b.labelKey}`)}</label>
                     <Input type="number" min={0} value={beds[b.key]}
                       onChange={e => setBeds(p => ({ ...p, [b.key]: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))}
                       className="h-7 text-xs mt-0.5" data-testid={`bed-${b.key}`} />
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground">Counts are pre-filled from the typed text - adjust as needed. Saved to the structured King/Queen/Full/Twin columns.</p>
+              <p className="text-[11px] text-muted-foreground">{t('review.bedSection.hint')}</p>
             </div>
 
             {/* Auto code (smart lock) — admin sets; the code value lives in Settings */}
             <label className="flex items-start gap-2 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30">
               <Checkbox checked={hasAutoCode} onCheckedChange={(v) => setHasAutoCode(!!v)} className="mt-0.5" />
               <div className="text-xs flex-1">
-                <div className="font-medium">Auto Code (smart lock)</div>
-                <div className="text-muted-foreground">Check if this property has the shared smart-lock auto code installed. The code value itself is managed in Settings.</div>
+                <div className="font-medium">{t('review.autoCode.label')}</div>
+                <div className="text-muted-foreground">{t('review.autoCode.hint')}</div>
               </div>
             </label>
 
@@ -364,20 +371,20 @@ export function OnboardingReviewDialog({
             <div className="rounded-lg border border-border p-3 space-y-2">
               <label className="flex items-center gap-2 text-xs font-semibold">
                 <Checkbox checked={linkContact} onCheckedChange={(v) => setLinkContact(!!v)} />
-                {isMerge && existing?.contact_id ? 'Update the linked client contact' : 'Save client as a contact & link to this property'}
+                {isMerge && existing?.contact_id ? t('review.contact.updateLinked') : t('review.contact.saveNew')}
               </label>
               {linkContact && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div>
-                    <label className="text-[11px] text-muted-foreground">Name</label>
+                    <label className="text-[11px] text-muted-foreground">{t('common.labels.name')}</label>
                     <Input value={contactName} onChange={e => setContactName(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                   <div>
-                    <label className="text-[11px] text-muted-foreground">Email</label>
+                    <label className="text-[11px] text-muted-foreground">{t('common.labels.email')}</label>
                     <Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                   <div>
-                    <label className="text-[11px] text-muted-foreground">Phone</label>
+                    <label className="text-[11px] text-muted-foreground">{t('common.labels.phone')}</label>
                     <Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                 </div>
@@ -387,9 +394,9 @@ export function OnboardingReviewDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={apply.isPending}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={apply.isPending}>{t('common.actions.cancel')}</Button>
           <Button onClick={() => apply.mutate()} disabled={!ready || apply.isPending || (linkContact && !contactName.trim())}>
-            {apply.isPending ? 'Saving…' : isMerge ? 'Save merge' : 'Create property'}
+            {apply.isPending ? t('review.actions.saving') : isMerge ? t('review.actions.saveMerge') : t('review.actions.createProperty')}
           </Button>
         </DialogFooter>
       </DialogContent>

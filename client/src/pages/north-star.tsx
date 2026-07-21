@@ -13,6 +13,9 @@ import { format, endOfMonth } from 'date-fns'
 import Papa from 'papaparse'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { slugify } from '@/lib/issues'
 
 const STATUS_COLORS: Record<string, string> = {
   'Green': 'bg-green-500',
@@ -24,12 +27,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 const STATUS_OPTIONS = ['Green', 'Light Green', 'Yellow', 'Light Red', 'Red']
 
-function StatusDot({ status }: { status: string }) {
-  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${STATUS_COLORS[status] || 'bg-gray-300'}`} title={status} />
+function StatusDot({ status, label }: { status: string; label: string }) {
+  return <span className={`inline-block w-2.5 h-2.5 rounded-full ${STATUS_COLORS[status] || 'bg-gray-300'}`} title={label} />
 }
 
 export default function NorthStarPage() {
-  usePageTitle('North Star')
+  const { t } = useLocale('financials')
+  const { format: formatLocale } = useDateFormat()
+  usePageTitle(t('northStar.page.title', undefined, 'North Star'))
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -45,7 +50,7 @@ export default function NorthStarPage() {
   // Parse month safely (avoid timezone issues with new Date('YYYY-MM-01'))
   const [mYear, mMonth] = month.split('-').map(Number)
   const monthDate = new Date(mYear, mMonth - 1, 1)
-  const monthLabel = format(monthDate, 'MMMM yyyy')
+  const monthLabel = formatLocale(monthDate, 'MMMM yyyy')
   const MIN_MONTH = '2026-03'
   const maxMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
 
@@ -68,11 +73,11 @@ export default function NorthStarPage() {
     const endMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     while (d <= endMonth) {
       const val = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      opts.push({ value: val, label: format(d, 'MMMM yyyy') })
+      opts.push({ value: val, label: formatLocale(d, 'MMMM yyyy') })
       d = new Date(d.getFullYear(), d.getMonth() + 1, 1)
     }
     return opts
-  }, [])
+  }, [formatLocale])
 
   // ─── Queries ──────────────────────────────────────────────────────────────
   const { data: users } = useQuery({
@@ -214,15 +219,15 @@ export default function NorthStarPage() {
       })
     }
     qc.invalidateQueries({ queryKey: ['/supabase/north-star-metrics'] })
-    toast({ title: metricDialog?.id ? 'Metric updated' : 'Metric added' })
+    toast({ title: metricDialog?.id ? t('northStar.toasts.metricUpdated') : t('northStar.toasts.metricAdded') })
     setMetricDialog(null)
   }
 
   async function deleteMetric(id: string) {
-    if (!confirm('Delete this metric?')) return
+    if (!confirm(t('northStar.deleteConfirm'))) return
     await supabase.from('north_star_metrics').update({ enabled: false }).eq('id', id)
     qc.invalidateQueries({ queryKey: ['/supabase/north-star-metrics'] })
-    toast({ title: 'Metric removed' })
+    toast({ title: t('northStar.toasts.metricRemoved') })
   }
 
   function openEditMetric(m: any) {
@@ -243,17 +248,33 @@ export default function NorthStarPage() {
   }
 
   function exportCsv() {
+    // Translated column headers (matches the `csv` sub-namespace convention
+    // used by costTracking/proForma). Every row object uses these same
+    // translated keys so Papa.unparse renders a consistent header row.
+    const csvKeys = {
+      section: t('northStar.csv.section'),
+      metric: t('northStar.csv.metric'),
+      week1: t('northStar.csv.week1'),
+      week2: t('northStar.csv.week2'),
+      week3: t('northStar.csv.week3'),
+      week4: t('northStar.csv.week4'),
+      target: t('northStar.csv.target'),
+      actual: t('northStar.csv.actual'),
+      status: t('northStar.csv.status'),
+      owner: t('northStar.csv.owner'),
+      source: t('northStar.csv.source'),
+    }
     const rows: any[] = []
     for (const [section, items] of sections) {
-      rows.push({ Section: section, Metric: '', Week1: '', Week2: '', Week3: '', Week4: '', Target: '', Actual: '', Status: '', Owner: '', Source: '' })
+      rows.push({ [csvKeys.section]: section, [csvKeys.metric]: '', [csvKeys.week1]: '', [csvKeys.week2]: '', [csvKeys.week3]: '', [csvKeys.week4]: '', [csvKeys.target]: '', [csvKeys.actual]: '', [csvKeys.status]: '', [csvKeys.owner]: '', [csvKeys.source]: '' })
       for (const m of items) {
         const v = valuesByMetric.get(m.id) || {}
         const auto = getAutoValue(m.source)
         rows.push({
-          Section: '', Metric: m.name,
-          Week1: v.week1 ?? '', Week2: v.week2 ?? '', Week3: v.week3 ?? '', Week4: v.week4 ?? '',
-          Target: m.monthly_target ?? '', Actual: auto ?? v.monthly_actual ?? '',
-          Status: v.status || 'Green', Owner: m.owner_name || '', Source: m.source || 'manual',
+          [csvKeys.section]: '', [csvKeys.metric]: m.name,
+          [csvKeys.week1]: v.week1 ?? '', [csvKeys.week2]: v.week2 ?? '', [csvKeys.week3]: v.week3 ?? '', [csvKeys.week4]: v.week4 ?? '',
+          [csvKeys.target]: m.monthly_target ?? '', [csvKeys.actual]: auto ?? v.monthly_actual ?? '',
+          [csvKeys.status]: v.status || 'Green', [csvKeys.owner]: m.owner_name || '', [csvKeys.source]: m.source || 'manual',
         })
       }
     }
@@ -270,8 +291,8 @@ export default function NorthStarPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col md:overflow-auto">
       <PageHeader
-        title="North Star"
-        subtitle={`KPI scorecard - ${monthLabel}`}
+        title={t('northStar.page.title', undefined, 'North Star')}
+        subtitle={t('northStar.page.subtitle', { month: monthLabel })}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1">
@@ -282,11 +303,11 @@ export default function NorthStarPage() {
               <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={nextMonth} disabled={month >= maxMonth}><ChevronRight className="w-4 h-4" /></Button>
             </div>
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv}>
-              <Download className="w-3.5 h-3.5" /> Export
+              <Download className="w-3.5 h-3.5" /> {t('northStar.page.exportCsv')}
             </Button>
             {canEdit && (
               <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => openAddMetric()}>
-                <Plus className="w-3.5 h-3.5" /> Add Metric
+                <Plus className="w-3.5 h-3.5" /> {t('northStar.page.addMetric')}
               </Button>
             )}
           </div>
@@ -297,23 +318,23 @@ export default function NorthStarPage() {
       {metricsLoading ? (
         <Skeleton className="h-64 w-full" />
       ) : sections.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground text-sm">No metrics configured. Click "Add Metric" to start.</div>
+        <div className="text-center py-12 text-muted-foreground text-sm">{t('northStar.table.noMetrics', { addMetric: t('northStar.page.addMetric') })}</div>
       ) : (
         <div className="overflow-auto rounded-2xl border border-border shadow-sm">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-muted border-b border-border z-20">
               <tr>
-                <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[200px] sticky left-0 bg-muted z-20">Metric</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Wk 1</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Wk 2</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Wk 3</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Wk 4</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">Target</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">Type</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">Actual</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-14">Status</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">Owner</th>
-                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">Source</th>
+                <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[200px] sticky left-0 bg-muted z-20">{t('northStar.table.metric')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">{t('northStar.table.week', { n: 1 })}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">{t('northStar.table.week', { n: 2 })}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">{t('northStar.table.week', { n: 3 })}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">{t('northStar.table.week', { n: 4 })}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">{t('northStar.table.target')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-16">{t('northStar.table.type')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">{t('northStar.table.actual')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-14">{t('northStar.table.status')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">{t('northStar.table.owner')}</th>
+                <th className="text-center font-medium text-muted-foreground uppercase tracking-wide py-2 px-2 w-20">{t('northStar.table.source')}</th>
                 {canEdit && <th className="w-16 py-2 px-2" />}
               </tr>
             </thead>
@@ -351,10 +372,10 @@ export default function NorthStarPage() {
                           </td>
                         ))}
                         <td className="py-1.5 px-2 text-center tabular-nums font-medium">{m.monthly_target ?? '—'}</td>
-                        <td className="py-1.5 px-2 text-center text-muted-foreground">{m.metric_type}</td>
+                        <td className="py-1.5 px-2 text-center text-muted-foreground">{t(`northStar.metricType.${slugify(m.metric_type)}`, undefined, m.metric_type)}</td>
                         <td className="py-1.5 px-1 text-center">
                           {isAuto ? (
-                            <span className="tabular-nums font-medium" title="Auto-computed">{typeof actual === 'number' ? (actual % 1 === 0 ? actual : actual.toFixed(1)) : '—'}</span>
+                            <span className="tabular-nums font-medium" title={t('northStar.table.autoComputedTooltip')}>{typeof actual === 'number' ? (actual % 1 === 0 ? actual : actual.toFixed(1)) : '—'}</span>
                           ) : canEdit ? (
                             <input
                               type="number"
@@ -373,18 +394,18 @@ export default function NorthStarPage() {
                               onChange={e => saveValue(m.id, 'status', e.target.value)}
                               className="h-6 text-2xs border-none bg-transparent cursor-pointer"
                             >
-                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{t(`northStar.status.${slugify(s)}`, undefined, s)}</option>)}
                             </select>
                           ) : (
-                            <StatusDot status={v.status || 'Green'} />
+                            <StatusDot status={v.status || 'Green'} label={t(`northStar.status.${slugify(v.status || 'Green')}`, undefined, v.status || 'Green')} />
                           )}
                         </td>
                         <td className="py-1.5 px-2 text-center text-muted-foreground">{m.owner_name || '—'}</td>
                         <td className="py-1.5 px-2 text-center">
                           {isAuto ? (
-                            <span className="text-2xs bg-info/10 text-info px-1.5 py-0.5 rounded">auto</span>
+                            <span className="text-2xs bg-info/10 text-info px-1.5 py-0.5 rounded">{t('northStar.table.auto')}</span>
                           ) : (
-                            <span className="text-muted-foreground">manual</span>
+                            <span className="text-muted-foreground">{t('northStar.table.manual')}</span>
                           )}
                         </td>
                         {canEdit && (
@@ -408,59 +429,59 @@ export default function NorthStarPage() {
       {/* Add/Edit Metric Dialog */}
       <Dialog open={!!metricDialog} onOpenChange={v => !v && setMetricDialog(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{metricDialog?.id ? 'Edit Metric' : 'Add Metric'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{metricDialog?.id ? t('northStar.dialog.editTitle') : t('northStar.dialog.addTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Section</label>
-              <Input value={metricForm.section} onChange={e => setMetricForm(f => ({ ...f, section: e.target.value }))} className="h-8 text-xs" placeholder="e.g. Finance" list="sections-list" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.section')}</label>
+              <Input value={metricForm.section} onChange={e => setMetricForm(f => ({ ...f, section: e.target.value }))} className="h-8 text-xs" placeholder={t('northStar.dialog.sectionPlaceholder')} list="sections-list" />
               <datalist id="sections-list">
                 {sections.map(([s]) => <option key={s} value={s} />)}
               </datalist>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Metric Name *</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.metricName')}</label>
               <Input value={metricForm.name} onChange={e => setMetricForm(f => ({ ...f, name: e.target.value }))} className="h-8 text-xs" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Type</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.type')}</label>
                 <select value={metricForm.metric_type} onChange={e => setMetricForm(f => ({ ...f, metric_type: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  <option value="Total">Total</option>
-                  <option value="Avg">Average</option>
+                  <option value="Total">{t('northStar.metricType.total')}</option>
+                  <option value="Avg">{t('northStar.metricType.avg')}</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Monthly Target</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.monthlyTarget')}</label>
                 <Input type="number" value={metricForm.monthly_target} onChange={e => setMetricForm(f => ({ ...f, monthly_target: e.target.value }))} className="h-8 text-xs" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Owner</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.owner')}</label>
                 <select value={metricForm.owner_name} onChange={e => setMetricForm(f => ({ ...f, owner_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  <option value="">Unassigned</option>
+                  <option value="">{t('northStar.dialog.unassigned')}</option>
                   {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Data Source</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.dataSource')}</label>
                 <select value={metricForm.source} onChange={e => setMetricForm(f => ({ ...f, source: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  <option value="manual">Manual</option>
-                  <option value="issues:missed_cleans">Issues: Missed Cleans</option>
-                  <option value="issues:general">Issues: General</option>
-                  <option value="pipeline:leads">Pipeline: New Leads</option>
-                  <option value="pipeline:quoted">Pipeline: Quoted</option>
-                  <option value="pipeline:closed">Pipeline: Deals Closed</option>
-                  <option value="offboarded">Offboarded Properties</option>
-                  <option value="inspections">% Cleans Inspected</option>
+                  <option value="manual">{t('northStar.dialog.source.manual')}</option>
+                  <option value="issues:missed_cleans">{t('northStar.dialog.source.issuesMissedCleans')}</option>
+                  <option value="issues:general">{t('northStar.dialog.source.issuesGeneral')}</option>
+                  <option value="pipeline:leads">{t('northStar.dialog.source.pipelineLeads')}</option>
+                  <option value="pipeline:quoted">{t('northStar.dialog.source.pipelineQuoted')}</option>
+                  <option value="pipeline:closed">{t('northStar.dialog.source.pipelineClosed')}</option>
+                  <option value="offboarded">{t('northStar.dialog.source.offboarded')}</option>
+                  <option value="inspections">{t('northStar.dialog.source.inspections')}</option>
                 </select>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMetricDialog(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setMetricDialog(null)}>{t('common.actions.cancel')}</Button>
             <Button onClick={saveMetric} disabled={!metricForm.name.trim() || !metricForm.section.trim()}>
-              {metricDialog?.id ? 'Update' : 'Add'}
+              {metricDialog?.id ? t('northStar.dialog.update') : t('northStar.dialog.add')}
             </Button>
           </DialogFooter>
         </DialogContent>

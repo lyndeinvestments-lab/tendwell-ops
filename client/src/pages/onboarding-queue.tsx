@@ -15,6 +15,8 @@ import { Check, X, RefreshCw, ChevronDown, ChevronRight, ExternalLink, Image as 
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { ErrorState } from '@/components/ErrorState'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 
 interface OnboardingSubmission {
   id: string
@@ -57,18 +59,19 @@ interface OnboardingSubmission {
 
 type Tab = 'pending' | 'converted' | 'rejected' | 'all'
 
-function fmtBool(v: boolean | null) {
+function fmtBool(v: boolean | null, t: (key: string) => string) {
   if (v === null) return '—'
-  return v ? 'Yes' : 'No'
+  return v ? t('common.actions.yes') : t('common.actions.no')
 }
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null, locale: string) {
   if (!iso) return '—'
-  try { return new Date(iso).toLocaleString() } catch { return iso }
+  try { return new Date(iso).toLocaleString(locale === 'es' ? 'es' : 'en-US') } catch { return iso }
 }
 
 export default function OnboardingQueuePage() {
   usePageTitle('Onboarding Queue')
+  const { t, locale } = useLocale('onboarding')
   const { effectiveUser, user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -118,12 +121,12 @@ export default function OnboardingQueuePage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Submission rejected' })
+      toast({ title: t('toasts.submissionRejected') })
       qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
       setWorking(null)
     },
     onError: (e: any) => {
-      toast({ title: 'Reject failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.rejectFailed'), description: e?.message, variant: 'destructive' })
       setWorking(null)
     },
   })
@@ -138,11 +141,11 @@ export default function OnboardingQueuePage() {
   return (
     <PageContainer width="lg">
       <PageHeader
-        title="Onboarding Queue"
-        subtitle={<>Public submissions from <code className="px-1 py-0.5 rounded bg-muted text-2xs">/onboarding</code>. Review and create properties.</>}
+        title={t('queue.header.title')}
+        subtitle={<>{t('queue.header.subtitleBefore')} <code className="px-1 py-0.5 rounded bg-muted text-2xs">/onboarding</code>{t('queue.header.subtitleAfter')}</>}
         actions={
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isRefetching} data-testid="button-refresh">
-            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? 'animate-spin' : ''}`} /> Refresh
+            <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${isRefetching ? 'animate-spin' : ''}`} /> {t('common.actions.refresh')}
           </Button>
         }
       />
@@ -152,28 +155,28 @@ export default function OnboardingQueuePage() {
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-2">
               <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Pending · In this view</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('queue.kpi.pendingInView')}</p>
             </div>
             <p className="text-3xl font-bold tabular-nums leading-none">{counts.pending}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-2">
               <Inbox className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Total · In this view</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('queue.kpi.totalInView')}</p>
             </div>
             <p className="text-3xl font-bold tabular-nums leading-none">{counts.total}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-2">
               <CheckCircle2 className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Converted · In this view</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('queue.kpi.convertedInView')}</p>
             </div>
             <p className="text-3xl font-bold tabular-nums leading-none">{counts.converted}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card p-4 shadow-sm">
             <div className="flex items-center gap-1.5 mb-2">
               <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
-              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Rejected · In this view</p>
+              <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('queue.kpi.rejectedInView')}</p>
             </div>
             <p className="text-3xl font-bold tabular-nums leading-none">{counts.rejected}</p>
           </div>
@@ -182,18 +185,18 @@ export default function OnboardingQueuePage() {
 
       <div className="flex gap-2 flex-wrap text-sm">
         {([
-          { key: 'pending', label: `Pending (${counts.pending})` },
-          { key: 'converted', label: `Converted (${counts.converted})` },
-          { key: 'rejected', label: `Rejected (${counts.rejected})` },
-          { key: 'all', label: 'All' },
-        ] as { key: Tab; label: string }[]).map(t => (
+          { key: 'pending', label: t('queue.tabs.pending', { count: counts.pending }) },
+          { key: 'converted', label: t('queue.tabs.converted', { count: counts.converted }) },
+          { key: 'rejected', label: t('queue.tabs.rejected', { count: counts.rejected }) },
+          { key: 'all', label: t('queue.tabs.all') },
+        ] as { key: Tab; label: string }[]).map(opt => (
           <button
-            key={t.key}
+            key={opt.key}
             type="button"
-            onClick={() => setTab(t.key)}
-            data-testid={`tab-${t.key}`}
-            className={`px-3 h-8 rounded-md border transition-colors ${tab === t.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
-          >{t.label}</button>
+            onClick={() => setTab(opt.key)}
+            data-testid={`tab-${opt.key}`}
+            className={`px-3 h-8 rounded-md border transition-colors ${tab === opt.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+          >{opt.label}</button>
         ))}
       </div>
 
@@ -202,7 +205,7 @@ export default function OnboardingQueuePage() {
       ) : isLoading ? (
         <div className="space-y-2"><Skeleton className="h-24 w-full" /><Skeleton className="h-24 w-full" /></div>
       ) : (rows?.length ?? 0) === 0 ? (
-        <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No submissions in this view.</CardContent></Card>
+        <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">{t('queue.empty')}</CardContent></Card>
       ) : (
         <div className="space-y-2">
           {rows!.map(r => {
@@ -216,62 +219,62 @@ export default function OnboardingQueuePage() {
                     {expanded ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-sm font-medium truncate">
-                        {r.property_name || r.address || '(no name)'} <span className="text-muted-foreground font-normal">- {r.client_name || 'Unknown'}</span>
+                        {r.property_name || r.address || t('queue.row.noName')} <span className="text-muted-foreground font-normal">- {r.client_name || t('queue.row.unknownClient')}</span>
                       </CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(r.submitted_at)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(r.submitted_at, locale)}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge variant={isPublic ? 'secondary' : 'outline'}>{isPublic ? 'Public' : 'Token'}</Badge>
-                      <Badge variant={r.status === 'pending' ? 'default' : r.status === 'converted' ? 'secondary' : 'outline'}>{r.status}</Badge>
+                      <Badge variant={isPublic ? 'secondary' : 'outline'}>{isPublic ? t('queue.row.sourcePublic') : t('queue.row.sourceToken')}</Badge>
+                      <Badge variant={r.status === 'pending' ? 'default' : r.status === 'converted' ? 'secondary' : 'outline'}>{t(`queue.status.${slugify(r.status)}`, undefined, r.status)}</Badge>
                       {r.photos.length > 0 && <Badge variant="outline"><ImageIcon className="w-3 h-3 mr-1" />{r.photos.length}</Badge>}
-                      {r.api_key && <Badge variant="outline">API key</Badge>}
-                      {r.ical_url && <Badge variant="outline">iCal</Badge>}
+                      {r.api_key && <Badge variant="outline">{t('queue.row.apiKeyBadge')}</Badge>}
+                      {r.ical_url && <Badge variant="outline">{t('queue.row.icalBadge')}</Badge>}
                     </div>
                   </div>
                 </CardHeader>
                 {expanded && (
                   <CardContent className="p-4 pt-0 space-y-3 text-sm border-t border-border">
-                    <Section title="Contact">
-                      <KV k="Name" v={r.client_name} />
-                      <KV k="Email" v={r.contact_email} />
-                      <KV k="Phone" v={r.contact_phone} />
-                      <KV k="Invoice Email" v={r.invoice_email && r.invoice_email !== r.contact_email ? r.invoice_email : (r.invoice_email ? `${r.invoice_email} (same as primary)` : '—')} wide />
+                    <Section title={t('queue.sections.contact')}>
+                      <KV k={t('queue.kv.name')} v={r.client_name} />
+                      <KV k={t('queue.kv.email')} v={r.contact_email} />
+                      <KV k={t('queue.kv.phone')} v={r.contact_phone} />
+                      <KV k={t('queue.kv.invoiceEmail')} v={r.invoice_email && r.invoice_email !== r.contact_email ? r.invoice_email : (r.invoice_email ? t('queue.kv.sameAsPrimary', { email: r.invoice_email }) : '—')} wide />
                     </Section>
-                    <Section title="Property">
-                      <KV k="Address" v={r.address} />
-                      <KV k="Bedrooms" v={r.bedrooms} />
-                      <KV k="Beds" v={r.number_of_beds} />
-                      <KV k="Full / Half Baths" v={`${r.full_baths ?? '—'} / ${r.half_baths ?? '—'}`} />
-                      <KV k="Sq Ft" v={r.square_footage} />
-                      <KV k="Bed Sizes" v={r.bed_sizes} wide />
-                      <KV k="Hot Tub" v={fmtBool(r.hot_tub)} />
-                      <KV k="Pool" v={fmtBool(r.pool)} />
-                      <KV k="Linen Program" v={fmtBool(r.linen_program)} />
-                      <KV k="Onboarding Deep Clean" v={fmtBool(r.onboarding_deep_clean)} />
+                    <Section title={t('queue.sections.property')}>
+                      <KV k={t('queue.kv.address')} v={r.address} />
+                      <KV k={t('queue.kv.bedrooms')} v={r.bedrooms} />
+                      <KV k={t('queue.kv.beds')} v={r.number_of_beds} />
+                      <KV k={t('queue.kv.fullHalfBaths')} v={`${r.full_baths ?? '—'} / ${r.half_baths ?? '—'}`} />
+                      <KV k={t('queue.kv.sqFt')} v={r.square_footage} />
+                      <KV k={t('queue.kv.bedSizes')} v={r.bed_sizes} wide />
+                      <KV k={t('queue.kv.hotTub')} v={fmtBool(r.hot_tub, t)} />
+                      <KV k={t('queue.kv.pool')} v={fmtBool(r.pool, t)} />
+                      <KV k={t('queue.kv.linenProgram')} v={fmtBool(r.linen_program, t)} />
+                      <KV k={t('queue.kv.onboardingDeepClean')} v={fmtBool(r.onboarding_deep_clean, t)} />
                     </Section>
-                    <Section title="Access & Wi-Fi">
-                      <KV k="Door Code" v={r.door_code} />
-                      <KV k="Auto Code" v={r.auto_code} />
-                      <KV k="Other Codes" v={r.other_codes} wide />
-                      <KV k="Wi-Fi" v={r.wifi_info} wide />
-                      <KV k="A/C Filter" v={r.filter_size} />
-                      <KV k="Check-in" v={r.check_in_time} />
-                      <KV k="Check-out" v={r.check_out_time} />
+                    <Section title={t('queue.sections.accessWifi')}>
+                      <KV k={t('queue.kv.doorCode')} v={r.door_code} />
+                      <KV k={t('queue.kv.autoCode')} v={r.auto_code} />
+                      <KV k={t('queue.kv.otherCodes')} v={r.other_codes} wide />
+                      <KV k={t('queue.kv.wifi')} v={r.wifi_info} wide />
+                      <KV k={t('queue.kv.acFilter')} v={r.filter_size} />
+                      <KV k={t('queue.kv.checkIn')} v={r.check_in_time} />
+                      <KV k={t('queue.kv.checkOut')} v={r.check_out_time} />
                     </Section>
                     {(r.ical_url || r.api_key || r.api_client_id) && (
-                      <Section title="Booking Integration">
-                        {r.ical_url && <KV k="iCal URL" v={r.ical_url} wide />}
-                        {r.api_client_id && <KV k="Client ID / public key" v={r.api_client_id} wide secret />}
-                        {r.api_key && <KV k="API secret / client secret / token" v={r.api_key} wide secret />}
+                      <Section title={t('queue.sections.bookingIntegration')}>
+                        {r.ical_url && <KV k={t('queue.kv.icalUrl')} v={r.ical_url} wide />}
+                        {r.api_client_id && <KV k={t('queue.kv.clientId')} v={r.api_client_id} wide secret />}
+                        {r.api_key && <KV k={t('queue.kv.apiSecret')} v={r.api_key} wide secret />}
                       </Section>
                     )}
                     {r.notes && (
-                      <Section title="Notes">
+                      <Section title={t('queue.sections.notes')}>
                         <div className="col-span-full whitespace-pre-wrap text-sm bg-muted/30 rounded p-2">{r.notes}</div>
                       </Section>
                     )}
                     {r.photos.length > 0 && (
-                      <Section title={`Photos (${r.photos.length})`}>
+                      <Section title={t('queue.sections.photos', { count: r.photos.length })}>
                         <div className="col-span-full grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {r.photos.map(p => {
                             const url = photoUrl(p)
@@ -293,19 +296,19 @@ export default function OnboardingQueuePage() {
                       </Section>
                     )}
                     {r.property_id && (
-                      <p className="text-xs text-muted-foreground">Linked to property #{r.property_id} · approved {fmtDate(r.approved_at)} by {r.approved_by || '—'}</p>
+                      <p className="text-xs text-muted-foreground">{t('queue.row.linkedToProperty', { id: r.property_id, date: fmtDate(r.approved_at, locale), name: r.approved_by || '—' })}</p>
                     )}
 
                     {r.status === 'pending' && (
                       <div className="flex gap-2 pt-2 flex-wrap">
                         <Button size="sm" onClick={() => setCreateFor(r)} disabled={isWorking} data-testid={`button-approve-${r.id}`}>
-                          <Check className="w-3.5 h-3.5 mr-1.5" /> Review & Create Property
+                          <Check className="w-3.5 h-3.5 mr-1.5" /> {t('queue.actions.reviewCreate')}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => setMergeFor(r)} disabled={isWorking} data-testid={`button-merge-${r.id}`}>
-                          <Link2 className="w-3.5 h-3.5 mr-1.5" /> Merge with Existing
+                          <Link2 className="w-3.5 h-3.5 mr-1.5" /> {t('queue.actions.mergeExisting')}
                         </Button>
                         <Button size="sm" variant="outline" onClick={() => reject(r)} disabled={isWorking} data-testid={`button-reject-${r.id}`}>
-                          <X className="w-3.5 h-3.5 mr-1.5" /> Reject
+                          <X className="w-3.5 h-3.5 mr-1.5" /> {t('queue.actions.reject')}
                         </Button>
                       </div>
                     )}
@@ -359,6 +362,7 @@ function MergePropertyDialog({
   onClose: () => void
   onPick: (propertyId: number) => void
 }) {
+  const { t } = useLocale('onboarding')
   const [search, setSearch] = useState('')
 
   const initialQuery = useMemo(() => {
@@ -401,16 +405,16 @@ function MergePropertyDialog({
     <Dialog open={!!submission} onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Merge with existing property</DialogTitle>
+          <DialogTitle>{t('queue.merge.title')}</DialogTitle>
           <DialogDescription>
-            Find the existing listing this submission matches. You'll then review it field by field and choose what to keep before anything is saved.
+            {t('queue.merge.description')}
           </DialogDescription>
         </DialogHeader>
 
         {submission && (
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs space-y-0.5">
-            <p><span className="text-muted-foreground">Client:</span> {submission.client_name || '—'}</p>
-            <p><span className="text-muted-foreground">Address:</span> {submission.address || '—'}</p>
+            <p><span className="text-muted-foreground">{t('queue.merge.client')}</span> {submission.client_name || '—'}</p>
+            <p><span className="text-muted-foreground">{t('queue.merge.address')}</span> {submission.address || '—'}</p>
           </div>
         )}
 
@@ -419,7 +423,7 @@ function MergePropertyDialog({
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder={initialQuery ? `Searching for "${initialQuery}" - refine here` : 'Search by name or address'}
+            placeholder={initialQuery ? t('queue.merge.searchingFor', { query: initialQuery }) : t('queue.merge.searchPlaceholder')}
             className="pl-8 h-9 text-sm"
             data-testid="input-merge-search"
           />
@@ -429,7 +433,7 @@ function MergePropertyDialog({
           {isLoading ? (
             <div className="space-y-2 px-2"><Skeleton className="h-12 w-full" /><Skeleton className="h-12 w-full" /></div>
           ) : (matches?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-6">No matching properties.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">{t('queue.merge.noMatches')}</p>
           ) : (
             <ul className="space-y-1 px-2">
               {matches!.map(m => (
@@ -443,7 +447,7 @@ function MergePropertyDialog({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium truncate">{m.name}</span>
-                      {m.pipeline_stages?.name && <Badge variant="outline" className="shrink-0">{m.pipeline_stages.name}</Badge>}
+                      {m.pipeline_stages?.name && <Badge variant="outline" className="shrink-0">{t(`common.stage.${slugify(m.pipeline_stages.name)}`, undefined, m.pipeline_stages.name)}</Badge>}
                     </div>
                     {m.address && <p className="text-xs text-muted-foreground truncate mt-0.5">{m.address}</p>}
                   </button>
@@ -454,7 +458,7 @@ function MergePropertyDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={working}>Cancel</Button>
+          <Button variant="outline" onClick={onClose} disabled={working}>{t('common.actions.cancel')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
