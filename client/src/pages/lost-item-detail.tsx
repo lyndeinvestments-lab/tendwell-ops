@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useRoute } from 'wouter'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { format, formatDistanceToNow } from 'date-fns'
 import {
   ArrowLeft, ExternalLink, Loader2, MessageSquare, Send, Slack,
   AlertTriangle, MessageCircle,
@@ -15,9 +14,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import {
-  STATUS_COLORS, STATUS_LABELS, LOST_ITEM_PIPELINE, RETURN_METHODS,
-  authFetch,
+  STATUS_COLORS, LOST_ITEM_PIPELINE, RETURN_METHODS,
+  authFetch, statusLabel, returnMethodLabel,
   type LostItemAssignment, type LostItemCase,
 } from '@/components/lost-items/shared'
 
@@ -32,6 +33,8 @@ export default function LostItemDetailPage() {
   const canEdit = !!effectiveUser && (effectiveUser.role === 'admin' || effectiveUser.role === 'operations')
 
   usePageTitle('Lost Item · Tendwell')
+  const { t } = useLocale('lostItems')
+  const { format, formatDistanceToNow } = useDateFormat()
   const qc = useQueryClient()
   const { toast } = useToast()
 
@@ -81,8 +84,8 @@ export default function LostItemDetailPage() {
         body: JSON.stringify(patch),
       })
     },
-    onSuccess: () => { toast({ title: 'Saved' }); invalidateAll() },
-    onError: (e: any) => { toast({ title: 'Save failed', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onSuccess: () => { toast({ title: t('toasts.saved') }); invalidateAll() },
+    onError: (e: any) => { toast({ title: t('toasts.saveFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   const setAssignment = useMutation({
@@ -92,16 +95,16 @@ export default function LostItemDetailPage() {
         body: JSON.stringify({ case_id: caseId, user_id: userId }),
       })
     },
-    onSuccess: () => { toast({ title: 'Assignment updated' }); invalidateAll() },
-    onError: (e: any) => { toast({ title: 'Failed to assign', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onSuccess: () => { toast({ title: t('toasts.assignmentUpdated') }); invalidateAll() },
+    onError: (e: any) => { toast({ title: t('toasts.assignFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   if (!canAccess) {
     return (
       <div className="p-6">
-        <h1 className="text-xl font-semibold">Lost Items</h1>
+        <h1 className="text-xl font-semibold">{t('detail.noAccessTitle')}</h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Your role doesn't have access to Lost Items.
+          {t('detail.noAccessDescription')}
         </p>
       </div>
     )
@@ -125,11 +128,11 @@ export default function LostItemDetailPage() {
     return (
       <PageContainer width="lg">
         <Link href="/lost-items" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to all cases
+          <ArrowLeft className="h-3.5 w-3.5" /> {t('detail.backToAll')}
         </Link>
         <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
-          <span>Couldn't load case: {error instanceof Error ? error.message : 'Unknown error'}</span>
+          <span>{t('detail.errorLoad', { error: error instanceof Error ? error.message : t('toasts.unknownError') })}</span>
         </div>
       </PageContainer>
     )
@@ -141,16 +144,16 @@ export default function LostItemDetailPage() {
         <div className="flex flex-col gap-5 min-w-0">
           <Link href="/lost-items" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground w-fit">
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back to all cases
+            {t('detail.backToAll')}
           </Link>
 
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-xs text-muted-foreground">{item.case_number}</span>
             <span className={`inline-flex items-center px-2 py-0.5 rounded font-medium text-2xs border ${STATUS_COLORS[item.status]}`}>
-              {STATUS_LABELS[item.status]}
+              {statusLabel(item.status, t)}
             </span>
             <span className="text-xs text-muted-foreground">
-              opened {formatDistanceToNow(new Date(item.created_at), { addSuffix: true })}
+              {t('detail.openedAgo', { time: formatDistanceToNow(new Date(item.created_at), { addSuffix: true }) })}
             </span>
           </div>
 
@@ -176,7 +179,7 @@ export default function LostItemDetailPage() {
                   }
                   data-testid={`pill-status-${s}`}
                 >
-                  {STATUS_LABELS[s]}
+                  {statusLabel(s, t)}
                 </button>
               )
             })}
@@ -197,9 +200,9 @@ export default function LostItemDetailPage() {
         </div>
 
         <div className="flex flex-col gap-3">
-          <SidePanel title="Assignment">
+          <SidePanel title={t('detail.panels.assignment')}>
             <div className="flex flex-col gap-1">
-              <Label>Owner (Tendwell)</Label>
+              <Label>{t('detail.fields.ownerTendwell')}</Label>
               <select
                 value={assignment?.assigned_user_id != null ? String(assignment.assigned_user_id) : ''}
                 onChange={e => setAssignment.mutate(e.target.value === '' ? null : Number(e.target.value))}
@@ -207,56 +210,56 @@ export default function LostItemDetailPage() {
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
                 data-testid="select-detail-assignee"
               >
-                <option value="">- Unassigned</option>
+                <option value="">{t('detail.fields.unassignedOption')}</option>
                 {team.map(u => (
                   <option key={u.id} value={u.id}>{u.label} · {u.role}</option>
                 ))}
               </select>
               {assignment?.assignee?.label ? (
                 <span className="text-2xs text-muted-foreground">
-                  Assigned {formatDistanceToNow(new Date(assignment.updated_at), { addSuffix: true })}
+                  {t('detail.assignment.assignedAgo', { time: formatDistanceToNow(new Date(assignment.updated_at), { addSuffix: true }) })}
                 </span>
               ) : null}
             </div>
             <InlineDateRow
-              label="Follow-up date"
+              label={t('detail.fields.followUpDate')}
               value={item.follow_up_date ?? ''}
               canEdit={canEdit}
               onChange={(v) => updateField.mutate({ follow_up_date: v || null })}
             />
           </SidePanel>
 
-          <SidePanel title="Links">
-            <LinkRow icon={<Slack className="h-3.5 w-3.5" />} label="Slack thread" url={(item as any).slack_thread_url ?? null} />
-            <LinkRow icon={<MessageCircle className="h-3.5 w-3.5" />} label="Conversation" url={(item as any).conversation_url ?? null} />
+          <SidePanel title={t('detail.panels.links')}>
+            <LinkRow icon={<Slack className="h-3.5 w-3.5" />} label={t('detail.links.slackThread')} url={(item as any).slack_thread_url ?? null} />
+            <LinkRow icon={<MessageCircle className="h-3.5 w-3.5" />} label={t('detail.links.conversation')} url={(item as any).conversation_url ?? null} />
             {item.external_url ? (
               <LinkRow
                 icon={<ExternalLink className="h-3.5 w-3.5" />}
-                label={item.external_source ?? 'Source system'}
+                label={item.external_source ?? t('detail.links.sourceSystemFallback')}
                 url={item.external_url}
               />
             ) : null}
             <LinkRow
               icon={<ExternalLink className="h-3.5 w-3.5" />}
-              label="Open in Haven-OS"
+              label={t('detail.links.openHaven')}
               url={`https://www.havenvros.com/operations/lost-items/${item.id}`}
             />
           </SidePanel>
 
-          <SidePanel title="Source">
-            <KV label="Origin" value={item.source} />
-            {item.external_source ? <KV label="External system" value={item.external_source} /> : null}
-            {(item as any).external_id ? <KV label="External ID" value={(item as any).external_id} mono /> : null}
+          <SidePanel title={t('detail.panels.source')}>
+            <KV label={t('detail.source.origin')} value={item.source} />
+            {item.external_source ? <KV label={t('detail.source.externalSystem')} value={item.external_source} /> : null}
+            {(item as any).external_id ? <KV label={t('detail.source.externalId')} value={(item as any).external_id} mono /> : null}
           </SidePanel>
 
-          <SidePanel title="Timeline">
-            <KV label="Opened" value={fmt(item.created_at)} />
-            <KV label="Pickup scheduled" value={fmt(item.pickup_scheduled_at)} />
-            <KV label="Last update" value={fmt(item.updated_at)} />
+          <SidePanel title={t('detail.panels.timeline')}>
+            <KV label={t('detail.timeline.opened')} value={fmt(item.created_at, format)} />
+            <KV label={t('detail.timeline.pickupScheduled')} value={fmt(item.pickup_scheduled_at, format)} />
+            <KV label={t('detail.timeline.lastUpdate')} value={fmt(item.updated_at, format)} />
           </SidePanel>
 
           {item.photo_urls && item.photo_urls.length > 0 ? (
-            <SidePanel title="Photos">
+            <SidePanel title={t('detail.panels.photos')}>
               <div className="grid grid-cols-3 gap-2">
                 {item.photo_urls.map(url => (
                   <a key={url} href={url} target="_blank" rel="noreferrer">
@@ -264,7 +267,7 @@ export default function LostItemDetailPage() {
                   </a>
                 ))}
               </div>
-              <p className="text-2xs text-muted-foreground">Upload happens in Haven-OS.</p>
+              <p className="text-2xs text-muted-foreground">{t('detail.photos.uploadNote')}</p>
             </SidePanel>
           ) : null}
         </div>
@@ -281,6 +284,8 @@ function ActivityFeed({
   canEdit: boolean
   onAfterChange: () => void
 }) {
+  const { t } = useLocale('lostItems')
+  const { format, formatDistanceToNow } = useDateFormat()
   const { toast } = useToast()
   const [comment, setComment] = useState('')
 
@@ -292,7 +297,7 @@ function ActivityFeed({
       })
     },
     onSuccess: () => { setComment(''); onAfterChange() },
-    onError: (e: any) => { toast({ title: 'Failed to post comment', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onError: (e: any) => { toast({ title: t('toasts.postCommentFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   const comments = useMemo(() => events.filter(e => e.event_type === 'comment'), [events])
@@ -307,7 +312,7 @@ function ActivityFeed({
     <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
       <h3 className="flex items-center gap-2 text-base font-semibold">
         <MessageSquare className="h-4 w-4" />
-        Comments &amp; activity
+        {t('detail.comments.title')}
       </h3>
 
       {canEdit ? (
@@ -319,13 +324,13 @@ function ActivityFeed({
               if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit()
             }}
             rows={2}
-            placeholder="Add a comment for the team - context, next steps, what the guest said…"
+            placeholder={t('detail.comments.placeholder')}
             className="text-sm"
             data-testid="input-comment"
           />
           <div className="flex items-center justify-between">
             <span className="text-2xs text-muted-foreground">
-              {comments.length} comment{comments.length === 1 ? '' : 's'}
+              {t('detail.comments.count', { count: comments.length })}
             </span>
             <Button
               size="sm"
@@ -335,7 +340,7 @@ function ActivityFeed({
               data-testid="button-submit-comment"
             >
               {post.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-              Post comment
+              {t('detail.comments.post')}
             </Button>
           </div>
         </div>
@@ -347,10 +352,10 @@ function ActivityFeed({
             <li key={e.id} className="flex flex-col gap-1 rounded-md border border-border bg-primary/5 p-3">
               <div className="flex items-center gap-2 text-2xs text-muted-foreground">
                 <span className="font-medium text-foreground">
-                  {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? 'system'}
+                  {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? t('detail.activityLog.systemActor')}
                 </span>
                 <span>·</span>
-                <span>{fmt(e.created_at)}</span>
+                <span>{fmt(e.created_at, format)}</span>
                 <span>·</span>
                 <span>{formatDistanceToNow(new Date(e.created_at), { addSuffix: true })}</span>
               </div>
@@ -360,31 +365,31 @@ function ActivityFeed({
         </ul>
       ) : (
         <p className="mt-4 text-xs text-muted-foreground">
-          No comments yet. {canEdit ? 'Be the first to add context for the team.' : null}
+          {t('detail.comments.empty')} {canEdit ? t('detail.comments.emptyCta') : null}
         </p>
       )}
 
       {others.length > 0 ? (
         <details className="mt-5 group">
           <summary className="cursor-pointer text-2xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground select-none">
-            Activity log ({others.length})
+            {t('detail.activityLog.title', { count: others.length })}
           </summary>
           <ul className="mt-3 flex flex-col gap-2">
             {others.map(e => (
               <li key={e.id} className="flex flex-col gap-0.5 rounded-md border border-border bg-muted/30 p-2.5">
                 <div className="flex items-center gap-2 text-2xs text-muted-foreground">
                   <span className="font-medium text-foreground">
-                    {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? 'system'}
+                    {e.actor?.full_name ?? e.actor?.email ?? e.actor_label ?? t('detail.activityLog.systemActor')}
                   </span>
                   <span>·</span>
-                  <span>{fmt(e.created_at)}</span>
+                  <span>{fmt(e.created_at, format)}</span>
                   <span>·</span>
-                  <span className="uppercase tracking-wider">{e.event_type.replace(/_/g, ' ')}</span>
+                  <span className="uppercase tracking-wider">{t(`detail.eventType.${e.event_type}`, undefined, e.event_type.replace(/_/g, ' '))}</span>
                 </div>
                 {e.event_type === 'status_change' ? (
-                  <div className="text-sm">Status: <strong>{e.from_value ?? '—'}</strong> → <strong>{e.to_value ?? '—'}</strong></div>
+                  <div className="text-sm">{t('detail.activityLog.statusChangeLabel')} <strong>{e.from_value ?? '—'}</strong> → <strong>{e.to_value ?? '—'}</strong></div>
                 ) : e.event_type === 'assignment' ? (
-                  <div className="text-sm">Assigned: <strong>{e.from_value ?? '—'}</strong> → <strong>{e.to_value ?? '—'}</strong></div>
+                  <div className="text-sm">{t('detail.activityLog.assignmentChangeLabel')} <strong>{e.from_value ?? '—'}</strong> → <strong>{e.to_value ?? '—'}</strong></div>
                 ) : e.body ? (
                   <div className="text-sm whitespace-pre-wrap">{e.body}</div>
                 ) : null}
@@ -404,6 +409,7 @@ function DetailsCard({
   canEdit: boolean
   onSave: (patch: Record<string, unknown>) => Promise<unknown>
 }) {
+  const { t } = useLocale('lostItems')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState({
     item_description: item.item_description,
@@ -461,28 +467,28 @@ function DetailsCard({
     return (
       <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-semibold">Case details</h3>
+          <h3 className="text-base font-semibold">{t('detail.card.title')}</h3>
           {canEdit ? (
             <button type="button" onClick={() => setEditing(true)} className="text-xs text-primary hover:underline" data-testid="button-edit-details">
-              Edit
+              {t('common.actions.edit')}
             </button>
           ) : null}
         </div>
         <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
-          <KV label="Item" value={item.item_description} />
-          <KV label="Found at" value={item.found_location ?? '—'} />
-          <KV label="Property" value={item.property?.name ?? item.property_name ?? '—'} />
-          <KV label="Guest" value={item.guest_name ?? '—'} />
-          <KV label="Guest email" value={item.guest_email ?? '—'} />
-          <KV label="Guest phone" value={item.guest_phone ?? '—'} />
-          <KV label="Cleaning vendor" value={item.cleaning_vendor ?? '—'} />
-          <KV label="Return method" value={item.return_method ?? '—'} />
-          <KV label="Carrier" value={item.shipping_carrier ?? '—'} />
-          <KV label="Tracking #" value={item.shipping_tracking ?? '—'} mono />
+          <KV label={t('detail.fields.item')} value={item.item_description} />
+          <KV label={t('detail.fields.foundAt')} value={item.found_location ?? '—'} />
+          <KV label={t('common.labels.property')} value={item.property?.name ?? item.property_name ?? '—'} />
+          <KV label={t('detail.fields.guest')} value={item.guest_name ?? '—'} />
+          <KV label={t('detail.fields.guestEmail')} value={item.guest_email ?? '—'} />
+          <KV label={t('detail.fields.guestPhone')} value={item.guest_phone ?? '—'} />
+          <KV label={t('detail.fields.cleaningVendor')} value={item.cleaning_vendor ?? '—'} />
+          <KV label={t('detail.fields.returnMethod')} value={item.return_method ? returnMethodLabel(item.return_method, t) : '—'} />
+          <KV label={t('detail.fields.carrier')} value={item.shipping_carrier ?? '—'} />
+          <KV label={t('detail.fields.trackingNumber')} value={item.shipping_tracking ?? '—'} mono />
         </dl>
         {item.notes ? (
           <div className="mt-4">
-            <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Notes</div>
+            <div className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('common.labels.notes')}</div>
             <p className="mt-1 whitespace-pre-wrap text-sm">{item.notes}</p>
           </div>
         ) : null}
@@ -492,39 +498,39 @@ function DetailsCard({
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-sm p-5">
-      <h3 className="text-base font-semibold">Edit case</h3>
+      <h3 className="text-base font-semibold">{t('detail.card.editTitle')}</h3>
       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-        <FieldRow label="Item description"><Input value={draft.item_description} onChange={e => setDraft({ ...draft, item_description: e.target.value })} /></FieldRow>
-        <FieldRow label="Found at"><Input value={draft.found_location} onChange={e => setDraft({ ...draft, found_location: e.target.value })} /></FieldRow>
-        <FieldRow label="Property"><Input value={draft.property_name} onChange={e => setDraft({ ...draft, property_name: e.target.value })} /></FieldRow>
-        <FieldRow label="Guest name"><Input value={draft.guest_name} onChange={e => setDraft({ ...draft, guest_name: e.target.value })} /></FieldRow>
-        <FieldRow label="Guest email"><Input type="email" value={draft.guest_email} onChange={e => setDraft({ ...draft, guest_email: e.target.value })} /></FieldRow>
-        <FieldRow label="Guest phone"><Input value={draft.guest_phone} onChange={e => setDraft({ ...draft, guest_phone: e.target.value })} /></FieldRow>
-        <FieldRow label="Cleaning vendor"><Input value={draft.cleaning_vendor} onChange={e => setDraft({ ...draft, cleaning_vendor: e.target.value })} /></FieldRow>
-        <FieldRow label="Return method">
+        <FieldRow label={t('detail.fields.itemDescription')}><Input value={draft.item_description} onChange={e => setDraft({ ...draft, item_description: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.foundAt')}><Input value={draft.found_location} onChange={e => setDraft({ ...draft, found_location: e.target.value })} /></FieldRow>
+        <FieldRow label={t('common.labels.property')}><Input value={draft.property_name} onChange={e => setDraft({ ...draft, property_name: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.guestName')}><Input value={draft.guest_name} onChange={e => setDraft({ ...draft, guest_name: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.guestEmail')}><Input type="email" value={draft.guest_email} onChange={e => setDraft({ ...draft, guest_email: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.guestPhone')}><Input value={draft.guest_phone} onChange={e => setDraft({ ...draft, guest_phone: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.cleaningVendor')}><Input value={draft.cleaning_vendor} onChange={e => setDraft({ ...draft, cleaning_vendor: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.returnMethod')}>
           <select
             value={draft.return_method}
             onChange={e => setDraft({ ...draft, return_method: e.target.value })}
             className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
           >
-            <option value="">- unset -</option>
+            <option value="">{t('detail.fields.returnMethodUnset')}</option>
             {RETURN_METHODS.map(r => (
-              <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>
+              <option key={r} value={r}>{returnMethodLabel(r, t)}</option>
             ))}
           </select>
         </FieldRow>
-        <FieldRow label="Carrier"><Input value={draft.shipping_carrier} onChange={e => setDraft({ ...draft, shipping_carrier: e.target.value })} /></FieldRow>
-        <FieldRow label="Tracking #"><Input value={draft.shipping_tracking} onChange={e => setDraft({ ...draft, shipping_tracking: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.carrier')}><Input value={draft.shipping_carrier} onChange={e => setDraft({ ...draft, shipping_carrier: e.target.value })} /></FieldRow>
+        <FieldRow label={t('detail.fields.trackingNumber')}><Input value={draft.shipping_tracking} onChange={e => setDraft({ ...draft, shipping_tracking: e.target.value })} /></FieldRow>
         <div className="sm:col-span-2">
-          <FieldRow label="Notes">
+          <FieldRow label={t('common.labels.notes')}>
             <Textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} rows={3} />
           </FieldRow>
         </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
+        <Button variant="outline" size="sm" onClick={() => setEditing(false)} disabled={saving}>{t('common.actions.cancel')}</Button>
         <Button size="sm" onClick={save} disabled={saving || !draft.item_description.trim()} data-testid="button-save-details">
-          {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null} Save changes
+          {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null} {t('detail.card.saveChanges')}
         </Button>
       </div>
     </div>
@@ -604,7 +610,7 @@ function InlineDateRow({
   )
 }
 
-function fmt(iso: string | null | undefined): string {
+function fmt(iso: string | null | undefined, formatFn: (date: Date | number, pattern: string) => string): string {
   if (!iso) return '—'
-  try { return format(new Date(iso), 'MMM d, yyyy h:mm a') } catch { return '—' }
+  try { return formatFn(new Date(iso), 'MMM d, yyyy h:mm a') } catch { return '—' }
 }

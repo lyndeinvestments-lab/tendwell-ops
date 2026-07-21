@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2 } from 'lucide-react'
-import { LOST_ITEM_PIPELINE, STATUS_LABELS, authFetch, type LostItemStatus } from './shared'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { LOST_ITEM_PIPELINE, authFetch, statusLabel, type LostItemStatus } from './shared'
 
 interface Props {
   open: boolean
@@ -48,6 +49,7 @@ const EMPTY: FormState = {
 // only via the Haven UI.
 export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY)
+  const { t } = useLocale('lostItems')
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -71,7 +73,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
       }) as Promise<{ ok: boolean; case: { id: string; case_number: string } }>
     },
     onSuccess: (r) => {
-      toast({ title: 'Case created', description: r.case.case_number })
+      toast({ title: t('toasts.caseCreated'), description: r.case.case_number })
       qc.invalidateQueries({ queryKey: ['/api/lost-items/list'] })
       qc.invalidateQueries({ queryKey: ['/api/lost-items/assignments'] })
       onCreated?.(r.case.id)
@@ -79,7 +81,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
       onOpenChange(false)
     },
     onError: (e: any) => {
-      toast({ title: 'Failed to create case', description: e?.message ?? 'Unknown error', variant: 'destructive' })
+      toast({ title: t('toasts.createFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' })
     },
   })
 
@@ -93,19 +95,19 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
     <Dialog open={open} onOpenChange={v => !create.isPending && onOpenChange(v)}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>New lost item case</DialogTitle>
+          <DialogTitle>{t('newCase.title')}</DialogTitle>
           <DialogDescription className="text-xs">
-            Logs a case in Haven-OS and shows up immediately on this board.
+            {t('newCase.description')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           <div>
-            <Label className="text-xs">What was found *</Label>
+            <Label className="text-xs">{t('newCase.whatWasFound')}</Label>
             <Textarea
               value={form.item_description}
               onChange={e => patch('item_description', e.target.value)}
-              placeholder="Pair of black-rim Ray-Bans in a soft case…"
+              placeholder={t('newCase.whatWasFoundPlaceholder')}
               rows={2}
               className="text-sm"
               data-testid="input-new-case-description"
@@ -114,20 +116,20 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs">Found at</Label>
+              <Label className="text-xs">{t('detail.fields.foundAt')}</Label>
               <Input
                 value={form.found_location}
                 onChange={e => patch('found_location', e.target.value)}
-                placeholder="Master bedroom nightstand"
+                placeholder={t('newCase.foundAtPlaceholder')}
                 className="h-8 text-sm"
               />
             </div>
             <div>
-              <Label className="text-xs">Property</Label>
+              <Label className="text-xs">{t('common.labels.property')}</Label>
               <Input
                 value={form.property_name}
                 onChange={e => patch('property_name', e.target.value)}
-                placeholder="Property name"
+                placeholder={t('newCase.propertyPlaceholder')}
                 className="h-8 text-sm"
               />
             </div>
@@ -135,7 +137,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs">Guest name</Label>
+              <Label className="text-xs">{t('detail.fields.guestName')}</Label>
               <Input
                 value={form.guest_name}
                 onChange={e => patch('guest_name', e.target.value)}
@@ -143,7 +145,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
               />
             </div>
             <div>
-              <Label className="text-xs">Guest email</Label>
+              <Label className="text-xs">{t('detail.fields.guestEmail')}</Label>
               <Input
                 type="email"
                 value={form.guest_email}
@@ -155,7 +157,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs">Guest phone</Label>
+              <Label className="text-xs">{t('detail.fields.guestPhone')}</Label>
               <Input
                 value={form.guest_phone}
                 onChange={e => patch('guest_phone', e.target.value)}
@@ -163,7 +165,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
               />
             </div>
             <div>
-              <Label className="text-xs">Cleaning vendor</Label>
+              <Label className="text-xs">{t('detail.fields.cleaningVendor')}</Label>
               <Input
                 value={form.cleaning_vendor}
                 onChange={e => patch('cleaning_vendor', e.target.value)}
@@ -174,20 +176,20 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <Label className="text-xs">Initial status</Label>
+              <Label className="text-xs">{t('newCase.initialStatus')}</Label>
               <Select value={form.status} onValueChange={v => patch('status', v as LostItemStatus)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {LOST_ITEM_PIPELINE.map(s => (
-                    <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                    <SelectItem key={s} value={s}>{statusLabel(s, t)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Follow up</Label>
+              <Label className="text-xs">{t('detail.fields.followUp')}</Label>
               <Input
                 type="date"
                 value={form.follow_up_date}
@@ -198,7 +200,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
           </div>
 
           <div>
-            <Label className="text-xs">Notes</Label>
+            <Label className="text-xs">{t('common.labels.notes')}</Label>
             <Textarea
               value={form.notes}
               onChange={e => patch('notes', e.target.value)}
@@ -209,7 +211,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
           <div className="flex items-center justify-end gap-2 pt-2">
             <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={create.isPending}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button
               size="sm"
@@ -218,7 +220,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
               data-testid="button-submit-new-case"
             >
               {create.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : null}
-              Create case
+              {t('newCase.create')}
             </Button>
           </div>
         </div>

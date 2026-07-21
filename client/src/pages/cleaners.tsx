@@ -22,7 +22,10 @@ import {
 import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2, Pencil } from 'lucide-react'
 import { sendInviteEmail } from '@/lib/notify'
 import { roleBadgeClasses } from '@/lib/role-colors'
-import { format, startOfWeek, addDays, isSameDay } from 'date-fns'
+import { format as dfFormat, startOfWeek, addDays, isSameDay } from 'date-fns'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 type ViewMode = 'list' | 'calendar' | 'reconciliation'
 
@@ -40,8 +43,18 @@ const LEGEND_DOTS = [
   'bg-rose-500', 'bg-cyan-500', 'bg-orange-500',
 ]
 
+// Display-only lookup for `clean_assignments.status` — DB stays canonical
+// English; unknown statuses fall back to the raw value (mirrors the
+// slugify pattern in client/src/lib/issues.ts, kept local to this page).
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+function assignmentStatusLabel(status: string, t: TFunc): string {
+  return t(`calendar.status.${slugify(status)}`, undefined, status)
+}
+
 // ── Draggable assignment chip ──────────────────────────────────────────────
-function DraggableChip({ assignment, colorClass, fmt }: { assignment: any; colorClass: string; fmt: (n: number) => string }) {
+function DraggableChip({ assignment, colorClass, fmt, t }: { assignment: any; colorClass: string; fmt: (n: number) => string; t: TFunc }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: assignment.id })
   return (
     <Popover>
@@ -54,9 +67,9 @@ function DraggableChip({ assignment, colorClass, fmt }: { assignment: any; color
       </div>
       <PopoverContent className="w-48 p-2 text-xs space-y-1">
         <p className="font-medium">{(assignment.properties as any)?.name}</p>
-        <p className="text-muted-foreground">{(assignment.properties as any)?.address || 'No address'}</p>
-        {assignment.pay_amount && <p>Pay: {fmt(Number(assignment.pay_amount))}</p>}
-        <p>Status: {assignment.status}</p>
+        <p className="text-muted-foreground">{(assignment.properties as any)?.address || t('calendar.noAddress')}</p>
+        {assignment.pay_amount && <p>{t('calendar.payLine', { amount: fmt(Number(assignment.pay_amount)) })}</p>}
+        <p>{t('calendar.statusLine', { status: assignmentStatusLabel(assignment.status, t) })}</p>
         {assignment.notes && <p className="text-muted-foreground">{assignment.notes}</p>}
       </PopoverContent>
     </Popover>
@@ -64,7 +77,7 @@ function DraggableChip({ assignment, colorClass, fmt }: { assignment: any; color
 }
 
 // ── Droppable day cell ─────────────────────────────────────────────────────
-function DroppableDayCell({ cellId, children, onAssign }: { cellId: string; children: React.ReactNode; onAssign: () => void }) {
+function DroppableDayCell({ cellId, children, onAssign, assignLabel }: { cellId: string; children: React.ReactNode; onAssign: () => void; assignLabel: string }) {
   const { isOver, setNodeRef } = useDroppable({ id: cellId })
   return (
     <div
@@ -75,7 +88,7 @@ function DroppableDayCell({ cellId, children, onAssign }: { cellId: string; chil
       <button
         onClick={onAssign}
         className="absolute bottom-0.5 right-0.5 opacity-0 group-hover:opacity-100 sm:opacity-0 max-sm:opacity-100 transition-opacity text-xs text-muted-foreground hover:text-primary"
-        title="Assign"
+        title={assignLabel}
       >
         <Plus className="w-3 h-3" />
       </button>
@@ -85,6 +98,8 @@ function DroppableDayCell({ cellId, children, onAssign }: { cellId: string; chil
 
 export default function CleanersPage() {
   usePageTitle('Cleaners')
+  const { t, locale } = useLocale('cleaners')
+  const { format } = useDateFormat()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
@@ -195,11 +210,11 @@ export default function CleanersPage() {
         new_value: newForm.full_name,
         changed_by: user?.label ?? null,
       })
-      toast({ title: 'Cleaner added', description: newForm.email ? 'Account created. Send them an invite email.' : undefined })
+      toast({ title: t('toasts.cleanerAdded'), description: newForm.email ? t('toasts.cleanerAddedAccountDescription') : undefined })
       setAddOpen(false)
       setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '', app_role: 'cleaning' })
     },
-    onError: (error: any) => toast({ title: 'Failed to add cleaner', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.addCleanerFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: renameCleaner } = useGuardedMutation('cleaners', {
@@ -221,10 +236,10 @@ export default function CleanersPage() {
         new_value: name,
         changed_by: user?.label ?? null,
       })
-      toast({ title: 'Name updated' })
+      toast({ title: t('toasts.nameUpdated') })
       setEditingNameId(null)
     },
-    onError: (error: any) => toast({ title: 'Failed to rename', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.renameFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const commitRename = (id: string, currentName: string) => {
@@ -252,10 +267,10 @@ export default function CleanersPage() {
         new_value: alt,
         changed_by: user?.label ?? null,
       })
-      toast({ title: alt ? 'Alt email saved' : 'Alt email cleared' })
+      toast({ title: alt ? t('toasts.altEmailSaved') : t('toasts.altEmailCleared') })
       setEditingAltId(null)
     },
-    onError: (error: any) => toast({ title: 'Failed to save alt email', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.altEmailSaveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const commitAltEmail = (id: string, current: string | null) => {
@@ -294,14 +309,14 @@ export default function CleanersPage() {
         metadata: { property_id: assignPropertyId, scheduled_date: assignDate, pay_amount: assignPay || null },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
-      toast({ title: 'Assignment added' })
+      toast({ title: t('toasts.assignmentAdded') })
       setAssignOpen(false)
       setAssignCleanerId('')
       setAssignPropertyId('')
       setAssignDate('')
       setAssignPay('')
     },
-    onError: (error: any) => toast({ title: 'Failed to add assignment', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.assignmentAddFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: moveAssignment } = useGuardedMutation('cleaners', {
@@ -320,9 +335,9 @@ export default function CleanersPage() {
         metadata: { assignment_id: variables.id },
       })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
-      toast({ title: 'Assignment moved' })
+      toast({ title: t('toasts.assignmentMoved') })
     },
-    onError: (error: any) => toast({ title: 'Failed to move assignment', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.assignmentMoveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: deleteCleaner, isPending: deleting } = useGuardedMutation('cleaners', {
@@ -341,11 +356,11 @@ export default function CleanersPage() {
       })
       qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
-      toast({ title: 'Cleaner deleted' })
+      toast({ title: t('toasts.cleanerDeleted') })
       setDeleteConfirmId(null)
       if (detailCleaner?.id === id) setDetailCleaner(null)
     },
-    onError: (error: any) => toast({ title: 'Failed to delete cleaner', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.deleteCleanerFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {
@@ -414,12 +429,16 @@ export default function CleanersPage() {
 
   function exportReconciliation() {
     if (!reconciliationData || reconciliationData.length === 0) return
-    const headers = ['Cleaner', 'Status', 'Pay Rate', 'Cleans This Month', 'Total Pay', 'Avg Pay/Clean', 'Expected Pay']
+    const headers = [
+      t('reconciliation.csv.cleaner'), t('reconciliation.csv.status'), t('reconciliation.csv.payRate'),
+      t('reconciliation.csv.cleansThisMonth'), t('reconciliation.csv.totalPay'), t('reconciliation.csv.avgPayPerClean'),
+      t('reconciliation.csv.expectedPay'),
+    ]
     const rows = reconciliationData.map((c: any) => {
       const expected = c.pay_rate && c.cleans > 0 ? c.pay_rate * c.cleans : null
       return [
         c.full_name || '',
-        c.is_active ? 'Active' : 'Inactive',
+        c.is_active ? t('table.statusActive') : t('table.statusInactive'),
         c.pay_rate ?? '',
         c.cleans,
         c.totalPay > 0 ? c.totalPay.toFixed(2) : '',
@@ -460,8 +479,8 @@ export default function CleanersPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Cleaners"
-        subtitle="Roster, assignments, and cost reconciliation"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center border rounded-md overflow-hidden">
@@ -471,7 +490,7 @@ export default function CleanersPage() {
                   onClick={() => setViewMode(v)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
                 >
-                  {v === 'list' ? 'Roster' : v === 'calendar' ? 'Calendar' : <><span className="sm:hidden">Recon</span><span className="hidden sm:inline">Reconciliation</span></>}
+                  {v === 'list' ? t('page.tabRoster') : v === 'calendar' ? t('page.tabCalendar') : <><span className="sm:hidden">{t('page.tabReconciliationShort')}</span><span className="hidden sm:inline">{t('page.tabReconciliation')}</span></>}
                 </button>
               ))}
             </div>
@@ -479,7 +498,7 @@ export default function CleanersPage() {
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input
-                  type="search" placeholder="Search…" value={search}
+                  type="search" placeholder={t('page.searchPlaceholder')} value={search}
                   onChange={e => setSearch(e.target.value)}
                   className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
                 />
@@ -487,7 +506,7 @@ export default function CleanersPage() {
               </div>
             )}
             <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)}>
-              <Plus className="w-3.5 h-3.5" /> Add Cleaner
+              <Plus className="w-3.5 h-3.5" /> {t('page.addCleaner')}
             </Button>
           </div>
         }
@@ -499,15 +518,15 @@ export default function CleanersPage() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
               <tr>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Alt Email</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Pay Rate</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Assignments</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.name')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.phone')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.email')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.altEmail')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.role')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.payRate')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.assignments')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.avgPay')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.status')}</th>
                 <th className="py-2 px-3 w-16" />
               </tr>
             </thead>
@@ -516,7 +535,11 @@ export default function CleanersPage() {
                 [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={10}>
-                  <EmptyState icon={Users2} title="No cleaners" description={`Add your first cleaner to get started.${suggestedCleaners.length > 0 ? ` ${suggestedCleaners.length} active properties have cleaner pay set but no assignments.` : ''}`} />
+                  <EmptyState
+                    icon={Users2}
+                    title={t('page.emptyTitle')}
+                    description={`${t('page.emptyDescription')}${suggestedCleaners.length > 0 ? ` ${t('page.emptySuggestedCleaners', { count: suggestedCleaners.length })}` : ''}`}
+                  />
                 </td></tr>
               ) : (
                 filtered.map((c: any) => {
@@ -543,7 +566,7 @@ export default function CleanersPage() {
                             type="button"
                             className="flex items-center gap-1 group/name text-left"
                             onClick={() => { setEditingNameId(c.id); setNameDraft(c.full_name ?? '') }}
-                            title="Click to rename"
+                            title={t('table.clickToRename')}
                             data-testid={`button-rename-cleaner-${c.id}`}
                           >
                             {c.full_name}
@@ -558,7 +581,7 @@ export default function CleanersPage() {
                           <Input
                             value={altDraft}
                             autoFocus
-                            placeholder="alt@email.com"
+                            placeholder={t('table.altEmailPlaceholder')}
                             onChange={e => setAltDraft(e.target.value)}
                             onBlur={() => commitAltEmail(c.id, c.alt_email ?? null)}
                             onKeyDown={e => {
@@ -573,7 +596,7 @@ export default function CleanersPage() {
                             type="button"
                             className="flex items-center gap-1 group/alt text-left"
                             onClick={() => { setEditingAltId(c.id); setAltDraft(c.alt_email ?? '') }}
-                            title="Secondary email (e.g. the one used in Trellis). Click to edit."
+                            title={t('table.altEmailTooltip')}
                             data-testid={`button-alt-email-${c.id}`}
                           >
                             {c.alt_email || '—'}
@@ -584,7 +607,7 @@ export default function CleanersPage() {
                       <td className="py-2 px-3">
                         {c.app_role ? (
                           <span className={`text-xs px-1.5 py-0.5 rounded ${roleBadgeClasses(c.app_role === 'inspector' ? 'inspector' : 'cleaner')}`}>
-                            {c.app_role === 'inspector' ? 'Inspector' : 'Cleaner'}
+                            {c.app_role === 'inspector' ? t('table.roleInspector') : t('table.roleCleaner')}
                           </span>
                         ) : <span className="text-xs text-muted-foreground">-</span>}
                       </td>
@@ -593,7 +616,7 @@ export default function CleanersPage() {
                       <td className="py-2 px-3 text-xs tabular-nums">{avgPay > 0 ? fmt(avgPay) : '—'}</td>
                       <td className="py-2 px-3">
                         <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
-                          {c.is_active ? 'Active' : 'Inactive'}
+                          {c.is_active ? t('table.statusActive') : t('table.statusInactive')}
                         </span>
                       </td>
                       <td className="py-2 px-3 text-right" onClick={e => e.stopPropagation()}>
@@ -608,24 +631,24 @@ export default function CleanersPage() {
                                 if (result.ok) {
                                   await supabase.from('cleaners').update({ invite_sent_at: new Date().toISOString() }).eq('id', c.id)
                                   qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
-                                  toast({ title: 'Invite sent', description: `Email sent to ${c.email}` })
+                                  toast({ title: t('toasts.inviteSent'), description: t('toasts.inviteSentDescription', { email: c.email }) })
                                 } else {
-                                  toast({ title: 'Failed to send invite', description: result.error, variant: 'destructive' })
+                                  toast({ title: t('toasts.inviteFailed'), description: result.error, variant: 'destructive' })
                                 }
                               }}
                               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors px-1.5 py-0.5 rounded border border-transparent hover:border-border"
-                              title={c.invite_sent_at ? `Resend invite (last sent ${new Date(c.invite_sent_at).toLocaleDateString()})` : 'Send invite email'}
+                              title={c.invite_sent_at ? t('table.resendInviteTooltip', { date: new Date(c.invite_sent_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') }) : t('table.sendInviteTooltip')}
                             >
                               {invitingSendingId === c.id
                                 ? <Loader2 className="w-3 h-3 animate-spin" />
                                 : <Mail className="w-3 h-3" />}
-                              <span className="hidden sm:inline">{c.invite_sent_at ? 'Resend' : 'Invite'}</span>
+                              <span className="hidden sm:inline">{c.invite_sent_at ? t('table.resend') : t('table.invite')}</span>
                             </button>
                           )}
                           <button
                             onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
                             className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                            title="Delete cleaner"
+                            title={t('table.deleteTooltip')}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -652,7 +675,7 @@ export default function CleanersPage() {
           <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
             <div className="border border-border rounded-2xl shadow-sm overflow-auto">
               <div className="grid" style={{ gridTemplateColumns: '150px repeat(7, 1fr)', minWidth: '900px' }}>
-                <div className="bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-muted-foreground sticky left-0 z-20">Cleaner</div>
+                <div className="bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-muted-foreground sticky left-0 z-20">{t('calendar.cleanerColumn')}</div>
                 {weekDays.map(d => (
                   <div key={d.toISOString()} className={`bg-muted/60 border-b border-r border-border px-2 py-1.5 text-xs font-medium text-center ${isSameDay(d, new Date()) ? 'text-primary' : 'text-muted-foreground'}`}>
                     {format(d, 'EEE M/d')}
@@ -665,7 +688,7 @@ export default function CleanersPage() {
                       {c.full_name}
                     </div>
                     {weekDays.map(d => {
-                      const dateStr = format(d, 'yyyy-MM-dd')
+                      const dateStr = dfFormat(d, 'yyyy-MM-dd')
                       const dayAssignments = calendarAssignments[`${c.id}_${dateStr}`] || []
                       const cellId = `cell_${c.id}_${dateStr}`
                       return (
@@ -673,6 +696,7 @@ export default function CleanersPage() {
                           key={cellId}
                           cellId={cellId}
                           onAssign={() => openAssign(c.id, dateStr)}
+                          assignLabel={t('calendar.assignTooltip')}
                         >
                           {dayAssignments.map((a: any) => (
                             <DraggableChip
@@ -680,6 +704,7 @@ export default function CleanersPage() {
                               assignment={a}
                               colorClass={CLEANER_COLORS[cleanerColorMap[c.id] ?? 0]}
                               fmt={fmt}
+                              t={t}
                             />
                           ))}
                         </DroppableDayCell>
@@ -716,13 +741,13 @@ export default function CleanersPage() {
                 value={reconMonth}
                 onChange={e => setReconMonth(e.target.value)}
                 className="h-7 w-40 text-xs"
-                aria-label="Reconciliation month"
+                aria-label={t('reconciliation.monthAriaLabel')}
               />
-              <span>Total cleans: <strong className="text-foreground">{reconciliationData.reduce((s: number, c: any) => s + c.cleans, 0)}</strong></span>
-              <span>Total pay: <strong className="text-foreground">{fmt(reconciliationData.reduce((s: number, c: any) => s + c.totalPay, 0))}</strong></span>
-              <span>Active cleaners: <strong className="text-foreground">{reconciliationData.filter((c: any) => c.is_active && c.cleans > 0).length}</strong></span>
+              <span>{t('reconciliation.totalCleans')}: <strong className="text-foreground">{reconciliationData.reduce((s: number, c: any) => s + c.cleans, 0)}</strong></span>
+              <span>{t('reconciliation.totalPay')}: <strong className="text-foreground">{fmt(reconciliationData.reduce((s: number, c: any) => s + c.totalPay, 0))}</strong></span>
+              <span>{t('reconciliation.activeCleaners')}: <strong className="text-foreground">{reconciliationData.filter((c: any) => c.is_active && c.cleans > 0).length}</strong></span>
               <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs ml-auto" onClick={exportReconciliation}>
-                <Download className="w-3 h-3" /> Export CSV
+                <Download className="w-3 h-3" /> {t('common.actions.exportCsv')}
               </Button>
             </div>
           )}
@@ -730,18 +755,18 @@ export default function CleanersPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Pay Rate</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleans This Month</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Total Pay</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Avg Pay / Clean</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Expected (Rate x Cleans)</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.cleaner')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.status')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.payRate')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.cleansThisMonth')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.totalPay')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.avgPayPerClean')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('reconciliation.table.expected')}</th>
                 </tr>
               </thead>
               <tbody>
                 {reconciliationData.length === 0 ? (
-                  <tr><td colSpan={7}><EmptyState icon={Users2} title="No cleaners" description="Add cleaners to see reconciliation." /></td></tr>
+                  <tr><td colSpan={7}><EmptyState icon={Users2} title={t('page.emptyTitle')} description={t('reconciliation.emptyDescription')} /></td></tr>
                 ) : (
                   reconciliationData.map((c: any) => {
                     const expected = c.pay_rate && c.cleans > 0 ? c.pay_rate * c.cleans : null
@@ -751,7 +776,7 @@ export default function CleanersPage() {
                         <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
                         <td className="py-2 px-3">
                           <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
-                            {c.is_active ? 'Active' : 'Inactive'}
+                            {c.is_active ? t('table.statusActive') : t('table.statusInactive')}
                           </span>
                         </td>
                         <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
@@ -783,59 +808,59 @@ export default function CleanersPage() {
       {/* Add Cleaner Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Add Cleaner</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('invite.addCleanerTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Full Name *</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.fullName')}</label>
               <Input value={newForm.full_name} onChange={e => setNewForm(f => ({ ...f, full_name: e.target.value }))} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Role *</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('invite.role')}</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setNewForm(f => ({ ...f, app_role: 'cleaning' }))}
                   className={`h-10 rounded-md border-2 text-sm font-medium transition-colors ${newForm.app_role === 'cleaning' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/40'}`}
                 >
-                  Cleaner
+                  {t('table.roleCleaner')}
                 </button>
                 <button
                   type="button"
                   onClick={() => setNewForm(f => ({ ...f, app_role: 'inspector' }))}
                   className={`h-10 rounded-md border-2 text-sm font-medium transition-colors ${newForm.app_role === 'inspector' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:border-primary/40'}`}
                 >
-                  Inspector
+                  {t('table.roleInspector')}
                 </button>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Phone</label>
+                <label className="text-xs font-medium text-muted-foreground">{t('invite.phone')}</label>
                 <Input value={newForm.phone} onChange={e => setNewForm(f => ({ ...f, phone: e.target.value }))} className="mt-1" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground">Email</label>
-                <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" placeholder="For login access" />
+                <label className="text-xs font-medium text-muted-foreground">{t('invite.email')}</label>
+                <Input value={newForm.email} onChange={e => setNewForm(f => ({ ...f, email: e.target.value }))} className="mt-1" placeholder={t('invite.emailPlaceholder')} />
               </div>
             </div>
             <p className="text-2xs text-muted-foreground -mt-1">
-              Entering an email grants this cleaner sign-in access with the Cleaning role.
+              {t('invite.emailAccessHint')}
             </p>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Pay Rate ($)</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.payRate')}</label>
               <Input type="number" step="0.01" value={newForm.pay_rate} onChange={e => setNewForm(f => ({ ...f, pay_rate: e.target.value }))} className="mt-1" />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Notes</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.notes')}</label>
               <Input value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" />
             </div>
             {newForm.email && (
-              <p className="text-xs text-muted-foreground">A site account will be created for this email. Send them an invite email after adding.</p>
+              <p className="text-xs text-muted-foreground">{t('invite.accountWillBeCreatedHint')}</p>
             )}
           </div>
           <DialogFooter>
             <Button size="sm" disabled={!newForm.full_name.trim() || adding} onClick={() => addCleaner()}>
-              {adding ? 'Adding…' : 'Add Cleaner'}
+              {adding ? t('invite.adding') : t('invite.addCleanerTitle')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -844,36 +869,36 @@ export default function CleanersPage() {
       {/* Assign Dialog */}
       <Dialog open={assignOpen} onOpenChange={v => !v && setAssignOpen(false)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Assign Cleaner</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('invite.assignTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Cleaner</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.cleanerLabel')}</label>
               <select
                 value={assignCleanerId}
                 onChange={e => setAssignCleanerId(e.target.value)}
                 className="mt-1 w-full h-8 text-xs border border-input rounded px-2 bg-background"
               >
-                <option value="">Select cleaner…</option>
+                <option value="">{t('invite.selectCleanerPlaceholder')}</option>
                 {(cleaners || []).filter((c: any) => c.is_active).map((c: any) => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Property</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.propertyLabel')}</label>
               <select
                 value={assignPropertyId}
                 onChange={e => setAssignPropertyId(e.target.value)}
                 className="mt-1 w-full h-8 text-xs border border-input rounded px-2 bg-background"
               >
-                <option value="">Select property…</option>
+                <option value="">{t('invite.selectPropertyPlaceholder')}</option>
                 {(activeProps || []).map((p: any) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Date</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.dateLabel')}</label>
               <Input
                 type="date"
                 value={assignDate}
@@ -882,25 +907,25 @@ export default function CleanersPage() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Pay Amount ($)</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('invite.payAmountLabel')}</label>
               <Input
                 type="number"
                 step="0.01"
                 value={assignPay}
                 onChange={e => setAssignPay(e.target.value)}
                 className="mt-1 h-8 text-xs"
-                placeholder="Optional"
+                placeholder={t('invite.payAmountPlaceholder')}
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAssignOpen(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => setAssignOpen(false)}>{t('common.actions.cancel')}</Button>
             <Button
               size="sm"
               disabled={!assignCleanerId || !assignPropertyId || !assignDate || assigning}
               onClick={() => addAssignment()}
             >
-              {assigning ? 'Saving…' : 'Assign'}
+              {assigning ? t('invite.saving') : t('invite.assign')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -913,14 +938,14 @@ export default function CleanersPage() {
           {detailCleaner && (
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-muted-foreground block">Phone</span>{detailCleaner.phone || '—'}</div>
-                <div><span className="text-muted-foreground block">Email</span>{detailCleaner.email || '—'}</div>
-                <div><span className="text-muted-foreground block">Alt Email (Trellis)</span>{detailCleaner.alt_email || '—'}</div>
-                <div><span className="text-muted-foreground block">Pay Rate</span>{detailCleaner.pay_rate ? fmt(detailCleaner.pay_rate) : '—'}</div>
-                <div><span className="text-muted-foreground block">Status</span>{detailCleaner.is_active ? 'Active' : 'Inactive'}</div>
+                <div><span className="text-muted-foreground block">{t('table.detailPhone')}</span>{detailCleaner.phone || '—'}</div>
+                <div><span className="text-muted-foreground block">{t('table.detailEmail')}</span>{detailCleaner.email || '—'}</div>
+                <div><span className="text-muted-foreground block">{t('table.detailAltEmail')}</span>{detailCleaner.alt_email || '—'}</div>
+                <div><span className="text-muted-foreground block">{t('table.detailPayRate')}</span>{detailCleaner.pay_rate ? fmt(detailCleaner.pay_rate) : '—'}</div>
+                <div><span className="text-muted-foreground block">{t('table.detailStatus')}</span>{detailCleaner.is_active ? t('table.statusActive') : t('table.statusInactive')}</div>
               </div>
               <div>
-                <span className="text-xs text-muted-foreground block mb-1">Assignment History</span>
+                <span className="text-xs text-muted-foreground block mb-1">{t('table.assignmentHistory')}</span>
                 <div className="space-y-1 max-h-60 overflow-y-auto">
                   {(assignments || []).filter((a: any) => a.cleaner_id === detailCleaner.id).slice(0, 50).map((a: any) => (
                     <div key={a.id} className="flex items-center justify-between text-xs border-b border-border/40 py-1">
@@ -934,7 +959,7 @@ export default function CleanersPage() {
                     </div>
                   ))}
                   {(assignments || []).filter((a: any) => a.cleaner_id === detailCleaner.id).length === 0 && (
-                    <p className="text-muted-foreground text-center py-4">No assignments yet.</p>
+                    <p className="text-muted-foreground text-center py-4">{t('table.noAssignmentsYet')}</p>
                   )}
                 </div>
               </div>
@@ -947,7 +972,7 @@ export default function CleanersPage() {
               onClick={() => { setDeleteConfirmId(detailCleaner?.id); setDetailCleaner(null) }}
             >
               <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              Delete
+              {t('table.deleteButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -956,19 +981,24 @@ export default function CleanersPage() {
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteConfirmId} onOpenChange={v => !v && setDeleteConfirmId(null)}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Delete Cleaner</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('table.deleteDialogTitle')}</DialogTitle></DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Are you sure you want to delete <strong>{(cleaners || []).find((c: any) => c.id === deleteConfirmId)?.full_name}</strong>? This will also remove all their assignments and cannot be undone.
+            {(() => {
+              // Split the translated template on the {{name}} placeholder so the
+              // cleaner's name can still render inside a <strong> tag.
+              const [before, after] = t('table.deleteDialogConfirm').split('{{name}}')
+              return <>{before}<strong>{(cleaners || []).find((c: any) => c.id === deleteConfirmId)?.full_name}</strong>{after}</>
+            })()}
           </p>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => setDeleteConfirmId(null)}>{t('common.actions.cancel')}</Button>
             <Button
               variant="destructive"
               size="sm"
               disabled={deleting}
               onClick={() => deleteConfirmId && deleteCleaner(deleteConfirmId)}
             >
-              {deleting ? 'Deleting…' : 'Delete'}
+              {deleting ? t('table.deleting') : t('table.deleteButton')}
             </Button>
           </DialogFooter>
         </DialogContent>

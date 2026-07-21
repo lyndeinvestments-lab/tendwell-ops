@@ -13,10 +13,13 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Search, RefreshCw, Loader2, Check, Undo2 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { parseISO } from 'date-fns'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { ErrorState } from '@/components/ErrorState'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 type DeliveryResponsible = 'Haven' | 'Tendwell'
@@ -41,6 +44,8 @@ type RespFilter = 'all' | DeliveryResponsible
 // ─── Page ───────────────────────────────────────────────────────────────────
 export default function IncomingShipmentsPage() {
   usePageTitle('Incoming Shipments')
+  const { t } = useLocale('shipments')
+  const { format: formatDate } = useDateFormat()
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -115,13 +120,13 @@ export default function IncomingShipmentsPage() {
       if (e) throw e
     },
     onSuccess: () => {
-      toast({ title: 'Marked received' })
+      toast({ title: t('toasts.markedReceived') })
       qc.invalidateQueries({ queryKey: ['/incoming_shipments'] })
       setReceivingId(null)
       setReceivingNotes('')
     },
     onError: (e: any) => {
-      toast({ title: 'Failed to mark received', description: e?.message ?? 'Unknown error', variant: 'destructive' })
+      toast({ title: t('toasts.markReceivedFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' })
     },
   })
 
@@ -134,11 +139,11 @@ export default function IncomingShipmentsPage() {
       if (e) throw e
     },
     onSuccess: () => {
-      toast({ title: 'Moved back to pending' })
+      toast({ title: t('toasts.movedToPending') })
       qc.invalidateQueries({ queryKey: ['/incoming_shipments'] })
     },
     onError: (e: any) => {
-      toast({ title: 'Failed to undo', description: e?.message ?? 'Unknown error', variant: 'destructive' })
+      toast({ title: t('toasts.undoFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' })
     },
   })
 
@@ -180,15 +185,15 @@ export default function IncomingShipmentsPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Incoming Shipments"
-        subtitle="Submissions from the public report form · auto-refreshes every 30s"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search sender, property, description, tracking…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-8 h-8 w-full sm:w-80 text-sm"
@@ -200,27 +205,28 @@ export default function IncomingShipmentsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All parties</SelectItem>
+                <SelectItem value="all">{t('page.allParties')}</SelectItem>
+                {/* 'Haven'/'Tendwell' are company names (delivery_responsible enum values) — not translated */}
                 <SelectItem value="Haven">Haven</SelectItem>
                 <SelectItem value="Tendwell">Tendwell</SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
-              Refresh
+              {t('common.actions.refresh')}
             </Button>
           </div>
         }
       />
 
       <div className="grid grid-cols-3 gap-2">
-        <SummaryTile label="Pending" count={counts.pending}
+        <SummaryTile label={t('status.pending')} count={counts.pending}
           colorClass="bg-warning/15 text-warning border-warning/30"
           onClick={() => setStatusFilter('pending')} active={statusFilter === 'pending'} />
-        <SummaryTile label="Received" count={counts.received}
+        <SummaryTile label={t('status.received')} count={counts.received}
           colorClass="bg-success/15 text-success border-success/30"
           onClick={() => setStatusFilter('received')} active={statusFilter === 'received'} />
-        <SummaryTile label="All" count={counts.total}
+        <SummaryTile label={t('common.actions.all')} count={counts.total}
           colorClass="bg-muted text-foreground border-border"
           onClick={() => setStatusFilter('all')} active={statusFilter === 'all'} />
       </div>
@@ -228,7 +234,7 @@ export default function IncomingShipmentsPage() {
       {isError && (
         <ErrorState
           onRetry={() => refetch()}
-          description={`Couldn't load Incoming Shipments: ${error instanceof Error ? error.message : 'Unknown error'}`}
+          description={t('page.errorDescription', { message: error instanceof Error ? error.message : t('toasts.unknownError') })}
         />
       )}
 
@@ -246,6 +252,8 @@ export default function IncomingShipmentsPage() {
             onUndo={(id) => undoReceived.mutate(id)}
             undoingId={undoReceived.isPending ? undoReceived.variables ?? null : null}
             onView={(id) => setViewingId(id)}
+            t={t}
+            formatDate={formatDate}
           />
         )}
       </div>
@@ -253,32 +261,32 @@ export default function IncomingShipmentsPage() {
       {isLoading && (
         <div className="text-xs text-muted-foreground flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin" />
-          Loading…
+          {t('common.actions.loading')}
         </div>
       )}
 
       <Dialog open={!!receivingId} onOpenChange={open => { if (!open) { setReceivingId(null); setReceivingNotes('') } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Mark shipment received</DialogTitle>
+            <DialogTitle>{t('form.markReceivedTitle')}</DialogTitle>
             <DialogDescription>
               {receivingRow
                 ? `${receivingRow.sender_name} → ${receivingRow.property_name}`
-                : 'Confirm the package has physically arrived.'}
+                : t('form.markReceivedFallback')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('form.notesLabel')}</label>
             <Textarea
               value={receivingNotes}
               onChange={e => setReceivingNotes(e.target.value)}
-              placeholder="Anything worth recording - damage, location, who handed it off…"
+              placeholder={t('form.notesPlaceholder')}
               rows={3}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setReceivingId(null); setReceivingNotes('') }}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button
               onClick={() => receivingId && markReceived.mutate({ id: receivingId, notes: receivingNotes })}
@@ -288,7 +296,7 @@ export default function IncomingShipmentsPage() {
               {markReceived.isPending
                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 : <Check className="w-3.5 h-3.5" />}
-              Mark received
+              {t('table.markReceived')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -297,23 +305,23 @@ export default function IncomingShipmentsPage() {
       <Dialog open={!!viewingId} onOpenChange={open => { if (!open) setViewingId(null) }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Shipment details</DialogTitle>
+            <DialogTitle>{t('form.detailsTitle')}</DialogTitle>
             <DialogDescription>
-              {viewingRow ? `Submitted ${safeFormatTimestamp(viewingRow.submitted_at)}` : ''}
+              {viewingRow ? t('form.submittedAt', { time: safeFormatTimestamp(viewingRow.submitted_at, formatDate) }) : ''}
             </DialogDescription>
           </DialogHeader>
           {viewingRow && (
             <div className="space-y-3 text-sm">
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                <ShipKV k="Sender" v={viewingRow.sender_name} />
-                <ShipKV k="Property" v={viewingRow.property_name} />
-                <ShipKV k="Tracking #" v={viewingRow.tracking_number || '—'} mono />
-                <ShipKV k="Estimated delivery" v={safeFormatDate(viewingRow.estimated_delivery, 'MMM d, yyyy')} />
-                <ShipKV k="Delivery responsible" v={viewingRow.delivery_responsible} />
-                <ShipKV k="Status" v={viewingRow.received_at ? 'Received' : 'Pending'} />
+                <ShipKV k={t('table.headers.sender')} v={viewingRow.sender_name} />
+                <ShipKV k={t('common.labels.property')} v={viewingRow.property_name} />
+                <ShipKV k={t('form.trackingNumber')} v={viewingRow.tracking_number || '—'} mono />
+                <ShipKV k={t('form.estimatedDelivery')} v={safeFormatDate(viewingRow.estimated_delivery, 'MMM d, yyyy', formatDate)} />
+                <ShipKV k={t('form.deliveryResponsible')} v={viewingRow.delivery_responsible} />
+                <ShipKV k={t('common.labels.status')} v={viewingRow.received_at ? t('status.received') : t('status.pending')} />
               </div>
               <div>
-                <p className="text-2xs uppercase tracking-wide font-medium text-muted-foreground mb-1">Description</p>
+                <p className="text-2xs uppercase tracking-wide font-medium text-muted-foreground mb-1">{t('table.headers.description')}</p>
                 <div className="rounded-md border border-border bg-muted/30 p-2.5 whitespace-pre-wrap break-words">
                   {viewingRow.description}
                 </div>
@@ -322,9 +330,9 @@ export default function IncomingShipmentsPage() {
                 <div className="rounded-md border border-success/20 bg-success/5 p-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs">
                     <Check className="w-3.5 h-3.5 text-success" />
-                    <span>Received {safeFormatTimestamp(viewingRow.received_at)}</span>
+                    <span>{t('form.receivedAt', { time: safeFormatTimestamp(viewingRow.received_at, formatDate) })}</span>
                     {viewingRow.received_by && receiverMap?.[viewingRow.received_by] && (
-                      <span className="text-muted-foreground">· by {receiverMap[viewingRow.received_by]}</span>
+                      <span className="text-muted-foreground">{t('form.receivedBy', { name: receiverMap[viewingRow.received_by] })}</span>
                     )}
                   </div>
                   {viewingRow.received_notes && (
@@ -379,7 +387,7 @@ function SummaryTile({
 }
 
 function ListView({
-  rows, receiverMap, canEdit, onMarkReceived, onUndo, undoingId, onView,
+  rows, receiverMap, canEdit, onMarkReceived, onUndo, undoingId, onView, t, formatDate,
 }: {
   rows: Shipment[]
   receiverMap: Record<string, string>
@@ -388,11 +396,13 @@ function ListView({
   onUndo: (id: string) => void
   undoingId: string | null
   onView: (id: string) => void
+  t: TFunc
+  formatDate: DateFormatFn
 }) {
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
-        No shipments match your filters.
+        {t('table.empty')}
       </div>
     )
   }
@@ -401,15 +411,15 @@ function ListView({
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
           <tr>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sender</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Property</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Description</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Tracking</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Est. Delivery</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Responsible</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Submitted</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-            <th className="text-right font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.sender')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.property')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.description')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.tracking')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.estDelivery')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.responsible')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.headers.submitted')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.status')}</th>
+            <th className="text-right font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -427,9 +437,10 @@ function ListView({
                 <td className="py-1.5 px-3 max-w-[320px] truncate text-primary hover:underline" title={s.description}>{s.description}</td>
                 <td className="py-1.5 px-3 font-mono text-2xs text-muted-foreground">{s.tracking_number || '—'}</td>
                 <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
-                  {safeFormatDate(s.estimated_delivery, 'MMM d, yyyy')}
+                  {safeFormatDate(s.estimated_delivery, 'MMM d, yyyy', formatDate)}
                 </td>
                 <td className="py-1.5 px-3">
+                  {/* 'Haven'/'Tendwell' are company names (delivery_responsible enum value) — not translated */}
                   <span className={`px-1.5 py-0.5 rounded font-medium text-2xs border ${
                     s.delivery_responsible === 'Haven'
                       ? 'bg-info/15 text-info border-info/30'
@@ -439,16 +450,16 @@ function ListView({
                   </span>
                 </td>
                 <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
-                  {safeFormatTimestamp(s.submitted_at)}
+                  {safeFormatTimestamp(s.submitted_at, formatDate)}
                 </td>
                 <td className="py-1.5 px-3">
                   {isReceived ? (
                     <div className="flex flex-col">
                       <span className="px-1.5 py-0.5 rounded font-medium text-2xs border bg-success/15 text-success border-success/30 inline-flex items-center gap-1 w-fit">
-                        <Check className="w-3 h-3" /> Received
+                        <Check className="w-3 h-3" /> {t('status.received')}
                       </span>
                       <span className="text-2xs text-muted-foreground mt-0.5 tabular-nums">
-                        {safeFormatTimestamp(s.received_at)}
+                        {safeFormatTimestamp(s.received_at, formatDate)}
                         {s.received_by && receiverMap[s.received_by] ? ` · ${receiverMap[s.received_by]}` : ''}
                       </span>
                       {s.received_notes && (
@@ -459,7 +470,7 @@ function ListView({
                     </div>
                   ) : (
                     <span className="px-1.5 py-0.5 rounded font-medium text-2xs border bg-warning/15 text-warning border-warning/30">
-                      Pending
+                      {t('status.pending')}
                     </span>
                   )}
                 </td>
@@ -469,7 +480,7 @@ function ListView({
                       onClick={() => onMarkReceived(s.id)}
                       data-testid={`button-mark-received-${s.id}`}
                     >
-                      <Check className="w-3 h-3" /> Mark received
+                      <Check className="w-3 h-3" /> {t('table.markReceived')}
                     </Button>
                   )}
                   {canEdit && isReceived && (
@@ -478,7 +489,7 @@ function ListView({
                       disabled={undoingId === s.id}
                       data-testid={`button-undo-received-${s.id}`}
                     >
-                      <Undo2 className="w-3 h-3" /> Undo
+                      <Undo2 className="w-3 h-3" /> {t('table.undo')}
                     </Button>
                   )}
                 </td>
@@ -491,12 +502,14 @@ function ListView({
   )
 }
 
-function safeFormatDate(value: string | null | undefined, pattern: string): string {
+type DateFormatFn = (date: Date | number, pattern: string) => string
+
+function safeFormatDate(value: string | null | undefined, pattern: string, formatDate: DateFormatFn): string {
   if (!value) return '—'
-  try { return format(parseISO(value), pattern) } catch { return value }
+  try { return formatDate(parseISO(value), pattern) } catch { return value }
 }
 
-function safeFormatTimestamp(value: string | null | undefined): string {
+function safeFormatTimestamp(value: string | null | undefined, formatDate: DateFormatFn): string {
   if (!value) return '—'
-  try { return format(parseISO(value), 'MMM d, h:mm a') } catch { return value }
+  try { return formatDate(parseISO(value), 'MMM d, h:mm a') } catch { return value }
 }

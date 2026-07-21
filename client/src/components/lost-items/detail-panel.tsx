@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
 import { Loader2, ExternalLink, Pencil, Save, X, Send } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Badge } from '@/components/ui/badge'
@@ -9,9 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import {
-  STATUS_COLORS, STATUS_LABELS, LOST_ITEM_PIPELINE, RETURN_METHODS,
-  authFetch,
+  STATUS_COLORS, LOST_ITEM_PIPELINE, RETURN_METHODS,
+  authFetch, statusLabel, returnMethodLabel,
   type LostItemAssignment, type LostItemCase,
 } from './shared'
 
@@ -25,6 +26,8 @@ interface Props {
 interface AppUserRow { id: number; label: string; role: string }
 
 export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Props) {
+  const { t } = useLocale('lostItems')
+  const { format } = useDateFormat()
   const qc = useQueryClient()
   const { toast } = useToast()
 
@@ -41,8 +44,8 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
         body: JSON.stringify(patch),
       })
     },
-    onSuccess: () => { toast({ title: 'Saved' }); invalidateAll() },
-    onError: (e: any) => { toast({ title: 'Save failed', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onSuccess: () => { toast({ title: t('toasts.saved') }); invalidateAll() },
+    onError: (e: any) => { toast({ title: t('toasts.saveFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   const [draft, setDraft] = useState('')
@@ -53,8 +56,8 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
         body: JSON.stringify({ body }),
       })
     },
-    onSuccess: () => { setDraft(''); toast({ title: 'Comment added' }); invalidateAll() },
-    onError: (e: any) => { toast({ title: 'Failed to comment', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onSuccess: () => { setDraft(''); toast({ title: t('toasts.commentAdded') }); invalidateAll() },
+    onError: (e: any) => { toast({ title: t('toasts.commentFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   const { data: teamRaw } = useQuery<AppUserRow[]>({
@@ -78,8 +81,8 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
         body: JSON.stringify({ case_id: caseId, user_id: userId }),
       })
     },
-    onSuccess: () => { toast({ title: 'Assignment updated' }); invalidateAll() },
-    onError: (e: any) => { toast({ title: 'Failed to assign', description: e?.message ?? 'Unknown error', variant: 'destructive' }) },
+    onSuccess: () => { toast({ title: t('toasts.assignmentUpdated') }); invalidateAll() },
+    onError: (e: any) => { toast({ title: t('toasts.assignFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' }) },
   })
 
   return (
@@ -87,7 +90,7 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <Badge className={`text-[10px] border ${STATUS_COLORS[detail.status]}`}>
-            {STATUS_LABELS[detail.status]}
+            {statusLabel(detail.status, t)}
           </Badge>
           {canEdit ? (
             <Select
@@ -96,25 +99,25 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
               disabled={updateField.isPending}
             >
               <SelectTrigger className="h-7 w-36 text-[11px]" data-testid="select-detail-status">
-                <SelectValue placeholder="Change status" />
+                <SelectValue placeholder={t('detail.changeStatus')} />
               </SelectTrigger>
               <SelectContent>
                 {LOST_ITEM_PIPELINE.map(s => (
-                  <SelectItem key={s} value={s}>{STATUS_LABELS[s]}</SelectItem>
+                  <SelectItem key={s} value={s}>{statusLabel(s, t)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           ) : null}
         </div>
         <InlineText
-          label="Description"
+          label={t('detail.fields.description')}
           value={detail.item_description}
           canEdit={canEdit}
           required
           onSave={v => updateField.mutate({ item_description: v })}
         />
         <InlineText
-          label="Found at"
+          label={t('detail.fields.foundAt')}
           value={detail.found_location ?? ''}
           canEdit={canEdit}
           onSave={v => updateField.mutate({ found_location: v || null })}
@@ -122,18 +125,18 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <InlineText label="Property" value={detail.property?.name ?? detail.property_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ property_name: v || null })} />
-        <InlineText label="Guest name" value={detail.guest_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_name: v || null })} />
-        <InlineText label="Guest email" value={detail.guest_email ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_email: v || null })} />
-        <InlineText label="Guest phone" value={detail.guest_phone ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_phone: v || null })} />
-        <InlineText label="Cleaning vendor" value={detail.cleaning_vendor ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ cleaning_vendor: v || null })} />
-        <InlineText label="Shipping carrier" value={detail.shipping_carrier ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ shipping_carrier: v || null })} />
-        <InlineText label="Tracking #" value={detail.shipping_tracking ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ shipping_tracking: v || null })} />
-        <InlineDate label="Follow-up" value={detail.follow_up_date ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ follow_up_date: v || null })} />
+        <InlineText label={t('common.labels.property')} value={detail.property?.name ?? detail.property_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ property_name: v || null })} />
+        <InlineText label={t('detail.fields.guestName')} value={detail.guest_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_name: v || null })} />
+        <InlineText label={t('detail.fields.guestEmail')} value={detail.guest_email ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_email: v || null })} />
+        <InlineText label={t('detail.fields.guestPhone')} value={detail.guest_phone ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_phone: v || null })} />
+        <InlineText label={t('detail.fields.cleaningVendor')} value={detail.cleaning_vendor ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ cleaning_vendor: v || null })} />
+        <InlineText label={t('detail.fields.shippingCarrier')} value={detail.shipping_carrier ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ shipping_carrier: v || null })} />
+        <InlineText label={t('detail.fields.trackingNumber')} value={detail.shipping_tracking ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ shipping_tracking: v || null })} />
+        <InlineDate label={t('detail.fields.followUp')} value={detail.follow_up_date ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ follow_up_date: v || null })} />
         <InlineSelect
-          label="Return method"
+          label={t('detail.fields.returnMethod')}
           value={detail.return_method ?? ''}
-          options={[{ v: '', label: '—' }, ...RETURN_METHODS.map(r => ({ v: r, label: r.replace(/_/g, ' ') }))]}
+          options={[{ v: '', label: '—' }, ...RETURN_METHODS.map(r => ({ v: r, label: returnMethodLabel(r, t) }))]}
           canEdit={canEdit}
           onSave={v => updateField.mutate({ return_method: v || null })}
         />
@@ -148,7 +151,7 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
 
       {detail.photo_urls && detail.photo_urls.length > 0 && (
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Photos</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('detail.panels.photos')}</h4>
           <div className="grid grid-cols-3 gap-2">
             {detail.photo_urls.map(url => (
               <a key={url} href={url} target="_blank" rel="noreferrer">
@@ -156,12 +159,12 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
               </a>
             ))}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">Upload happens in Haven-OS.</p>
+          <p className="text-[10px] text-muted-foreground mt-1">{t('detail.photos.uploadNote')}</p>
         </div>
       )}
 
       <InlineTextarea
-        label="Notes"
+        label={t('common.labels.notes')}
         value={detail.notes ?? ''}
         canEdit={canEdit}
         onSave={v => updateField.mutate({ notes: v || null })}
@@ -169,12 +172,12 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
 
       {detail.events && detail.events.length > 0 && (
         <div>
-          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Timeline</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('detail.panels.timeline')}</h4>
           <div className="space-y-1.5">
             {detail.events.map(e => (
               <div key={e.id} className="border-l-2 border-border pl-2 text-xs">
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="capitalize">{e.event_type.replace(/_/g, ' ')}</span>
+                  <span className="capitalize">{t(`detail.eventType.${e.event_type}`, undefined, e.event_type.replace(/_/g, ' '))}</span>
                   <span className="text-muted-foreground/60">·</span>
                   <span>{format(new Date(e.created_at), 'MMM d, h:mm a')}</span>
                   {e.actor_label && <><span className="text-muted-foreground/60">·</span><span>{e.actor_label}</span></>}
@@ -194,7 +197,7 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
           <Textarea
             value={draft}
             onChange={e => setDraft(e.target.value)}
-            placeholder="Add a comment…"
+            placeholder={t('detail.comments.placeholderShort')}
             rows={2}
             className="text-xs"
             data-testid="input-comment"
@@ -208,17 +211,17 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
               data-testid="button-submit-comment"
             >
               {addComment.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-              Comment
+              {t('detail.comments.submit')}
             </Button>
           </div>
         </div>
       ) : null}
 
       <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
-        <span>Source: {detail.source}{detail.external_source ? ` · ${detail.external_source}` : ''}</span>
+        <span>{t('detail.footer.source', { source: detail.source })}{detail.external_source ? ` · ${detail.external_source}` : ''}</span>
         {detail.external_url ? (
           <a href={detail.external_url} target="_blank" rel="noreferrer" className="text-primary hover:underline inline-flex items-center gap-1">
-            Open in Haven-OS <ExternalLink className="w-3 h-3" />
+            {t('detail.links.openHaven')} <ExternalLink className="w-3 h-3" />
           </a>
         ) : null}
       </div>
@@ -350,6 +353,7 @@ function InlineTextarea({
   canEdit: boolean
   onSave: (v: string) => void
 }) {
+  const { t } = useLocale('lostItems')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
   useEffect(() => { setDraft(value) }, [value])
@@ -368,7 +372,7 @@ function InlineTextarea({
         {value ? (
           <div className="rounded-md border border-border bg-muted/30 p-3 text-xs whitespace-pre-wrap">{value}</div>
         ) : (
-          <div className="text-xs text-muted-foreground/60">No notes yet.</div>
+          <div className="text-xs text-muted-foreground/60">{t('detail.notesEmpty')}</div>
         )}
       </div>
     )
@@ -378,8 +382,8 @@ function InlineTextarea({
       <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>
       <Textarea value={draft} onChange={e => setDraft(e.target.value)} rows={3} className="text-xs" autoFocus />
       <div className="flex items-center justify-end gap-1">
-        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDraft(value); setEditing(false) }}>Cancel</Button>
-        <Button size="sm" className="h-7 text-xs" onClick={() => { onSave(draft.trim()); setEditing(false) }}>Save</Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setDraft(value); setEditing(false) }}>{t('common.actions.cancel')}</Button>
+        <Button size="sm" className="h-7 text-xs" onClick={() => { onSave(draft.trim()); setEditing(false) }}>{t('common.actions.save')}</Button>
       </div>
     </div>
   )
@@ -421,26 +425,27 @@ function AssignmentField({
   onChange: (userId: number | null) => void
   pending: boolean
 }) {
+  const { t } = useLocale('lostItems')
   const current = assignment?.assigned_user_id != null ? String(assignment.assigned_user_id) : '__unassigned'
   if (!canEdit) {
     return (
-      <FieldShell label="Tendwell assignee">
-        <span className="text-foreground">{assignment?.assignee?.label ?? <span className="text-muted-foreground/60">Unassigned</span>}</span>
+      <FieldShell label={t('detail.fields.tendwellAssignee')}>
+        <span className="text-foreground">{assignment?.assignee?.label ?? <span className="text-muted-foreground/60">{t('board.unassigned')}</span>}</span>
       </FieldShell>
     )
   }
   return (
-    <FieldShell label="Tendwell assignee">
+    <FieldShell label={t('detail.fields.tendwellAssignee')}>
       <Select
         value={current}
         onValueChange={v => onChange(v === '__unassigned' ? null : Number(v))}
         disabled={pending}
       >
         <SelectTrigger className="h-7 text-xs" data-testid="select-detail-assignee">
-          <SelectValue placeholder="Pick someone" />
+          <SelectValue placeholder={t('detail.assignment.pickSomeone')} />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="__unassigned">- Unassigned</SelectItem>
+          <SelectItem value="__unassigned">{t('detail.fields.unassignedOption')}</SelectItem>
           {team.map(u => (
             <SelectItem key={u.id} value={String(u.id)}>{u.label} <span className="text-muted-foreground">· {u.role}</span></SelectItem>
           ))}

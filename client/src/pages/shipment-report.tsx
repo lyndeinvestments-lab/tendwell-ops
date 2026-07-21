@@ -4,6 +4,8 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Package } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { LanguageToggle } from '@/components/LanguageToggle'
 
 // Public page — uses anon key directly (no auth required)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
@@ -13,6 +15,7 @@ const publicSupabase = createClient(supabaseUrl, supabaseAnonKey)
 type DeliveryResponsible = 'Haven' | 'Tendwell'
 
 export default function ShipmentReportPage() {
+  const { t } = useLocale('shipments')
   const [senderName, setSenderName] = useState('')
   const [propertyName, setPropertyName] = useState('')
   const [propertyFocused, setPropertyFocused] = useState(false)
@@ -63,7 +66,7 @@ export default function ShipmentReportPage() {
     const trimmedDescription = description.trim()
 
     if (!trimmedName || !trimmedProperty || !estimatedDelivery || !trimmedDescription || !deliveryResponsible) {
-      setError('Please fill in all required fields.')
+      setError(t('report.validationRequired'))
       return
     }
 
@@ -83,11 +86,11 @@ export default function ShipmentReportPage() {
         })
 
       setSaving(false)
-      if (insertErr) { setError('Something went wrong. Please try again.'); return }
+      if (insertErr) { setError(t('report.validationGeneric')); return }
       setSubmitted(true)
     } catch {
       setSaving(false)
-      setError('Something went wrong. Please try again.')
+      setError(t('report.validationGeneric'))
     }
   }
 
@@ -99,11 +102,11 @@ export default function ShipmentReportPage() {
             <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto">
               <Check className="w-6 h-6 text-success" />
             </div>
-            <h2 className="text-lg font-semibold">Shipment Reported</h2>
+            <h2 className="text-lg font-semibold">{t('report.successTitle')}</h2>
             <p className="text-sm text-muted-foreground">
-              Thanks! Your shipment report has been received. We'll be on the lookout.
+              {t('report.successBody')}
             </p>
-            <Button className="w-full h-11" onClick={resetForm}>Submit Another</Button>
+            <Button className="w-full h-11" onClick={resetForm}>{t('report.submitAnother')}</Button>
           </CardContent>
         </Card>
       </div>
@@ -117,27 +120,31 @@ export default function ShipmentReportPage() {
     <div className="min-h-screen bg-background p-4 sm:p-8">
       <div className="max-w-md mx-auto space-y-5">
 
+        <div className="flex items-center justify-end">
+          <LanguageToggle size="lg" />
+        </div>
+
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mx-auto">
             <Package className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold">Report Incoming Shipment</h1>
+          <h1 className="text-2xl font-semibold">{t('report.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Let us know about a shipment on its way to our facility.
+            {t('report.subtitle')}
           </p>
         </div>
 
         {/* Sender name */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Your Name{required}</CardTitle>
+            <CardTitle className="text-sm">{t('report.yourName')}{required}</CardTitle>
           </CardHeader>
           <CardContent>
             <Input
               value={senderName}
               onChange={e => setSenderName(e.target.value)}
               className={inputCls}
-              placeholder="First and last name"
+              placeholder={t('report.yourNamePlaceholder')}
               autoComplete="name"
             />
           </CardContent>
@@ -146,7 +153,7 @@ export default function ShipmentReportPage() {
         {/* Property */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Property{required}</CardTitle>
+            <CardTitle className="text-sm">{t('common.labels.property')}{required}</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={propertyWrapperRef} className="relative">
@@ -156,7 +163,7 @@ export default function ShipmentReportPage() {
                 onFocus={() => setPropertyFocused(true)}
                 onBlur={() => setTimeout(() => setPropertyFocused(false), 200)}
                 className={inputCls}
-                placeholder="Search property…"
+                placeholder={t('report.propertyPlaceholder')}
                 autoComplete="off"
               />
               {showPropertyDropdown && (
@@ -186,8 +193,8 @@ export default function ShipmentReportPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">
-              Tracking Number
-              <span className="ml-1.5 text-xs font-normal text-muted-foreground">(optional)</span>
+              {t('report.trackingNumber')}
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground">{t('report.optional')}</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -195,7 +202,7 @@ export default function ShipmentReportPage() {
               value={trackingNumber}
               onChange={e => setTrackingNumber(e.target.value)}
               className={inputCls}
-              placeholder="e.g. 1Z999AA10123456784"
+              placeholder={t('report.trackingPlaceholder')}
               autoComplete="off"
             />
           </CardContent>
@@ -204,7 +211,7 @@ export default function ShipmentReportPage() {
         {/* Estimated delivery date */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Estimated Delivery Date{required}</CardTitle>
+            <CardTitle className="text-sm">{t('report.estimatedDeliveryDate')}{required}</CardTitle>
           </CardHeader>
           <CardContent>
             <Input
@@ -219,14 +226,14 @@ export default function ShipmentReportPage() {
         {/* Description */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Description of Item{required}</CardTitle>
+            <CardTitle className="text-sm">{t('report.descriptionOfItem')}{required}</CardTitle>
           </CardHeader>
           <CardContent>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               className="w-full min-h-[96px] rounded-md border border-input bg-background px-3 py-2 text-base resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Describe the item(s) being shipped…"
+              placeholder={t('report.descriptionPlaceholder')}
             />
           </CardContent>
         </Card>
@@ -234,10 +241,11 @@ export default function ShipmentReportPage() {
         {/* Delivery responsible */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">Who is responsible for delivering to the property?{required}</CardTitle>
+            <CardTitle className="text-sm">{t('report.responsibleQuestion')}{required}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
+              {/* 'Haven'/'Tendwell' are company names (delivery_responsible enum value) — not translated */}
               {(['Haven', 'Tendwell'] as DeliveryResponsible[]).map(option => (
                 <button
                   key={option}
@@ -265,10 +273,10 @@ export default function ShipmentReportPage() {
           disabled={saving}
           onClick={handleSubmit}
         >
-          {saving ? 'Submitting…' : 'Submit Shipment Report'}
+          {saving ? t('report.submitting') : t('report.submit')}
         </Button>
 
-        <p className="text-xs text-muted-foreground text-center pb-4">Tendwell Operations</p>
+        <p className="text-xs text-muted-foreground text-center pb-4">{t('report.footer')}</p>
       </div>
     </div>
   )

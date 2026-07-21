@@ -9,13 +9,14 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Search, Loader2, AlertTriangle, RefreshCw, Plus, KanbanSquare, List as ListIcon } from 'lucide-react'
-import { format } from 'date-fns'
 import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import {
-  STATUS_COLORS, STATUS_LABELS, LOST_ITEM_PIPELINE,
-  authFetch,
+  STATUS_COLORS, LOST_ITEM_PIPELINE,
+  authFetch, statusLabel,
   type LostItemAssignment, type LostItemCase, type LostItemStatus,
 } from '@/components/lost-items/shared'
 import { LostItemsBoardView } from '@/components/lost-items/board-view'
@@ -26,6 +27,7 @@ type StatusFilter = LostItemStatus | 'all' | 'open'
 
 export default function LostItemsPage() {
   usePageTitle('Lost Items')
+  const { t } = useLocale('lostItems')
   const { effectiveUser } = useAuth()
   const canAccess = canAccessView('lost-items', effectiveUser)
   const canEdit = !!effectiveUser && (effectiveUser.role === 'admin' || effectiveUser.role === 'operations')
@@ -87,12 +89,12 @@ export default function LostItemsPage() {
       })
     },
     onSuccess: (_d, vars) => {
-      toast({ title: `Moved to ${STATUS_LABELS[vars.status]}` })
+      toast({ title: t('toasts.movedTo', { status: statusLabel(vars.status, t) }) })
       qc.invalidateQueries({ queryKey: ['/api/lost-items/list'] })
       qc.invalidateQueries({ queryKey: ['/api/lost-items/get', vars.caseId] })
     },
     onError: (e: any) => {
-      toast({ title: 'Failed to move case', description: e?.message ?? 'Unknown error', variant: 'destructive' })
+      toast({ title: t('toasts.moveFailed'), description: e?.message ?? t('toasts.unknownError'), variant: 'destructive' })
       qc.invalidateQueries({ queryKey: ['/api/lost-items/list'] })
     },
   })
@@ -108,9 +110,9 @@ export default function LostItemsPage() {
   if (!canAccess) {
     return (
       <PageContainer>
-        <h1 className="text-xl font-semibold">Lost Items</h1>
+        <h1 className="text-xl font-semibold">{t('page.noAccessTitle')}</h1>
         <p className="text-sm text-muted-foreground mt-2">
-          Your role doesn't have access to Lost Items. Contact an admin if you need this view.
+          {t('page.noAccessDescription')}
         </p>
       </PageContainer>
     )
@@ -119,8 +121,8 @@ export default function LostItemsPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Lost Items"
-        subtitle="Live data from Haven-OS · auto-refreshes every 30s"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <ViewToggle value={view} onChange={setView} />
@@ -128,7 +130,7 @@ export default function LostItemsPage() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search description, guest, location…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-8 h-8 w-full sm:w-72 text-sm"
@@ -140,21 +142,21 @@ export default function LostItemsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="open">Open</SelectItem>
-                <SelectItem value="all">All statuses</SelectItem>
+                <SelectItem value="open">{t('page.filterOpen')}</SelectItem>
+                <SelectItem value="all">{t('page.filterAllStatuses')}</SelectItem>
                 {LOST_ITEM_PIPELINE.map(k => (
-                  <SelectItem key={k} value={k}>{STATUS_LABELS[k]}</SelectItem>
+                  <SelectItem key={k} value={k}>{statusLabel(k, t)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => refetch()} disabled={isRefetching}>
               <RefreshCw className={`w-3 h-3 ${isRefetching ? 'animate-spin' : ''}`} />
-              Refresh
+              {t('common.actions.refresh')}
             </Button>
             {canEdit ? (
               <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setNewCaseOpen(true)} data-testid="button-new-lost-item">
                 <Plus className="w-3.5 h-3.5" />
-                New Case
+                {t('page.newCase')}
               </Button>
             ) : null}
           </>
@@ -165,7 +167,7 @@ export default function LostItemsPage() {
         {LOST_ITEM_PIPELINE.map(s => (
           <SummaryTile
             key={s}
-            label={STATUS_LABELS[s]}
+            label={statusLabel(s, t)}
             count={summaryCounts[s]}
             colorClass={STATUS_COLORS[s]}
             onClick={() => setStatusFilter(s)}
@@ -174,7 +176,7 @@ export default function LostItemsPage() {
         ))}
       </div>
 
-      {isError && <ErrorState onRetry={() => refetch()} description={`Couldn't load Lost Items: ${error instanceof Error ? error.message : 'Unknown error'}`} />}
+      {isError && <ErrorState onRetry={() => refetch()} description={t('page.errorLoad', { error: error instanceof Error ? error.message : t('toasts.unknownError') })} />}
 
       <div className="flex-1 overflow-auto">
         {isLoading ? (
@@ -205,7 +207,7 @@ export default function LostItemsPage() {
       {isLoading && (
         <div className="text-xs text-muted-foreground flex items-center gap-1.5">
           <Loader2 className="w-3 h-3 animate-spin" />
-          Loading…
+          {t('common.actions.loading')}
         </div>
       )}
     </PageContainer>
@@ -213,6 +215,7 @@ export default function LostItemsPage() {
 }
 
 function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMode) => void }) {
+  const { t } = useLocale('lostItems')
   return (
     <div className="inline-flex items-center rounded-md border border-border bg-card overflow-hidden h-8">
       <button
@@ -221,7 +224,7 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
         className={`px-2 h-full text-xs flex items-center gap-1 ${value === 'board' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
         data-testid="button-view-board"
       >
-        <KanbanSquare className="w-3.5 h-3.5" /> Board
+        <KanbanSquare className="w-3.5 h-3.5" /> {t('page.viewBoard')}
       </button>
       <button
         type="button"
@@ -229,7 +232,7 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
         className={`px-2 h-full text-xs flex items-center gap-1 border-l border-border ${value === 'list' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
         data-testid="button-view-list"
       >
-        <ListIcon className="w-3.5 h-3.5" /> List
+        <ListIcon className="w-3.5 h-3.5" /> {t('page.viewList')}
       </button>
     </div>
   )
@@ -268,23 +271,25 @@ function ListView({
   assignmentsByCase: Map<string, LostItemAssignment>
   onCaseClick: (id: string) => void
 }) {
+  const { t } = useLocale('lostItems')
+  const { format } = useDateFormat()
   return (
     <div className="rounded-2xl border border-border shadow-sm overflow-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-10">
           <tr>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Case</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Item</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Property</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Guest</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Assignee</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Updated</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('page.list.case')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('detail.fields.item')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.property')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('detail.fields.guest')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('page.list.assignee')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.status')}</th>
+            <th className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('page.list.updated')}</th>
           </tr>
         </thead>
         <tbody>
           {cases.length === 0 ? (
-            <tr><td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">No lost items match your filters.</td></tr>
+            <tr><td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">{t('page.list.empty')}</td></tr>
           ) : cases.map(c => {
             const a = assignmentsByCase.get(c.id)
             return (
@@ -301,7 +306,7 @@ function ListView({
                 <td className="py-1.5 px-3 text-muted-foreground">{a?.assignee?.label ?? '—'}</td>
                 <td className="py-1.5 px-3">
                   <span className={`px-1.5 py-0.5 rounded font-medium text-2xs border ${STATUS_COLORS[c.status]}`}>
-                    {STATUS_LABELS[c.status]}
+                    {statusLabel(c.status, t)}
                   </span>
                 </td>
                 <td className="py-1.5 px-3 text-muted-foreground tabular-nums">
