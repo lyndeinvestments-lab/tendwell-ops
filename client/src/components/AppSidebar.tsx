@@ -95,8 +95,10 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Account',
     items: [
-      // Personal notification preferences — visible to every staff member.
-      { title: 'Notifications', href: '/notifications', view: 'notifications', icon: BellRing, alwaysShow: true },
+      // Personal settings (language, password, notification prefs) — visible
+      // to every staff member. Replaces the old Notifications entry, which
+      // /account absorbed.
+      { title: 'My Account', href: '/account', view: 'account', icon: BellRing, alwaysShow: true },
     ],
   },
 ]

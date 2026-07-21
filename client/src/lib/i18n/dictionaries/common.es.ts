@@ -38,6 +38,7 @@ export const commonEs: typeof commonEn = {
     'trellis-sync': 'Sincronización de API',
     'settings': 'Configuración',
     'notifications': 'Notificaciones',
+    'account': 'Mi Cuenta',
   },
   navSection: {
     overview: 'Resumen',
