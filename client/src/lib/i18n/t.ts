@@ -47,3 +47,19 @@ export function createTranslator(dict: unknown, fallbackDict?: unknown): TFunc {
     return interpolate(raw, vars)
   }
 }
+
+/** Sentinel returned by `t()` only when a key misses every dictionary — lets `scopeT` detect the miss. */
+const MISS = ' i18n-miss'
+
+/**
+ * Wraps a root translator so `t('page.title')` under scope `'linens'` first
+ * tries `linens.page.title`, then falls back to the unscoped key — so shared
+ * keys like `common.save` still resolve through a scoped translator. Per-call
+ * `fallback` semantics are unchanged.
+ */
+export function scopeT(t: TFunc, scope: string): TFunc {
+  return (key, vars, fallback) => {
+    const scoped = t(`${scope}.${key}`, vars, MISS)
+    return scoped === MISS ? t(key, vars, fallback) : scoped
+  }
+}

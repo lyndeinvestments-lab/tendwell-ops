@@ -24,7 +24,7 @@ export function IssuePhotoGrid({
   uploading: boolean
   onUpload: (file: File, phase: 'initial' | 'completion') => void
 }) {
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   return (
     <div className="pt-2 border-t border-border space-y-3">
       {PHOTO_GROUPS.map(group => {

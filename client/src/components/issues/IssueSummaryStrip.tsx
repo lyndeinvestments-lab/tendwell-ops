@@ -14,7 +14,7 @@ export function IssueSummaryStrip({
   byCategory: Record<string, number>
   onSelectCategory: (category: string) => void
 }) {
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
       {Object.entries(byCategory).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([cat, count]) => (

@@ -1,13 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { createTranslator, type TFunc } from './t'
-import { issuesEn } from './dictionaries/issues.en'
-import { issuesEs } from './dictionaries/issues.es'
+import { createTranslator, scopeT, type TFunc } from './t'
+import { dictionaryEn, dictionaryEs } from './dictionaries'
 
 export type Locale = 'en' | 'es'
 
 const STORAGE_KEY = 'tendwell-locale'
 
-const DICTIONARIES: Record<Locale, typeof issuesEn> = { en: issuesEn, es: issuesEs }
+const DICTIONARIES: Record<Locale, typeof dictionaryEn> = { en: dictionaryEn, es: dictionaryEs }
 
 interface LocaleContextValue {
   locale: Locale
@@ -29,17 +28,15 @@ function detectBrowserLocale(): Locale {
 }
 
 /**
- * Locale context for the Issues surface. Mounted locally on `/issues`
- * (`client/src/pages/issues.tsx`) and the public `/issue/:token` share page
- * (`client/src/pages/issue-share.tsx`) rather than hoisted to `App.tsx` — a
- * future PR can lift it app-wide with zero call-site changes since every
- * consumer goes through `useLocale()`.
+ * App-wide locale context, mounted once in `App.tsx` around the router so
+ * every surface — staff pages, the owner portal, and the public share/weigh-in
+ * pages — resolves against the same dictionary registry.
  *
  * Persists the chosen locale to `localStorage` (`tendwell-locale`) so it
- * survives reloads and is shared between the two mount points. When
- * `autoDetect` is true (the share page, since a cleaner has never touched
- * this app and has no stored preference yet) and there's no stored value,
- * the initial locale is guessed from `navigator.language`.
+ * survives reloads. When `autoDetect` is true (the global mount uses it) and
+ * there's no stored value, the initial locale is guessed from
+ * `navigator.language` — a Spanish-language phone opening any page for the
+ * first time starts in Spanish.
  */
 export function LocaleProvider({ children, autoDetect = false }: { children: ReactNode; autoDetect?: boolean }) {
   const [locale, setLocale] = useState<Locale>(() => readStoredLocale() ?? (autoDetect ? detectBrowserLocale() : 'en'))
@@ -48,16 +45,22 @@ export function LocaleProvider({ children, autoDetect = false }: { children: Rea
     try { window.localStorage.setItem(STORAGE_KEY, locale) } catch { /* storage unavailable — locale still works for this session */ }
   }, [locale])
 
-  const t = useMemo(() => createTranslator(DICTIONARIES[locale], issuesEn), [locale])
+  const t = useMemo(() => createTranslator(DICTIONARIES[locale], dictionaryEn), [locale])
 
   const value = useMemo<LocaleContextValue>(() => ({ locale, setLocale, t }), [locale, t])
 
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
 }
 
-/** Reads the current locale + translator. Must be used under a `<LocaleProvider>`. */
-export function useLocale(): LocaleContextValue {
+/**
+ * Reads the current locale + translator. Must be used under a `<LocaleProvider>`.
+ *
+ * Pass a dictionary namespace (`useLocale('linens')`) to get a scoped `t`:
+ * `t('page.title')` resolves `linens.page.title` first, then falls back to the
+ * unscoped key so shared lookups like `t('common.save')` still work.
+ */
+export function useLocale(scope?: string): LocaleContextValue {
   const ctx = useContext(LocaleContext)
   if (!ctx) throw new Error('useLocale must be used within a LocaleProvider')
-  return ctx
+  return useMemo(() => (scope ? { ...ctx, t: scopeT(ctx.t, scope) } : ctx), [ctx, scope])
 }

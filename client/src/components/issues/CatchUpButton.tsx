@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
  * computed from the already-fetched issues array — no extra query.
  */
 export function CatchUpButton({ issues, onClick }: { issues: Issue[]; onClick: () => void }) {
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   const queue = useMemo(() => catchUpQueue(issues), [issues])
   const count = queue.length
   const hasOverdue = useMemo(() => queue.some(isOverdue), [queue])
