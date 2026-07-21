@@ -18,15 +18,33 @@ import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import type { TFunc } from '@/lib/i18n/t'
 
 const ACCESS_COLS = [
-  { key: 'door_code', label: 'Door Code', sensitive: true },
-  { key: 'other_codes', label: 'Other Codes', sensitive: true },
-  { key: 'wifi_info', label: 'WiFi Info', sensitive: true },
-  { key: 'notes', label: 'Notes', sensitive: false },
+  { key: 'door_code', sensitive: true },
+  { key: 'other_codes', sensitive: true },
+  { key: 'wifi_info', sensitive: true },
+  { key: 'notes', sensitive: false },
 ]
 
 const SENSITIVE_KEYS = ACCESS_COLS.filter(c => c.sensitive).map(c => c.key)
+
+/** `'Active'` → `'active'`; used to look up the shared `common.stage.*` display name for `stage_name` (DB value stays canonical English). Copied from `lib/issues.ts`'s `slugify`. */
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/** Translated column label for an ACCESS_COLS key (door_code / other_codes / wifi_info / notes). */
+function columnLabel(key: string, t: TFunc): string {
+  switch (key) {
+    case 'door_code': return t('table.doorCode')
+    case 'other_codes': return t('table.otherCodes')
+    case 'wifi_info': return t('table.wifiInfo')
+    case 'notes': return t('common.labels.notes')
+    default: return key
+  }
+}
 
 async function logAccessEvent(propertyId: string, fieldName: string, action: 'reveal' | 'update') {
   try {
@@ -42,6 +60,7 @@ async function logAccessEvent(propertyId: string, fieldName: string, action: 're
 }
 
 function CopyButton({ value, field, id }: { value: string; field: string; id: string }) {
+  const { t } = useLocale('accessCodes')
   const [copied, setCopied] = useState(false)
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation()
@@ -54,7 +73,7 @@ function CopyButton({ value, field, id }: { value: string; field: string; id: st
     <button
       onClick={handleCopy}
       className="p-1 min-w-[28px] min-h-[28px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-      aria-label={copied ? 'Copied!' : `Copy ${field} to clipboard`}
+      aria-label={copied ? t('aria.copied') : t('aria.copyField', { field })}
       data-testid={`copy-${field}-${id}`}
     >
       {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
@@ -67,6 +86,7 @@ function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }:
   revealed: boolean; onReveal: () => void
   onSave: (v: string) => void
 }) {
+  const { t } = useLocale('accessCodes')
   const [editing, setEditing] = useState(false)
 
   const handleSave = (v: string) => {
@@ -92,7 +112,7 @@ function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }:
         <button
           onClick={() => onReveal()}
           className="p-1 min-w-[28px] min-h-[28px] flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"
-          aria-label={revealed ? `Hide ${field}` : `Reveal ${field}`}
+          aria-label={revealed ? t('aria.hideField', { field }) : t('aria.revealField', { field })}
           data-testid={`reveal-${field}-${id}`}
         >
           {revealed ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
@@ -104,15 +124,16 @@ function MaskedCell({ value, field, id, sensitive, revealed, onReveal, onSave }:
 }
 
 function CopyAllButton({ p }: { p: any }) {
+  const { t } = useLocale('accessCodes')
   const [copied, setCopied] = useState(false)
   const { get } = useAppSettings()
   function handleCopy(e: React.MouseEvent) {
     e.stopPropagation()
-    const parts = [`Property: ${p.name}`]
-    if (p.has_auto_code) parts.push(`Auto: ${get('auto_code', '') || 'yes'}`)
-    if (p.door_code) parts.push(`Door: ${p.door_code}`)
-    if (p.wifi_info) parts.push(`WiFi: ${p.wifi_info}`)
-    if (p.other_codes) parts.push(`Other: ${p.other_codes}`)
+    const parts = [`${t('copyAll.propertyLabel')}: ${p.name}`]
+    if (p.has_auto_code) parts.push(`${t('copyAll.autoLabel')}: ${get('auto_code', '') || t('common.actions.yes')}`)
+    if (p.door_code) parts.push(`${t('copyAll.doorLabel')}: ${p.door_code}`)
+    if (p.wifi_info) parts.push(`${t('copyAll.wifiLabel')}: ${p.wifi_info}`)
+    if (p.other_codes) parts.push(`${t('copyAll.otherLabel')}: ${p.other_codes}`)
     navigator.clipboard.writeText(parts.join(' | ')).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -122,7 +143,7 @@ function CopyAllButton({ p }: { p: any }) {
     <button
       onClick={handleCopy}
       className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
-      aria-label={copied ? 'Copied!' : `Copy all codes for ${p.name}`}
+      aria-label={copied ? t('aria.copied') : t('aria.copyAllCodes', { name: p.name })}
       data-testid={`copy-all-${p.id}`}
     >
       {copied ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
@@ -131,9 +152,11 @@ function CopyAllButton({ p }: { p: any }) {
 }
 
 export default function AccessCodesPage() {
+  const { t, locale } = useLocale('accessCodes')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
+  // Browser tab title stays English (matches the /issues precedent).
   usePageTitle('Access Codes')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -166,9 +189,9 @@ export default function AccessCodesPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('toasts.saved') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const filtered = useMemo(() => {
@@ -214,8 +237,8 @@ export default function AccessCodesPage() {
   // CSV export: only property name + last updated (security requirement — no credentials)
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
-      'Property': p.name || '',
-      'Last Updated': p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '',
+      [t('common.labels.property')]: p.name || '',
+      [t('table.lastUpdated')]: p.updated_at ? new Date(p.updated_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') : '',
     }))
     const header = Object.keys(rows[0] || {}).join(',')
     const csv = rows.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
@@ -224,7 +247,7 @@ export default function AccessCodesPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'access-codes-export.csv'; a.click()
     URL.revokeObjectURL(url)
-    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
+    toast({ title: t('toasts.csvExported'), description: t('toasts.csvExportedDescription', { count: rows.length }) })
   }
 
   function SortIcon({ col }: { col: typeof sortKey }) {
@@ -236,26 +259,26 @@ export default function AccessCodesPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Access Codes"
-        subtitle="Click any field to edit - use copy icon for clipboard"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5" data-testid="button-export-csv">
               <Download className="w-3.5 h-3.5" />
-              Export CSV
+              {t('common.actions.exportCsv')}
             </Button>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 data-testid="input-search-access"
                 className="pl-8 pr-7 h-8 w-56 text-sm"
               />
               {search && (
-                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={t('page.clearSearch')}>
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -276,19 +299,19 @@ export default function AccessCodesPage() {
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><KeyRound className="w-3.5 h-3.5" /> Total Properties</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><KeyRound className="w-3.5 h-3.5" /> {t('stats.totalProperties')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{stats.total}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Check className="w-3.5 h-3.5" /> Has Code</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Check className="w-3.5 h-3.5" /> {t('stats.hasCode')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{stats.withCode}</p>
           </div>
           <div className={`rounded-2xl border shadow-sm p-4 ${stats.missing > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><X className="w-3.5 h-3.5" /> Missing Code</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><X className="w-3.5 h-3.5" /> {t('stats.missingCode')}</div>
             <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${stats.missing > 0 ? 'text-warning' : ''}`}>{stats.missing}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Eye className="w-3.5 h-3.5" /> Auto-Code</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Eye className="w-3.5 h-3.5" /> {t('stats.autoCode')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{stats.autoCode}</p>
           </div>
         </div>
@@ -307,7 +330,7 @@ export default function AccessCodesPage() {
                 aria-sort={sortKey === 'name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
                 <span className="flex items-center gap-1">
-                  Property
+                  {t('common.labels.property')}
                   <SortIcon col="name" />
                 </span>
               </th>
@@ -317,11 +340,11 @@ export default function AccessCodesPage() {
                 aria-sort={sortKey === 'stage_name' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
                 <span className="flex items-center gap-1">
-                  Stage
+                  {t('table.stage')}
                   <SortIcon col="stage_name" />
                 </span>
               </th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Auto Code</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.autoCode')}</th>
               {ACCESS_COLS.map(c => (
                 <th
                   key={c.key}
@@ -330,12 +353,12 @@ export default function AccessCodesPage() {
                   aria-sort={sortKey === c.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 >
                   <span className="flex items-center gap-1">
-                    {c.label}
+                    {columnLabel(c.key, t)}
                     <SortIcon col={c.key as typeof sortKey} />
                   </span>
                 </th>
               ))}
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Last Updated</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.lastUpdated')}</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8"></th>
             </tr>
           </thead>
@@ -351,14 +374,14 @@ export default function AccessCodesPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={ACCESS_COLS.length + 5} className="py-12">
-                  <EmptyState icon={KeyRound} title="No properties found" description="No properties match your current filters." />
+                  <EmptyState icon={KeyRound} title={t('page.emptyTitle')} description={t('page.emptyDescription')} />
                 </td>
               </tr>
             ) : (
               paged.map((p: any) => {
                 const codeKeys: Array<{ key: string; label: string }> = [
-                  { key: 'door_code', label: 'Door Code' },
-                  { key: 'other_codes', label: 'Other Codes' },
+                  { key: 'door_code', label: columnLabel('door_code', t) },
+                  { key: 'other_codes', label: columnLabel('other_codes', t) },
                 ]
                 const missingCodes = codeKeys.filter(c => !p[c.key] || !String(p[c.key]).trim())
                 const filledCount = codeKeys.length - missingCodes.length
@@ -384,9 +407,9 @@ export default function AccessCodesPage() {
                           <TooltipProvider delayDuration={200}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge variant="destructive" className="text-xs py-0 px-1 h-4 cursor-help">Missing</Badge>
+                                <Badge variant="destructive" className="text-xs py-0 px-1 h-4 cursor-help">{t('badges.missing')}</Badge>
                               </TooltipTrigger>
-                              <TooltipContent>No access codes set. Missing: {missingLabel}</TooltipContent>
+                              <TooltipContent>{t('badges.missingTooltip', { fields: missingLabel })}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         )}
@@ -394,16 +417,16 @@ export default function AccessCodesPage() {
                           <TooltipProvider delayDuration={200}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge className="text-xs py-0 px-1 h-4 bg-warning/10 text-warning border-warning/25 hover:bg-warning/15 cursor-help">Incomplete</Badge>
+                                <Badge className="text-xs py-0 px-1 h-4 bg-warning/10 text-warning border-warning/25 hover:bg-warning/15 cursor-help">{t('badges.incomplete')}</Badge>
                               </TooltipTrigger>
-                              <TooltipContent>Missing: {missingLabel}</TooltipContent>
+                              <TooltipContent>{t('badges.incompleteTooltip', { fields: missingLabel })}</TooltipContent>
                             </Tooltip>
                           </TooltipProvider>
                         )}
                       </div>
                     </td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name || '—'}</td>
-                    <td className="py-2 px-3 text-xs whitespace-nowrap">{p.has_auto_code ? <span className="font-mono">{autoCodeValue || 'Yes'}</span> : <span className="text-muted-foreground">-</span>}</td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}</td>
+                    <td className="py-2 px-3 text-xs whitespace-nowrap">{p.has_auto_code ? <span className="font-mono">{autoCodeValue || t('common.actions.yes')}</span> : <span className="text-muted-foreground">-</span>}</td>
                     {ACCESS_COLS.map(c => {
                       const isEmpty = c.sensitive && (!p[c.key] || p[c.key].trim() === '')
                       return (
@@ -425,8 +448,8 @@ export default function AccessCodesPage() {
                       p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000
                         ? 'text-warning font-medium'
                         : 'text-muted-foreground'
-                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? 'Last updated over 90 days ago - codes may have changed' : undefined}>
-                      {p.updated_at ? new Date(p.updated_at).toLocaleDateString() : '—'}
+                    }`} title={p.updated_at && (Date.now() - new Date(p.updated_at).getTime()) > 90 * 24 * 60 * 60 * 1000 ? t('table.staleTooltip') : undefined}>
+                      {p.updated_at ? new Date(p.updated_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') : '—'}
                     </td>
                     <td className="py-2 px-3">
                       <CopyAllButton p={p} />

@@ -17,6 +17,8 @@ import {
   Boxes, Check, ChevronDown, ChevronUp, Download, Plus,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import Papa from 'papaparse'
 
 type ViewMode = 'snapshot' | 'record' | 'history'
@@ -84,11 +86,19 @@ function VarianceBadge({ value }: { value: number }) {
 }
 
 export default function LinenInventoryPage() {
-  usePageTitle('Linen Inventory')
+  const { t } = useLocale('linens')
+  const { format: formatLocalized } = useDateFormat()
+  usePageTitle(t('inventory.page.title', undefined, 'Linen Inventory'))
   const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const qc = useQueryClient()
   const canEdit = canEditView('linen-inventory', effectiveUser)
+
+  // Item display label — English `label` on the item-definition arrays is
+  // the fallback if a translation key is ever missing.
+  const itemLabel = (item: { key: string; label: string }) => t(`items.${item.key}`, undefined, item.label)
+  const itemDescription = (item: { key: string; description?: string }) =>
+    item.description ? t(`itemDescriptions.${item.key}`, undefined, item.description) : undefined
 
   const [viewMode, setViewMode] = useState<ViewMode>('snapshot')
   const [showExtras, setShowExtras] = useState(false)
@@ -217,13 +227,13 @@ export default function LinenInventoryPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/linen-inventory-latest'] })
       qc.invalidateQueries({ queryKey: ['/supabase/linen-inventory-history'] })
-      toast({ title: 'Inventory count saved' })
+      toast({ title: t('inventory.toasts.countSaved', undefined, 'Inventory count saved') })
       setViewMode('snapshot')
       setCountValues({})
       setCountNotes('')
       setShowExtras(false)
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('inventory.toasts.saveFailed', undefined, 'Save failed'), description: error?.message, variant: 'destructive' }),
   })
 
   function prefillFromLatest() {
@@ -234,22 +244,25 @@ export default function LinenInventoryPage() {
       if (v) vals[item.key] = String(v)
     }
     setCountValues(vals)
-    toast({ title: 'Prefilled from last count' })
+    toast({ title: t('inventory.toasts.prefilled', undefined, 'Prefilled from last count') })
   }
 
   function exportHistory() {
     if (!history?.length) return
+    const countedAtLabel = t('inventory.csv.countedAt', undefined, 'Counted At')
+    const countedByLabel = t('inventory.labels.countedBy', undefined, 'Counted By')
+    const notesLabel = t('common.labels.notes', undefined, 'Notes')
     const rows = history.map((h: any) => {
       const row: Record<string, any> = {
-        'Counted At': format(new Date(h.counted_at), 'yyyy-MM-dd HH:mm'),
-        'Counted By': h.counted_by || '',
+        [countedAtLabel]: format(new Date(h.counted_at), 'yyyy-MM-dd HH:mm'),
+        [countedByLabel]: h.counted_by || '',
       }
-      for (const item of STANDARD_ITEMS) row[item.label] = h[item.key] ?? 0
-      for (const item of ON_HAND_ITEMS) row[item.label] = h[item.key] ?? 0
+      for (const item of STANDARD_ITEMS) row[itemLabel(item)] = h[item.key] ?? 0
+      for (const item of ON_HAND_ITEMS) row[itemLabel(item)] = h[item.key] ?? 0
       for (const item of EXTRA_ITEMS) {
-        if (h[item.key]) row[item.label] = h[item.key]
+        if (h[item.key]) row[itemLabel(item)] = h[item.key]
       }
-      row['Notes'] = h.notes || ''
+      row[notesLabel] = h.notes || ''
       return row
     })
     const csv = Papa.unparse(rows)
@@ -265,11 +278,11 @@ export default function LinenInventoryPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Linen Inventory"
+        title={t('inventory.page.title', undefined, 'Linen Inventory')}
         subtitle={
           <span>
-            Company-wide linen counts vs. total requirements
-            {latestCount && <span className="ml-2">· Last counted {format(new Date(latestCount.counted_at), 'MMM d, yyyy')}</span>}
+            {t('inventory.page.subtitle', undefined, 'Company-wide linen counts vs. total requirements')}
+            {latestCount && <span className="ml-2">{t('inventory.page.lastCounted', { date: formatLocalized(new Date(latestCount.counted_at), 'MMM d, yyyy') }, `· Last counted ${format(new Date(latestCount.counted_at), 'MMM d, yyyy')}`)}</span>}
           </span>
         }
         actions={
@@ -280,7 +293,7 @@ export default function LinenInventoryPage() {
                 onClick={() => setViewMode(v)}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
               >
-                {v === 'snapshot' ? 'Current Status' : v === 'record' ? 'Record Count' : 'Count History'}
+                {v === 'snapshot' ? t('inventory.tabs.snapshot', undefined, 'Current Status') : v === 'record' ? t('inventory.tabs.record', undefined, 'Record Count') : t('inventory.tabs.history', undefined, 'Count History')}
               </button>
             ))}
           </div>
@@ -299,33 +312,32 @@ export default function LinenInventoryPage() {
                 <Boxes className="w-5 h-5 text-muted-foreground" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground">No on-hand counts yet</p>
+                <p className="text-sm font-medium text-foreground">{t('inventory.empty.noCountsTitle', undefined, 'No on-hand counts yet')}</p>
                 <p className="text-xs text-muted-foreground mt-1 max-w-xl">
-                  Record your first inventory count to see variance vs the company-wide requirement on this page. Until then,
-                  the “On Hand” and “Variance” columns will show <span className="font-mono">-</span>.
+                  {t('inventory.empty.noCountsDescription', undefined, 'Record your first inventory count to see variance vs the company-wide requirement on this page. Until then, the "On Hand" and "Variance" columns will show')} <span className="font-mono">-</span>.
                 </p>
               </div>
               <button
                 onClick={() => setViewMode('record')}
                 className="text-xs font-medium px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:opacity-90 flex-shrink-0"
               >
-                Record Count
+                {t('inventory.tabs.record', undefined, 'Record Count')}
               </button>
             </div>
           )}
 
           {/* Summary cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard title="Total Required" value={totalRequired.toLocaleString()} icon={Boxes} />
-            <StatCard title="Total On Hand" value={latestCount ? totalOnHand.toLocaleString() : '—'} icon={Boxes} />
+            <StatCard title={t('inventory.stats.totalRequired', undefined, 'Total Required')} value={totalRequired.toLocaleString()} icon={Boxes} />
+            <StatCard title={t('inventory.stats.totalOnHand', undefined, 'Total On Hand')} value={latestCount ? totalOnHand.toLocaleString() : '—'} icon={Boxes} />
             <StatCard
-              title="Overall Variance"
+              title={t('inventory.stats.overallVariance', undefined, 'Overall Variance')}
               value={totalVariance != null ? (totalVariance > 0 ? '+' : '') + totalVariance.toLocaleString() : '—'}
               tone={totalVariance != null && totalVariance < 0 ? 'destructive' : totalVariance != null && totalVariance > 0 ? 'success' : 'neutral'}
               icon={Boxes}
             />
             <StatCard
-              title="Shortages"
+              title={t('inventory.stats.shortages', undefined, 'Shortages')}
               value={latestCount ? String(shortages.length) : '—'}
               tone={shortages.length > 0 ? 'destructive' : 'success'}
               icon={Boxes}
@@ -337,10 +349,10 @@ export default function LinenInventoryPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted border-b border-border z-20">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Item</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Required</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">On Hand</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Variance</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('inventory.table.item', undefined, 'Item')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('inventory.table.required', undefined, 'Required')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('inventory.table.onHand', undefined, 'On Hand')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('inventory.table.variance', undefined, 'Variance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,8 +363,8 @@ export default function LinenInventoryPage() {
                     {snapshotRows.map(row => (
                       <tr key={row.key} className={`border-b border-border/50 ${row.variance != null && row.variance < 0 ? 'bg-destructive/5' : ''}`}>
                         <td className="py-2 px-3 text-xs font-medium">
-                          {row.label}
-                          {'description' in row && row.description && <span className="text-muted-foreground font-normal ml-1.5">({(row as any).description})</span>}
+                          {itemLabel(row)}
+                          {itemDescription(row) && <span className="text-muted-foreground font-normal ml-1.5">({itemDescription(row)})</span>}
                         </td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right">{row.required}</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>
@@ -361,11 +373,11 @@ export default function LinenInventoryPage() {
                     ))}
                     {/* Encasements & pillows — on-hand only, no required target */}
                     <tr className="bg-muted/40">
-                      <td colSpan={4} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Encasements & Pillows</td>
+                      <td colSpan={4} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('inventory.table.encasementsPillows', undefined, 'Encasements & Pillows')}</td>
                     </tr>
                     {onHandRows.map(row => (
                       <tr key={row.key} className="border-b border-border/50">
-                        <td className="py-2 px-3 text-xs font-medium">{row.label}</td>
+                        <td className="py-2 px-3 text-xs font-medium">{itemLabel(row)}</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">-</td>
                         <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand ?? '—'}</td>
                         <td className="py-2 px-3 text-right text-muted-foreground text-xs">-</td>
@@ -375,11 +387,11 @@ export default function LinenInventoryPage() {
                     {extraRows.length > 0 && (
                       <>
                         <tr className="bg-muted/40">
-                          <td colSpan={4} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Individual Extras</td>
+                          <td colSpan={4} className="py-1.5 px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('inventory.table.individualExtras', undefined, 'Individual Extras')}</td>
                         </tr>
                         {extraRows.map(row => (
                           <tr key={row.key} className="border-b border-border/50">
-                            <td className="py-2 px-3 text-xs">{row.label}</td>
+                            <td className="py-2 px-3 text-xs">{itemLabel(row)}</td>
                             <td className="py-2 px-3 text-xs tabular-nums text-right text-muted-foreground">-</td>
                             <td className="py-2 px-3 text-xs tabular-nums text-right font-medium">{row.onHand}</td>
                             <td className="py-2 px-3 text-right text-muted-foreground text-xs">-</td>
@@ -389,7 +401,7 @@ export default function LinenInventoryPage() {
                     )}
                     {/* Totals */}
                     <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                      <td className="py-2 px-3 text-xs uppercase tracking-wide">Total</td>
+                      <td className="py-2 px-3 text-xs uppercase tracking-wide">{t('common.labels.total', undefined, 'Total')}</td>
                       <td className="py-2 px-3 text-xs tabular-nums text-right">{totalRequired.toLocaleString()}</td>
                       <td className="py-2 px-3 text-xs tabular-nums text-right">{latestCount ? totalOnHand.toLocaleString() : '—'}</td>
                       <td className="py-2 px-3 text-right">{totalVariance != null ? <VarianceBadge value={totalVariance} /> : <span className="text-xs text-muted-foreground">-</span>}</td>
@@ -402,8 +414,8 @@ export default function LinenInventoryPage() {
 
           {!latestCount && !isLoading && (
             <div className="text-center py-4">
-              <p className="text-sm text-muted-foreground mb-2">No inventory count recorded yet.</p>
-              {canEdit && <Button size="sm" onClick={() => setViewMode('record')} className="gap-1.5"><Plus className="w-3.5 h-3.5" /> Record First Count</Button>}
+              <p className="text-sm text-muted-foreground mb-2">{t('inventory.noCount.message', undefined, 'No inventory count recorded yet.')}</p>
+              {canEdit && <Button size="sm" onClick={() => setViewMode('record')} className="gap-1.5"><Plus className="w-3.5 h-3.5" /> {t('inventory.noCount.recordFirstCount', undefined, 'Record First Count')}</Button>}
             </div>
           )}
         </>
@@ -416,27 +428,27 @@ export default function LinenInventoryPage() {
             {!canEdit ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Boxes className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                <p className="text-sm font-medium">View Only</p>
-                <p className="text-xs">You don't have edit access to record counts.</p>
+                <p className="text-sm font-medium">{t('inventory.record.viewOnlyTitle', undefined, 'View Only')}</p>
+                <p className="text-xs">{t('inventory.record.viewOnlyDescription', undefined, "You don't have edit access to record counts.")}</p>
               </div>
             ) : (
               <>
                 <div className="flex items-center justify-between">
-                  <p className="text-sm text-muted-foreground">Enter current quantities on hand</p>
+                  <p className="text-sm text-muted-foreground">{t('inventory.record.enterQuantities', undefined, 'Enter current quantities on hand')}</p>
                   {latestCount && (
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={prefillFromLatest}>
-                      Prefill from last count
+                      {t('inventory.record.prefill', undefined, 'Prefill from last count')}
                     </Button>
                   )}
                 </div>
 
                 {/* Rolls */}
                 <div>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Rolls</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.record.sectionRolls', undefined, 'Rolls')}</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {STANDARD_ITEMS.filter(i => i.key.endsWith('_rolls')).map(item => (
                       <div key={item.key}>
-                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                         <Input
                           type="number" inputMode="numeric"
                           value={countValues[item.key] || ''}
@@ -444,7 +456,7 @@ export default function LinenInventoryPage() {
                           className="h-10 text-base font-medium"
                           placeholder="0"
                         />
-                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">Need: {requirements[item.reqKey] ?? 0}</p>}
+                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">{t('inventory.record.needLabel', { count: requirements[item.reqKey] ?? 0 }, `Need: ${requirements[item.reqKey] ?? 0}`)}</p>}
                       </div>
                     ))}
                   </div>
@@ -452,11 +464,11 @@ export default function LinenInventoryPage() {
 
                 {/* Top Sheets */}
                 <div>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Top Sheets</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.record.sectionTopSheets', undefined, 'Top Sheets')}</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {STANDARD_ITEMS.filter(i => i.key.endsWith('_top_sheets')).map(item => (
                       <div key={item.key}>
-                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                         <Input
                           type="number" inputMode="numeric"
                           value={countValues[item.key] || ''}
@@ -464,7 +476,7 @@ export default function LinenInventoryPage() {
                           className="h-10 text-base font-medium"
                           placeholder="0"
                         />
-                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">Need: {requirements[item.reqKey] ?? 0}</p>}
+                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">{t('inventory.record.needLabel', { count: requirements[item.reqKey] ?? 0 }, `Need: ${requirements[item.reqKey] ?? 0}`)}</p>}
                       </div>
                     ))}
                   </div>
@@ -472,11 +484,11 @@ export default function LinenInventoryPage() {
 
                 {/* Towels */}
                 <div>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Towels</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.record.sectionTowels', undefined, 'Towels')}</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {STANDARD_ITEMS.filter(i => !i.key.endsWith('_rolls') && !i.key.endsWith('_top_sheets')).map(item => (
                       <div key={item.key}>
-                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                         <Input
                           type="number" inputMode="numeric"
                           value={countValues[item.key] || ''}
@@ -484,7 +496,7 @@ export default function LinenInventoryPage() {
                           className="h-10 text-base font-medium"
                           placeholder="0"
                         />
-                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">Need: {requirements[item.reqKey] ?? 0}</p>}
+                        {requirements && <p className="text-xs text-muted-foreground mt-0.5">{t('inventory.record.needLabel', { count: requirements[item.reqKey] ?? 0 }, `Need: ${requirements[item.reqKey] ?? 0}`)}</p>}
                       </div>
                     ))}
                   </div>
@@ -492,11 +504,11 @@ export default function LinenInventoryPage() {
 
                 {/* Mattress Encasements — on-hand only, no requirement */}
                 <div>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Mattress Encasements</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.record.sectionEncasements', undefined, 'Mattress Encasements')}</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {ENCASEMENT_ITEMS.map(item => (
                       <div key={item.key}>
-                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                         <Input
                           type="number" inputMode="numeric"
                           value={countValues[item.key] || ''}
@@ -511,11 +523,11 @@ export default function LinenInventoryPage() {
 
                 {/* Pillows — the pillow itself (not pillowcases); on-hand only */}
                 <div>
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Pillows</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.record.sectionPillows', undefined, 'Pillows')}</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {PILLOW_ITEMS.map(item => (
                       <div key={item.key}>
-                        <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                        <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                         <Input
                           type="number" inputMode="numeric"
                           value={countValues[item.key] || ''}
@@ -534,16 +546,16 @@ export default function LinenInventoryPage() {
                   className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {showExtras ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  {showExtras ? 'Hide' : 'Show'} individual extras (fitted, flat, pillowcases)
+                  {showExtras ? t('inventory.record.hideExtras', undefined, 'Hide') : t('inventory.record.showExtras', undefined, 'Show')} {t('inventory.record.extrasToggleSuffix', undefined, 'individual extras (fitted, flat, pillowcases)')}
                 </button>
 
                 {showExtras && (
                   <div>
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">Individual Extras</h3>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t('inventory.table.individualExtras', undefined, 'Individual Extras')}</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {EXTRA_ITEMS.map(item => (
                         <div key={item.key}>
-                          <label className="text-xs text-muted-foreground block mb-1">{item.label}</label>
+                          <label className="text-xs text-muted-foreground block mb-1">{itemLabel(item)}</label>
                           <Input
                             type="number" inputMode="numeric"
                             value={countValues[item.key] || ''}
@@ -560,12 +572,12 @@ export default function LinenInventoryPage() {
                 {/* Counted by + notes */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Counted By</label>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">{t('inventory.labels.countedBy', undefined, 'Counted By')}</label>
                     <Input value={countBy} onChange={e => setCountBy(e.target.value)} className="h-9 text-sm" />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-muted-foreground block mb-1">Notes</label>
-                    <Input value={countNotes} onChange={e => setCountNotes(e.target.value)} placeholder="Optional…" className="h-9 text-sm" />
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.labels.notes', undefined, 'Notes')}</label>
+                    <Input value={countNotes} onChange={e => setCountNotes(e.target.value)} placeholder={t('inventory.record.notesPlaceholder', undefined, 'Optional…')} className="h-9 text-sm" />
                   </div>
                 </div>
 
@@ -575,7 +587,7 @@ export default function LinenInventoryPage() {
                   onClick={() => saveCount()}
                 >
                   <Check className="w-4 h-4" />
-                  {saving ? 'Saving…' : 'Save Inventory Count'}
+                  {saving ? t('common.actions.saving', undefined, 'Saving…') : t('inventory.record.save', undefined, 'Save Inventory Count')}
                 </Button>
               </>
             )}
@@ -588,7 +600,7 @@ export default function LinenInventoryPage() {
         <>
           <div className="flex items-center justify-end">
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportHistory} disabled={!history?.length}>
-              <Download className="w-3.5 h-3.5" /> Export CSV
+              <Download className="w-3.5 h-3.5" /> {t('common.actions.exportCsv', undefined, 'Export CSV')}
             </Button>
           </div>
 
@@ -596,25 +608,30 @@ export default function LinenInventoryPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted border-b border-border z-20">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Date</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Counted By</th>
-                  {STANDARD_ITEMS.slice(0, 4).map(i => (
-                    <th key={i.key} className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{i.label.replace(' Rolls', '').replace(' Top Sheets', ' TS')}</th>
-                  ))}
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Bath</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Wash</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Hand</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Notes</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.date', undefined, 'Date')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('inventory.labels.countedBy', undefined, 'Counted By')}</th>
+                  {STANDARD_ITEMS.slice(0, 4).map(i => {
+                    const bedKey = i.key.replace('_rolls', '') as 'king' | 'queen' | 'full' | 'twin'
+                    return (
+                      <th key={i.key} className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">
+                        {t(`historyAbbrev.${bedKey}`, undefined, i.label.replace(' Rolls', '').replace(' Top Sheets', ' TS'))}
+                      </th>
+                    )
+                  })}
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('historyAbbrev.bath', undefined, 'Bath')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('historyAbbrev.wash', undefined, 'Wash')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('historyAbbrev.hand', undefined, 'Hand')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.notes', undefined, 'Notes')}</th>
                 </tr>
               </thead>
               <tbody>
                 {histLoading ? (
                   [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
                 ) : !history?.length ? (
-                  <tr><td colSpan={9}><EmptyState icon={Boxes} title="No count history" description="Record your first inventory count to start tracking." /></td></tr>
+                  <tr><td colSpan={9}><EmptyState icon={Boxes} title={t('inventory.history.emptyTitle', undefined, 'No count history')} description={t('inventory.history.emptyDescription', undefined, 'Record your first inventory count to start tracking.')} /></td></tr>
                 ) : history.map((h: any) => (
-                  <tr key={h.id} onClick={() => setDetailCount(h)} title="Click to see every field" className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer">
-                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{format(new Date(h.counted_at), 'MMM d, yyyy h:mm a')}</td>
+                  <tr key={h.id} onClick={() => setDetailCount(h)} title={t('inventory.history.clickHint', undefined, 'Click to see every field')} className="border-b border-border/50 hover:bg-muted/20 transition-colors cursor-pointer">
+                    <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{formatLocalized(new Date(h.counted_at), 'MMM d, yyyy h:mm a')}</td>
                     <td className="py-2 px-3 text-xs">{h.counted_by || '—'}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-right">{h.king_rolls || 0}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-right">{h.queen_rolls || 0}</td>
@@ -636,21 +653,21 @@ export default function LinenInventoryPage() {
         <Dialog open={!!detailCount} onOpenChange={(o) => { if (!o) setDetailCount(null) }}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Count detail - {format(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a')}</DialogTitle>
+              <DialogTitle>{t('inventory.detail.title', { date: formatLocalized(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a') }, `Count detail - ${format(new Date(detailCount.counted_at), 'MMM d, yyyy h:mm a')}`)}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 text-sm">
-              <div className="text-xs text-muted-foreground">Counted by {detailCount.counted_by || '—'}</div>
+              <div className="text-xs text-muted-foreground">{t('inventory.detail.countedByPrefix', { name: detailCount.counted_by || '—' }, `Counted by ${detailCount.counted_by || '—'}`)}</div>
               {[
-                { title: 'Sheets, Towels & Kitchen', items: STANDARD_ITEMS },
-                { title: 'On Hand - Encasements & Pillows', items: ON_HAND_ITEMS },
-                { title: 'Extras', items: EXTRA_ITEMS },
+                { title: t('inventory.detail.groupSheetsTowelsKitchen', undefined, 'Sheets, Towels & Kitchen'), items: STANDARD_ITEMS },
+                { title: t('inventory.detail.groupOnHand', undefined, 'On Hand - Encasements & Pillows'), items: ON_HAND_ITEMS },
+                { title: t('inventory.detail.groupExtras', undefined, 'Extras'), items: EXTRA_ITEMS },
               ].map(group => (
                 <div key={group.title}>
                   <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1.5">{group.title}</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1">
                     {group.items.map((it: any) => (
                       <div key={it.key} className="flex items-center justify-between gap-2 border-b border-border/40 py-0.5">
-                        <span className="text-xs text-muted-foreground">{it.label}</span>
+                        <span className="text-xs text-muted-foreground">{itemLabel(it)}</span>
                         <span className="text-sm font-medium tabular-nums">{detailCount[it.key] ?? 0}</span>
                       </div>
                     ))}
@@ -659,7 +676,7 @@ export default function LinenInventoryPage() {
               ))}
               {detailCount.notes && (
                 <div>
-                  <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</p>
+                  <p className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{t('common.labels.notes', undefined, 'Notes')}</p>
                   <p className="text-sm whitespace-pre-wrap bg-muted/30 rounded p-2">{detailCount.notes}</p>
                 </div>
               )}
