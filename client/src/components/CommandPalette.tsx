@@ -5,6 +5,7 @@ import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useContacts } from '@/hooks/use-contacts'
 import { useAuth, canAccessView } from '@/lib/auth'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
@@ -46,6 +47,7 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
+  const { t } = useLocale('palette')
   const [query, setQuery] = useState('')
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
@@ -125,6 +127,16 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
       .slice(0, 5)
   }, [q, contacts])
 
+  // Page entry display names reuse the shared sidebar nav labels
+  // (common.nav.<view-key>) so this list never carries its own duplicate
+  // translation set. "Live Pro Forma" is a command-palette-only deep link
+  // into the Pro Forma page's Live tab and shares a viewId with the plain
+  // "Pro Forma" entry, so it can't be looked up by viewId alone.
+  function pageLabel(page: typeof PAGE_ROUTES[number]) {
+    if (page.name === 'Live Pro Forma') return t('pages.liveProForma', undefined, page.name)
+    return t(`common.nav.${page.viewId}`, undefined, page.name)
+  }
+
   function handleSelectProperty(id: string) {
     onClose()
     openPropertyModal(id)
@@ -159,15 +171,15 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-lg p-0 overflow-hidden" data-testid="command-palette" onKeyDown={e => e.stopPropagation()}>
-        <DialogTitle className="sr-only">Search</DialogTitle>
-        <DialogDescription className="sr-only">Search properties or navigate to a page</DialogDescription>
+        <DialogTitle className="sr-only">{t('common.header.search', undefined, 'Search')}</DialogTitle>
+        <DialogDescription className="sr-only">{t('srSearchDescription')}</DialogDescription>
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
           <Input
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search properties or navigate to a page…"
+            placeholder={t('placeholder')}
             className="border-0 shadow-none focus-visible:ring-0 px-0 h-auto text-sm"
             data-testid="command-palette-input"
             onKeyDown={e => {
@@ -191,13 +203,13 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         </div>
 
         {totalResults === 0 && recentProperties.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">No results found</div>
+          <div className="py-8 text-center text-sm text-muted-foreground">{t('common.labels.noResults', undefined, 'No results found')}</div>
         ) : (
           <div className="max-h-80 overflow-y-auto py-1">
             {/* Pages group — always first */}
             {matchedPages.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Pages</div>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('groups.pages')}</div>
                 {matchedPages.map((page, pageIdx) => (
                   <button
                     key={page.path}
@@ -206,7 +218,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
                     data-testid={`cmd-page-${page.path}`}
                   >
                     <page.icon className="w-4 h-4 text-muted-foreground mr-2 flex-shrink-0" />
-                    <span>{page.name}</span>
+                    <span>{pageLabel(page)}</span>
                     <ArrowRight className="w-3 h-3 text-muted-foreground" />
                   </button>
                 ))}
@@ -216,7 +228,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
             {/* Recently Viewed — on empty query only */}
             {recentProperties.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Recently Viewed</div>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('groups.recentlyViewed')}</div>
                 {recentProperties.map((p: any, recentIdx: number) => (
                   <button
                     key={`recent-${p.id}`}
@@ -231,7 +243,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
             {matchedProperties.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Properties</div>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('groups.properties')}</div>
                 {matchedProperties.map((p: any, propIdx: number) => {
                   const stageName = p.pipeline_stages?.name || ''
                   const color = p.pipeline_stages?.color || STAGE_COLORS[stageName] || '#6b7280'
@@ -262,7 +274,7 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
 
             {matchedContacts.length > 0 && (
               <>
-                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">Clients</div>
+                <div className="px-4 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('groups.clients')}</div>
                 {matchedContacts.map((c: any, contactIdx: number) => (
                   <button
                     key={`contact-${c.id}`}
@@ -283,9 +295,9 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
         )}
 
         <div className="px-4 py-2 border-t border-border flex items-center gap-3 text-xs text-muted-foreground">
-          <span><kbd className="bg-muted px-1 py-0.5 rounded">↑↓</kbd> to navigate</span>
-          <span><kbd className="bg-muted px-1 py-0.5 rounded">↵</kbd> to select</span>
-          <span><kbd className="bg-muted px-1 py-0.5 rounded">Esc</kbd> to close</span>
+          <span><kbd className="bg-muted px-1 py-0.5 rounded">↑↓</kbd> {t('hints.navigate')}</span>
+          <span><kbd className="bg-muted px-1 py-0.5 rounded">↵</kbd> {t('hints.select')}</span>
+          <span><kbd className="bg-muted px-1 py-0.5 rounded">Esc</kbd> {t('hints.close')}</span>
         </div>
       </DialogContent>
     </Dialog>

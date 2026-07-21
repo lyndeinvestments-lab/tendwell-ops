@@ -27,6 +27,9 @@ import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { slugify } from '@/lib/issues'
 
 // Recharts is heavy — load it only when a chart actually renders inside the
 // modal instead of bundling it with the always-mounted modal shell.
@@ -34,6 +37,7 @@ const PropertyModalChart = lazy(() => import('@/components/PropertyModalChart'))
 
 // ── Access code cell (always visible, click to copy) ────────────────────────
 function RevealCell({ value }: { value: string | null; field: string; id: string }) {
+  const { t } = useLocale('propertyModal')
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
@@ -49,7 +53,7 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
   return (
     <div className="flex items-center gap-1.5">
       <span className="text-xs font-mono">{value}</span>
-      <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground" title={copied ? 'Copied!' : 'Copy'}>
+      <button onClick={handleCopy} className="text-muted-foreground hover:text-foreground" title={copied ? t('access.copiedTooltip') : t('access.copyTooltip')}>
         {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
       </button>
     </div>
@@ -58,6 +62,8 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
 
 // ── Inspections Tab ──────────────────────────────────────────────────────────
 function VerificationHistory({ propertyId, enabled = true }: { propertyId: string; enabled?: boolean }) {
+  const { t } = useLocale('propertyModal')
+  const { format } = useDateFormat()
   const { data: verifications, isLoading } = useQuery({
     queryKey: ['/supabase/property-verifications-history', propertyId],
     queryFn: async () => {
@@ -73,18 +79,18 @@ function VerificationHistory({ propertyId, enabled = true }: { propertyId: strin
   })
 
   if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
-  if (!verifications?.length) return <p className="text-sm text-muted-foreground text-center py-6">No verifications completed yet.</p>
+  if (!verifications?.length) return <p className="text-sm text-muted-foreground text-center py-6">{t('verification.noneYet')}</p>
 
   return (
     <div className="space-y-2">
       {verifications.map((v: any) => (
         <div key={v.id} className="rounded-md border border-border p-3 text-xs">
           <div className="flex items-center justify-between">
-            <span className="font-medium">{new Date(v.verified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <span className="font-medium">{format(new Date(v.verified_at), 'MMM d, yyyy')}</span>
             <span className="text-muted-foreground">{v.verified_by || '—'}</span>
           </div>
           {v.fields_updated && Object.keys(v.fields_updated).length > 0 && (
-            <p className="text-muted-foreground mt-1">{Object.keys(v.fields_updated).length} field(s) updated</p>
+            <p className="text-muted-foreground mt-1">{t('verification.fieldsUpdated', { count: Object.keys(v.fields_updated).length })}</p>
           )}
           {v.notes && <p className="text-muted-foreground mt-1">{v.notes}</p>}
         </div>
@@ -320,6 +326,7 @@ function AssignmentsTab({ propertyId }: { propertyId: string }) {
 
 // ── Photos Tab ───────────────────────────────────────────────────────────────
 function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled?: boolean }) {
+  const { t } = useLocale('propertyModal')
   const { toast } = useToast()
   const qc = useQueryClient()
   const [uploading, setUploading] = useState(false)
@@ -345,9 +352,9 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
-      toast({ title: 'Photo deleted' })
+      toast({ title: t('toasts.photoDeleted') })
     },
-    onError: (error: any) => toast({ title: 'Failed to delete photo', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.photoDeleteFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -371,9 +378,9 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
         })
       }
       qc.invalidateQueries({ queryKey: ['/supabase/property-photos', propertyId] })
-      toast({ title: `${files.length} photo(s) uploaded` })
+      toast({ title: t('toasts.photosUploaded', { count: files.length }) })
     } catch (e: any) {
-      toast({ title: 'Upload failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.uploadFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -387,7 +394,7 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
       <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
         <input type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" />
         <Plus className="w-4 h-4 text-muted-foreground" />
-        <span className="text-xs text-muted-foreground">{uploading ? 'Uploading…' : 'Click to upload photos'}</span>
+        <span className="text-xs text-muted-foreground">{uploading ? t('photos.uploading') : t('photos.uploadPrompt')}</span>
       </label>
       {photos && photos.length > 0 ? (
         <div className="grid grid-cols-3 gap-2">
@@ -398,12 +405,12 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
                 <button
                   onClick={() => window.open(p.photo_url, '_blank')}
                   className="bg-background/90 text-foreground p-1.5 rounded text-xs hover:bg-background"
-                  title="Copy URL"
+                  title={t('photos.copyUrlTooltip')}
                 >
                   <Copy className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => { if (confirm('Delete this photo?')) deletePhoto(p.id) }}
+                  onClick={() => { if (confirm(t('photos.deleteConfirm'))) deletePhoto(p.id) }}
                   className="bg-red-500/90 text-destructive-foreground p-1.5 rounded text-xs hover:bg-red-500"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -413,7 +420,7 @@ function PhotosTab({ propertyId, enabled = true }: { propertyId: string; enabled
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground text-center py-4">No photos yet. Upload the first one above.</p>
+        <p className="text-xs text-muted-foreground text-center py-4">{t('photos.noPhotosYet')}</p>
       )}
     </div>
   )
@@ -585,6 +592,8 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
 
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
+  const { t } = useLocale('propertyModal')
+  const { format } = useDateFormat()
   const { data: editHistory } = useQuery({
     queryKey: ['/supabase/property-edit-history', property.id],
     queryFn: async () => {
@@ -610,7 +619,7 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
       if (log.field_name === 'cleaner_pay') pay = parseFloat(log.new_value || '0')
       const pct = ce > 0 ? ((ce - pay) / ce) * 100 : 0
       if (log.changed_at) {
-        points.push({ date: new Date(log.changed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), pct })
+        points.push({ date: format(new Date(log.changed_at), 'MMM d'), pct })
       }
     }
     return points
@@ -629,26 +638,26 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
   const fmt = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
   const breakdownRows: Array<{ label: string; value: string; color?: string }> = [
-    { label: 'Client Charged', value: fmt(ce) },
-    { label: 'Cleaner Pay', value: fmt(pay) },
-    { label: 'Laundry', value: fmt(laundry) },
-    { label: 'Consumables', value: fmt(consumables) },
-    { label: 'Inspection', value: fmt(inspection) },
-    { label: 'Trash', value: fmt(trash) },
-    ...(linenCost > 0 ? [{ label: 'Linen Program', value: fmt(linenCost) }] : []),
-    { label: 'Total Cost', value: fmt(totalCost) },
-    { label: 'Profit', value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
-    { label: 'Profit %', value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
-    { label: 'DC Cost', value: property.estimated_deep_clean_cost != null ? fmt(Number(property.estimated_deep_clean_cost)) : '—' },
-    { label: 'DC Income (3x)', value: property.deep_clean_3x_ce != null ? fmt(Number(property.deep_clean_3x_ce)) : '—' },
-    { label: 'DC Profit', value: property.profit_deep_clean != null ? fmt(Number(property.profit_deep_clean)) : '—', color: Number(property.profit_deep_clean || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
+    { label: t('financials.breakdown.clientCharged'), value: fmt(ce) },
+    { label: t('financials.breakdown.cleanerPay'), value: fmt(pay) },
+    { label: t('financials.breakdown.laundry'), value: fmt(laundry) },
+    { label: t('financials.breakdown.consumables'), value: fmt(consumables) },
+    { label: t('financials.breakdown.inspection'), value: fmt(inspection) },
+    { label: t('financials.breakdown.trash'), value: fmt(trash) },
+    ...(linenCost > 0 ? [{ label: t('financials.breakdown.linenProgram'), value: fmt(linenCost) }] : []),
+    { label: t('financials.breakdown.totalCost'), value: fmt(totalCost) },
+    { label: t('financials.breakdown.profit'), value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
+    { label: t('financials.breakdown.profitPercent'), value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
+    { label: t('financials.breakdown.dcCost'), value: property.estimated_deep_clean_cost != null ? fmt(Number(property.estimated_deep_clean_cost)) : '—' },
+    { label: t('financials.breakdown.dcIncome3x'), value: property.deep_clean_3x_ce != null ? fmt(Number(property.deep_clean_3x_ce)) : '—' },
+    { label: t('financials.breakdown.dcProfit'), value: property.profit_deep_clean != null ? fmt(Number(property.profit_deep_clean)) : '—', color: Number(property.profit_deep_clean || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
   ]
 
   return (
     <div className="space-y-3">
       {chartData.length >= 2 ? (
         <div>
-          <span className="text-xs text-muted-foreground block mb-1">Profit % History</span>
+          <span className="text-xs text-muted-foreground block mb-1">{t('financials.profitHistoryHeading')}</span>
           <Suspense fallback={<Skeleton className="h-[100px] w-full" />}>
             <PropertyModalChart
               data={chartData}
@@ -662,11 +671,11 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
           </Suspense>
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground italic">Not enough history yet</p>
+        <p className="text-xs text-muted-foreground italic">{t('financials.notEnoughHistory')}</p>
       )}
 
       <div className="space-y-1">
-        <span className="text-xs text-muted-foreground block">Breakdown</span>
+        <span className="text-xs text-muted-foreground block">{t('financials.breakdownHeading')}</span>
         <div className="grid grid-cols-1 gap-1">
           {breakdownRows.map(row => (
             <div key={row.label} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
@@ -765,6 +774,7 @@ function buildFormFromProperty(property: any): Record<string, any> {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export function PropertyDetailModal() {
+  const { t } = useLocale('propertyModal')
   const { modalState, closePropertyModal } = usePropertyModal()
   const { user, effectiveUser } = useAuth()
   const { toast } = useToast()
@@ -838,10 +848,10 @@ export function PropertyDetailModal() {
       // detail row we just set intact).
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      toast({ title: 'Client updated' })
+      toast({ title: t('toasts.clientUpdated') })
       setContactPopoverOpen(false)
     },
-    onError: (error: any) => toast({ title: 'Failed to update client', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.clientUpdateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Reset form when property changes
@@ -919,10 +929,10 @@ export function PropertyDetailModal() {
       // previous-properties all reflect the change immediately (but keep the
       // detail row we set above from the write representation).
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('toasts.saved') })
       setIsEditing(false)
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Per-field inline save (click a field to edit it without pencil icon)
@@ -952,10 +962,10 @@ export function PropertyDetailModal() {
       // row we set above from the write representation.
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('toasts.saved') })
       setInlineField(null)
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: toggleHotTub } = useMutation({
@@ -975,9 +985,9 @@ export function PropertyDetailModal() {
         user?.label ?? null,
       )
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: next ? 'Hot tub: Yes' : 'Hot tub: No' })
+      toast({ title: next ? t('toasts.hotTubYes') : t('toasts.hotTubNo') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: toggleAutoCode } = useMutation({
@@ -990,9 +1000,9 @@ export function PropertyDetailModal() {
       if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
       logPropertyEdit(propertyId!, 'has_auto_code', String((property as any)?.has_auto_code ?? false), String(next), property?.name ?? null, user?.label ?? null)
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: next ? 'Auto code: Yes' : 'Auto code: No' })
+      toast({ title: next ? t('toasts.autoCodeYes') : t('toasts.autoCodeNo') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // "Mark done" for follow-ups: clearing the date removes the property from
@@ -1014,9 +1024,9 @@ export function PropertyDetailModal() {
         user?.label ?? null,
       )
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: 'Follow-up cleared' })
+      toast({ title: t('toasts.followUpCleared') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: toggleInspectionExempt } = useMutation({
@@ -1038,9 +1048,9 @@ export function PropertyDetailModal() {
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/properties'] })
       qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
-      toast({ title: next ? 'Inspection exempt enabled' : 'Inspection exempt removed' })
+      toast({ title: next ? t('toasts.inspectionExemptEnabled') : t('toasts.inspectionExemptRemoved') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: toggleLinenProgram } = useMutation({
@@ -1062,9 +1072,9 @@ export function PropertyDetailModal() {
       // Linen program flag affects operational reports, the master list,
       // and any property-derived caches that filter by program enrollment.
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: next ? 'Linen program enabled' : 'Linen program disabled' })
+      toast({ title: next ? t('toasts.linenProgramEnabled') : t('toasts.linenProgramDisabled') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function startInlineEdit(field: string, currentValue: any, allowed: boolean = canEditProperty) {
@@ -1078,7 +1088,7 @@ export function PropertyDetailModal() {
     if (field === 'name') {
       const trimmed = value.trim()
       if (!trimmed) {
-        toast({ title: 'Name cannot be blank', variant: 'destructive' })
+        toast({ title: t('toasts.nameBlank'), variant: 'destructive' })
         setInlineField(null)
         return
       }
@@ -1154,10 +1164,10 @@ export function PropertyDetailModal() {
       // dashboard counts/velocity, master list, pro-forma, revenue,
       // previous-properties (a move to Offboarded shows it there), etc.
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: 'Stage updated' })
+      toast({ title: t('toasts.stageUpdated') })
       setStagePopoverOpen(false)
     },
-    onError: (err: any) => toast({ title: 'Stage change failed', description: err?.message, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: t('toasts.stageChangeFailed'), description: err?.message, variant: 'destructive' }),
   })
 
   const { mutate: archiveQuote, isPending: archivePending } = useGuardedMutation('quote-sheet', {
@@ -1177,13 +1187,13 @@ export function PropertyDetailModal() {
     },
     onSuccess: (data) => {
       if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
-      toast({ title: 'Quote archived' })
+      toast({ title: t('toasts.quoteArchived') })
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
       setArchiveOpen(false)
       setArchiveReason('')
     },
-    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.archiveFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const { mutate: restoreQuote, isPending: restorePending } = useGuardedMutation('quote-sheet', {
@@ -1199,11 +1209,11 @@ export function PropertyDetailModal() {
     },
     onSuccess: (data) => {
       if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
-      toast({ title: 'Quote restored' })
+      toast({ title: t('toasts.quoteRestored') })
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
     },
-    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.restoreFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   // Highlight field ring class
@@ -1227,15 +1237,15 @@ export function PropertyDetailModal() {
   }
 
   const LINEN_COLS = [
-    { key: 'king_beds', label: 'King Beds' },
-    { key: 'queen_beds', label: 'Queen Beds' },
-    { key: 'full_beds', label: 'Full Beds' },
-    { key: 'twin_beds', label: 'Twin Beds' },
-    { key: 'bath_towels', label: 'Bath Towels' },
-    { key: 'washcloths', label: 'Washcloths' },
-    { key: 'hand_towels', label: 'Hand Towels' },
-    { key: 'bathmats', label: 'Bathmats' },
-    { key: 'pool_towels', label: 'Pool Towels' },
+    { key: 'king_beds', label: t('linens.fields.kingBeds') },
+    { key: 'queen_beds', label: t('linens.fields.queenBeds') },
+    { key: 'full_beds', label: t('linens.fields.fullBeds') },
+    { key: 'twin_beds', label: t('linens.fields.twinBeds') },
+    { key: 'bath_towels', label: t('linens.fields.bathTowels') },
+    { key: 'washcloths', label: t('linens.fields.washcloths') },
+    { key: 'hand_towels', label: t('linens.fields.handTowels') },
+    { key: 'bathmats', label: t('linens.fields.bathmats') },
+    { key: 'pool_towels', label: t('linens.fields.poolTowels') },
   ]
 
   return (
@@ -1267,7 +1277,7 @@ export function PropertyDetailModal() {
                 <DialogTitle
                   className={`text-base truncate ${canEditProperty && !isEditing ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
                   onClick={() => startInlineEdit('name', property?.name ?? '', canEditProperty)}
-                  title={canEditProperty ? 'Click to rename' : undefined}
+                  title={canEditProperty ? t('header.renameTooltip') : undefined}
                 >
                   {property?.name ?? '—'}
                 </DialogTitle>
@@ -1283,9 +1293,9 @@ export function PropertyDetailModal() {
                           color: stageColor,
                           border: `1px solid ${stageColor}40`,
                         }}
-                        title="Click to change stage"
+                        title={t('header.changeStageTooltip')}
                       >
-                        {changingStagePending ? <Loader2 className="w-3 h-3 animate-spin" /> : stageName}
+                        {changingStagePending ? <Loader2 className="w-3 h-3 animate-spin" /> : t(`common.stage.${slugify(stageName)}`, undefined, stageName)}
                         <ChevronDown className="w-3 h-3 opacity-60" />
                       </button>
                     </PopoverTrigger>
@@ -1296,7 +1306,7 @@ export function PropertyDetailModal() {
                           onClick={() => s.name !== stageName && changeStage({ id: s.id, name: s.name })}
                           className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors ${s.name === stageName ? 'font-semibold bg-muted/50' : ''}`}
                         >
-                          {s.name}
+                          {t(`common.stage.${slugify(s.name)}`, undefined, s.name)}
                         </button>
                       ))}
                     </PopoverContent>
@@ -1310,7 +1320,7 @@ export function PropertyDetailModal() {
                       border: `1px solid ${stageColor}40`,
                     }}
                   >
-                    {stageName}
+                    {t(`common.stage.${slugify(stageName)}`, undefined, stageName)}
                   </span>
                 )
               )}
@@ -1320,7 +1330,7 @@ export function PropertyDetailModal() {
                 <button
                   onClick={() => { setArchiveReason(''); setArchiveOpen(true) }}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-                  title="Archive quote (didn't pan out)"
+                  title={t('header.archiveTooltip')}
                   data-testid="modal-archive-btn"
                 >
                   <Archive className="w-4 h-4" />
@@ -1331,7 +1341,7 @@ export function PropertyDetailModal() {
                   onClick={() => restoreQuote()}
                   disabled={restorePending}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                  title="Restore quote"
+                  title={t('header.restoreTooltip')}
                   data-testid="modal-restore-btn"
                 >
                   {restorePending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />}
@@ -1345,14 +1355,14 @@ export function PropertyDetailModal() {
                         buildPropertyCopyText(property, canViewFinancials, autoCodeValue),
                       )
                       setCopied(true)
-                      toast({ title: 'Property details copied' })
+                      toast({ title: t('toasts.copyDetailsSuccess') })
                       setTimeout(() => setCopied(false), 1500)
                     } catch {
-                      toast({ title: 'Copy failed', variant: 'destructive' })
+                      toast({ title: t('toasts.copyFailed'), variant: 'destructive' })
                     }
                   }}
                   className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                  title="Copy property details"
+                  title={t('header.copyDetailsTooltip')}
                   data-testid="modal-copy-details"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -1363,7 +1373,7 @@ export function PropertyDetailModal() {
                   <button
                     onClick={() => { setIsEditing(false); if (property) setForm(buildFormFromProperty(property)) }}
                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Cancel editing"
+                    title={t('header.cancelEditTooltip')}
                     data-testid="modal-cancel-edit"
                   >
                     <X className="w-4 h-4" />
@@ -1372,7 +1382,7 @@ export function PropertyDetailModal() {
                   <button
                     onClick={() => setIsEditing(true)}
                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Edit property"
+                    title={t('header.editTooltip')}
                     data-testid="modal-edit-btn"
                   >
                     <Pencil className="w-4 h-4" />
@@ -1388,23 +1398,23 @@ export function PropertyDetailModal() {
             {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}
           </div>
         ) : !property ? (
-          <p className="text-sm text-muted-foreground py-4">Property not found.</p>
+          <p className="text-sm text-muted-foreground py-4">{t('header.propertyNotFound')}</p>
         ) : sourceContext === 'dashboard-missing' && highlightFields.length > 0 ? (
           /* ── Focused Missing Data Form ── */
           <div className="mt-3 space-y-4">
-            <p className="text-xs text-muted-foreground">Fill in the missing fields below:</p>
+            <p className="text-xs text-muted-foreground">{t('missingFields.intro')}</p>
             <div className="space-y-3">
               {highlightFields.map(field => {
                 const fieldConfig: Record<string, { label: string; type: string }> = {
-                  address: { label: 'Address', type: 'text' },
-                  bedrooms: { label: 'Bedrooms', type: 'number' },
-                  full_baths: { label: 'Full Baths', type: 'number' },
-                  half_baths: { label: 'Half Baths', type: 'number' },
-                  square_footage: { label: 'Square Footage', type: 'number' },
-                  guest_count: { label: 'Guest Count', type: 'number' },
-                  ce_charged: { label: 'Client Charged ($)', type: 'number' },
-                  cleaner_pay: { label: 'Cleaner Pay ($)', type: 'number' },
-                  number_of_beds: { label: 'Number of Beds', type: 'number' },
+                  address: { label: t('missingFields.labels.address'), type: 'text' },
+                  bedrooms: { label: t('missingFields.labels.bedrooms'), type: 'number' },
+                  full_baths: { label: t('missingFields.labels.fullBaths'), type: 'number' },
+                  half_baths: { label: t('missingFields.labels.halfBaths'), type: 'number' },
+                  square_footage: { label: t('missingFields.labels.squareFootage'), type: 'number' },
+                  guest_count: { label: t('missingFields.labels.guestCount'), type: 'number' },
+                  ce_charged: { label: t('missingFields.labels.ceCharged'), type: 'number' },
+                  cleaner_pay: { label: t('missingFields.labels.cleanerPay'), type: 'number' },
+                  number_of_beds: { label: t('missingFields.labels.numberOfBeds'), type: 'number' },
                 }
                 const config = fieldConfig[field] || { label: field, type: 'text' }
                 return (
@@ -1423,7 +1433,7 @@ export function PropertyDetailModal() {
               })}
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={closePropertyModal}>Cancel</Button>
+              <Button variant="outline" size="sm" onClick={closePropertyModal}>{t('common.actions.cancel')}</Button>
               <Button
                 size="sm"
                 disabled={savingMissing}
@@ -1440,10 +1450,10 @@ export function PropertyDetailModal() {
                   const { data, error } = await supabase.from('properties').update(updates).eq('id', property.id).select(PROPERTY_DETAIL_SELECT).single()
                   setSavingMissing(false)
                   if (error) {
-                    toast({ title: 'Save failed', description: error.message, variant: 'destructive' })
+                    toast({ title: t('toasts.saveFailed'), description: error.message, variant: 'destructive' })
                   } else {
                     if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
-                    toast({ title: 'Missing data filled in' })
+                    toast({ title: t('toasts.missingDataFilled') })
                     // "Fill missing data" can write to financials, bedrooms,
                     // square footage — every property-derived cache should
                     // refresh so the previously-missing values populate (keep
@@ -1453,27 +1463,27 @@ export function PropertyDetailModal() {
                   }
                 }}
               >
-                {savingMissing ? 'Saving…' : 'Save'}
+                {savingMissing ? t('common.actions.saving') : t('common.actions.save')}
               </Button>
             </div>
           </div>
         ) : (
           <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-2">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
-              <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
-              {sourceContext !== 'property-list' && canViewFinancials && <TabsTrigger value="financials" className="text-xs">Financials</TabsTrigger>}
-              <TabsTrigger value="operations" className="text-xs">Operations</TabsTrigger>
-              {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">Access</TabsTrigger>}
-              <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>
-              {canViewVerification && <TabsTrigger value="inspections" className="text-xs">Verification</TabsTrigger>}
-              <TabsTrigger value="photos" className="text-xs">Photos</TabsTrigger>
+              <TabsTrigger value="overview" className="text-xs">{t('tabs.overview')}</TabsTrigger>
+              {sourceContext !== 'property-list' && canViewFinancials && <TabsTrigger value="financials" className="text-xs">{t('tabs.financials')}</TabsTrigger>}
+              <TabsTrigger value="operations" className="text-xs">{t('tabs.operations')}</TabsTrigger>
+              {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">{t('tabs.access')}</TabsTrigger>}
+              <TabsTrigger value="notes" className="text-xs">{t('tabs.notes')}</TabsTrigger>
+              {canViewVerification && <TabsTrigger value="inspections" className="text-xs">{t('tabs.verification')}</TabsTrigger>}
+              <TabsTrigger value="photos" className="text-xs">{t('tabs.photos')}</TabsTrigger>
             </TabsList>
 
             {/* ── Overview Tab ── */}
             <TabsContent value="overview" className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: 'Stage', field: '_stage', value: stageName, editable: false },
+                  { label: t('overview.stage'), field: '_stage', value: t(`common.stage.${slugify(stageName)}`, undefined, stageName), editable: false },
                 ].map(row => (
                   <div key={row.field}>
                     <span className="text-xs text-muted-foreground block mb-0.5">{row.label}</span>
@@ -1483,7 +1493,7 @@ export function PropertyDetailModal() {
               </div>
               {/* Client */}
               <div>
-                <Label className="text-xs text-muted-foreground">Client</Label>
+                <Label className="text-xs text-muted-foreground">{t('overview.client')}</Label>
                 <div className="mt-0.5 flex items-center gap-2">
                   {linkedContact ? (
                     <div className="flex items-center gap-2 flex-1">
@@ -1494,7 +1504,7 @@ export function PropertyDetailModal() {
                         <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
                       )}
                       {canEditProperty && (
-                        <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title="Unlink client">
+                        <button onClick={() => linkContact(null)} className="text-muted-foreground hover:text-destructive ml-1" title={t('overview.unlinkClientTooltip')}>
                           <X className="w-3 h-3" />
                         </button>
                       )}
@@ -1503,20 +1513,20 @@ export function PropertyDetailModal() {
                     <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
                       <PopoverTrigger asChild>
                         <button className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-dashed border-border hover:border-primary/40">
-                          Assign client…
+                          {t('overview.assignClient')}
                         </button>
                       </PopoverTrigger>
                       <PopoverContent className="w-64 p-2" align="start">
                         <Input
                           value={contactSearch}
                           onChange={e => setContactSearch(e.target.value)}
-                          placeholder="Search clients…"
+                          placeholder={t('overview.searchClientsPlaceholder')}
                           className="h-7 text-xs mb-2"
                           autoFocus
                         />
                         <div className="max-h-40 overflow-y-auto space-y-0.5">
                           {filteredContacts.length === 0 ? (
-                            <p className="text-xs text-muted-foreground text-center py-2">No clients found</p>
+                            <p className="text-xs text-muted-foreground text-center py-2">{t('overview.noClientsFound')}</p>
                           ) : (
                             filteredContacts.map((c: any) => (
                               <button
@@ -1539,7 +1549,7 @@ export function PropertyDetailModal() {
               </div>
               <div className="grid grid-cols-1 gap-2">
                 <div>
-                  <Label className="text-xs text-muted-foreground">Address</Label>
+                  <Label className="text-xs text-muted-foreground">{t('common.labels.address')}</Label>
                   {isEditing && canEditProperty ? (
                     <AddressAutocomplete
                       value={form.address ?? ''}
@@ -1581,7 +1591,7 @@ export function PropertyDetailModal() {
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
-                          title="Directions / copy address"
+                          title={t('overview.directionsTooltip')}
                           onClick={() => setMapPickerOpen(true)}
                           data-testid="modal-address-map"
                         >
@@ -1594,14 +1604,14 @@ export function PropertyDetailModal() {
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
-                  { label: 'Bedrooms', field: 'bedrooms', value: property.bedrooms, editable: true, inputType: 'number' },
-                  { label: 'Baths', field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false, inputType: 'number' },
-                  { label: 'Sq Ft', field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true, inputType: 'number' },
-                  { label: 'Guests', field: 'guest_count', value: property.guest_count, editable: true, inputType: 'number' },
-                  { label: 'Beds', field: 'number_of_beds', value: property.number_of_beds, editable: true, inputType: 'number' },
-                  { label: 'Kitchens', field: 'kitchens', value: property.kitchens, editable: true, inputType: 'number' },
-                  { label: 'Check-in', field: 'check_in_time', value: property.check_in_time, editable: true, inputType: 'text' },
-                  { label: 'Check-out', field: 'check_out_time', value: property.check_out_time, editable: true, inputType: 'text' },
+                  { label: t('overview.fields.bedrooms'), field: 'bedrooms', value: property.bedrooms, editable: true, inputType: 'number' },
+                  { label: t('overview.fields.baths'), field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false, inputType: 'number' },
+                  { label: t('overview.fields.sqFt'), field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true, inputType: 'number' },
+                  { label: t('overview.fields.guests'), field: 'guest_count', value: property.guest_count, editable: true, inputType: 'number' },
+                  { label: t('overview.fields.beds'), field: 'number_of_beds', value: property.number_of_beds, editable: true, inputType: 'number' },
+                  { label: t('overview.fields.kitchens'), field: 'kitchens', value: property.kitchens, editable: true, inputType: 'number' },
+                  { label: t('overview.fields.checkIn'), field: 'check_in_time', value: property.check_in_time, editable: true, inputType: 'text' },
+                  { label: t('overview.fields.checkOut'), field: 'check_out_time', value: property.check_out_time, editable: true, inputType: 'text' },
                 ] as { label: string; field: string; value: any; editable: boolean; inputType: 'number' | 'text' }[]).map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>
@@ -1645,7 +1655,7 @@ export function PropertyDetailModal() {
                     className="h-4 w-4"
                     data-testid="modal-input-hot_tub"
                   />
-                  <span>Hot tub</span>
+                  <span>{t('overview.hotTubCheckboxLabel')}</span>
                 </label>
               )}
               {/* Hot tub toggle chip (click to flip) + follow-up indicator.
@@ -1664,13 +1674,13 @@ export function PropertyDetailModal() {
                     } ${canEditProperty ? 'cursor-pointer' : 'cursor-default'}`}
                     data-testid="chip-toggle-hot_tub"
                   >
-                    Hot tub: <span className="tabular-nums">{property.hot_tub ? 'Yes' : 'No'}</span>
+                    {t('overview.hotTubChipLabel')} <span className="tabular-nums">{property.hot_tub ? t('common.actions.yes') : t('common.actions.no')}</span>
                   </button>
                   <button
                     type="button"
                     disabled={!canEditProperty}
                     onClick={() => canEditProperty && toggleInspectionExempt(!(property as any).exempt_from_inspections)}
-                    title="When on, this property is hidden from the inspection priority dashboard and property verifications."
+                    title={t('overview.inspectionExemptTooltip')}
                     className={`px-2 py-0.5 rounded font-medium transition-colors ${
                       (property as any).exempt_from_inspections
                         ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50'
@@ -1678,16 +1688,16 @@ export function PropertyDetailModal() {
                     } ${canEditProperty ? 'cursor-pointer' : 'cursor-default'}`}
                     data-testid="chip-toggle-exempt_from_inspections"
                   >
-                    Inspection exempt: <span className="tabular-nums">{(property as any).exempt_from_inspections ? 'Yes' : 'No'}</span>
+                    {t('overview.inspectionExemptChipLabel')} <span className="tabular-nums">{(property as any).exempt_from_inspections ? t('common.actions.yes') : t('common.actions.no')}</span>
                   </button>
                   {property.follow_up_date && (
                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-warning/10 text-warning">
-                      Follow-up: <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
+                      {t('overview.followUpChipLabel')} <span className="tabular-nums">{String(property.follow_up_date).slice(0, 10)}</span>
                       {canEditProperty && (
                         <button
                           type="button"
                           onClick={() => clearFollowUp()}
-                          title="Mark follow-up done (clears the date)"
+                          title={t('overview.markFollowUpDoneTooltip')}
                           className="ml-0.5 rounded-sm p-0.5 hover:bg-warning/25 transition-colors"
                           data-testid="chip-clear-follow-up"
                         >
@@ -1702,9 +1712,9 @@ export function PropertyDetailModal() {
               {/* Financials snapshot — only for users who already see Financials */}
               {canViewFinancials && (
                 <div className="rounded-md border border-border bg-muted/30 p-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">Financials</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('tabs.financials')}</p>
                   <div>
-                    <span className="text-xs text-muted-foreground block">Cleaner Pay</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.cleanerPay')}</span>
                     <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
                   </div>
                 </div>
@@ -1718,9 +1728,9 @@ export function PropertyDetailModal() {
                 return (
                   <div className="rounded-md border border-border bg-muted/30 p-3 flex items-center justify-between">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Access Setup</p>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{t('overview.accessSetupHeading')}</p>
                       <p className="text-xs text-muted-foreground">
-                        {missing === 0 ? 'All codes configured.' : `${filled} of ${accessKeys.length} fields filled.`}
+                        {missing === 0 ? t('overview.allCodesConfigured') : t('overview.fieldsFilledCount', { filled, total: accessKeys.length })}
                       </p>
                     </div>
                     <span className={`text-xs px-2 py-0.5 rounded font-medium ${
@@ -1728,7 +1738,7 @@ export function PropertyDetailModal() {
                       filled === 0 ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' :
                       'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400'
                     }`}>
-                      {missing === 0 ? 'Complete' : filled === 0 ? 'Not set' : 'Partial'}
+                      {missing === 0 ? t('overview.status.complete') : filled === 0 ? t('overview.status.notSet') : t('overview.status.partial')}
                     </span>
                   </div>
                 )
@@ -1740,8 +1750,8 @@ export function PropertyDetailModal() {
               <TabsContent value="financials" className="mt-3 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   {([
-                    { label: 'Client Charged', field: 'ce_charged', value: property.ce_charged, target: 0.14 },
-                    { label: 'Cleaner Pay', field: 'cleaner_pay', value: property.cleaner_pay, target: 0.07 },
+                    { label: t('financials.fields.clientCharged'), field: 'ce_charged', value: property.ce_charged, target: 0.14 },
+                    { label: t('financials.fields.cleanerPay'), field: 'cleaner_pay', value: property.cleaner_pay, target: 0.07 },
                   ] as { label: string; field: string; value: any; target: number }[]).map(row => {
                     const editingThisField = isEditing && canEditFinancials
                     const liveValue = editingThisField
@@ -1793,10 +1803,10 @@ export function PropertyDetailModal() {
                         )}
                         <p className={`text-[11px] mt-0.5 ${pctCls}`} data-testid={`modal-${row.field}-psf`}>
                           {pricePerSqft != null
-                            ? `$${pricePerSqft.toFixed(3)}/sqft · target $${row.target.toFixed(2)}`
+                            ? t('financials.psf.withValue', { value: `$${pricePerSqft.toFixed(3)}`, target: `$${row.target.toFixed(2)}` })
                             : sqft > 0
-                              ? `- · target $${row.target.toFixed(2)}/sqft`
-                              : `target $${row.target.toFixed(2)}/sqft (set sqft)`}
+                              ? t('financials.psf.noValue', { target: row.target.toFixed(2) })
+                              : t('financials.psf.setSqft', { target: row.target.toFixed(2) })}
                         </p>
                         {row.field === 'cleaner_pay' && (() => {
                           // Cleaner minimum reference, keyed off the live bedroom
@@ -1810,7 +1820,7 @@ export function PropertyDetailModal() {
                           if (min == null) {
                             return (
                               <p className="text-[11px] mt-0.5 text-muted-foreground" data-testid="modal-cleaner-min">
-                                {liveBedrooms == null ? 'Min pay: set bedrooms' : `Min pay: no reference for ${liveBedrooms} bdr`}
+                                {liveBedrooms == null ? t('financials.minPay.setBedrooms') : t('financials.minPay.noReference', { bedrooms: liveBedrooms })}
                               </p>
                             )
                           }
@@ -1820,8 +1830,8 @@ export function PropertyDetailModal() {
                               className={`text-[11px] mt-0.5 ${belowMin ? 'text-destructive font-medium' : 'text-muted-foreground'}`}
                               data-testid="modal-cleaner-min"
                             >
-                              Min pay ({liveBedrooms} bdr): ${min.toFixed(2)}
-                              {belowMin ? ' · below min' : ''}
+                              {t('financials.minPay.line', { bedrooms: liveBedrooms ?? '', amount: `$${min.toFixed(2)}` })}
+                              {belowMin ? t('financials.minPay.belowMinSuffix') : ''}
                             </p>
                           )
                         })()}
@@ -1831,11 +1841,11 @@ export function PropertyDetailModal() {
                 </div>
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
-                    <span className="text-xs text-muted-foreground block">Total Cost</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.totalCost')}</span>
                     <span className="text-sm font-medium">{property.total_estimated_cost != null ? `$${Number(property.total_estimated_cost).toFixed(2)}` : '—'}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">Profit $</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.profitDollar')}</span>
                     <span className={`text-sm font-medium ${(property.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>
                       {property.estimated_profit != null ? `$${Number(property.estimated_profit).toFixed(2)}` : '—'}
                     </span>
@@ -1857,11 +1867,11 @@ export function PropertyDetailModal() {
                         data-testid="modal-input-linen_program"
                       />
                       <div className="text-xs flex-1">
-                        <div className="font-medium">Linen Program</div>
+                        <div className="font-medium">{t('financials.linenProgram.label')}</div>
                         <div className="text-muted-foreground">
                           {enabled
-                            ? <>Adds <span className="tabular-nums font-medium text-foreground">${cost.toFixed(2)}</span>/clean ({beds} beds × $300 / 12 / 4)</>
-                            : <>Adds {beds > 0 ? <span className="tabular-nums">${cost.toFixed(2)}</span> : '$0.00'}/clean when enabled ({beds > 0 ? `${beds} beds` : 'set beds'} × $300 / 12 / 4)</>
+                            ? <>{t('financials.linenProgram.enabledPrefix')} <span className="tabular-nums font-medium text-foreground">${cost.toFixed(2)}</span>{t('financials.linenProgram.enabledSuffix', { beds })}</>
+                            : <>{t('financials.linenProgram.disabledPrefix')} {beds > 0 ? <span className="tabular-nums">${cost.toFixed(2)}</span> : '$0.00'}{t('financials.linenProgram.disabledSuffix', { bedsPhrase: beds > 0 ? t('financials.linenProgram.bedsPhraseSet', { beds }) : t('financials.linenProgram.bedsPhraseUnset') })}</>
                           }
                         </div>
                       </div>
@@ -1870,15 +1880,15 @@ export function PropertyDetailModal() {
                 })()}
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
-                    <span className="text-xs text-muted-foreground block">DC Cost</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.dcCost')}</span>
                     <span className="text-sm font-medium">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">DC Income (3x)</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.dcIncome3x')}</span>
                     <span className="text-sm font-medium">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">DC Profit</span>
+                    <span className="text-xs text-muted-foreground block">{t('financials.fields.dcProfit')}</span>
                     <span className={`text-sm font-medium ${(property.profit_deep_clean || 0) < 0 ? 'text-destructive' : ''}`}>
                       {property.profit_deep_clean != null ? `$${Number(property.profit_deep_clean).toFixed(2)}` : '—'}
                     </span>
@@ -1892,7 +1902,7 @@ export function PropertyDetailModal() {
             <TabsContent value="operations" className="mt-3 space-y-4">
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Linens</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('linens.heading')}</h4>
                   {isEditing && canEditLinens && (
                     <button
                       type="button"
@@ -1918,12 +1928,12 @@ export function PropertyDetailModal() {
                           bathmats: c.bathmats,
                           pool_towels: c.pool_towels,
                         }))
-                        toast({ title: `Auto-filled linens (sleep count ${sleep})` })
+                        toast({ title: t('toasts.autoFilledLinens', { sleep }) })
                       }}
                       className="text-[10px] uppercase tracking-wide text-primary hover:text-primary/80 px-2 py-0.5 rounded border border-primary/30 hover:border-primary/60"
-                      title="Compute from guest count (falls back to bed counts) + baths + hot tub"
+                      title={t('linens.autoFillTooltip')}
                     >
-                      Auto-fill from beds
+                      {t('linens.autoFillButton')}
                     </button>
                   )}
                 </div>
@@ -1961,15 +1971,15 @@ export function PropertyDetailModal() {
                   ))}
                 </div>
                 <div className="mt-3">
-                  <PropertyNotesFeed propertyId={property.id} context="linen" title="Linen Notes" compact />
+                  <PropertyNotesFeed propertyId={property.id} context="linen" title={t('linens.notesTitle')} compact />
                 </div>
               </div>
               <Separator />
               <div>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">AC Filter</h4>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t('acFilter.heading')}</h4>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <span className="text-xs text-muted-foreground block">Filter Size</span>
+                    <span className="text-xs text-muted-foreground block">{t('acFilter.fields.filterSize')}</span>
                     {isEditing && canEditAC ? (
                       <Input
                         value={form.filter_size ?? ''}
@@ -1996,7 +2006,7 @@ export function PropertyDetailModal() {
                     )}
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">Last Changed</span>
+                    <span className="text-xs text-muted-foreground block">{t('acFilter.fields.lastChanged')}</span>
                     {isEditing && canEditAC ? (
                       <Input
                         type="date"
@@ -2010,7 +2020,7 @@ export function PropertyDetailModal() {
                     )}
                   </div>
                   <div>
-                    <span className="text-xs text-muted-foreground block">Next Due</span>
+                    <span className="text-xs text-muted-foreground block">{t('acFilter.fields.nextDue')}</span>
                     <span className="text-sm">{property.next_filter_due ? property.next_filter_due.slice(0, 10) : '—'}</span>
                   </div>
                 </div>
@@ -2020,7 +2030,7 @@ export function PropertyDetailModal() {
                 <>
                   <Separator />
                   <div>
-                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access & WiFi</h4>
+                    <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t('access.accessWifiHeading')}</h4>
                     <div className="space-y-2">
                       <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditAccess ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
                         <input
@@ -2032,16 +2042,16 @@ export function PropertyDetailModal() {
                           data-testid="modal-input-has_auto_code-ops"
                         />
                         <div className="text-xs flex-1">
-                          <div className="font-medium">Auto Code (smart lock)</div>
+                          <div className="font-medium">{t('access.autoCodeLabel')}</div>
                           <div className="text-muted-foreground">
                             {property.has_auto_code
-                              ? (autoCodeValue ? <>Yes - code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared)</> : <>Yes - set in Settings</>)
-                              : 'No auto code'}
+                              ? (autoCodeValue ? <>{t('access.autoCodeOps.yesWithCodePrefix')} <span className="font-mono text-foreground">{autoCodeValue}</span> {t('access.autoCodeOps.yesWithCodeSuffix')}</> : <>{t('access.autoCodeOps.yesSetInSettings')}</>)
+                              : t('access.autoCodeOps.none')}
                           </div>
                         </div>
                       </label>
                       {ACCESS_FIELD_KEYS.map(k => {
-                        const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
+                        const label = { auto_code: t('access.fields.autoCode'), door_code: t('access.fields.doorCode'), other_codes: t('access.fields.otherCodes'), wifi_info: t('access.fields.wifiInfo') }[k]
                         return (
                           <div key={k}>
                             <span className="text-xs text-muted-foreground block mb-0.5">{label}</span>
@@ -2082,7 +2092,7 @@ export function PropertyDetailModal() {
             {canViewAccess && (
               <TabsContent value="setup" className="mt-3 space-y-4">
                 <div>
-                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access Codes</h4>
+                  <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t('access.heading')}</h4>
                   <div className="space-y-3">
                     <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditAccess ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
                       <input
@@ -2094,16 +2104,16 @@ export function PropertyDetailModal() {
                         data-testid="modal-input-has_auto_code"
                       />
                       <div className="text-xs flex-1">
-                        <div className="font-medium">Auto Code (smart lock)</div>
+                        <div className="font-medium">{t('access.autoCodeLabel')}</div>
                         <div className="text-muted-foreground">
                           {property.has_auto_code
-                            ? (autoCodeValue ? <>Yes - code <span className="font-mono text-foreground">{autoCodeValue}</span> (shared, managed in Settings)</> : <>Yes - set the shared code in Settings</>)
-                            : 'No auto code on this property'}
+                            ? (autoCodeValue ? <>{t('access.autoCodeSetup.yesWithCodePrefix')} <span className="font-mono text-foreground">{autoCodeValue}</span> {t('access.autoCodeSetup.yesWithCodeSuffix')}</> : <>{t('access.autoCodeSetup.yesSetInSettings')}</>)
+                            : t('access.autoCodeSetup.none')}
                         </div>
                       </div>
                     </label>
                     {ACCESS_FIELD_KEYS.map(k => {
-                      const label = { auto_code: 'Auto Code', door_code: 'Door Code', other_codes: 'Other Codes', wifi_info: 'WiFi Info' }[k]
+                      const label = { auto_code: t('access.fields.autoCode'), door_code: t('access.fields.doorCode'), other_codes: t('access.fields.otherCodes'), wifi_info: t('access.fields.wifiInfo') }[k]
                       return (
                         <div key={k}>
                           <span className="text-xs text-muted-foreground block mb-0.5">{label}</span>
@@ -2165,21 +2175,21 @@ export function PropertyDetailModal() {
         <DialogFooter className="flex items-center gap-2 pt-2">
           {sourceContext === 'pipeline' && (
             <Button variant="outline" size="sm" onClick={handleViewInContext} className="mr-auto">
-              View in Pipeline
+              {t('footer.viewInPipeline')}
             </Button>
           )}
           {isEditing && canEdit ? (
             <>
               <Button variant="outline" size="sm" onClick={() => setIsEditing(false)} disabled={saving}>
-                Cancel
+                {t('common.actions.cancel')}
               </Button>
               <Button size="sm" onClick={() => saveEdits()} disabled={saving} data-testid="modal-save-btn">
-                {saving ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Changes'}
+                {saving ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{t('common.actions.saving')}</> : t('footer.saveChanges')}
               </Button>
             </>
           ) : (
             <Button variant="outline" size="sm" onClick={closePropertyModal}>
-              Close
+              {t('common.actions.close')}
             </Button>
           )}
         </DialogFooter>
@@ -2189,33 +2199,31 @@ export function PropertyDetailModal() {
     <Dialog open={archiveOpen} onOpenChange={v => !v && !archivePending && setArchiveOpen(false)}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-base">Archive quote</DialogTitle>
+          <DialogTitle className="text-base">{t('archive.title')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          <p>Archive <span className="font-medium">{property?.name ?? '—'}</span>?
-            The property stays in the database, the quote sheet hides it by default,
-            and you can restore it any time.</p>
+          <p>{t('archive.confirmPrefix')} <span className="font-medium">{property?.name ?? '—'}</span>{t('archive.confirmSuffix')}</p>
           <div>
             <Label htmlFor="modal-archive-reason" className="text-xs">
-              Reason <span className="text-destructive">*</span>
+              {t('archive.reasonLabel')} <span className="text-destructive">*</span>
             </Label>
             <textarea
               id="modal-archive-reason"
               value={archiveReason}
               onChange={e => setArchiveReason(e.target.value)}
-              placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up."
+              placeholder={t('archive.reasonPlaceholder')}
               rows={3}
               className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
               data-testid="modal-archive-reason"
               autoFocus
             />
             <p className="text-2xs text-muted-foreground mt-1">
-              Required. Visible in the quote sheet's archived view so you can audit why a quote didn't onboard.</p>
+              {t('archive.reasonHelper')}</p>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setArchiveOpen(false)} disabled={archivePending}>
-            Cancel
+            {t('common.actions.cancel')}
           </Button>
           <Button
             size="sm"
@@ -2223,7 +2231,7 @@ export function PropertyDetailModal() {
             disabled={archivePending || !archiveReason.trim()}
             data-testid="modal-confirm-archive"
           >
-            {archivePending ? 'Archiving…' : 'Archive quote'}
+            {archivePending ? t('archive.archiving') : t('archive.archiveButton')}
           </Button>
         </DialogFooter>
       </DialogContent>

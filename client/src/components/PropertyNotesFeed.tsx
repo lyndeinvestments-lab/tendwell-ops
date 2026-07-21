@@ -9,7 +9,8 @@ import { MentionTextarea, MentionBody } from '@/components/MentionInput'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, MessageSquare } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 
 interface PropertyNote {
   id: string
@@ -34,6 +35,8 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
   const qc = useQueryClient()
   const { toast } = useToast()
   const { user } = useAuth()
+  const { t } = useLocale('propertyModal')
+  const { formatDistanceToNow } = useDateFormat()
   const [draft, setDraft] = useState('')
 
   const viewId = context === 'linen' ? 'linen-tracker' : 'property-list'
@@ -122,7 +125,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
       qc.invalidateQueries({ queryKey })
       invalidateAllPropertyQueries(qc)
     },
-    onError: (e: any) => toast({ title: 'Failed to post note', description: e.message || '', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.notePostFailed'), description: e.message || '', variant: 'destructive' }),
   })
 
   const userLabels = (taggable || []).map(u => u.label)
@@ -140,7 +143,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
           value={draft}
           onChange={setDraft}
           users={taggable || []}
-          placeholder={placeholder ?? 'Write a note… use @ to tag someone'}
+          placeholder={placeholder ?? t('notes.composerPlaceholder')}
           rows={compact ? 2 : 3}
           dataTestId={`property-notes-composer${context ? '-' + context : ''}`}
         />
@@ -151,7 +154,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
             disabled={!draft.trim() || posting}
             data-testid={`property-notes-post${context ? '-' + context : ''}`}
           >
-            {posting ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Posting…</> : 'Post'}
+            {posting ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{t('notes.posting')}</> : t('notes.post')}
           </Button>
         </div>
       </div>
@@ -162,17 +165,17 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
           <Skeleton className="h-10 w-full" />
         </div>
       ) : (notes || []).length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No notes yet.</p>
+        <p className="text-xs text-muted-foreground italic">{t('notes.noNotesYet')}</p>
       ) : (
         <ul className="space-y-2">
           {(notes || []).map(n => (
             <li key={n.id} className="rounded-md border border-border bg-muted/30 p-2.5">
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mb-1">
                 <span className="flex items-center gap-1">
-                  <span className="font-medium text-foreground">{n.created_by || 'Unknown'}</span>
+                  <span className="font-medium text-foreground">{n.created_by || t('notes.unknownAuthor')}</span>
                   {n.owner_id && (
                     <span className="text-2xs font-medium px-1.5 py-0.5 rounded-full bg-info/10 text-info leading-none">
-                      Owner
+                      {t('notes.ownerBadge')}
                     </span>
                   )}
                 </span>

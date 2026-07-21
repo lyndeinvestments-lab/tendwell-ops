@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, PlusCircle } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -124,10 +125,12 @@ function fmtDate(d: Date) {
 
 // ─── Step indicators ──────────────────────────────────────────────────────────
 
-const STEPS = ['Upload', 'Map Columns', 'Match Properties', 'Summary']
+const STEP_KEYS = ['upload', 'mapColumns', 'matchProperties', 'summary'] as const
+const STEP_FALLBACKS = ['Upload', 'Map Columns', 'Match Properties', 'Summary']
 
 function StepIndicator({ current }: { current: number }) {
-  const visibleSteps = STEPS
+  const { t } = useLocale('csv')
+  const visibleSteps = STEP_KEYS.map((key, i) => t(`steps.${key}`, undefined, STEP_FALLBACKS[i]))
   return (
     <div className="flex items-center gap-0 mb-5">
       {visibleSteps.map((label, i) => (
@@ -156,6 +159,7 @@ interface CsvImportModalProps {
 }
 
 export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImportModalProps) {
+  const { t } = useLocale('csv')
   const { toast } = useToast()
   const { user } = useAuth()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -188,7 +192,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
   function handleFile(file: File) {
     if (!file.name.endsWith('.csv')) {
-      setParseError('Please upload a .csv file.')
+      setParseError(t('errors.notCsv'))
       return
     }
     setParseError('')
@@ -198,7 +202,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
       skipEmptyLines: true,
       complete: (result) => {
         if (result.errors.length > 0 && result.data.length === 0) {
-          setParseError('Could not parse CSV: ' + result.errors[0].message)
+          setParseError(t('errors.parseFailedPrefix', { message: result.errors[0].message }))
           return
         }
         const hs = result.meta.fields || []
@@ -214,7 +218,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         setColCleanerName(cleanerCol)
         setStep(1)
       },
-      error: (err) => setParseError('Parse error: ' + err.message),
+      error: (err) => setParseError(t('errors.parseErrorPrefix', { message: err.message })),
     })
   }
 
@@ -234,7 +238,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
   function proceedToMatch() {
     if (!colPropName || !colCleanDate) {
-      setParseError('Please map both Property Name and Clean Date columns.')
+      setParseError(t('errors.missingMapping'))
       return
     }
     setParseError('')
@@ -250,7 +254,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
       const date = parseDate(rawDate)
       if (!date) {
-        errors.push(`Row ${i + 2}: could not parse date "${rawDate}"`)
+        errors.push(t('errors.unparsableDate', { row: i + 2, date: rawDate }))
         continue
       }
 
@@ -261,7 +265,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     }
 
     if (Object.keys(byName).length === 0) {
-      setParseError('No valid records found. Check your column mapping.')
+      setParseError(t('errors.noValidRecords'))
       return
     }
 
@@ -290,7 +294,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     // Validate new property names
     const invalidNew = matchEntries.filter(e => e.isNew && !e.newPropertyName.trim())
     if (invalidNew.length > 0) {
-      setParseError(`Please enter a name for ${invalidNew.length} new ${invalidNew.length === 1 ? 'property' : 'properties'}.`)
+      setParseError(t('errors.missingNewNames', { count: invalidNew.length }))
       return
     }
 
@@ -319,7 +323,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     }
 
     if (groups.length === 0) {
-      setParseError('No matched or new properties to import. Please match at least one property.')
+      setParseError(t('errors.noMatchedOrNew'))
       return
     }
 
@@ -387,7 +391,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               .single()
 
             if (createError2) {
-              errors.push(`Failed to create "${group.matchedPropertyName}": ${createError2.message}`)
+              errors.push(t('errors.createFailed', { name: group.matchedPropertyName!, message: createError2.message }))
               continue
             }
             propertyId = newProp2.id
@@ -452,7 +456,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               })
               .eq('id', propertyId)
             if (propError2) {
-              errors.push(`Update failed for ${group.matchedPropertyName}: ${propError2.message}`)
+              errors.push(t('errors.updateFailed', { name: group.matchedPropertyName!, message: propError2.message }))
               continue
             }
           }
@@ -466,7 +470,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
         successCount++
       } catch (e: any) {
-        errors.push(`Unexpected error for ${group.matchedPropertyName}: ${e.message}`)
+        errors.push(t('errors.unexpectedError', { name: group.matchedPropertyName!, message: e.message }))
       }
     }
 
@@ -488,17 +492,17 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     setImporting(false)
     setCreatedNewProperties(newlyCreated)
 
-    const dedupNote = totalSkipped > 0 ? ` (${totalSkipped} duplicate${totalSkipped > 1 ? 's' : ''} skipped)` : ''
-    const recordNote = totalInserted > 0 ? ` · ${totalInserted} new clean records${dedupNote}` : dedupNote ? ` · ${dedupNote.trim()}` : ''
+    const dedupNote = totalSkipped > 0 ? ` (${t('toast.duplicatesSkipped', { count: totalSkipped })})` : ''
+    const recordNote = totalInserted > 0 ? ` · ${t('toast.newCleanRecords', { count: totalInserted })}${dedupNote}` : dedupNote ? ` · ${dedupNote.trim()}` : ''
 
     if (errors.length > 0) {
       toast({
-        title: `Imported ${successCount} of ${propertyGroups.length} properties`,
+        title: t('toast.importedOf', { success: successCount, total: propertyGroups.length }),
         description: errors.slice(0, 3).join('; '),
         variant: successCount === 0 ? 'destructive' : 'default',
       })
     } else {
-      toast({ title: `${successCount} ${successCount === 1 ? 'property' : 'properties'} updated${recordNote}` })
+      toast({ title: `${t('toast.updatedNoun', { count: successCount })}${recordNote}` })
     }
 
     if (newlyCreated.length > 0) {
@@ -528,7 +532,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
     <Dialog open onOpenChange={open => { if (!open) onClose() }}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
         <DialogHeader>
-          <DialogTitle>Import Cleaning History</DialogTitle>
+          <DialogTitle>{t('title')}</DialogTitle>
         </DialogHeader>
 
         {step < 4 && <StepIndicator current={step} />}
@@ -545,8 +549,8 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
               onClick={() => fileInputRef.current?.click()}
             >
               <Upload className="w-8 h-8 mx-auto mb-3 text-muted-foreground" />
-              <p className="text-sm font-medium">Drop a CSV file here or click to browse</p>
-              <p className="text-xs text-muted-foreground mt-1">Must include at least: property name, clean date</p>
+              <p className="text-sm font-medium">{t('upload.dropHint')}</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('upload.requirements')}</p>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -569,22 +573,22 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         {step === 1 && (
           <div className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Loaded <strong>{allRows.length}</strong> rows from <strong>{fileName}</strong>. Map the columns below.
+              {t('mapping.loadedRows', { count: allRows.length, fileName })}
             </p>
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Property Name *', value: colPropName, setter: setColPropName },
-                { label: 'Clean Date *', value: colCleanDate, setter: setColCleanDate },
-                { label: 'Cleaner Name', value: colCleanerName, setter: setColCleanerName },
+                { label: t('mapping.propertyName'), value: colPropName, setter: setColPropName },
+                { label: t('mapping.cleanDate'), value: colCleanDate, setter: setColCleanDate },
+                { label: t('mapping.cleanerName'), value: colCleanerName, setter: setColCleanerName },
               ].map(({ label, value, setter }) => (
                 <div key={label}>
                   <label className="text-xs font-medium text-muted-foreground block mb-1">{label}</label>
                   <Select value={value || '__none__'} onValueChange={v => setter(v === '__none__' ? '' : v)}>
                     <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="— not mapped —" />
+                      <SelectValue placeholder={t('mapping.notMapped')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__" className="text-xs">— not mapped —</SelectItem>
+                      <SelectItem value="__none__" className="text-xs">{t('mapping.notMapped')}</SelectItem>
                       {headers.map(h => (
                         <SelectItem key={h} value={h} className="text-xs">{h}</SelectItem>
                       ))}
@@ -596,7 +600,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
 
             {/* Preview table */}
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Preview (first {preview.length} rows)</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">{t('mapping.previewTitle', { count: preview.length })}</p>
               <div className="overflow-auto rounded border border-border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/60">
@@ -634,27 +638,27 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
             <div className="flex items-center gap-4 text-xs flex-wrap">
               <span className="flex items-center gap-1.5 text-green-700 dark:text-green-400">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                {matchedCount} matched
+                {t('match.matchedCount', { count: matchedCount })}
               </span>
               {newCount > 0 && (
                 <span className="flex items-center gap-1.5 text-primary">
                   <PlusCircle className="w-3.5 h-3.5" />
-                  {newCount} new {newCount === 1 ? 'property' : 'properties'}
+                  {t('match.newCount', { count: newCount })}
                 </span>
               )}
               {unmatchedCount > 0 && (
                 <span className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  {unmatchedCount} unmatched - assign, create new, or skip
+                  {t('match.unmatchedCount', { count: unmatchedCount })}
                 </span>
               )}
             </div>
 
             {matchErrors.length > 0 && (
               <div className="text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2">
-                <p className="font-medium mb-1">{matchErrors.length} rows skipped due to unparseable dates:</p>
+                <p className="font-medium mb-1">{t('match.errorsHeader', { count: matchErrors.length })}</p>
                 {matchErrors.slice(0, 5).map((e, i) => <p key={i}>{e}</p>)}
-                {matchErrors.length > 5 && <p>…and {matchErrors.length - 5} more</p>}
+                {matchErrors.length > 5 && <p>{t('match.moreErrors', { count: matchErrors.length - 5 })}</p>}
               </div>
             )}
 
@@ -663,14 +667,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                 <div key={i} className="flex items-center gap-3 rounded border border-border/50 px-3 py-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-medium truncate">{entry.csvName}</p>
-                    <p className="text-xs text-muted-foreground">{entry.records.length} records</p>
+                    <p className="text-xs text-muted-foreground">{t('match.recordsCount', { count: entry.records.length })}</p>
                   </div>
                   <div className="w-64 shrink-0">
                     {entry.isNew ? (
                       <div className="flex items-center gap-1">
                         <Input
                           className="h-7 text-xs flex-1"
-                          placeholder="Enter property name…"
+                          placeholder={t('match.newPropertyPlaceholder')}
                           value={entry.newPropertyName}
                           autoFocus
                           onChange={e => {
@@ -682,7 +686,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                         />
                         <button
                           className="text-muted-foreground hover:text-foreground shrink-0"
-                          title="Cancel new property"
+                          title={t('match.cancelNewTooltip')}
                           onClick={() => setMatchEntries(prev => prev.map((me, j) =>
                             j === i ? { ...me, isNew: false, newPropertyName: '' } : me
                           ))}
@@ -708,14 +712,14 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                         }}
                       >
                         <SelectTrigger className={`h-7 text-xs ${!entry.propertyId ? 'border-amber-400 text-amber-600' : ''}`}>
-                          <SelectValue placeholder="— skip —" />
+                          <SelectValue placeholder={t('match.skipOption')} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="__none__" className="text-xs text-muted-foreground">— skip —</SelectItem>
+                          <SelectItem value="__none__" className="text-xs text-muted-foreground">{t('match.skipOption')}</SelectItem>
                           <SelectItem value="__new__" className="text-xs text-primary font-medium">
                             <span className="flex items-center gap-1.5">
                               <PlusCircle className="w-3 h-3" />
-                              New Property
+                              {t('match.newPropertyOption')}
                             </span>
                           </SelectItem>
                           <div className="h-px bg-border my-1" />
@@ -750,13 +754,13 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-2 text-xs">
               <p>
-                This will update <strong>{existingGroups.length}</strong> existing {existingGroups.length === 1 ? 'property' : 'properties'}
-                {newGroups.length > 0 && <span> and create <strong>{newGroups.length}</strong> new {newGroups.length === 1 ? 'property' : 'properties'}</span>}
-                {unmatchedCount > 0 && <span className="text-muted-foreground"> ({unmatchedCount} skipped)</span>}.
+                {t('summary.willUpdatePrefix')} <strong>{existingGroups.length}</strong> {t('summary.existingNoun', { count: existingGroups.length })}
+                {newGroups.length > 0 && <span> {t('summary.andCreatePrefix')} <strong>{newGroups.length}</strong> {t('summary.newNoun', { count: newGroups.length })}</span>}
+                {unmatchedCount > 0 && <span className="text-muted-foreground"> {t('summary.skippedFragment', { count: unmatchedCount })}</span>}.
               </p>
               {summaryFirstClean && summaryLastClean && (
                 <p className="text-muted-foreground text-xs">
-                  Clean date range: <strong className="text-foreground">{fmtDate(summaryFirstClean)}</strong> to <strong className="text-foreground">{fmtDate(summaryLastClean)}</strong>
+                  {t('summary.dateRangeLabel')} <strong className="text-foreground">{fmtDate(summaryFirstClean)}</strong> {t('summary.dateRangeTo')} <strong className="text-foreground">{fmtDate(summaryLastClean)}</strong>
                 </p>
               )}
             </div>
@@ -766,17 +770,17 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                 <div key={i} className="flex items-center gap-3 text-xs px-2 py-1.5 rounded hover:bg-muted/30">
                   {g.isNew && <PlusCircle className="w-3 h-3 text-primary shrink-0" />}
                   <span className="flex-1 font-medium truncate">{g.matchedPropertyName}</span>
-                  <span className="text-muted-foreground">{g.records.length} cleans</span>
-                  <span className="tabular-nums text-muted-foreground">{g.cleansPerMonth}/mo</span>
-                  <span className="text-muted-foreground">→ {g.inferredFrequency.replace('_', ' ')}</span>
-                  <span className="text-muted-foreground">first: {fmtDate(g.firstClean)}</span>
+                  <span className="text-muted-foreground">{t('summary.cleansCount', { count: g.records.length })}</span>
+                  <span className="tabular-nums text-muted-foreground">{g.cleansPerMonth}{t('summary.perMonthSuffix')}</span>
+                  <span className="text-muted-foreground">→ {t(`frequency.${g.inferredFrequency}`, undefined, g.inferredFrequency.replace('_', ' '))}</span>
+                  <span className="text-muted-foreground">{t('summary.firstLabel')} {fmtDate(g.firstClean)}</span>
                 </div>
               ))}
             </div>
 
             <p className="text-xs text-muted-foreground">
-              For each property: <strong>first clean date</strong>, <strong>cleans/month</strong> (exact from CSV), and <strong>frequency</strong> will be updated.
-              {newGroups.length > 0 && ' New properties will be added as Active.'}
+              {t('summary.explanation.prefix')} <strong>{t('summary.explanation.firstCleanDate')}</strong>, <strong>{t('summary.explanation.cleansPerMonth')}</strong> {t('summary.explanation.middle')} <strong>{t('summary.explanation.frequency')}</strong> {t('summary.explanation.suffix')}
+              {newGroups.length > 0 && ` ${t('summary.explanation.newPropertiesNote')}`}
             </p>
           </div>
         )}
@@ -786,13 +790,15 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
               <CheckCircle2 className="w-5 h-5 shrink-0" />
-              <p className="text-sm font-medium">Import complete</p>
+              <p className="text-sm font-medium">{t('done.title')}</p>
             </div>
 
             {createdNewProperties.length > 0 && (
               <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-3">
                 <p className="text-sm font-medium">
-                  {createdNewProperties.length} new {createdNewProperties.length === 1 ? 'property was' : 'properties were'} created:
+                  {createdNewProperties.length === 1
+                    ? t('done.createdOneMessage', { count: createdNewProperties.length })
+                    : t('done.createdManyMessage', { count: createdNewProperties.length })}
                 </p>
                 <ul className="space-y-1">
                   {createdNewProperties.map((name, i) => (
@@ -803,7 +809,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
                   ))}
                 </ul>
                 <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
-                  These properties have been added with the cleaning frequency inferred from your CSV. Open them from the Pipeline or Property List to fill in Client Charged, costs, client info, and other details.
+                  {t('done.footnote')}
                 </p>
               </div>
             )}
@@ -815,36 +821,36 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
         <DialogFooter className="gap-2 mt-2 flex-shrink-0 border-t border-border pt-3">
           {step > 0 && step < 4 && !importing && (
             <Button variant="outline" size="sm" onClick={() => { setParseError(''); setStep(s => s - 1) }}>
-              Back
+              {t('common.actions.back', undefined, 'Back')}
             </Button>
           )}
           {step < 4 && (
             <Button variant="outline" size="sm" onClick={onClose} disabled={importing}>
-              Cancel
+              {t('common.actions.cancel', undefined, 'Cancel')}
             </Button>
           )}
           {step === 1 && (
             <Button size="sm" onClick={proceedToMatch}>
-              Next: Match Properties
+              {t('buttons.nextMatch')}
             </Button>
           )}
           {step === 2 && (
             <Button size="sm" onClick={proceedToSummary}>
-              Next: Review Summary
+              {t('buttons.nextSummary')}
             </Button>
           )}
           {step === 3 && (
             <Button size="sm" onClick={executeImport} disabled={importing} data-testid="button-confirm-import">
               {importing ? (
-                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Importing…</>
+                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> {t('buttons.importing')}</>
               ) : (
-                `Import ${propertyGroups.length} ${propertyGroups.length === 1 ? 'Property' : 'Properties'}`
+                t('buttons.importCount', { count: propertyGroups.length })
               )}
             </Button>
           )}
           {step === 4 && (
             <Button size="sm" onClick={onImportComplete}>
-              Done
+              {t('buttons.done')}
             </Button>
           )}
         </DialogFooter>

@@ -31,6 +31,8 @@ import { useAuth } from '@/lib/auth'
 import Papa from 'papaparse'
 import { profitTier, profitColorClass, PROFIT_THRESHOLDS } from '@/lib/profit-colors'
 import { Link } from 'wouter'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 
 type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'est_laundry' | 'est_consumables' | 'total_estimated_cost' | 'estimated_profit' | 'profit_percentage' | 'break_even_ce'
 
@@ -62,6 +64,7 @@ function ProfitBadge({ pct }: { pct: number | null }) {
 }
 
 function StageBadge({ stage }: { stage: string | null }) {
+  const { t } = useLocale()
   if (!stage) return <span className="text-muted-foreground text-xs">-</span>
   // Map pipeline stages to semantic tones; Active→success, Onboarding→info,
   // Offboarding→warning, Lead/Quote→neutral, Offboarded→neutral.
@@ -74,7 +77,7 @@ function StageBadge({ stage }: { stage: string | null }) {
     Offboarded: 'neutral',
   }
   const tone = toneMap[stage] ?? 'neutral'
-  return <StatusBadge tone={tone}>{stage}</StatusBadge>
+  return <StatusBadge tone={tone}>{t(`common.stage.${slugify(stage)}`, undefined, stage)}</StatusBadge>
 }
 
 function fmt(n: number | null | undefined) {
@@ -215,6 +218,8 @@ function EditDate({
 function EditToggle({
   label, value, onChange, canEdit, testId,
 }: { label: string; value: boolean | null | undefined; onChange: (next: boolean) => void; canEdit: boolean; testId?: string }) {
+  const { t } = useLocale()
+  const yesNo = value ? t('common.actions.yes') : t('common.actions.no')
   return (
     <div>
       <span className="text-muted-foreground block">{label}</span>
@@ -225,10 +230,10 @@ function EditToggle({
           className={`px-2 py-0.5 rounded-md border text-2xs font-medium transition-colors ${value ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}
           data-testid={testId}
         >
-          {value ? 'Yes' : 'No'}
+          {yesNo}
         </button>
       ) : (
-        <span className="font-medium">{value ? 'Yes' : 'No'}</span>
+        <span className="font-medium">{yesNo}</span>
       )}
     </div>
   )
@@ -245,6 +250,7 @@ function EditSelect({
   placeholder?: string
   testId?: string
 }) {
+  const { t } = useLocale('costTracking')
   return (
     <div>
       <span className="text-muted-foreground block">{label}</span>
@@ -257,7 +263,7 @@ function EditSelect({
             <SelectValue placeholder={placeholder} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="__null__" className="text-xs italic text-muted-foreground">- None -</SelectItem>
+            <SelectItem value="__null__" className="text-xs italic text-muted-foreground">{t('detail.noneOption')}</SelectItem>
             {options.map(o => (
               <SelectItem key={o.value} value={o.value} className="text-xs">{o.label}</SelectItem>
             ))}
@@ -311,6 +317,7 @@ function SetupStatusTiles({
   canEdit: boolean
   onUpdate: (field: string, value: number | string | boolean | null) => void
 }) {
+  const { t } = useLocale('costTracking')
   const bedTotal =
     (Number(property.king_beds) || 0) +
     (Number(property.queen_beds) || 0) +
@@ -322,13 +329,19 @@ function SetupStatusTiles({
   const hasBathmats = property.bathmats != null && Number(property.bathmats) > 0
   const hasBedConfig = bedTotal > 0
   const linenMissing: string[] = []
-  if (!hasBedConfig) linenMissing.push('bed counts')
+  if (!hasBedConfig) linenMissing.push(t('setup.linen.missingBedCounts'))
   if (!hasAllCoreTowels) {
-    for (const t of coreTowels) {
-      if (property[t] == null || Number(property[t]) === 0) linenMissing.push(t.replace('_', ' '))
+    // Loop var renamed to `towel` (not `t`) so it doesn't shadow the translator above.
+    const towelMissingKey: Record<typeof coreTowels[number], string> = {
+      bath_towels: 'missingBathTowels',
+      hand_towels: 'missingHandTowels',
+      washcloths: 'missingWashcloths',
+    }
+    for (const towel of coreTowels) {
+      if (property[towel] == null || Number(property[towel]) === 0) linenMissing.push(t(`setup.linen.${towelMissingKey[towel]}`))
     }
   }
-  if (!hasBathmats && (Number(property.full_baths) || 0) > 0) linenMissing.push('bathmats')
+  if (!hasBathmats && (Number(property.full_baths) || 0) > 0) linenMissing.push(t('setup.linen.missingBathmats'))
   const linenStatus: 'complete' | 'partial' | 'missing' =
     !hasAnyTowel && !hasBedConfig
       ? 'missing'
@@ -354,7 +367,7 @@ function SetupStatusTiles({
   } as const
 
   function SetupBadge({ status }: { status: 'complete' | 'partial' | 'missing' }) {
-    const labels = { complete: 'Complete', partial: 'Partial', missing: 'Missing' }
+    const labels = { complete: t('setup.badges.complete'), partial: t('setup.badges.partial'), missing: t('setup.badges.missing') }
     return (
       <span data-testid={`setup-badge-${status}`}>
         <StatusBadge tone={STATUS_TONE_MAP[status]}>{labels[status]}</StatusBadge>
@@ -391,7 +404,7 @@ function SetupStatusTiles({
           href={href}
           className="text-2xs text-primary hover:underline inline-flex items-center gap-1 self-start mt-1"
         >
-          Open {title} <ExternalLink className="w-3 h-3" />
+          {t('setup.openLink', { title })} <ExternalLink className="w-3 h-3" />
         </Link>
       </div>
     )
@@ -462,81 +475,81 @@ function SetupStatusTiles({
   return (
     <div data-testid={`setup-status-tiles-${property.id}`}>
       <h4 className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-        Setup Status
+        {t('setup.heading')}
         {canEdit && (
           <span className="ml-2 text-2xs font-normal text-muted-foreground/70 normal-case tracking-normal">
-            · Click any value to edit
+            {t('setup.editHint')}
           </span>
         )}
       </h4>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile icon={BedDouble} title="Linen Setup" status={linenStatus} href="/linen-tracker" testId={`tile-linen-${property.id}`}>
+        <Tile icon={BedDouble} title={t('setup.linen.title')} status={linenStatus} href="/linen-tracker" testId={`tile-linen-${property.id}`}>
           <div className="grid grid-cols-2 gap-x-2 gap-y-1">
-            <span>King beds</span>
+            <span>{t('setup.linen.kingBeds')}</span>
             <NumCell field="king_beds" />
-            <span>Queen beds</span>
+            <span>{t('setup.linen.queenBeds')}</span>
             <NumCell field="queen_beds" />
-            <span>Full beds</span>
+            <span>{t('setup.linen.fullBeds')}</span>
             <NumCell field="full_beds" />
-            <span>Twin beds</span>
+            <span>{t('setup.linen.twinBeds')}</span>
             <NumCell field="twin_beds" />
-            <span>Bath towels</span>
+            <span>{t('setup.linen.bathTowels')}</span>
             <NumCell field="bath_towels" />
-            <span>Hand towels</span>
+            <span>{t('setup.linen.handTowels')}</span>
             <NumCell field="hand_towels" />
-            <span>Washcloths</span>
+            <span>{t('setup.linen.washcloths')}</span>
             <NumCell field="washcloths" />
-            <span>Bath mats</span>
+            <span>{t('setup.linen.bathMats')}</span>
             <NumCell field="bathmats" />
-            <span>Pool towels</span>
+            <span>{t('setup.linen.poolTowels')}</span>
             <NumCell field="pool_towels" />
           </div>
           {linenStatus !== 'complete' && linenMissing.length > 0 && (
-            <p className="text-2xs text-warning">Missing: {linenMissing.join(', ')}</p>
+            <p className="text-2xs text-warning">{t('setup.linen.missingPrefix', { items: linenMissing.join(', ') })}</p>
           )}
         </Tile>
 
-        <Tile icon={Lock} title="Lock Access Setup" status={lockStatus} href="/access-codes" testId={`tile-lock-${property.id}`}>
+        <Tile icon={Lock} title={t('setup.lock.title')} status={lockStatus} href="/access-codes" testId={`tile-lock-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-            <span>Auto code</span>
-            <span className="text-foreground text-right">{property.has_auto_code ? 'Yes' : 'No'}</span>
-            <span>Door code</span>
+            <span>{t('setup.lock.autoCode')}</span>
+            <span className="text-foreground text-right">{property.has_auto_code ? t('common.actions.yes') : t('common.actions.no')}</span>
+            <span>{t('setup.lock.doorCode')}</span>
             <TextCell field="door_code" />
-            <span>Other</span>
+            <span>{t('setup.lock.other')}</span>
             <TextCell field="other_codes" />
           </div>
           {lockStatus === 'missing' && (
             <p className="text-2xs text-warning">
-              Add at least one: auto code, door code, or other access info.
+              {t('setup.lock.missingHint')}
             </p>
           )}
         </Tile>
 
-        <Tile icon={Wifi} title="Wi-Fi Setup" status={wifiStatus} href="/access-codes" testId={`tile-wifi-${property.id}`}>
+        <Tile icon={Wifi} title={t('setup.wifi.title')} status={wifiStatus} href="/access-codes" testId={`tile-wifi-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-            <span>Wi-Fi info</span>
-            <TextCell field="wifi_info" placeholder="SSID / password / notes" />
+            <span>{t('setup.wifi.label')}</span>
+            <TextCell field="wifi_info" placeholder={t('setup.wifi.placeholder')} />
           </div>
           {!hasWifi && (
-            <p className="text-2xs text-warning">Add SSID and password (or unit instructions).</p>
+            <p className="text-2xs text-warning">{t('setup.wifi.missingHint')}</p>
           )}
         </Tile>
 
-        <Tile icon={Wind} title="AC Filter Setup" status={filterStatus} href="/ac-filters" testId={`tile-filter-${property.id}`}>
+        <Tile icon={Wind} title={t('setup.acFilter.title')} status={filterStatus} href="/ac-filters" testId={`tile-filter-${property.id}`}>
           <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
-            <span>Filter size</span>
-            <TextCell field="filter_size" placeholder='e.g. 16x25x1' />
-            <span>Last change</span>
+            <span>{t('setup.acFilter.filterSize')}</span>
+            <TextCell field="filter_size" placeholder={t('setup.acFilter.filterSizePlaceholder')} />
+            <span>{t('setup.acFilter.lastChange')}</span>
             <DateCell field="last_filter_changed" />
             {property.next_filter_due && (
               <>
-                <span>Next due</span>
+                <span>{t('setup.acFilter.nextDue')}</span>
                 <span className="text-foreground text-right">{String(property.next_filter_due).slice(0, 10)}</span>
               </>
             )}
           </div>
           {filterStatus === 'missing' && (
-            <p className="text-2xs text-warning">Filter size required for filter scheduling.</p>
+            <p className="text-2xs text-warning">{t('setup.acFilter.missingHint')}</p>
           )}
         </Tile>
       </div>
@@ -545,6 +558,7 @@ function SetupStatusTiles({
 }
 
 function AssignCleanerInline({ propertyId }: { propertyId: string }) {
+  const { t } = useLocale('costTracking')
   const { toast } = useToast()
   const qc = useQueryClient()
   const [date, setDate] = useState('')
@@ -564,23 +578,23 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/all-assignments'] })
-      toast({ title: 'Assignment added' })
+      toast({ title: t('toasts.assignmentAdded') })
       setDate('')
       setCleanerId('')
     },
-    onError: (error: any) => toast({ title: 'Failed to add assignment', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.assignmentFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   return (
     <div className="mt-3 pt-2 border-t border-border/40">
-      <span className="text-muted-foreground block mb-1 text-xs">Assign Cleaner</span>
+      <span className="text-muted-foreground block mb-1 text-xs">{t('assignCleaner.label')}</span>
       <div className="flex items-center gap-2">
         <select
           value={cleanerId}
           onChange={e => setCleanerId(e.target.value)}
           className="h-6 text-xs border border-input rounded px-1 bg-background flex-1"
         >
-          <option value="">Select cleaner…</option>
+          <option value="">{t('assignCleaner.selectPlaceholder')}</option>
           {(cleaners || []).map((c: any) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
         </select>
         <input
@@ -596,7 +610,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
           disabled={!cleanerId || !date || isPending}
           onClick={() => addAssignment()}
         >
-          Add
+          {t('assignCleaner.add')}
         </Button>
       </div>
     </div>
@@ -604,6 +618,7 @@ function AssignCleanerInline({ propertyId }: { propertyId: string }) {
 }
 
 export default function CostTrackingPage() {
+  const { t } = useLocale('costTracking')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
@@ -781,11 +796,11 @@ export default function CostTrackingPage() {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
-      toast({ title: 'Stage updated' })
+      toast({ title: t('toasts.stageUpdated') })
     },
     onError: (e: any, _, ctx: any) => {
       if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
-      toast({ title: 'Stage change failed: ' + (e?.message || 'Unknown error'), variant: 'destructive' })
+      toast({ title: t('toasts.stageChangeFailed', { error: e?.message || t('toasts.unknownError') }), variant: 'destructive' })
     },
   })
 
@@ -907,11 +922,11 @@ export default function CostTrackingPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       flashCell(`${id}-${field}`)
-      toast({ title: 'Saved' })
+      toast({ title: t('toasts.saved') })
     },
     onError: (error: any, __, ctx: any) => {
       if (ctx?.snapshot) setLocalProperties(ctx.snapshot)
-      toast({ title: 'Update failed', description: error?.message, variant: 'destructive' })
+      toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' })
     },
   })
 
@@ -937,13 +952,13 @@ export default function CostTrackingPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       setConfirmArchiveId(null)
       toast({
-        title: `Archived ${prop?.name ?? 'property'}`,
-        description: 'Recoverable for 30 days from the Master List archive panel.',
+        title: t('toasts.archived', { name: prop?.name ?? t('toasts.archivedFallbackName') }),
+        description: t('toasts.archivedDescription'),
       })
     },
     onError: (e: any) => {
       setConfirmArchiveId(null)
-      toast({ title: 'Archive failed: ' + (e?.message || 'Unknown error'), variant: 'destructive' })
+      toast({ title: t('toasts.archiveFailed', { error: e?.message || t('toasts.unknownError') }), variant: 'destructive' })
     },
   })
 
@@ -951,10 +966,10 @@ export default function CostTrackingPage() {
     const { error } = await supabase.from('properties')
       .update({ est_laundry: null, est_consumables: null })
       .eq('id', Number(id))
-    if (error) { toast({ title: 'Reset failed', description: error.message, variant: 'destructive' }); return }
+    if (error) { toast({ title: t('toasts.resetFailed'), description: error.message, variant: 'destructive' }); return }
     invalidateAllPropertyQueries(qc)
-    toast({ title: 'Row reset to defaults' })
-  }, [qc, toast])
+    toast({ title: t('toasts.rowReset') })
+  }, [qc, toast, t])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -1026,15 +1041,15 @@ export default function CostTrackingPage() {
 
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
-      'Property': p.name || '',
-      'Status': p.stage_name || '',
-      'Client Charged': p.ce_charged ?? '',
-      'Cleaner Pay': p.cleaner_pay ?? '',
-      'Laundry': p.est_laundry ?? '',
-      'Consumables': p.est_consumables ?? '',
-      'Total Cost': p.total_estimated_cost ?? '',
-      'Profit': p.estimated_profit ?? '',
-      'Profit %': p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
+      [t('csv.property')]: p.name || '',
+      [t('csv.status')]: p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '',
+      [t('csv.clientCharged')]: p.ce_charged ?? '',
+      [t('csv.cleanerPay')]: p.cleaner_pay ?? '',
+      [t('csv.laundry')]: p.est_laundry ?? '',
+      [t('csv.consumables')]: p.est_consumables ?? '',
+      [t('csv.totalCost')]: p.total_estimated_cost ?? '',
+      [t('csv.profit')]: p.estimated_profit ?? '',
+      [t('csv.profitPercent')]: p.profit_percentage != null ? `${p.profit_percentage.toFixed(1)}%` : '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -1042,7 +1057,7 @@ export default function CostTrackingPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'cost-tracking.csv'; a.click()
     URL.revokeObjectURL(url)
-    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
+    toast({ title: t('toasts.csvExported'), description: t('toasts.csvExportedDescription', { count: rows.length }) })
   }
 
   async function bulkSaveAll() {
@@ -1053,11 +1068,11 @@ export default function CostTrackingPage() {
         )
       )
       invalidateAllPropertyQueries(qc)
-      toast({ title: `Updated ${Object.keys(bulkChanges).length} properties` })
+      toast({ title: t('toasts.bulkUpdated', { count: Object.keys(bulkChanges).length }) })
       setBulkEditMode(false)
       setBulkChanges({})
     } catch (e: any) {
-      toast({ title: 'Bulk update failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.bulkUpdateFailed'), description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -1070,8 +1085,8 @@ export default function CostTrackingPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Master List · Cost Tracking"
-        subtitle="Unified property + cost view. Click cells to edit financials. Expand a row for full Master List details (address, beds/baths, codes, linens, dates)."
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         beneath={!isLoading && Object.keys(stageTally).length > 0 ? (
           <div className="flex items-center gap-1 rounded-xl bg-muted/60 p-1 overflow-x-auto w-fit max-w-full" data-testid="stage-tally">
             <button
@@ -1080,30 +1095,31 @@ export default function CostTrackingPage() {
               className={`rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${statusFilter === 'all' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
               data-testid="tally-all"
             >
-              All <span className="tabular-nums text-muted-foreground">{displayProperties.length}</span>
+              {t('filters.all')} <span className="tabular-nums text-muted-foreground">{displayProperties.length}</span>
             </button>
             {(['Active', 'Onboarding', 'Offboarding', 'Lead', 'Quote', 'Offboarded'] as const).map(stage => {
               const n = stageTally[stage] || 0
               if (n === 0) return null
               const active = statusFilter === stage
+              const stageLabel = t(`common.stage.${slugify(stage)}`, undefined, stage)
               return (
                 <button
                   key={stage}
                   type="button"
                   onClick={() => { setStatusFilter(active ? 'all' : stage); setPage(1) }}
                   className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-colors ${active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  title={`Filter to ${stage}`}
+                  title={t('filters.stageTooltip', { stage: stageLabel })}
                   data-testid={`tally-${stage}`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${STAGE_DOT[stage] || 'bg-muted-foreground/50'}`} />
-                  {stage} <span className="tabular-nums text-muted-foreground">{n}</span>
+                  {stageLabel} <span className="tabular-nums text-muted-foreground">{n}</span>
                 </button>
               )
             })}
           </div>
         ) : undefined}
         actions={<div className="flex items-center gap-2 flex-wrap">
-          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title="Hide Lead, Quote, and Offboarded properties">
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none" title={t('page.showActiveOnlyTooltip')}>
             <input
               type="checkbox"
               checked={!showAllStages}
@@ -1111,16 +1127,16 @@ export default function CostTrackingPage() {
               className="h-3.5 w-3.5"
               data-testid="checkbox-all-stages"
             />
-            Show active only
+            {t('page.showActiveOnly')}
           </label>
           <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
             <SelectTrigger className="h-8 w-44 text-sm" data-testid="select-status-filter">
-              <SelectValue placeholder="All Statuses" />
+              <SelectValue placeholder={t('page.allStatuses')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="all">{t('page.allStatuses')}</SelectItem>
               {STATUS_OPTIONS.map(s => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
+                <SelectItem key={s} value={s}>{t(`common.stage.${slugify(s)}`, undefined, s)}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1128,7 +1144,7 @@ export default function CostTrackingPage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search…"
+              placeholder={t('page.searchPlaceholder')}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-cost"
@@ -1144,7 +1160,7 @@ export default function CostTrackingPage() {
             )}
           </div>
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 gap-1.5 text-xs" data-testid="button-export-csv">
-            <Download className="w-3.5 h-3.5" /> Export CSV
+            <Download className="w-3.5 h-3.5" /> {t('common.actions.exportCsv')}
           </Button>
           <Button
             variant={bulkEditMode ? "default" : "outline"}
@@ -1153,7 +1169,7 @@ export default function CostTrackingPage() {
             className="h-8 gap-1.5 text-xs"
             data-testid="button-bulk-edit"
           >
-            {bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit'}
+            {bulkEditMode ? t('page.exitBulkEdit') : t('page.bulkEdit')}
           </Button>
         </div>}
       />
@@ -1165,18 +1181,18 @@ export default function CostTrackingPage() {
         </div>
       ) : totals ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-          <Kpi icon={DollarSignIcon} label="Client Charged" value={fmtCompact(totals.ceTotal)} sub={`${filtered.length} properties`} accent="primary" />
-          <Kpi icon={Wallet} label="Total Cost" value={fmtCompact(totals.costTotal)} sub="Estimated per turn" accent="warning" />
+          <Kpi icon={DollarSignIcon} label={t('tiles.clientCharged')} value={fmtCompact(totals.ceTotal)} sub={t('tiles.clientChargedSub', { count: filtered.length })} accent="primary" />
+          <Kpi icon={Wallet} label={t('tiles.totalCost')} value={fmtCompact(totals.costTotal)} sub={t('tiles.totalCostSub')} accent="warning" />
           <Kpi
             icon={TrendingUp}
-            label="Net Profit"
+            label={t('tiles.netProfit')}
             value={fmtCompact(totals.profitTotal)}
-            sub="Across filtered set"
+            sub={t('tiles.netProfitSub')}
             accent={totals.profitTotal >= 0 ? 'success' : 'destructive'}
           />
           <Kpi
             icon={Percent}
-            label="Avg Margin"
+            label={t('tiles.avgMargin')}
             value={`${totals.avgProfitPct.toFixed(1)}%`}
             accent={profitTier(totals.avgProfitPct) === 'high' ? 'success' : profitTier(totals.avgProfitPct) === 'mid' ? 'warning' : 'destructive'}
           >
@@ -1210,7 +1226,7 @@ export default function CostTrackingPage() {
         {isLoading ? (
           [...Array(6)].map((_, i) => <Skeleton key={i} className="h-40 rounded-2xl" />)
         ) : filtered.length === 0 ? (
-          <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
+          <EmptyState icon={DollarSignIcon} title={t('page.emptyTitle')} description={t('page.emptyDescription')} />
         ) : (
           paged.map((p: any) => {
             const { label: clientLabel, paymentMethod } = resolveClient(p)
@@ -1241,7 +1257,7 @@ export default function CostTrackingPage() {
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
-                  <MobileField label="Client Charged">
+                  <MobileField label={t('mobile.clientCharged')}>
                     <InlineEdit
                       value={p.ce_charged}
                       type="number"
@@ -1250,7 +1266,7 @@ export default function CostTrackingPage() {
                       testId={`mobile-ce-${p.id}`}
                     />
                   </MobileField>
-                  <MobileField label="Cleaner Pay">
+                  <MobileField label={t('mobile.cleanerPay')}>
                     <InlineEdit
                       value={p.cleaner_pay}
                       type="number"
@@ -1259,7 +1275,7 @@ export default function CostTrackingPage() {
                       testId={`mobile-pay-${p.id}`}
                     />
                   </MobileField>
-                  <MobileField label="Laundry">
+                  <MobileField label={t('mobile.laundry')}>
                     <InlineEdit
                       value={p.est_laundry}
                       type="number"
@@ -1268,7 +1284,7 @@ export default function CostTrackingPage() {
                       testId={`mobile-laundry-${p.id}`}
                     />
                   </MobileField>
-                  <MobileField label="Consumables">
+                  <MobileField label={t('mobile.consumables')}>
                     <InlineEdit
                       value={p.est_consumables}
                       type="number"
@@ -1277,10 +1293,10 @@ export default function CostTrackingPage() {
                       testId={`mobile-consumables-${p.id}`}
                     />
                   </MobileField>
-                  <MobileField label="Total Cost">
+                  <MobileField label={t('mobile.totalCost')}>
                     <span className="tabular-nums font-medium">{fmt(p.total_estimated_cost)}</span>
                   </MobileField>
-                  <MobileField label="Profit">
+                  <MobileField label={t('mobile.profit')}>
                     <span className={`tabular-nums font-medium ${(p.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>{fmt(p.estimated_profit)}</span>
                   </MobileField>
                 </div>
@@ -1301,23 +1317,23 @@ export default function CostTrackingPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
-              <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}><span className="pl-6">Property</span> <SortIcon col="name" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Status</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Address</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Bd / Ba</th>
-              <th className={thCls} onClick={() => toggleSort('ce_charged')}>Client Charged <SortIcon col="ce_charged" /></th>
-              <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>Cleaner Pay <SortIcon col="cleaner_pay" /></th>
-              <th className={thCls} onClick={() => toggleSort('est_laundry')} title="Formula: beds × 11.5 lbs × $0.69/lb (≈ $7.94 per bed). Editable per row.">Laundry <SortIcon col="est_laundry" /></th>
-              <th className={thCls} onClick={() => toggleSort('est_consumables')} title="Formula: (baths × (bath + TP)) + (kitchens × kitchen) + (beds × trash bag) + (hot tub chems). Rates from Settings. Editable per row.">Consumables <SortIcon col="est_consumables" /></th>
-              <th className={thCls}>Inspection</th>
-              <th className={thCls}>Trash</th>
-              <th className={thCls} onClick={() => toggleSort('total_estimated_cost')}>Total Cost <SortIcon col="total_estimated_cost" /></th>
-              <th className={thCls} onClick={() => toggleSort('estimated_profit')}>Profit <SortIcon col="estimated_profit" /></th>
-              <th className={thCls} onClick={() => toggleSort('profit_percentage')}>Profit % <SortIcon col="profit_percentage" /></th>
-              <th className={thCls} onClick={() => toggleSort('break_even_ce')} title={`CE needed to break even at ${Math.round(breakEvenMargin * 100)}% margin`}>B/E CE <SortIcon col="break_even_ce" /></th>
-              <th className={thCls} title="$0.30 / sq ft">DC Cost</th>
-              <th className={thCls} title="3× Client Charged">DC Income</th>
-              <th className={thCls} title="DC Income − DC Cost">DC Profit</th>
+              <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}><span className="pl-6">{t('table.property')}</span> <SortIcon col="name" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.status')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.address')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.bdBa')}</th>
+              <th className={thCls} onClick={() => toggleSort('ce_charged')}>{t('table.clientCharged')} <SortIcon col="ce_charged" /></th>
+              <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>{t('table.cleanerPay')} <SortIcon col="cleaner_pay" /></th>
+              <th className={thCls} onClick={() => toggleSort('est_laundry')} title={t('table.laundryTooltip')}>{t('table.laundry')} <SortIcon col="est_laundry" /></th>
+              <th className={thCls} onClick={() => toggleSort('est_consumables')} title={t('table.consumablesTooltip')}>{t('table.consumables')} <SortIcon col="est_consumables" /></th>
+              <th className={thCls}>{t('table.inspection')}</th>
+              <th className={thCls}>{t('table.trash')}</th>
+              <th className={thCls} onClick={() => toggleSort('total_estimated_cost')}>{t('table.totalCost')} <SortIcon col="total_estimated_cost" /></th>
+              <th className={thCls} onClick={() => toggleSort('estimated_profit')}>{t('table.profit')} <SortIcon col="estimated_profit" /></th>
+              <th className={thCls} onClick={() => toggleSort('profit_percentage')}>{t('table.profitPercent')} <SortIcon col="profit_percentage" /></th>
+              <th className={thCls} onClick={() => toggleSort('break_even_ce')} title={t('table.beCeTooltip', { pct: Math.round(breakEvenMargin * 100) })}>{t('table.beCe')} <SortIcon col="break_even_ce" /></th>
+              <th className={thCls} title={t('table.dcCostTooltip')}>{t('table.dcCost')}</th>
+              <th className={thCls} title={t('table.dcIncomeTooltip')}>{t('table.dcIncome')}</th>
+              <th className={thCls} title={t('table.dcProfitTooltip')}>{t('table.dcProfit')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1332,7 +1348,7 @@ export default function CostTrackingPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={17}>
-                  <EmptyState icon={DollarSignIcon} title="No properties found" description="No operational properties match your current filters." />
+                  <EmptyState icon={DollarSignIcon} title={t('page.emptyTitle')} description={t('page.emptyDescription')} />
                 </td>
               </tr>
             ) : (
@@ -1373,8 +1389,8 @@ export default function CostTrackingPage() {
                           <button
                             onClick={() => openPropertyModal(p.id)}
                             className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 p-0.5 rounded hover:bg-muted"
-                            title="Open full property editor"
-                            aria-label="Open full property editor"
+                            title={t('table.openFullEditor')}
+                            aria-label={t('table.openFullEditor')}
                             data-testid={`open-panel-${p.id}`}
                           >
                             <ExternalLink className="w-3 h-3" />
@@ -1383,8 +1399,8 @@ export default function CostTrackingPage() {
                             <button
                               onClick={e => { e.stopPropagation(); setConfirmArchiveId(p.id) }}
                               className="text-destructive/60 hover:text-destructive transition-colors flex-shrink-0 p-0.5 rounded hover:bg-destructive/10"
-                              title="Archive property"
-                              aria-label="Archive property"
+                              title={t('table.archiveProperty')}
+                              aria-label={t('table.archiveProperty')}
                               data-testid={`row-archive-${p.id}`}
                             >
                               <Trash2 className="w-3 h-3" />
@@ -1416,7 +1432,7 @@ export default function CostTrackingPage() {
                           <SelectValue>
                             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
                               <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
-                              {p.stage_name || '—'}
+                              {p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}
                             </span>
                           </SelectValue>
                         </SelectTrigger>
@@ -1425,7 +1441,7 @@ export default function CostTrackingPage() {
                             <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                               <span className="inline-flex items-center gap-1.5">
                                 <span className={`w-2 h-2 rounded-full ${STAGE_DOT[s.name] || 'bg-muted-foreground/40'}`} />
-                                {s.name}
+                                {t(`common.stage.${slugify(s.name)}`, undefined, s.name)}
                               </span>
                             </SelectItem>
                           ))}
@@ -1434,7 +1450,7 @@ export default function CostTrackingPage() {
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap">
                         <span className={`w-2 h-2 rounded-full ${STAGE_DOT[p.stage_name] || 'bg-muted-foreground/40'}`} />
-                        {p.stage_name || '—'}
+                        {p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}
                       </span>
                     )}
                   </td>
@@ -1470,7 +1486,7 @@ export default function CostTrackingPage() {
                       onSave={v => {
                         const parsed = v ? parseFloat(v) : null
                         if ((parsed === 0 || parsed === null) && p.stage_name === 'Active') {
-                          toast({ title: 'Warning: $0 CE will show as negative profit', description: 'This property will appear in Missing Financial Data alerts.', variant: 'destructive' })
+                          toast({ title: t('toasts.zeroCeWarning'), description: t('toasts.zeroCeWarningDescription'), variant: 'destructive' })
                         }
                         updateProperty({ id: p.id, field: 'ce_charged', value: parsed })
                       }}
@@ -1529,7 +1545,7 @@ export default function CostTrackingPage() {
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => resetRow(p.id)} className="gap-2">
-                      <RotateCcw className="w-3.5 h-3.5" /> Reset Row
+                      <RotateCcw className="w-3.5 h-3.5" /> {t('contextMenu.resetRow')}
                     </ContextMenuItem>
                     {isAdmin && (
                       <ContextMenuItem
@@ -1537,7 +1553,7 @@ export default function CostTrackingPage() {
                         className="gap-2 text-destructive focus:text-destructive"
                         data-testid={`menu-archive-${p.id}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" /> Archive property
+                        <Trash2 className="w-3.5 h-3.5" /> {t('contextMenu.archiveProperty')}
                       </ContextMenuItem>
                     )}
                   </ContextMenuContent>
@@ -1561,7 +1577,7 @@ export default function CostTrackingPage() {
                                 <InlineEdit
                                   value={p.name}
                                   type="text"
-                                  placeholder="Name"
+                                  placeholder={t('common.labels.name')}
                                   onSave={v => updateProperty({ id: p.id, field: 'name', value: v.trim() === '' ? null : v.trim() })}
                                   testId={`expanded-name-${p.id}`}
                                 />
@@ -1583,7 +1599,7 @@ export default function CostTrackingPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   {(stages || []).map((s: any) => (
-                                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{s.name}</SelectItem>
+                                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">{t(`common.stage.${slugify(s.name)}`, undefined, s.name)}</SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
@@ -1596,7 +1612,7 @@ export default function CostTrackingPage() {
                                 "Unlinked" clears contact_id so the legacy `client`
                                 free-text field shows through. */}
                             <span className="inline-flex items-center gap-1" data-testid={`expanded-client-${p.id}`}>
-                              <span>Client:</span>
+                              <span>{t('expanded.client')}</span>
                               {canEditSetup ? (
                                 <Select
                                   value={p.contact_id != null ? String(p.contact_id) : '__unlinked__'}
@@ -1610,7 +1626,7 @@ export default function CostTrackingPage() {
                                     <SelectValue placeholder="—">{clientLabel || '—'}</SelectValue>
                                   </SelectTrigger>
                                   <SelectContent>
-                                    <SelectItem value="__unlinked__" className="text-xs italic text-muted-foreground">- Unlinked -</SelectItem>
+                                    <SelectItem value="__unlinked__" className="text-xs italic text-muted-foreground">{t('expanded.unlinked')}</SelectItem>
                                     {(allContacts || []).map((c: any) => (
                                       <SelectItem key={c.id} value={String(c.id)} className="text-xs">
                                         {c.full_name}{c.company && c.company !== c.full_name ? ` (${c.company})` : ''}
@@ -1627,7 +1643,7 @@ export default function CostTrackingPage() {
                             </span>
                             {/* Address — inline editable */}
                             <span className="inline-flex items-center gap-1 flex-1 min-w-[12rem]">
-                              <span>Address:</span>
+                              <span>{t('expanded.address')}</span>
                               {canEditSetup ? (
                                 <span className="flex-1 min-w-0">
                                   <InlineEdit
@@ -1650,9 +1666,9 @@ export default function CostTrackingPage() {
                               onClick={() => setConfirmArchiveId(p.id)}
                               className="text-xs text-destructive hover:underline inline-flex items-center gap-1"
                               data-testid={`button-archive-${p.id}`}
-                              title="Archive (recoverable for 30 days)"
+                              title={t('expanded.archiveTooltip')}
                             >
-                              <Trash2 className="w-3 h-3" /> Archive property
+                              <Trash2 className="w-3 h-3" /> {t('expanded.archiveProperty')}
                             </button>
                           )}
                           <button
@@ -1660,7 +1676,7 @@ export default function CostTrackingPage() {
                             className="text-xs text-primary hover:underline"
                             data-testid={`button-open-modal-${p.id}`}
                           >
-                            Open full property →
+                            {t('expanded.openFull')}
                           </button>
                         </div>
                       </div>
@@ -1694,6 +1710,12 @@ export default function CostTrackingPage() {
                           updateProperty({ id: p.id, field, value: raw.trim() === '' ? null : raw.trim() })
                         const saveBool = (field: string) => (next: boolean) =>
                           updateProperty({ id: p.id, field, value: next })
+                        // `cleaning_frequency` stays canonical English in the DB (value); only
+                        // the picker's display label is translated.
+                        const frequencyLabelKey: Record<string, string> = {
+                          Weekly: 'weekly', 'Bi-weekly': 'biWeekly', Monthly: 'monthly', Turnover: 'turnover', 'On-demand': 'onDemand',
+                        }
+                        const frequencyOptions = FREQUENCY_OPTIONS.map(o => ({ value: o.value, label: t(`detail.frequency.${frequencyLabelKey[o.value]}`, undefined, o.label) }))
 
                         return (
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -1704,63 +1726,63 @@ export default function CostTrackingPage() {
                             update on their own. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
                           <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                            Property Details
+                            {t('detail.heading')}
                             {canEditSetup && (
                               <span className="ml-2 text-2xs font-normal text-muted-foreground/70 normal-case tracking-normal">
-                                · Click any value to edit
+                                {t('detail.editHint')}
                               </span>
                             )}
                           </div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <EditText  label="Address"     value={p.address}        canEdit={canEditSetup} onSave={saveText('address')}            testId={`row-detail-address-${p.id}`} />
-                            <EditNumber label="Bedrooms"    value={p.bedrooms}       canEdit={canEditSetup} onSave={saveInt('bedrooms')}            testId={`row-detail-bedrooms-${p.id}`} />
-                            <EditNumber label="Full Baths"  value={p.full_baths}     canEdit={canEditSetup} onSave={saveInt('full_baths')}          testId={`row-detail-full_baths-${p.id}`} />
-                            <EditNumber label="Half Baths"  value={p.half_baths}     canEdit={canEditSetup} onSave={saveInt('half_baths')}          testId={`row-detail-half_baths-${p.id}`} />
-                            <EditNumber label="Kitchens"    value={p.kitchens}       canEdit={canEditSetup} onSave={saveInt('kitchens')}            testId={`row-detail-kitchens-${p.id}`} />
-                            <EditNumber label="Sq Footage"  value={p.square_footage} canEdit={canEditSetup} onSave={saveInt('square_footage')}      testId={`row-detail-square_footage-${p.id}`} />
-                            <EditNumber label="Beds (count)" value={p.number_of_beds} canEdit={canEditSetup} onSave={saveInt('number_of_beds')}     testId={`row-detail-number_of_beds-${p.id}`} />
-                            <EditNumber label="Guest Count" value={p.guest_count}    canEdit={canEditSetup} onSave={saveInt('guest_count')}         testId={`row-detail-guest_count-${p.id}`} />
-                            <EditToggle label="Hot Tub"     value={p.hot_tub}        canEdit={canEditSetup} onChange={saveBool('hot_tub')}          testId={`row-detail-hot_tub-${p.id}`} />
-                            <EditToggle label="Pet Friendly" value={p.pet_friendly}  canEdit={canEditSetup} onChange={saveBool('pet_friendly')}     testId={`row-detail-pet_friendly-${p.id}`} />
-                            <AutoField  label="$/Sq Ft"     value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
-                            <AutoField  label="CE/Sq Ft"    value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
-                            <AutoField  label="Suggested Pay" value={fmt(p.suggested_pay)} />
-                            <EditSelect label="Frequency"   value={p.cleaning_frequency} options={FREQUENCY_OPTIONS} canEdit={canEditSetup} onSave={v => updateProperty({ id: p.id, field: 'cleaning_frequency', value: v })} testId={`row-detail-cleaning_frequency-${p.id}`} />
-                            <AutoField  label="Cleans / Mo" value={p.avg_cleans_per_month ?? '—'} />
-                            <EditDate   label="First Clean" value={p.first_clean_date}    canEdit={canEditSetup} onSave={saveDate('first_clean_date')} testId={`row-detail-first_clean_date-${p.id}`} />
-                            <EditDate   label="Onboarding"  value={p.onboarding_date}     canEdit={canEditSetup} onSave={saveDate('onboarding_date')}  testId={`row-detail-onboarding_date-${p.id}`} />
-                            <EditDate   label="Offboarding" value={p.offboarding_date}    canEdit={canEditSetup} onSave={saveDate('offboarding_date')} testId={`row-detail-offboarding_date-${p.id}`} />
-                            <EditText   label="Filter Size" value={p.filter_size}         canEdit={canEditSetup} onSave={saveText('filter_size')}      testId={`row-detail-filter_size-${p.id}`} placeholder="e.g. 16x25x1" />
-                            <EditDate   label="Last Filter" value={p.last_filter_changed} canEdit={canEditSetup} onSave={saveDate('last_filter_changed')} testId={`row-detail-last_filter_changed-${p.id}`} />
-                            <AutoField  label="Next Filter Due" value={p.next_filter_due ? String(p.next_filter_due).slice(0, 10) : '—'} />
-                            <EditText   label="Breezeway"   value={p.breezeway_name || p.breezeway_id} canEdit={canEditSetup} onSave={saveText('breezeway_id')} testId={`row-detail-breezeway_id-${p.id}`} />
+                            <EditText  label={t('detail.fields.address')}     value={p.address}        canEdit={canEditSetup} onSave={saveText('address')}            testId={`row-detail-address-${p.id}`} />
+                            <EditNumber label={t('detail.fields.bedrooms')}    value={p.bedrooms}       canEdit={canEditSetup} onSave={saveInt('bedrooms')}            testId={`row-detail-bedrooms-${p.id}`} />
+                            <EditNumber label={t('detail.fields.fullBaths')}  value={p.full_baths}     canEdit={canEditSetup} onSave={saveInt('full_baths')}          testId={`row-detail-full_baths-${p.id}`} />
+                            <EditNumber label={t('detail.fields.halfBaths')}  value={p.half_baths}     canEdit={canEditSetup} onSave={saveInt('half_baths')}          testId={`row-detail-half_baths-${p.id}`} />
+                            <EditNumber label={t('detail.fields.kitchens')}    value={p.kitchens}       canEdit={canEditSetup} onSave={saveInt('kitchens')}            testId={`row-detail-kitchens-${p.id}`} />
+                            <EditNumber label={t('detail.fields.sqFootage')}  value={p.square_footage} canEdit={canEditSetup} onSave={saveInt('square_footage')}      testId={`row-detail-square_footage-${p.id}`} />
+                            <EditNumber label={t('detail.fields.bedsCount')} value={p.number_of_beds} canEdit={canEditSetup} onSave={saveInt('number_of_beds')}     testId={`row-detail-number_of_beds-${p.id}`} />
+                            <EditNumber label={t('detail.fields.guestCount')} value={p.guest_count}    canEdit={canEditSetup} onSave={saveInt('guest_count')}         testId={`row-detail-guest_count-${p.id}`} />
+                            <EditToggle label={t('detail.fields.hotTub')}     value={p.hot_tub}        canEdit={canEditSetup} onChange={saveBool('hot_tub')}          testId={`row-detail-hot_tub-${p.id}`} />
+                            <EditToggle label={t('detail.fields.petFriendly')} value={p.pet_friendly}  canEdit={canEditSetup} onChange={saveBool('pet_friendly')}     testId={`row-detail-pet_friendly-${p.id}`} />
+                            <AutoField  label={t('detail.fields.pricePerSqFt')}     value={p.price_per_sq_foot != null ? `$${Number(p.price_per_sq_foot).toFixed(2)}` : '—'} />
+                            <AutoField  label={t('detail.fields.cePerSqFt')}    value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
+                            <AutoField  label={t('detail.fields.suggestedPay')} value={fmt(p.suggested_pay)} />
+                            <EditSelect label={t('detail.fields.frequency')}   value={p.cleaning_frequency} options={frequencyOptions} canEdit={canEditSetup} onSave={v => updateProperty({ id: p.id, field: 'cleaning_frequency', value: v })} testId={`row-detail-cleaning_frequency-${p.id}`} />
+                            <AutoField  label={t('detail.fields.cleansPerMo')} value={p.avg_cleans_per_month ?? '—'} />
+                            <EditDate   label={t('detail.fields.firstClean')} value={p.first_clean_date}    canEdit={canEditSetup} onSave={saveDate('first_clean_date')} testId={`row-detail-first_clean_date-${p.id}`} />
+                            <EditDate   label={t('detail.fields.onboarding')}  value={p.onboarding_date}     canEdit={canEditSetup} onSave={saveDate('onboarding_date')}  testId={`row-detail-onboarding_date-${p.id}`} />
+                            <EditDate   label={t('detail.fields.offboarding')} value={p.offboarding_date}    canEdit={canEditSetup} onSave={saveDate('offboarding_date')} testId={`row-detail-offboarding_date-${p.id}`} />
+                            <EditText   label={t('detail.fields.filterSize')} value={p.filter_size}         canEdit={canEditSetup} onSave={saveText('filter_size')}      testId={`row-detail-filter_size-${p.id}`} placeholder={t('detail.fields.filterSizePlaceholder')} />
+                            <EditDate   label={t('detail.fields.lastFilter')} value={p.last_filter_changed} canEdit={canEditSetup} onSave={saveDate('last_filter_changed')} testId={`row-detail-last_filter_changed-${p.id}`} />
+                            <AutoField  label={t('detail.fields.nextFilterDue')} value={p.next_filter_due ? String(p.next_filter_due).slice(0, 10) : '—'} />
+                            <EditText   label={t('detail.fields.breezeway')}   value={p.breezeway_name || p.breezeway_id} canEdit={canEditSetup} onSave={saveText('breezeway_id')} testId={`row-detail-breezeway_id-${p.id}`} />
                           </div>
                         </div>
 
                         {/* Linen counts — every count is inline-editable. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Linens &amp; Beds</div>
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t('linensBeds.heading')}</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <EditNumber label="King Beds"    value={p.king_beds}    canEdit={canEditSetup} onSave={saveInt('king_beds')}    testId={`row-detail-king_beds-${p.id}`} />
-                            <EditNumber label="Queen Beds"   value={p.queen_beds}   canEdit={canEditSetup} onSave={saveInt('queen_beds')}   testId={`row-detail-queen_beds-${p.id}`} />
-                            <EditNumber label="Full Beds"    value={p.full_beds}    canEdit={canEditSetup} onSave={saveInt('full_beds')}    testId={`row-detail-full_beds-${p.id}`} />
-                            <EditNumber label="Twin Beds"    value={p.twin_beds}    canEdit={canEditSetup} onSave={saveInt('twin_beds')}    testId={`row-detail-twin_beds-${p.id}`} />
-                            <EditNumber label="Bath Towels"  value={p.bath_towels}  canEdit={canEditSetup} onSave={saveInt('bath_towels')}  testId={`row-detail-bath_towels-${p.id}`} />
-                            <EditNumber label="Hand Towels"  value={p.hand_towels}  canEdit={canEditSetup} onSave={saveInt('hand_towels')}  testId={`row-detail-hand_towels-${p.id}`} />
-                            <EditNumber label="Washcloths"   value={p.washcloths}   canEdit={canEditSetup} onSave={saveInt('washcloths')}   testId={`row-detail-washcloths-${p.id}`} />
-                            <EditNumber label="Bath Mats"    value={p.bathmats}     canEdit={canEditSetup} onSave={saveInt('bathmats')}     testId={`row-detail-bathmats-${p.id}`} />
-                            <EditNumber label="Pool Towels"  value={p.pool_towels}  canEdit={canEditSetup} onSave={saveInt('pool_towels')}  testId={`row-detail-pool_towels-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.kingBeds')}    value={p.king_beds}    canEdit={canEditSetup} onSave={saveInt('king_beds')}    testId={`row-detail-king_beds-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.queenBeds')}   value={p.queen_beds}   canEdit={canEditSetup} onSave={saveInt('queen_beds')}   testId={`row-detail-queen_beds-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.fullBeds')}    value={p.full_beds}    canEdit={canEditSetup} onSave={saveInt('full_beds')}    testId={`row-detail-full_beds-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.twinBeds')}    value={p.twin_beds}    canEdit={canEditSetup} onSave={saveInt('twin_beds')}    testId={`row-detail-twin_beds-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.bathTowels')}  value={p.bath_towels}  canEdit={canEditSetup} onSave={saveInt('bath_towels')}  testId={`row-detail-bath_towels-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.handTowels')}  value={p.hand_towels}  canEdit={canEditSetup} onSave={saveInt('hand_towels')}  testId={`row-detail-hand_towels-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.washcloths')}   value={p.washcloths}   canEdit={canEditSetup} onSave={saveInt('washcloths')}   testId={`row-detail-washcloths-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.bathMats')}    value={p.bathmats}     canEdit={canEditSetup} onSave={saveInt('bathmats')}     testId={`row-detail-bathmats-${p.id}`} />
+                            <EditNumber label={t('linensBeds.fields.poolTowels')}  value={p.pool_towels}  canEdit={canEditSetup} onSave={saveInt('pool_towels')}  testId={`row-detail-pool_towels-${p.id}`} />
                             {p.bed_sizes_text && (p.king_beds == null && p.queen_beds == null && p.full_beds == null && p.twin_beds == null) && (
-                              <EditText label="Bed Sizes (legacy)" value={p.bed_sizes_text} canEdit={canEditSetup} onSave={saveText('bed_sizes_text')} testId={`row-detail-bed_sizes_text-${p.id}`} />
+                              <EditText label={t('linensBeds.fields.bedSizesLegacy')} value={p.bed_sizes_text} canEdit={canEditSetup} onSave={saveText('bed_sizes_text')} testId={`row-detail-bed_sizes_text-${p.id}`} />
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground mt-3">
-                            <span className="block mb-1">Linen notes</span>
+                            <span className="block mb-1">{t('linensBeds.notesLabel')}</span>
                             {canEditSetup ? (
                               <InlineEdit
                                 value={p.linen_notes}
                                 type="text"
-                                placeholder="Add linen notes…"
+                                placeholder={t('linensBeds.notesPlaceholder')}
                                 onSave={saveText('linen_notes')}
                                 testId={`row-detail-linen_notes-${p.id}`}
                               />
@@ -1772,12 +1794,12 @@ export default function CostTrackingPage() {
 
                         {/* Codes & access — every code is inline-editable. */}
                         <div className="rounded-md border border-border/60 bg-card p-3">
-                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Access &amp; Codes</div>
+                          <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{t('accessCodes.heading')}</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                            <EditText label="Auto Code"   value={p.has_auto_code ? 'Yes' : 'No'} canEdit={false} onSave={() => {}}   testId={`row-detail-auto_code-${p.id}`} />
-                            <EditText label="Door Code"   value={p.door_code}   canEdit={canEditSetup} onSave={saveText('door_code')}   testId={`row-detail-door_code-${p.id}`} />
-                            <EditText label="Other Codes" value={p.other_codes} canEdit={canEditSetup} onSave={saveText('other_codes')} testId={`row-detail-other_codes-${p.id}`} />
-                            <EditText label="WiFi"        value={p.wifi_info}   canEdit={canEditSetup} onSave={saveText('wifi_info')}   testId={`row-detail-wifi_info-${p.id}`} placeholder="SSID / password / notes" />
+                            <EditText label={t('accessCodes.fields.autoCode')}   value={p.has_auto_code ? t('common.actions.yes') : t('common.actions.no')} canEdit={false} onSave={() => {}}   testId={`row-detail-auto_code-${p.id}`} />
+                            <EditText label={t('accessCodes.fields.doorCode')}   value={p.door_code}   canEdit={canEditSetup} onSave={saveText('door_code')}   testId={`row-detail-door_code-${p.id}`} />
+                            <EditText label={t('accessCodes.fields.otherCodes')} value={p.other_codes} canEdit={canEditSetup} onSave={saveText('other_codes')} testId={`row-detail-other_codes-${p.id}`} />
+                            <EditText label={t('accessCodes.fields.wifi')}        value={p.wifi_info}   canEdit={canEditSetup} onSave={saveText('wifi_info')}   testId={`row-detail-wifi_info-${p.id}`} placeholder={t('accessCodes.wifiPlaceholder')} />
                           </div>
                         </div>
                       </div>
@@ -1785,13 +1807,13 @@ export default function CostTrackingPage() {
                       })()}
 
                       <div className="rounded-md border border-border/60 bg-card p-3 space-y-3">
-                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Notes &amp; Cleaner</div>
+                        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t('notesCleaner.heading')}</div>
                         <div className="text-xs">
-                          <span className="text-muted-foreground block mb-1">Notes</span>
+                          <span className="text-muted-foreground block mb-1">{t('notesCleaner.notesLabel')}</span>
                           <InlineEdit
                             value={p.notes}
                             type="text"
-                            placeholder="Add notes…"
+                            placeholder={t('notesCleaner.notesPlaceholder')}
                             onSave={v => updateProperty({ id: p.id, field: 'notes', value: v || null })}
                             testId={`inline-notes-${p.id}`}
                           />
@@ -1809,7 +1831,7 @@ export default function CostTrackingPage() {
                 {/* Cell-level sticky (not row-level) so it pins reliably; the first
                     cell also pins left at z-20 so it stays above the body's
                     sticky-left Property column (z-10) instead of being painted over. */}
-                <td colSpan={4} className="sticky bottom-0 left-0 z-20 bg-muted border-t-2 border-border py-2 px-3 text-xs uppercase tracking-wide">Totals ({filtered?.length})</td>
+                <td colSpan={4} className="sticky bottom-0 left-0 z-20 bg-muted border-t-2 border-border py-2 px-3 text-xs uppercase tracking-wide">{t('totals.label', { count: filtered?.length })}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.ceTotal)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.payTotal)}</td>
                 <td className="sticky bottom-0 z-10 bg-muted border-t-2 border-border py-2 px-3 tabular-nums text-xs">{fmt(totals.laundryTotal)}</td>
@@ -1833,13 +1855,13 @@ export default function CostTrackingPage() {
       )}
       {bulkEditMode && Object.keys(bulkChanges).length > 0 && (
         <div className="sticky bottom-0 left-0 right-0 bg-background border-t border-border p-3 flex items-center justify-between z-20 shadow-lg">
-          <span className="text-sm text-muted-foreground">{Object.keys(bulkChanges).length} change(s) pending</span>
+          <span className="text-sm text-muted-foreground">{t('bulk.pending', { count: Object.keys(bulkChanges).length })}</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => { setBulkEditMode(false); setBulkChanges({}) }} data-testid="button-bulk-cancel">
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button size="sm" onClick={bulkSaveAll} data-testid="button-bulk-save">
-              Save All
+              {t('bulk.saveAll')}
             </Button>
           </div>
         </div>
@@ -1855,18 +1877,18 @@ export default function CostTrackingPage() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Archive property?</DialogTitle>
+            <DialogTitle>{t('archiveDialog.title')}</DialogTitle>
           </DialogHeader>
           {(() => {
             const target = displayProperties.find((p: any) => p.id === confirmArchiveId)
             return (
               <div className="space-y-3 text-sm">
                 <p>
-                  <span className="font-medium">{target?.name ?? 'This property'}</span>{' '}
-                  will be removed from active lists. It stays recoverable for 30 days from the Master List archive panel, then is purged automatically.
+                  <span className="font-medium">{target?.name ?? t('archiveDialog.nameFallback')}</span>{' '}
+                  {t('archiveDialog.bodyRest')}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  This is a soft delete - historical financial records remain intact.
+                  {t('archiveDialog.note')}
                 </p>
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
@@ -1876,7 +1898,7 @@ export default function CostTrackingPage() {
                     disabled={archivePending}
                     data-testid="button-archive-cancel"
                   >
-                    Cancel
+                    {t('common.actions.cancel')}
                   </Button>
                   <Button
                     variant="destructive"
@@ -1885,7 +1907,7 @@ export default function CostTrackingPage() {
                     onClick={() => confirmArchiveId && archiveProperty(confirmArchiveId)}
                     data-testid="button-archive-confirm"
                   >
-                    {archivePending ? 'Archiving…' : 'Archive'}
+                    {archivePending ? t('archiveDialog.archiving') : t('archiveDialog.archive')}
                   </Button>
                 </div>
               </div>
