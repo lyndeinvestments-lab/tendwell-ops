@@ -12,11 +12,12 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from '@dnd-kit/core'
-import { format } from 'date-fns'
 import { Package, User as UserIcon } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 import {
   LOST_ITEM_PIPELINE,
-  STATUS_LABELS,
+  statusLabel,
   type LostItemAssignment,
   type LostItemCase,
   type LostItemStatus,
@@ -126,6 +127,7 @@ function BoardColumn({
   canEdit: boolean
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status, disabled: !canEdit })
+  const { t } = useLocale('lostItems')
   return (
     <div
       ref={setNodeRef}
@@ -136,7 +138,7 @@ function BoardColumn({
     >
       <div className="flex items-center justify-between px-2 pt-1">
         <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {STATUS_LABELS[status]}
+          {statusLabel(status, t)}
         </div>
         <span className="text-[10px] text-muted-foreground tabular-nums">{cases.length}</span>
       </div>
@@ -160,7 +162,7 @@ function BoardColumn({
                 : 'text-muted-foreground/70 border-border')
             }
           >
-            {isOver ? 'Drop here' : 'No cases'}
+            {isOver ? t('board.dropHere') : t('board.noCases')}
           </div>
         ) : null}
       </div>
@@ -207,6 +209,8 @@ function BoardCard({
   assignment?: LostItemAssignment
   isDragging?: boolean
 }) {
+  const { t } = useLocale('lostItems')
+  const { format } = useDateFormat()
   return (
     <div
       className={
@@ -220,7 +224,7 @@ function BoardCard({
         <span className="font-mono text-[10px] text-muted-foreground">{c.case_number}</span>
         {c.follow_up_date ? (
           <span className="text-[10px] text-amber-600 dark:text-amber-400">
-            FU {format(new Date(c.follow_up_date), 'MMM d')}
+            {t('board.followUpAbbrev', { date: format(new Date(c.follow_up_date), 'MMM d') })}
           </span>
         ) : null}
       </div>
@@ -250,7 +254,7 @@ function BoardCard({
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/70">
-            <UserIcon className="w-2.5 h-2.5" /> Unassigned
+            <UserIcon className="w-2.5 h-2.5" /> {t('board.unassigned')}
           </span>
         )}
       </div>

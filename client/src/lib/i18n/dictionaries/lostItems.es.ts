@@ -1,4 +1,163 @@
 import type { lostItemsEn } from './lostItems.en'
 
-/** Spanish (Latin American) strings for the lost-items surface. */
-export const lostItemsEs: typeof lostItemsEn = {}
+/**
+ * Spanish (Latin American) strings for the lost-items surface. Typed as
+ * `typeof lostItemsEn` so TypeScript enforces key parity between the two.
+ * Terminology follows existing dictionary conventions: "Objeto Perdido" for
+ * lost item, "Caso" for case, "Huésped" for guest, "Propiedad" for property.
+ */
+export const lostItemsEs: typeof lostItemsEn = {
+  page: {
+    title: 'Objetos Perdidos',
+    subtitle: 'Datos en vivo de Haven-OS · se actualiza cada 30s',
+    searchPlaceholder: 'Buscar descripción, huésped, ubicación…',
+    filterOpen: 'Abiertos',
+    filterAllStatuses: 'Todos los estados',
+    newCase: 'Nuevo Caso',
+    viewBoard: 'Tablero',
+    viewList: 'Lista',
+    noAccessTitle: 'Objetos Perdidos',
+    noAccessDescription: 'Tu rol no tiene acceso a Objetos Perdidos. Contacta a un administrador si necesitas esta vista.',
+    errorLoad: 'No se pudieron cargar los Objetos Perdidos: {{error}}',
+    list: {
+      case: 'Caso',
+      assignee: 'Asignado a',
+      updated: 'Actualizado',
+      empty: 'Ningún objeto perdido coincide con tus filtros.',
+    },
+  },
+  board: {
+    dropHere: 'Suelta aquí',
+    noCases: 'Sin casos',
+    unassigned: 'Sin asignar',
+    followUpAbbrev: 'Seg. {{date}}', // REVIEW: abbreviation for "follow-up" (Seguimiento) — confirm team's preferred shorthand
+  },
+  status: {
+    pending_pickup: 'Recolección Pendiente',
+    picked_up: 'Recolectado',
+    delivered: 'Entregado',
+    failed: 'Fallido',
+    completed: 'Completado',
+  },
+  returnMethod: {
+    shipped: 'Enviado',
+    guest_pickup: 'Recolectado por el Huésped',
+    in_person: 'En Persona',
+    other: 'Otro',
+  },
+  detail: {
+    backToAll: 'Volver a todos los casos',
+    openedAgo: 'abierto {{time}}',
+    noAccessTitle: 'Objetos Perdidos',
+    noAccessDescription: 'Tu rol no tiene acceso a Objetos Perdidos.',
+    errorLoad: 'No se pudo cargar el caso: {{error}}',
+    changeStatus: 'Cambiar estado',
+    fields: {
+      item: 'Objeto',
+      itemDescription: 'Descripción del objeto',
+      description: 'Descripción',
+      foundAt: 'Encontrado en',
+      guest: 'Huésped',
+      guestName: 'Nombre del huésped',
+      guestEmail: 'Correo del huésped',
+      guestPhone: 'Teléfono del huésped',
+      cleaningVendor: 'Proveedor de limpieza',
+      returnMethod: 'Método de devolución',
+      returnMethodUnset: '- sin definir -',
+      carrier: 'Transportista',
+      shippingCarrier: 'Transportista de envío',
+      trackingNumber: 'Número de rastreo',
+      ownerTendwell: 'Responsable (Tendwell)',
+      tendwellAssignee: 'Asignado de Tendwell',
+      unassignedOption: '- Sin asignar',
+      followUpDate: 'Fecha de seguimiento',
+      followUp: 'Seguimiento',
+    },
+    assignment: {
+      assignedAgo: 'Asignado {{time}}',
+      pickSomeone: 'Elegir a alguien',
+    },
+    card: {
+      title: 'Detalles del caso',
+      editTitle: 'Editar caso',
+      saveChanges: 'Guardar cambios',
+    },
+    comments: {
+      title: 'Comentarios y actividad',
+      placeholder: 'Agrega un comentario para el equipo - contexto, próximos pasos, lo que dijo el huésped…',
+      placeholderShort: 'Agregar un comentario…',
+      count: '{{count}} comentario(s)',
+      post: 'Publicar comentario',
+      submit: 'Comentar',
+      empty: 'Aún no hay comentarios.',
+      emptyCta: 'Sé el primero en agregar contexto para el equipo.',
+    },
+    activityLog: {
+      title: 'Registro de actividad ({{count}})',
+      statusChangeLabel: 'Estado:',
+      assignmentChangeLabel: 'Asignado:',
+      systemActor: 'sistema',
+    },
+    eventType: {
+      status_change: 'cambio de estado',
+      comment: 'comentario',
+      assignment: 'asignación',
+      created: 'creado',
+      updated: 'actualizado',
+    },
+    panels: {
+      assignment: 'Asignación',
+      links: 'Enlaces',
+      source: 'Origen',
+      timeline: 'Cronología',
+      photos: 'Fotos',
+    },
+    links: {
+      slackThread: 'Hilo de Slack',
+      conversation: 'Conversación',
+      sourceSystemFallback: 'Sistema de origen',
+      openHaven: 'Abrir en Haven-OS',
+    },
+    source: {
+      origin: 'Origen',
+      externalSystem: 'Sistema externo',
+      externalId: 'ID externo',
+    },
+    timeline: {
+      opened: 'Abierto',
+      pickupScheduled: 'Recolección programada',
+      lastUpdate: 'Última actualización',
+    },
+    photos: {
+      uploadNote: 'La carga se hace en Haven-OS.',
+    },
+    notesEmpty: 'Aún no hay notas.',
+    footer: {
+      source: 'Origen: {{source}}',
+    },
+  },
+  newCase: {
+    title: 'Nuevo caso de objeto perdido',
+    description: 'Registra un caso en Haven-OS y aparece de inmediato en este tablero.',
+    whatWasFound: 'Qué se encontró *',
+    whatWasFoundPlaceholder: 'Par de lentes Ray-Ban de montura negra en un estuche suave…',
+    foundAtPlaceholder: 'Mesita de noche del dormitorio principal',
+    propertyPlaceholder: 'Nombre de la propiedad',
+    initialStatus: 'Estado inicial',
+    create: 'Crear caso',
+  },
+  toasts: {
+    saved: 'Guardado',
+    saveFailed: 'Error al guardar',
+    assignmentUpdated: 'Asignación actualizada',
+    assignFailed: 'Error al asignar',
+    movedTo: 'Movido a {{status}}',
+    moveFailed: 'Error al mover el caso',
+    commentAdded: 'Comentario agregado',
+    commentFailed: 'Error al comentar',
+    postCommentFailed: 'Error al publicar el comentario',
+    caseCreated: 'Caso creado',
+    createFailed: 'Error al crear el caso',
+    unknownError: 'Error desconocido',
+  },
+}

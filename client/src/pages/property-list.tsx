@@ -20,10 +20,17 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+
+/** `'Active'` → `'active'`; used to look up the shared `common.stage.*` display name for `stage_name` (DB value stays canonical English). Copied from `lib/issues.ts`'s `slugify`. */
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
 
 function StageBadgePopover({ propertyId, propertyName, currentStageName, stageColor, stages }: {
   propertyId: string; propertyName: string; currentStageName: string; stageColor: string; stages: any[]
 }) {
+  const { t } = useLocale('propertyList')
   const { toast } = useToast()
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
@@ -53,10 +60,10 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Stage updated' })
+      toast({ title: t('toasts.stageUpdated') })
       setOpen(false)
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   return (
@@ -66,9 +73,9 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
           onClick={e => { e.stopPropagation(); setOpen(true) }}
           className="text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all duration-300"
           style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
-          title="Click to change stage"
+          title={t('table.changeStageTooltip')}
         >
-          {currentStageName}
+          {t(`common.stage.${slugify(currentStageName)}`, undefined, currentStageName)}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-40 p-1" align="start" onClick={e => e.stopPropagation()}>
@@ -78,7 +85,7 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
             onClick={() => changeStage(s.id)}
             className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted transition-colors ${s.name === currentStageName ? 'font-semibold bg-muted/50' : ''}`}
           >
-            {s.name}
+            {t(`common.stage.${slugify(s.name)}`, undefined, s.name)}
           </button>
         ))}
       </PopoverContent>
@@ -87,6 +94,8 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
 }
 
 export default function PropertyListPage() {
+  const { t } = useLocale('propertyList')
+  // Browser tab title stays English (matches the /access-codes precedent).
   usePageTitle('Property List')
   const { openPropertyModal } = usePropertyModal()
   const [search, setSearch] = useState('')
@@ -176,14 +185,14 @@ export default function PropertyListPage() {
 
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
-      'Property': p.name || '',
-      'Address': p.address || '',
-      'Bedrooms': p.bedrooms ?? '',
-      'Full Baths': p.full_baths ?? '',
-      'Max Guests': p.guest_count ?? '',
-      'Sq Ft': p.square_footage ?? '',
-      'Cleaner Pay': p.cleaner_pay ?? '',
-      'Status': p.stage_name || '',
+      [t('table.csv.property')]: p.name || '',
+      [t('table.csv.address')]: p.address || '',
+      [t('table.csv.bedrooms')]: p.bedrooms ?? '',
+      [t('table.csv.fullBaths')]: p.full_baths ?? '',
+      [t('table.csv.maxGuests')]: p.guest_count ?? '',
+      [t('table.csv.sqFt')]: p.square_footage ?? '',
+      [t('table.csv.cleanerPay')]: p.cleaner_pay ?? '',
+      [t('table.csv.status')]: p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -196,15 +205,15 @@ export default function PropertyListPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Property List"
-        subtitle="Operational properties - onboarding, active & offboarding"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search properties…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 data-testid="input-search-properties"
@@ -221,9 +230,11 @@ export default function PropertyListPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Operational ({total})</SelectItem>
+                <SelectItem value="all">{t('filters.allOperational', { count: total })}</SelectItem>
                 {stagesInData.map((s: any) => (
-                  <SelectItem key={s.id} value={s.name}>{s.name} ({countByStage(s.name)})</SelectItem>
+                  <SelectItem key={s.id} value={s.name}>
+                    {t('filters.stageOption', { name: t(`common.stage.${slugify(s.name)}`, undefined, s.name), count: countByStage(s.name) })}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -236,7 +247,7 @@ export default function PropertyListPage() {
               data-testid="button-export-csv"
             >
               <Download className="w-3.5 h-3.5" />
-              Export CSV
+              {t('common.actions.exportCsv')}
             </Button>
           </>
         }
@@ -259,19 +270,19 @@ export default function PropertyListPage() {
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
               <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Total Properties</div>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> {t('tiles.total')}</div>
                 <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
               </div>
               <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><DoorOpen className="w-3.5 h-3.5" /> Onboarding</div>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><DoorOpen className="w-3.5 h-3.5" /> {t('tiles.onboarding')}</div>
                 <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{countByStage('Onboarding')}</p>
               </div>
               <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Active</div>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> {t('tiles.active')}</div>
                 <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{countByStage('Active')}</p>
               </div>
               <div className={`rounded-2xl border shadow-sm p-4 ${countByStage('Offboarding') > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><LogOut className="w-3.5 h-3.5" /> Offboarding</div>
+                <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><LogOut className="w-3.5 h-3.5" /> {t('tiles.offboarding')}</div>
                 <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${countByStage('Offboarding') > 0 ? 'text-warning' : ''}`}>{countByStage('Offboarding')}</p>
               </div>
             </div>
@@ -289,16 +300,16 @@ export default function PropertyListPage() {
                     onClick={() => toggleSort('name')}
                     onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
                   >
-                    Property<SortIcon col="name" />
+                    {t('common.labels.property')}<SortIcon col="name" />
                   </th>
                   {([
-                    { col: 'address', label: 'Address' },
-                    { col: 'bedrooms', label: 'Beds' },
-                    { col: 'full_baths', label: 'Baths' },
-                    { col: 'guest_count', label: 'Guests' },
-                    { col: 'square_footage', label: 'Sq Ft' },
-                    { col: 'cleaner_pay', label: 'Cleaner Pay' },
-                    { col: 'stage_name', label: 'Status' },
+                    { col: 'address', label: t('common.labels.address') },
+                    { col: 'bedrooms', label: t('table.beds') },
+                    { col: 'full_baths', label: t('table.baths') },
+                    { col: 'guest_count', label: t('table.guests') },
+                    { col: 'square_footage', label: t('table.sqFt') },
+                    { col: 'cleaner_pay', label: t('table.cleanerPay') },
+                    { col: 'stage_name', label: t('common.labels.status') },
                   ] as { col: string; label: string }[]).map(({ col, label }) => (
                     <th
                       key={col}
@@ -326,7 +337,7 @@ export default function PropertyListPage() {
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={8}>
-                      <EmptyState icon={Building2} title="No properties found" description="Try adjusting your search or filter criteria." />
+                      <EmptyState icon={Building2} title={t('page.emptyTitle')} description={t('page.emptyDescription')} />
                     </td>
                   </tr>
                 ) : (
@@ -359,7 +370,7 @@ export default function PropertyListPage() {
                           ) : p.stage_name ? (
                             <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                               style={{ backgroundColor: color + '20', color, border: `1px solid ${color}40` }}>
-                              {p.stage_name}
+                              {t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name)}
                             </span>
                           ) : '—'}
                         </td>

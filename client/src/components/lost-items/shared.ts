@@ -1,3 +1,5 @@
+import { slugify } from '@/lib/issues'
+
 // Shared types and constants for the Lost Items UI.
 // Mirrors Haven-OS lib/lost-items/types.ts.
 
@@ -36,6 +38,32 @@ export const STATUS_COLORS: Record<LostItemStatus, string> = {
 
 export const RETURN_METHODS = ['shipped', 'guest_pickup', 'in_person', 'other'] as const
 export type LostItemReturnMethod = (typeof RETURN_METHODS)[number]
+
+/**
+ * Local, minimal translator shape (matches `TFunc` from `lib/i18n/t.ts`) so
+ * this domain file doesn't need to import the i18n module directly — mirrors
+ * the same pattern in `lib/issues.ts`.
+ */
+type TFunc = (key: string, vars?: Record<string, string | number>, fallback?: string) => string
+
+/**
+ * Translated case-status display name. The DB enum value (`LostItemStatus`)
+ * stays canonical English everywhere else — board grouping, filters,
+ * `STATUS_COLORS`/`STATUS_LABELS`, and writes. This is the one display-only
+ * slug lookup, falling back to the raw English label if a key is missing.
+ */
+export function statusLabel(status: LostItemStatus, t: TFunc): string {
+  return t(`status.${slugify(status)}`, undefined, STATUS_LABELS[status])
+}
+
+/**
+ * Translated return-method display name (`shipped`/`guest_pickup`/etc.).
+ * Same display-only slug-lookup pattern as `statusLabel` — the raw DB value
+ * is untouched, this only affects what's rendered.
+ */
+export function returnMethodLabel(method: string, t: TFunc): string {
+  return t(`returnMethod.${slugify(method)}`, undefined, method.replace(/_/g, ' '))
+}
 
 export interface LostItemAssignment {
   haven_case_id: string
