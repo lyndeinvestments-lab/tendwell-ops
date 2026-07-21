@@ -31,7 +31,7 @@ export function IssueDetailSheet({
   onClose: () => void
   onChanged: () => void
 }) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()

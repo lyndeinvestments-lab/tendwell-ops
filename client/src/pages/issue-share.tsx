@@ -9,7 +9,7 @@ import { es as dateFnsEs } from 'date-fns/locale'
 import { AlertTriangle, Check, Languages, Upload, Loader2, ImageOff } from 'lucide-react'
 import { resizeImageFile } from '@/lib/resize-image'
 import { categoryLabel, dueLabel, isOverdue, statusLabel } from '@/lib/issues'
-import { LocaleProvider, useLocale } from '@/lib/i18n/LocaleProvider'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import { IssueBadges } from '@/components/issues/IssueBadges'
 
@@ -21,13 +21,11 @@ function getToken() {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
-/** Mounts the locale context locally, auto-detecting from the browser's language since a cleaner opening this link for the first time has no stored preference. */
+// Locale context comes from the app-wide <LocaleProvider autoDetect> in
+// App.tsx — a first-time cleaner with a Spanish-language phone still lands
+// in Spanish.
 export default function IssueSharePage() {
-  return (
-    <LocaleProvider autoDetect>
-      <IssueSharePageContent />
-    </LocaleProvider>
-  )
+  return <IssueSharePageContent />
 }
 
 type ShareTranslations = Record<string, { es?: string; en?: string }>
@@ -48,7 +46,7 @@ async function requestShareTranslate(token: string, targetLang: 'es' | 'en', ite
 
 function IssueSharePageContent() {
   const token = getToken()
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
   const qc = useQueryClient()
   const queryKey = ['/issue-share', token]
   const [name, setName] = useState(() => localStorage.getItem('issueShareName') || '')

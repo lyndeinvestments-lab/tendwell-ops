@@ -27,7 +27,7 @@ export function IssueFilters({
   categoryFilter: string
   onCategoryChange: (value: string) => void
 }) {
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   const [mobileOpen, setMobileOpen] = useState(false)
   const activeCount = (statusFilter !== 'all' ? 1 : 0) + (categoryFilter !== 'all' ? 1 : 0) + (search.trim() ? 1 : 0)
 

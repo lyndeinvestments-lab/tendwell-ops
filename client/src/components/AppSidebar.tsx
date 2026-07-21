@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 
 interface NavItem {
   title: string
@@ -120,6 +121,7 @@ function loadCollapsedState(): Record<string, boolean> {
 
 export function AppSidebar() {
   const { user, effectiveUser, logout, canActAsOwner, setActingAsOwner } = useAuth()
+  const { t } = useLocale()
   const [location] = useLocation()
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
@@ -174,7 +176,7 @@ export function AppSidebar() {
                 className="text-xs font-medium text-muted-foreground uppercase tracking-wider px-4 py-1 flex items-center justify-between cursor-pointer select-none hover:text-foreground transition-colors"
                 onClick={() => toggleSection(section.label)}
               >
-                <span>{section.label}</span>
+                <span>{t(`common.navSection.${section.label.toLowerCase()}`, undefined, section.label)}</span>
                 {isCollapsed
                   ? <ChevronRight className="w-3 h-3 flex-shrink-0" />
                   : <ChevronDown className="w-3 h-3 flex-shrink-0" />
@@ -186,12 +188,13 @@ export function AppSidebar() {
                     {visibleItems.map((item) => {
                       const isActive = location === item.href || (item.href !== '/' && location.startsWith(item.href))
                       const viewKey = Array.isArray(item.view) ? item.view[0] : item.view
+                      const title = t(`common.nav.${viewKey}`, undefined, item.title)
                       return (
                         <SidebarMenuItem key={viewKey}>
                           <SidebarMenuButton
                             asChild
                             isActive={isActive}
-                            tooltip={item.title}
+                            tooltip={title}
                             data-testid={`nav-${viewKey}`}
                           >
                             <Link
@@ -200,7 +203,7 @@ export function AppSidebar() {
                               onClick={() => isMobile && setOpenMobile(false)}
                             >
                               <item.icon className="w-4 h-4 flex-shrink-0" />
-                              <span className="text-sm">{item.title}</span>
+                              <span className="text-sm">{title}</span>
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>
@@ -239,9 +242,9 @@ export function AppSidebar() {
         </div>
         <div className="flex items-center justify-center gap-3 text-xs text-muted-foreground/60 mb-1">
           <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">⌘K</kbd>
-          <span>Search</span>
+          <span>{t('common.sidebarFooter.searchHint')}</span>
           <kbd className="bg-muted border border-border rounded px-1.5 py-0.5">?</kbd>
-          <span>Shortcuts</span>
+          <span>{t('common.sidebarFooter.shortcutsHint')}</span>
         </div>
         <Button
           variant="ghost"
@@ -252,7 +255,7 @@ export function AppSidebar() {
           aria-label="Toggle dark mode"
         >
           {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          <span className="text-sm">{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+          <span className="text-sm">{theme === 'dark' ? t('common.sidebarFooter.lightMode') : t('common.sidebarFooter.darkMode')}</span>
         </Button>
         {canActAsOwner && (
           <Button
@@ -263,7 +266,7 @@ export function AppSidebar() {
             className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground h-8"
           >
             <Eye className="w-4 h-4" />
-            <span className="text-sm">Owner view</span>
+            <span className="text-sm">{t('common.sidebarFooter.ownerView')}</span>
           </Button>
         )}
         <Button
@@ -274,7 +277,7 @@ export function AppSidebar() {
           className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground h-8"
         >
           <LogOut className="w-4 h-4" />
-          <span className="text-sm">Sign out</span>
+          <span className="text-sm">{t('common.sidebarFooter.signOut')}</span>
         </Button>
       </SidebarFooter>
     </Sidebar>

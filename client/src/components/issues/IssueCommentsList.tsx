@@ -27,7 +27,7 @@ export function IssueCommentsList({
   onSubmit: () => void
   submitting: boolean
 }) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
   return (
     <div className="pt-2 border-t border-border">
       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-2"><MessageSquare className="w-3.5 h-3.5" /> {t('comments.title')}</span>

@@ -49,7 +49,7 @@ export function CatchUpFlow({
   canEdit: boolean
 }) {
   const isMobile = useIsMobile()
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()

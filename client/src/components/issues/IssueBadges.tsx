@@ -32,7 +32,7 @@ export function IssueBadges({
   variant?: 'compact' | 'full'
   className?: string
 }) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
   const showPriority = issue.priority === 'high' || issue.priority === 'urgent'
   const overdue = isOverdue(issue)
   const showDue = !!issue.due_date && issue.status !== 'Completed'

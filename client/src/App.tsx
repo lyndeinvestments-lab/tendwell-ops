@@ -22,6 +22,8 @@ import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcuts } from '@/components/KeyboardShortcuts';
+import { LocaleProvider } from '@/lib/i18n/LocaleProvider';
+import { LanguageToggle } from '@/components/LanguageToggle';
 
 // Lazy load with automatic retry on chunk fetch failure (stale deployments)
 function lazyRetry(factory: () => Promise<{ default: React.ComponentType<any> }>) {
@@ -442,6 +444,7 @@ function AppLayout() {
                     <Bot className="w-3.5 h-3.5" />
                   </button>
                 )}
+                <LanguageToggle className="ml-1" />
                 <AlertBellButton />
               </div>
             </header>
@@ -468,11 +471,17 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>
-            <Router>
-              <ErrorBoundary>
-                <AppLayout />
-              </ErrorBoundary>
-            </Router>
+            {/* App-wide locale. autoDetect: with no stored preference, first
+                visit follows the browser language — so a Spanish-language
+                phone opening the public weigh-in or share pages starts in
+                Spanish. The toggle persists any explicit choice. */}
+            <LocaleProvider autoDetect>
+              <Router>
+                <ErrorBoundary>
+                  <AppLayout />
+                </ErrorBoundary>
+              </Router>
+            </LocaleProvider>
             <Toaster />
             <Analytics />
           </AuthProvider>

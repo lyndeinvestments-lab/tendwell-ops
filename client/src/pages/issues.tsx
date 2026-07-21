@@ -25,8 +25,7 @@ import { AddIssueSheet, type NewIssueForm } from '@/components/issues/AddIssueSh
 import { CatchUpButton } from '@/components/issues/CatchUpButton'
 import { CatchUpFlow } from '@/components/issues/CatchUpFlow'
 import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, issueTypeLabel, statusLabel, type Issue } from '@/lib/issues'
-import { LocaleProvider, useLocale } from '@/lib/i18n/LocaleProvider'
-import { LanguageToggle } from '@/components/LanguageToggle'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useIssueTranslations, type TranslatableCandidate } from '@/hooks/use-issue-translations'
 import { triggerIssueTranslate } from '@/lib/issue-translate'
 import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
@@ -36,18 +35,14 @@ import {
 } from 'lucide-react'
 import Papa from 'papaparse'
 
-/** Mounts the locale context locally — see `LocaleProvider`'s doc comment. */
+// Locale context now comes from the app-wide <LocaleProvider> in App.tsx.
 export default function IssuesPage() {
-  return (
-    <LocaleProvider>
-      <IssuesPageContent />
-    </LocaleProvider>
-  )
+  return <IssuesPageContent />
 }
 
 function IssuesPageContent() {
   usePageTitle('Issues')
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const qc = useQueryClient()
@@ -440,7 +435,6 @@ function IssuesPageContent() {
         }
         actions={
           <>
-            <LanguageToggle />
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
               <Download className="w-3.5 h-3.5" /> {t('page.exportCsv')}
             </Button>

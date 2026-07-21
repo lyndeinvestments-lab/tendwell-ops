@@ -59,7 +59,7 @@ export function AddIssueSheet({
   adding: boolean
   onSubmit: () => void
 }) {
-  const { t } = useLocale()
+  const { t } = useLocale('issues')
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">

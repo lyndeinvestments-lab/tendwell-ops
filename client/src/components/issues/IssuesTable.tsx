@@ -47,7 +47,7 @@ export function IssuesTable({
   /** ES overlay lookup from `useIssueTranslations`, lifted from the page — a no-op passthrough when the UI isn't in Spanish. */
   translate: (sourceId: string, field: string, original: string | null | undefined) => string | null | undefined
 }) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('issues')
 
   function SortIcon({ col }: { col: SortKey }) {
     if (sortKey !== col) return <ArrowUpDown className="w-3 h-3 inline ml-1 opacity-40" />
