@@ -3,6 +3,8 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { AlertTriangle } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 
 interface StageTransitionModalProps {
   open: boolean
@@ -17,21 +19,25 @@ interface StageTransitionModalProps {
 export function StageTransitionModal({
   open, onClose, onConfirm, propertyName, targetStage, missingFields, isPending
 }: StageTransitionModalProps) {
+  const { t } = useLocale('propertyModal')
+  // `targetStage` is the canonical English pipeline_stages.name — display-only
+  // slug lookup against common.stage, falls back to the raw value.
+  const targetStageLabel = t(`common.stage.${slugify(targetStage)}`, undefined, targetStage)
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
             <AlertTriangle className="w-4 h-4 text-amber-500" />
-            Missing Fields
+            {t('stageTransition.title')}
           </DialogTitle>
           <DialogDescription className="text-sm">
-            Moving <strong>{propertyName}</strong> to <strong>{targetStage}</strong>
+            {t('stageTransition.movingPrefix')} <strong>{propertyName}</strong> {t('stageTransition.movingTo')} <strong>{targetStageLabel}</strong>
           </DialogDescription>
         </DialogHeader>
         <div className="py-2">
           <p className="text-sm text-muted-foreground mb-3">
-            The following fields are recommended for this stage but are not yet filled in:
+            {t('stageTransition.intro')}
           </p>
           <ul className="space-y-1">
             {missingFields.map(f => (
@@ -42,15 +48,15 @@ export function StageTransitionModal({
             ))}
           </ul>
           <p className="text-xs text-muted-foreground mt-3">
-            You can still move this property - fill in the missing fields later.
+            {t('stageTransition.footerNote')}
           </p>
         </div>
         <DialogFooter className="gap-2">
           <Button variant="outline" size="sm" onClick={onClose} disabled={isPending}>
-            Cancel
+            {t('common.actions.cancel')}
           </Button>
           <Button size="sm" onClick={onConfirm} disabled={isPending} data-testid="button-confirm-transition">
-            {isPending ? 'Moving…' : 'Move Anyway'}
+            {isPending ? t('stageTransition.moving') : t('stageTransition.moveAnyway')}
           </Button>
         </DialogFooter>
       </DialogContent>

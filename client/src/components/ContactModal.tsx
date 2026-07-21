@@ -12,10 +12,13 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send, Plus } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
+import { format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { profitColorClass } from '@/lib/profit-colors'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { slugify } from '@/lib/issues'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
@@ -68,24 +71,33 @@ function Field({
 }
 
 function SelectField({
-  label, field, options, form, onSelectField,
+  label, field, options, form, onSelectField, optionNamespace,
 }: {
   label: string
   field: string
   options: string[]
   form: any
   onSelectField: (field: string, value: string) => void
+  /** Dictionary namespace (e.g. 'source', 'paymentMethod') used to display-translate
+   *  each option via a slug lookup, with the raw option as fallback. The value
+   *  written to the DB always stays the raw canonical English option string. */
+  optionNamespace?: string
 }) {
+  const { t } = useLocale('contacts')
   return (
     <div>
       <Label className="text-xs text-muted-foreground">{label}</Label>
       <Select value={form[field] || '_none'} onValueChange={v => onSelectField(field, v)}>
         <SelectTrigger className="mt-0.5 h-7 text-xs">
-          <SelectValue placeholder="Select..." />
+          <SelectValue placeholder={t('modal.selectPlaceholder')} />
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="_none">-</SelectItem>
-          {options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+          {options.map(o => (
+            <SelectItem key={o} value={o}>
+              {optionNamespace ? t(`${optionNamespace}.${slugify(o)}`, undefined, o) : o}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     </div>
@@ -93,6 +105,8 @@ function SelectField({
 }
 
 export function ContactModal({ contactId, open, onClose, mode }: ContactModalProps) {
+  const { t } = useLocale('contacts')
+  const { format: formatDate, formatDistanceToNow } = useDateFormat()
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
@@ -171,9 +185,9 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-unassigned'] })
       setAssignPropId('')
-      toast({ title: 'Property assigned' })
+      toast({ title: t('modal.toastPropertyAssigned') })
     },
-    onError: (error: any) => toast({ title: 'Assign failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('modal.toastAssignFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { data: interactions } = useQuery({
@@ -232,9 +246,9 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contact-detail', contactId] })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      toast({ title: 'Saved' })
+      toast({ title: t('modal.toastSaved') })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('modal.toastSaveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Create contact
@@ -267,10 +281,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         metadata: { company: form.company?.trim() || null, source: form.source || null },
       })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      toast({ title: 'Client created' })
+      toast({ title: t('modal.toastClientCreated') })
       onClose()
     },
-    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to create client'), variant: 'destructive' }),
+    onError: (e: any) => toast({ title: `${t('modal.toastErrorPrefix')}: ${e.message || t('modal.toastCreateFailed')}`, variant: 'destructive' }),
   })
 
   // Log interaction
@@ -286,10 +300,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/contact-interactions', contactId] })
-      toast({ title: 'Interaction logged' })
+      toast({ title: t('modal.toastInteractionLogged') })
       setInteractionSummary('')
     },
-    onError: (error: any) => toast({ title: 'Failed to log interaction', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('modal.toastLogInteractionFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function handleFieldBlur(field: string) {
@@ -320,11 +334,18 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   }
 
   function removeTag(tag: string) {
-    const newTags = (form.tags || []).filter((t: string) => t !== tag)
+    const newTags = (form.tags || []).filter((existingTag: string) => existingTag !== tag)
     setForm(f => ({ ...f, tags: newTags }))
     if (!isCreate && contactId) {
       saveField({ field: 'tags', value: newTags.length > 0 ? newTags : null })
     }
+  }
+
+  // `pipeline_stages.name` is a DB enum value — stays canonical English in
+  // the record, translated for display via the shared `common.stage.*` slug
+  // lookup (falls back to the raw name if it doesn't match a known stage).
+  function stageLabel(name?: string | null) {
+    return name ? t('common.stage.' + slugify(name), undefined, name) : '—'
   }
 
   return (
@@ -332,10 +353,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       <SheetContent side="right" className="w-[480px] overflow-y-auto" data-testid="contact-modal">
         <SheetHeader>
           <SheetTitle className="text-base">
-            {isCreate ? 'New Client' : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || 'Client')}
+            {isCreate ? t('modal.newClientTitle') : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || t('modal.clientFallbackTitle'))}
           </SheetTitle>
           {!isCreate && contact?.updated_at && (
-            <p className="text-xs text-muted-foreground">Updated {formatDistanceToNow(new Date(contact.updated_at), { addSuffix: true })}</p>
+            <p className="text-xs text-muted-foreground">{t('modal.updatedAgo', { time: formatDistanceToNow(new Date(contact.updated_at), { addSuffix: true }) })}</p>
           )}
         </SheetHeader>
 
@@ -346,21 +367,21 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         ) : (
           <Tabs defaultValue="details" className="mt-4">
             <TabsList className="w-full justify-start flex-wrap h-auto gap-1">
-              <TabsTrigger value="details" className="text-xs">Details</TabsTrigger>
-              {!isCreate && <TabsTrigger value="properties" className="text-xs">Properties</TabsTrigger>}
-              {!isCreate && <TabsTrigger value="notes" className="text-xs">Notes</TabsTrigger>}
-              {!isCreate && <TabsTrigger value="activity" className="text-xs">Activity</TabsTrigger>}
+              <TabsTrigger value="details" className="text-xs">{t('modal.tabDetails')}</TabsTrigger>
+              {!isCreate && <TabsTrigger value="properties" className="text-xs">{t('modal.tabProperties')}</TabsTrigger>}
+              {!isCreate && <TabsTrigger value="notes" className="text-xs">{t('modal.tabNotes')}</TabsTrigger>}
+              {!isCreate && <TabsTrigger value="activity" className="text-xs">{t('modal.tabActivity')}</TabsTrigger>}
             </TabsList>
 
             {/* Details Tab */}
             <TabsContent value="details" className="mt-3 space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Full Name *" field="full_name" placeholder="Client name" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
-                <Field label="Company" field="company" placeholder="Company name" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('modal.fieldFullName')} field="full_name" placeholder={t('modal.placeholderClientName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('modal.fieldCompany')} field="company" placeholder={t('modal.placeholderCompanyName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label className="text-xs text-muted-foreground">Email</Label>
+                  <Label className="text-xs text-muted-foreground">{t('common.labels.email')}</Label>
                   <div className="flex items-center gap-1 mt-0.5">
                     <Input
                       type="email"
@@ -368,37 +389,37 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                       onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                       onBlur={() => handleFieldBlur('email')}
                       className="h-7 text-xs flex-1"
-                      placeholder="email@example.com"
+                      placeholder={t('modal.placeholderEmail')}
                     />
                     {form.email && (
                       <button
                         onClick={() => window.open(`mailto:${form.email}`, '_blank')}
                         className="text-muted-foreground hover:text-primary transition-colors"
-                        title="Send email"
+                        title={t('modal.sendEmailTitle')}
                       >
                         <Send className="w-3.5 h-3.5" />
                       </button>
                     )}
                   </div>
                 </div>
-                <Field label="Phone" field="phone" type="tel" placeholder="(555) 123-4567" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('common.labels.phone')} field="phone" type="tel" placeholder={t('modal.placeholderPhone')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Secondary Phone" field="secondary_phone" type="tel" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
-                <Field label="Mailing Address" field="mailing_address" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('modal.fieldSecondaryPhone')} field="secondary_phone" type="tel" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('modal.fieldMailingAddress')} field="mailing_address" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <SelectField label="Source" field="source" options={SOURCE_OPTIONS} form={form} onSelectField={handleSelectField} />
-                <Field label="Source Notes" field="source_notes" placeholder="How they found us..." form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <SelectField label={t('modal.fieldSource')} field="source" options={SOURCE_OPTIONS} form={form} onSelectField={handleSelectField} optionNamespace="source" />
+                <Field label={t('modal.fieldSourceNotes')} field="source_notes" placeholder={t('modal.placeholderSourceNotes')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <SelectField label="Payment Method" field="payment_method" options={PAYMENT_OPTIONS} form={form} onSelectField={handleSelectField} />
-                <Field label="Payment Notes" field="payment_notes" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <SelectField label={t('modal.fieldPaymentMethod')} field="payment_method" options={PAYMENT_OPTIONS} form={form} onSelectField={handleSelectField} optionNamespace="paymentMethod" />
+                <Field label={t('modal.fieldPaymentNotes')} field="payment_notes" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Client Since" field="client_since" type="date" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <Field label={t('modal.fieldClientSince')} field="client_since" type="date" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
                 <div>
-                  <Label className="text-xs text-muted-foreground">Tags</Label>
+                  <Label className="text-xs text-muted-foreground">{t('modal.fieldTags')}</Label>
                   <div className="flex flex-wrap gap-1 mt-0.5 min-h-[28px] items-center">
                     {(form.tags || []).map((tag: string) => (
                       <span key={tag} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">
@@ -410,7 +431,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                       value={tagInput}
                       onChange={e => setTagInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-                      placeholder="Add tag..."
+                      placeholder={t('modal.placeholderAddTag')}
                       className="h-6 text-xs border-0 shadow-none focus-visible:ring-0 w-24 p-0"
                     />
                   </div>
@@ -418,25 +439,25 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
               </div>
               {!isCreate && contactId ? (
                 <div>
-                  <Label className="text-xs text-muted-foreground mb-1 block">Notes</Label>
+                  <Label className="text-xs text-muted-foreground mb-1 block">{t('common.labels.notes')}</Label>
                   <ContactNotesFeed contactId={contactId} compact />
                 </div>
               ) : isCreate ? (
                 <div>
-                  <Label className="text-xs text-muted-foreground">Notes</Label>
+                  <Label className="text-xs text-muted-foreground">{t('common.labels.notes')}</Label>
                   <textarea
                     value={form.notes ?? ''}
                     onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                     className="mt-0.5 w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-xs resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder="Initial notes (taggable once saved)..."
+                    placeholder={t('modal.placeholderInitialNotes')}
                   />
                 </div>
               ) : null}
               {isCreate ? (
                 <div className="flex gap-2 pt-2">
-                  <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                  <Button variant="outline" size="sm" onClick={onClose}>{t('common.actions.cancel')}</Button>
                   <Button size="sm" onClick={() => createContact()} disabled={!form.full_name?.trim() || creating} data-testid="button-save-contact">
-                    {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Saving…</> : 'Save Client'}
+                    {creating ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{t('common.actions.saving')}</> : t('modal.saveClientButton')}
                   </Button>
                 </div>
               ) : (
@@ -446,15 +467,15 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                     size="sm"
                     className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
                     onClick={() => {
-                      if (confirm('Deactivate this client? They will be hidden from the active list.')) {
+                      if (confirm(t('modal.deactivateConfirm'))) {
                         saveField({ field: 'is_active', value: false })
                         onClose()
                       }
                     }}
                   >
-                    Deactivate
+                    {t('modal.deactivateButton')}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={onClose} className="ml-auto">Close</Button>
+                  <Button variant="outline" size="sm" onClick={onClose} className="ml-auto">{t('common.actions.close')}</Button>
                 </div>
               )}
             </TabsContent>
@@ -466,14 +487,14 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                 <div className="flex items-center gap-2">
                   <Select value={assignPropId} onValueChange={setAssignPropId}>
                     <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-assign-property">
-                      <SelectValue placeholder="Assign an unassigned property…" />
+                      <SelectValue placeholder={t('modal.assignPropertyPlaceholder')} />
                     </SelectTrigger>
                     <SelectContent>
                       {(assignableProps || []).length === 0 ? (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground">No unassigned properties</div>
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('modal.noUnassignedProperties')}</div>
                       ) : (assignableProps || []).map((p: any) => (
                         <SelectItem key={p.id} value={String(p.id)}>
-                          {p.name}{p.pipeline_stages?.name ? ` · ${p.pipeline_stages.name}` : ''}
+                          {p.name}{p.pipeline_stages?.name ? ` · ${stageLabel(p.pipeline_stages.name)}` : ''}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -485,17 +506,17 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                     onClick={() => assignProperty(assignPropId)}
                     data-testid="button-assign-property"
                   >
-                    {assigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Assign
+                    {assigning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} {t('modal.assignButton')}
                   </Button>
                 </div>
 
                 {!linkedProperties || linkedProperties.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No properties linked to this contact</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('modal.noLinkedProperties')}</p>
                 ) : (
                   <div className="space-y-1.5">
                     {linkedProperties.map((p: any) => {
                       const stageColor = p.pipeline_stages?.color || '#6b7280'
-                      const stageName = p.pipeline_stages?.name || '—'
+                      const stageName = stageLabel(p.pipeline_stages?.name)
                       return (
                         <div
                           key={p.id}
@@ -545,14 +566,14 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {INTERACTION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      {INTERACTION_TYPES.map(it => <SelectItem key={it} value={it}>{t('interactionType.' + slugify(it), undefined, it)}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Input
                     value={interactionSummary}
                     onChange={e => setInteractionSummary(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && interactionSummary.trim()) logInteraction() }}
-                    placeholder="What happened?"
+                    placeholder={t('modal.interactionPlaceholder')}
                     className="h-7 text-xs flex-1"
                   />
                   <Button
@@ -561,13 +582,13 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                     disabled={!interactionSummary.trim() || logging}
                     onClick={() => logInteraction()}
                   >
-                    {logging ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Log'}
+                    {logging ? <Loader2 className="w-3 h-3 animate-spin" /> : t('modal.logButton')}
                   </Button>
                 </div>
 
                 {/* Activity feed */}
                 {!interactions || interactions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-6">No activity logged yet</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('modal.noActivity')}</p>
                 ) : (
                   <div className="space-y-2">
                     {interactions.map((i: any) => {
@@ -580,7 +601,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                           <div className="flex-1 min-w-0">
                             <p className="text-xs">{i.summary}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">
-                              {i.interaction_type} · {formatDistanceToNow(new Date(i.created_at), { addSuffix: true })}
+                              {t('interactionType.' + slugify(i.interaction_type), undefined, i.interaction_type)} · {formatDistanceToNow(new Date(i.created_at), { addSuffix: true })}
                             </p>
                           </div>
                         </div>

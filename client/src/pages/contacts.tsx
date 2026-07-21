@@ -20,6 +20,9 @@ import { Search, Plus, X, Download, BarChart3, Users, ArrowUpDown, ArrowUp, Arro
 import Papa from 'papaparse'
 import { format } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, Cell } from 'recharts'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { slugify } from '@/lib/issues'
 
 const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'Social Media', 'Word of Mouth', 'Other']
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
@@ -54,6 +57,8 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 }
 
 export default function ContactsPage() {
+  const { t } = useLocale('contacts')
+  const { format: formatDate } = useDateFormat()
   const { toast } = useToast()
   usePageTitle('Clients')
   const [search, setSearch] = useState('')
@@ -157,15 +162,15 @@ export default function ContactsPage() {
 
   function exportCsv() {
     const rows = filtered.map((c: any) => ({
-      Name: c.full_name || '',
-      Company: c.company || '',
-      Email: c.email || '',
-      Phone: c.phone || '',
-      Source: c.source || '',
-      'Payment Method': c.payment_method || '',
-      'Client Since': c.client_since || '',
-      Properties: c.properties?.length || 0,
-      Tags: (c.tags || []).join(', '),
+      [t('table.csv.name')]: c.full_name || '',
+      [t('table.csv.company')]: c.company || '',
+      [t('table.csv.email')]: c.email || '',
+      [t('table.csv.phone')]: c.phone || '',
+      [t('table.csv.source')]: c.source || '',
+      [t('table.csv.paymentMethod')]: c.payment_method || '',
+      [t('table.csv.clientSince')]: c.client_since || '',
+      [t('table.csv.properties')]: c.properties?.length || 0,
+      [t('table.csv.tags')]: (c.tags || []).join(', '),
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -175,7 +180,7 @@ export default function ContactsPage() {
     a.download = `contacts-${format(new Date(), 'yyyy-MM-dd')}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    toast({ title: `Exported ${rows.length} contacts` })
+    toast({ title: t('page.toastExported', { count: rows.length }) })
   }
 
   // Source report data
@@ -196,14 +201,14 @@ export default function ContactsPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Clients"
-        subtitle="Manage clients and relationships"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={<div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search name, company, email…"
+              placeholder={t('page.searchPlaceholder')}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-contacts"
@@ -217,38 +222,38 @@ export default function ContactsPage() {
           </div>
           <Select value={sourceFilter} onValueChange={v => { setSourceFilter(v); setPage(1); try { localStorage.setItem('contacts_source_filter', v) } catch {} }}>
             <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="All Sources" />
+              <SelectValue placeholder={t('page.allSources')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Sources</SelectItem>
-              {SOURCE_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              <SelectItem value="all">{t('page.allSources')}</SelectItem>
+              {SOURCE_OPTIONS.map(s => <SelectItem key={s} value={s}>{t('source.' + slugify(s), undefined, s)}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={paymentFilter} onValueChange={v => { setPaymentFilter(v); setPage(1); try { localStorage.setItem('contacts_payment_filter', v) } catch {} }}>
             <SelectTrigger className="h-8 w-36 text-xs">
-              <SelectValue placeholder="All Payments" />
+              <SelectValue placeholder={t('page.allPayments')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Payments</SelectItem>
-              {PAYMENT_OPTIONS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+              <SelectItem value="all">{t('page.allPayments')}</SelectItem>
+              {PAYMENT_OPTIONS.map(p => <SelectItem key={p} value={p}>{t('paymentMethod.' + slugify(p), undefined, p)}</SelectItem>)}
             </SelectContent>
           </Select>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setSourceReportOpen(true)}>
-                <BarChart3 className="w-3.5 h-3.5" /> Source Report
+                <BarChart3 className="w-3.5 h-3.5" /> {t('page.sourceReportButton')}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>View breakdown of how clients were sourced</TooltipContent>
+            <TooltipContent>{t('page.sourceReportTooltip')}</TooltipContent>
           </Tooltip>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={exportCsv} disabled={filtered.length === 0}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
+            <Download className="w-3.5 h-3.5" /> {t('common.actions.exportCsv')}
           </Button>
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)} disabled={filtered.length === 0}>
-            <GitMerge className="w-3.5 h-3.5" /> Find Duplicates
+            <GitMerge className="w-3.5 h-3.5" /> {t('page.findDuplicatesButton')}
           </Button>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
-            <Plus className="w-3.5 h-3.5" /> Add Client
+            <Plus className="w-3.5 h-3.5" /> {t('page.addClientButton')}
           </Button>
         </div>}
       />
@@ -265,19 +270,19 @@ export default function ContactsPage() {
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Users className="w-3.5 h-3.5" /> Total Clients</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Users className="w-3.5 h-3.5" /> {t('page.summaryTotalClients')}</div>
               <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{total}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> New (30d)</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><UserPlus className="w-3.5 h-3.5" /> {t('page.summaryNew30')}</div>
               <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{new30}</p>
             </div>
             <div className={`rounded-2xl border shadow-sm p-4 ${unassigned > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertCircle className="w-3.5 h-3.5" /> Unassigned</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertCircle className="w-3.5 h-3.5" /> {t('page.summaryUnassigned')}</div>
               <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${unassigned > 0 ? 'text-warning' : ''}`}>{unassigned}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> Avg Properties</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Building2 className="w-3.5 h-3.5" /> {t('page.summaryAvgProperties')}</div>
               <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{avgProps.toFixed(1)}</p>
             </div>
           </div>
@@ -288,15 +293,15 @@ export default function ContactsPage() {
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
-              <SortHeader label="Name" sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Company" sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Email" sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Phone" sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Source" sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Payment" sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Client Since" sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Properties" sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label="Tags" sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('common.labels.name')} sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.company')} sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('common.labels.email')} sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('common.labels.phone')} sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.source')} sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.payment')} sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.clientSince')} sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('common.labels.properties')} sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.tags')} sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
             </tr>
           </thead>
           <tbody>
@@ -314,11 +319,11 @@ export default function ContactsPage() {
                   {contacts && contacts.length === 0 ? (
                     <EmptyState
                       icon={Users}
-                      title="No clients yet"
-                      description="Add your first client to start tracking properties against contacts."
+                      title={t('page.emptyTitle')}
+                      description={t('page.emptyDescription')}
                     />
                   ) : (
-                    <div className="text-center py-12 text-muted-foreground text-sm">No clients match your filters</div>
+                    <div className="text-center py-12 text-muted-foreground text-sm">{t('page.emptyFiltered')}</div>
                   )}
                 </td>
               </tr>
@@ -339,22 +344,22 @@ export default function ContactsPage() {
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground">{c.phone || '—'}</td>
                   <td className="py-2 px-3 text-xs">
-                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{c.source}</span> : <span className="text-muted-foreground">-</span>}
+                    {c.source ? <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-foreground/80 ring-1 ring-border">{t('source.' + slugify(c.source), undefined, c.source)}</span> : <span className="text-muted-foreground">-</span>}
                   </td>
                   <td className="py-2 px-3 text-xs">
-                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{c.payment_method}</span> : <span className="text-muted-foreground">-</span>}
+                    {c.payment_method ? <span className="inline-flex items-center rounded-full bg-info/10 px-2 py-0.5 text-2xs font-medium text-info ring-1 ring-info/20">{t('paymentMethod.' + slugify(c.payment_method), undefined, c.payment_method)}</span> : <span className="text-muted-foreground">-</span>}
                   </td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? format(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? formatDate(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
                   <td className="py-2 px-3 text-xs">
                     {(c.properties?.length || 0) > 0
                       ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
-                      : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">none</span>}
+                      : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">{t('table.noneBadge')}</span>}
                   </td>
                   <td className="py-2 px-3 text-xs">
                     {(c.tags || []).length > 0 ? (
                       <div className="flex flex-wrap gap-1">
-                        {c.tags.slice(0, 3).map((t: string) => (
-                          <span key={t} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{t}</span>
+                        {c.tags.slice(0, 3).map((tag: string) => (
+                          <span key={tag} className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">{tag}</span>
                         ))}
                         {c.tags.length > 3 && <span className="text-xs text-muted-foreground">+{c.tags.length - 3}</span>}
                       </div>
@@ -382,19 +387,19 @@ export default function ContactsPage() {
       <Dialog open={sourceReportOpen} onOpenChange={setSourceReportOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Contact Source Report</DialogTitle>
+            <DialogTitle>{t('sourceReport.dialogTitle')}</DialogTitle>
           </DialogHeader>
           {sourceReportData.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No contacts to report on</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">{t('sourceReport.empty')}</p>
           ) : (
             <div className="space-y-4">
               <div className="h-48">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={sourceReportData} layout="vertical" margin={{ left: 80 }}>
                     <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} width={75} />
+                    <YAxis type="category" dataKey="source" tick={{ fontSize: 11 }} width={75} tickFormatter={(v: string) => t('source.' + slugify(v), undefined, v)} />
                     <RechartsTooltip contentStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="total" name="Clients" radius={[0, 4, 4, 0]}>
+                    <Bar dataKey="total" name={t('sourceReport.chartLabel')} radius={[0, 4, 4, 0]}>
                       {sourceReportData.map((_, i) => (
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                       ))}
@@ -406,16 +411,16 @@ export default function ContactsPage() {
                 <table className="w-full text-xs">
                   <thead className="bg-muted/60">
                     <tr>
-                      <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Source</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Total</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">With Properties</th>
-                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">Conversion</th>
+                      <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">{t('sourceReport.colSource')}</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">{t('sourceReport.colTotal')}</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">{t('sourceReport.colWithProperties')}</th>
+                      <th className="text-right py-1.5 px-2 font-medium text-muted-foreground">{t('sourceReport.colConversion')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sourceReportData.map(row => (
                       <tr key={row.source} className="border-t border-border/50">
-                        <td className="py-1.5 px-2">{row.source}</td>
+                        <td className="py-1.5 px-2">{t('source.' + slugify(row.source), undefined, row.source)}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{row.total}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{row.withProperties}</td>
                         <td className="py-1.5 px-2 text-right tabular-nums">{row.conversion}%</td>
@@ -452,6 +457,7 @@ function levenshtein(a: string, b: string): number {
 }
 
 function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; onClose: () => void; contacts: any[] }) {
+  const { t } = useLocale('contacts')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { effectiveUser } = useAuth()
@@ -459,7 +465,9 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
 
   const duplicates = useMemo(() => {
     if (!contacts || contacts.length < 2) return []
-    const pairs: { primary: any; secondary: any; reason: string }[] = []
+    // `reason` stores a stable code (not the display string) — translated at
+    // render time via `duplicates.reasonSimilarName`/`reasonSameEmail`.
+    const pairs: { primary: any; secondary: any; reason: 'similar_name' | 'same_email' }[] = []
     const seen = new Set<string>()
     for (let i = 0; i < contacts.length; i++) {
       for (let j = i + 1; j < contacts.length; j++) {
@@ -471,13 +479,13 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
         const nameB = (b.full_name || '').toLowerCase()
         if (nameA && nameB && levenshtein(nameA, nameB) <= 2) {
           seen.add(key)
-          pairs.push({ primary: a, secondary: b, reason: 'Similar name' })
+          pairs.push({ primary: a, secondary: b, reason: 'similar_name' })
           continue
         }
         // Check email match
         if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) {
           seen.add(key)
-          pairs.push({ primary: a, secondary: b, reason: 'Same email' })
+          pairs.push({ primary: a, secondary: b, reason: 'same_email' })
         }
       }
     }
@@ -486,7 +494,7 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
 
   async function handleMerge(primary: any, secondary: any) {
     if (!canEditView('contacts', effectiveUser)) {
-      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      toast({ title: t('duplicates.toastEditAccessRequired'), description: t('duplicates.toastEditAccessDescription'), variant: 'destructive' })
       return
     }
     setMerging(true)
@@ -522,9 +530,9 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
       // Refresh the shared useContacts cache app-wide; fuzzy matching also
       // covers this page's ['contacts', 'with-property-counts'] join query.
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      toast({ title: 'Clients merged successfully.' })
+      toast({ title: t('duplicates.toastMerged') })
     } catch (e: any) {
-      toast({ title: 'Merge failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('duplicates.toastMergeFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setMerging(false)
     }
@@ -533,29 +541,29 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>Duplicate Review</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>{t('duplicates.dialogTitle')}</DialogTitle></DialogHeader>
         {duplicates.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No duplicates detected.</p>
+          <p className="text-sm text-muted-foreground text-center py-6">{t('duplicates.empty')}</p>
         ) : (
           <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">{duplicates.length} potential duplicate pair(s) found</p>
+            <p className="text-xs text-muted-foreground">{t('duplicates.pairsFound', { count: duplicates.length })}</p>
             {duplicates.map(({ primary, secondary, reason }, i) => (
               <div key={i} className="border border-border rounded-md p-3">
-                <p className="text-xs text-muted-foreground mb-2">{reason}</p>
+                <p className="text-xs text-muted-foreground mb-2">{reason === 'similar_name' ? t('duplicates.reasonSimilarName') : t('duplicates.reasonSameEmail')}</p>
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
                     <p className="font-medium">{primary.full_name}</p>
                     <p className="text-muted-foreground">{primary.email || '—'}</p>
-                    <p className="text-muted-foreground">{primary.properties?.length || 0} properties</p>
+                    <p className="text-muted-foreground">{t('duplicates.propertiesCount', { count: primary.properties?.length || 0 })}</p>
                   </div>
                   <div>
                     <p className="font-medium">{secondary.full_name}</p>
                     <p className="text-muted-foreground">{secondary.email || '—'}</p>
-                    <p className="text-muted-foreground">{secondary.properties?.length || 0} properties</p>
+                    <p className="text-muted-foreground">{t('duplicates.propertiesCount', { count: secondary.properties?.length || 0 })}</p>
                   </div>
                 </div>
                 <Button size="sm" variant="outline" className="mt-2 text-xs w-full" disabled={merging} onClick={() => handleMerge(primary, secondary)}>
-                  Merge → Keep {primary.full_name}
+                  {t('duplicates.mergeButton', { name: primary.full_name })}
                 </Button>
               </div>
             ))}

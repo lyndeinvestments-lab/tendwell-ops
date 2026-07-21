@@ -40,6 +40,8 @@ import {
 import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/components/AddressAutocomplete'
 import { SignaturePad } from '@/components/SignaturePad'
 import { downloadAgreementPdf } from '@/lib/agreements'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -50,10 +52,18 @@ const SYSTEM_ROLE_OPTIONS: { value: UserRole; label: string }[] = [
   { value: 'viewer', label: 'Viewer' },
 ]
 
+// Display-only lookup for `app_users.role` (+ custom role slugs) — the DB
+// value stays canonical English; unknown/custom roles fall back to the
+// label passed in (system default or an admin-entered custom role name).
+function roleDisplayLabel(t: (key: string, vars?: Record<string, string | number>, fallback?: string) => string, role: string, fallback?: string): string {
+  return t(`roleLabel.${slugify(role)}`, undefined, fallback ?? role)
+}
+
 function RoleBadge({ role }: { role: string }) {
+  const { t } = useLocale('settingsPage')
   return (
     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium capitalize whitespace-nowrap ${roleBadgeClasses(role)}`}>
-      {role}
+      {roleDisplayLabel(t, role)}
     </span>
   )
 }
@@ -98,6 +108,7 @@ function useRolePermissions() {
 
 function PermissionsSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const { user } = useAuth()
   const { rolePermissions, isLoading, savePermissions } = useRolePermissions()
   const [localPerms, setLocalPerms] = useState<RolePermissionsStore | null>(null)
@@ -159,9 +170,9 @@ function PermissionsSection() {
         changed_by: user?.label ?? null,
       })
       setLocalPerms(null)
-      toast({ title: 'Permissions saved' })
+      toast({ title: t('toasts.permissionsSaved') })
     } catch (e: any) {
-      toast({ title: 'Failed to save permissions', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.permissionsSaveFailed'), description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -201,9 +212,9 @@ function PermissionsSection() {
       setLocalPerms(null) // DB is now source of truth
       setNewRoleName('')
       setNewRoleOpen(false)
-      toast({ title: `Role "${newRoleName.trim()}" created`, description: 'Configure its views in the matrix, then save.' })
+      toast({ title: t('toasts.roleCreated', { name: newRoleName.trim() }), description: t('toasts.roleCreatedDesc') })
     } catch (e: any) {
-      toast({ title: 'Failed to create role', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.roleCreateFailed'), description: e?.message, variant: 'destructive' })
     }
   }
 
@@ -237,7 +248,7 @@ function PermissionsSection() {
       changed_by: user?.label ?? null,
     })
     setDeleteRoleId(null)
-    toast({ title: 'Role deleted', description: 'Save to persist changes.' })
+    toast({ title: t('toasts.roleDeleted'), description: t('toasts.roleDeletedDesc') })
   }
 
   if (isLoading) {
@@ -256,10 +267,10 @@ function PermissionsSection() {
           <div>
             <h2 className="text-base font-medium flex items-center gap-2">
               <Lock className="w-4 h-4" />
-              Permissions
+              {t('permissions.heading')}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Configure which views each role can access. Settings is always admin-only.
+              {t('permissions.description')}
             </p>
           </div>
           <div className="flex gap-2">
@@ -270,7 +281,7 @@ function PermissionsSection() {
               onClick={() => setNewRoleOpen(true)}
             >
               <Plus className="w-3.5 h-3.5" />
-              New Role
+              {t('permissions.newRole')}
             </Button>
             {localPerms && (
               <Button
@@ -279,7 +290,7 @@ function PermissionsSection() {
                 onClick={handleSaveMatrix}
               >
                 <Check className="w-3.5 h-3.5" />
-                Save Changes
+                {t('permissions.saveChanges')}
               </Button>
             )}
           </div>
@@ -289,17 +300,17 @@ function PermissionsSection() {
           <table className="w-full text-xs">
             <thead className="bg-muted/80 border-b border-border">
               <tr>
-                <th rowSpan={2} className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] align-bottom">Page</th>
+                <th rowSpan={2} className="text-left font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[160px] align-bottom">{t('permissions.colPage')}</th>
                 {roleIds.map(roleId => (
                   <th key={roleId} colSpan={2} className="text-center font-medium text-muted-foreground uppercase tracking-wide py-1 px-1 min-w-[80px]">
                     <div className="flex flex-col items-center gap-0.5">
-                      <span>{effectivePerms[roleId]?.label || roleId}</span>
+                      <span>{effectivePerms[roleId]?.label || roleDisplayLabel(t, roleId)}</span>
                       <div className="flex gap-0.5">
                         {roleId !== 'admin' && (
                           <button
                             onClick={() => handleResetRole(roleId)}
                             className="text-muted-foreground/60 hover:text-foreground"
-                            title="Reset to defaults"
+                            title={t('permissions.resetTitle')}
                           >
                             <RotateCcw className="w-3 h-3" />
                           </button>
@@ -308,7 +319,7 @@ function PermissionsSection() {
                           <button
                             onClick={() => handleDeleteRoleCheck(roleId)}
                             className="text-muted-foreground/60 hover:text-destructive"
-                            title="Delete role"
+                            title={t('permissions.deleteTitle')}
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -321,8 +332,8 @@ function PermissionsSection() {
               <tr className="border-b border-border/50">
                 {roleIds.map(roleId => (
                   <React.Fragment key={`sub-${roleId}`}>
-                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">View</th>
-                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">Edit</th>
+                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">{t('permissions.colView')}</th>
+                    <th className="text-center text-2xs text-muted-foreground/70 py-0.5 px-1 w-10">{t('permissions.colEdit')}</th>
                   </React.Fragment>
                 ))}
               </tr>
@@ -377,29 +388,29 @@ function PermissionsSection() {
       <Dialog open={newRoleOpen} onOpenChange={setNewRoleOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Create Custom Role</DialogTitle>
+            <DialogTitle>{t('permissions.createRoleTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Role Name</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('permissions.roleNameLabel')}</label>
               <Input
                 value={newRoleName}
                 onChange={e => setNewRoleName(e.target.value)}
-                placeholder="e.g. Manager"
+                placeholder={t('permissions.roleNamePlaceholder')}
                 className="mt-1"
                 autoFocus
               />
             </div>
             {newRoleSlug && (
               <div className="text-xs text-muted-foreground">
-                Slug: <code className="bg-muted px-1 rounded">{newRoleSlug}</code>
+                {t('permissions.slugLabel')} <code className="bg-muted px-1 rounded">{newRoleSlug}</code>
                 {slugCollision && (
-                  <span className="text-destructive ml-2">Already exists</span>
+                  <span className="text-destructive ml-2">{t('permissions.slugCollision')}</span>
                 )}
               </div>
             )}
             <p className="text-xs text-muted-foreground">
-              After creating, configure view access in the permissions matrix.
+              {t('permissions.createRoleHint')}
             </p>
           </div>
           <DialogFooter>
@@ -408,7 +419,7 @@ function PermissionsSection() {
               disabled={!newRoleName.trim() || !newRoleSlug || !!slugCollision}
               onClick={handleCreateRole}
             >
-              Create Role
+              {t('permissions.createRoleButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -418,33 +429,33 @@ function PermissionsSection() {
       <Dialog open={!!deleteRoleId} onOpenChange={() => setDeleteRoleId(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Delete Role</DialogTitle>
+            <DialogTitle>{t('permissions.deleteRoleTitle')}</DialogTitle>
           </DialogHeader>
           {deleteBlockedUsers.length > 0 ? (
             <div className="space-y-2">
               <p className="text-sm text-destructive">
-                Cannot delete - {deleteBlockedUsers.length} user{deleteBlockedUsers.length !== 1 ? 's' : ''} have this role:
+                {t('permissions.cannotDelete', { count: deleteBlockedUsers.length, plural: deleteBlockedUsers.length !== 1 ? 's' : '' })}
               </p>
               <ul className="text-sm list-disc pl-5 space-y-0.5">
                 {deleteBlockedUsers.map((u: any) => (
                   <li key={u.id}>{u.label}</li>
                 ))}
               </ul>
-              <p className="text-xs text-muted-foreground">Reassign these users to another role first.</p>
+              <p className="text-xs text-muted-foreground">{t('permissions.reassignHint')}</p>
             </div>
           ) : (
             <p className="text-sm">
-              Are you sure you want to delete the <strong>{deleteRoleId}</strong> role?
+              {t('permissions.confirmDelete', { role: deleteRoleId ?? '' })}
             </p>
           )}
           <DialogFooter>
             {deleteBlockedUsers.length === 0 ? (
               <Button variant="destructive" size="sm" onClick={handleDeleteRoleConfirm}>
-                Delete Role
+                {t('permissions.deleteRoleButton')}
               </Button>
             ) : (
               <Button variant="outline" size="sm" onClick={() => setDeleteRoleId(null)}>
-                Close
+                {t('permissions.close')}
               </Button>
             )}
           </DialogFooter>
@@ -458,7 +469,13 @@ function PermissionsSection() {
 
 function AppSettingsSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const { get, saveSetting } = useAppSettings()
+
+  // Field labels are looked up from `config.fields.<key>` (falling back to
+  // the English default here) — the `key` itself is the `app_settings.key`
+  // and stays canonical English.
+  const fieldLabel = (key: string, fallback: string) => t(`config.fields.${key}`, undefined, fallback)
 
   // NOTE: only settings that are actually read by the app are surfaced here.
   // (default_cleaner_pay, followup_reminder_days, stale_lead_days,
@@ -485,12 +502,13 @@ function AppSettingsSection() {
 
   function handleBlurSave(key: string, value: string) {
     saveSetting({ key, value })
-    toast({ title: 'Setting saved', description: `${ALL_FIELDS.find(f => f.key === key)?.label} updated.` })
+    const f = ALL_FIELDS.find(f => f.key === key)
+    toast({ title: t('toasts.settingSaved'), description: t('toasts.settingSavedDesc', { label: f ? fieldLabel(f.key, f.label) : key }) })
   }
 
   function handleSaveAll() {
     ALL_FIELDS.forEach(f => saveSetting({ key: f.key, value: localValues[f.key] ?? f.placeholder }))
-    toast({ title: 'All settings saved' })
+    toast({ title: t('toasts.allSettingsSaved') })
   }
 
   const COST_FIELDS = ALL_FIELDS.filter(f => f.section === 'cost')
@@ -502,7 +520,7 @@ function AppSettingsSection() {
   function FieldRow({ f }: { f: typeof ALL_FIELDS[number] }) {
     return (
       <div key={f.key} className="grid grid-cols-[180px_1fr] items-center gap-2">
-        <label className="text-xs text-muted-foreground">{f.label}</label>
+        <label className="text-xs text-muted-foreground">{fieldLabel(f.key, f.label)}</label>
         <Input
           type={(f as any).type === 'text' ? 'text' : 'number'}
           value={localValues[f.key] ?? f.placeholder}
@@ -521,9 +539,9 @@ function AppSettingsSection() {
       <div className="space-y-3">
         <h2 className="text-base font-medium flex items-center gap-2">
           <DollarSign className="w-4 h-4" />
-          Cost Defaults
+          {t('config.costHeading')}
         </h2>
-        <p className="text-xs text-muted-foreground">Default costs used in Quote Sheet calculations</p>
+        <p className="text-xs text-muted-foreground">{t('config.costDesc')}</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {COST_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -532,23 +550,23 @@ function AppSettingsSection() {
       <div className="space-y-3">
         <h2 className="text-base font-medium flex items-center gap-2">
           <DollarSign className="w-4 h-4" />
-          Amenity Costs
+          {t('config.amenityHeading')}
         </h2>
-        <p className="text-xs text-muted-foreground">Per-unit supply costs used to calculate Est Consumables on each property</p>
+        <p className="text-xs text-muted-foreground">{t('config.amenityDesc')}</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {AMENITY_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
         <p className="text-xs text-muted-foreground">
-          Formula: (Full Baths + Half Baths) × (Bathroom + Toilet Paper) + Kitchens × Kitchen + Beds × Trash Bag + Hot Tub
+          {t('config.amenityFormula')}
         </p>
       </div>
 
       <div className="space-y-3">
         <h2 className="text-base font-medium flex items-center gap-2">
           <TrendingUp className="w-4 h-4" />
-          Profit Tiers
+          {t('config.profitHeading')}
         </h2>
-        <p className="text-xs text-muted-foreground">Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard. Break-even target margin drives the break-even flag on Cost Tracking.</p>
+        <p className="text-xs text-muted-foreground">{t('config.profitDesc')}</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {PROFIT_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -557,9 +575,9 @@ function AppSettingsSection() {
       <div className="space-y-3">
         <h2 className="text-base font-medium flex items-center gap-2">
           <Wind className="w-4 h-4" />
-          AC Filter Schedule
+          {t('config.acHeading')}
         </h2>
-        <p className="text-xs text-muted-foreground">Default interval for AC filter replacement reminders</p>
+        <p className="text-xs text-muted-foreground">{t('config.acDesc')}</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {AC_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -568,9 +586,9 @@ function AppSettingsSection() {
       <div className="space-y-3">
         <h2 className="text-base font-medium flex items-center gap-2">
           <KeyRound className="w-4 h-4" />
-          Smart-Lock Access
+          {t('config.accessHeading')}
         </h2>
-        <p className="text-xs text-muted-foreground">The shared smart-lock auto code. Every property marked as having an auto code uses this value - changing it here updates it everywhere.</p>
+        <p className="text-xs text-muted-foreground">{t('config.accessDesc')}</p>
         <div className="rounded-lg border border-border p-4 space-y-3">
           {ACCESS_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
         </div>
@@ -579,7 +597,7 @@ function AppSettingsSection() {
       <div className="flex justify-end pt-1">
         <Button size="sm" className="h-8 text-xs gap-1.5" onClick={handleSaveAll} data-testid="button-save-all-settings">
           <Check className="w-3.5 h-3.5" />
-          Save All Settings
+          {t('config.saveAll')}
         </Button>
       </div>
     </div>
@@ -590,6 +608,7 @@ function AppSettingsSection() {
 
 function OnboardingTemplateSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const [newTask, setNewTask] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -619,7 +638,7 @@ function OnboardingTemplateSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
       setNewTask('')
-      toast({ title: 'Template task added' })
+      toast({ title: t('toasts.templateTaskAdded') })
     },
   })
 
@@ -631,7 +650,7 @@ function OnboardingTemplateSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
       setEditingId(null)
-      toast({ title: 'Template updated' })
+      toast({ title: t('toasts.templateUpdated') })
     },
   })
 
@@ -642,7 +661,7 @@ function OnboardingTemplateSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/onboarding-templates'] })
-      toast({ title: 'Template task removed' })
+      toast({ title: t('toasts.templateTaskRemoved') })
     },
   })
 
@@ -650,9 +669,9 @@ function OnboardingTemplateSection() {
     <div className="space-y-3">
       <h2 className="text-base font-medium flex items-center gap-2">
         <ClipboardCheck className="w-4 h-4" />
-        Onboarding Checklist
+        {t('templates.onboardingHeading')}
       </h2>
-      <p className="text-xs text-muted-foreground">Default tasks assigned to new onboarding properties</p>
+      <p className="text-xs text-muted-foreground">{t('templates.onboardingDesc')}</p>
       <div className="rounded-lg border border-border p-4 space-y-2">
         {isLoading ? (
           [...Array(4)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)
@@ -693,12 +712,12 @@ function OnboardingTemplateSection() {
           <Input
             value={newTask}
             onChange={e => setNewTask(e.target.value)}
-            placeholder="Add template task…"
+            placeholder={t('templates.addTaskPlaceholder')}
             className="h-7 text-xs flex-1"
             onKeyDown={e => e.key === 'Enter' && newTask.trim() && addTemplate(newTask.trim())}
           />
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={!newTask.trim()} onClick={() => addTemplate(newTask.trim())}>
-            <Plus className="w-3 h-3" /> Add
+            <Plus className="w-3 h-3" /> {t('common.actions.add')}
           </Button>
         </div>
       </div>
@@ -720,6 +739,7 @@ function CustomViewsDialog({
   rolePermissions: RolePermissionsStore
 }) {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const { user } = useAuth()
   const qc = useQueryClient()
 
@@ -789,7 +809,7 @@ function CustomViewsDialog({
       new_value: customViews.join(','),
       changed_by: user?.label ?? null,
     })
-    toast({ title: 'Custom access saved', description: `${targetUser.label} now has custom access.` })
+    toast({ title: t('toasts.customAccessSaved'), description: t('toasts.customAccessSavedDesc', { name: targetUser.label }) })
   }
 
   function handleReset() {
@@ -802,7 +822,7 @@ function CustomViewsDialog({
       new_value: 'reset_to_role',
       changed_by: user?.label ?? null,
     })
-    toast({ title: 'Reset to role defaults', description: `${targetUser.label} will inherit from their role.` })
+    toast({ title: t('toasts.customAccessReset'), description: t('toasts.customAccessResetDesc', { name: targetUser.label }) })
   }
 
   function togglePerm(viewId: string, field: 'view' | 'edit', checked: boolean) {
@@ -821,17 +841,17 @@ function CustomViewsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Custom Access for {targetUser.label}</DialogTitle>
+          <DialogTitle>{t('users.customViews.title', { name: targetUser.label })}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          Override which pages this user can view and edit. Clear all checkboxes only if you intend to revoke all access.
+          {t('users.customViews.description')}
         </p>
 
         <div className="space-y-3">
           <div className="flex items-center gap-4 text-2xs text-muted-foreground uppercase tracking-wider pl-1">
-            <span className="flex-1">Page</span>
-            <span className="w-10 text-center">View</span>
-            <span className="w-10 text-center">Edit</span>
+            <span className="flex-1">{t('users.customViews.colPage')}</span>
+            <span className="w-10 text-center">{t('users.customViews.colView')}</span>
+            <span className="w-10 text-center">{t('users.customViews.colEdit')}</span>
           </div>
           {viewGroups.map(({ group, views }) => (
             <div key={group}>
@@ -868,11 +888,11 @@ function CustomViewsDialog({
           {hasCustom && (
             <Button variant="outline" size="sm" onClick={handleReset} disabled={isPending} className="gap-1">
               <RotateCcw className="w-3 h-3" />
-              Reset to Role Defaults
+              {t('users.customViews.resetButton')}
             </Button>
           )}
           <Button size="sm" onClick={handleSave} disabled={isPending}>
-            {isPending ? 'Saving…' : 'Save Custom Access'}
+            {isPending ? t('users.customViews.saving') : t('users.customViews.saveButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -884,6 +904,7 @@ function CustomViewsDialog({
 
 function UsersSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const { user, setViewAs } = useAuth()
   const [, navigate] = useLocation()
@@ -935,7 +956,7 @@ function UsersSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      toast({ title: 'User invited', description: `${newEmail} can now sign in with Google using this email.` })
+      toast({ title: t('toasts.userInvited'), description: t('toasts.userInvitedDesc', { email: newEmail }) })
       setInviteOpen(false)
       setNewEmail('')
       setNewLabel('')
@@ -944,9 +965,9 @@ function UsersSection() {
     onError: (err: any) => {
       const msg = err?.message || ''
       if (msg.includes('unique') || msg.includes('duplicate')) {
-        toast({ title: 'Email already exists', description: 'That account email already has access.', variant: 'destructive' })
+        toast({ title: t('toasts.emailExists'), description: t('toasts.emailExistsDesc'), variant: 'destructive' })
       } else {
-        toast({ title: 'Failed to invite user', description: err?.message, variant: 'destructive' })
+        toast({ title: t('toasts.inviteFailed'), description: err?.message, variant: 'destructive' })
       }
     },
   })
@@ -975,10 +996,10 @@ function UsersSection() {
         new_value: label,
         changed_by: user?.label ?? null,
       })
-      toast({ title: 'Name updated' })
+      toast({ title: t('toasts.nameUpdated') })
       setEditingLabelId(null)
     },
-    onError: (e: any) => toast({ title: 'Failed to rename', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.renameFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const commitUserRename = (id: string, currentLabel: string) => {
@@ -1008,9 +1029,9 @@ function UsersSection() {
         new_value: newRole,
         changed_by: user?.label ?? null,
       })
-      toast({ title: 'Role updated' })
+      toast({ title: t('toasts.roleUpdated') })
     } catch (e: any) {
-      toast({ title: 'Failed to update role', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.roleUpdateFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setPendingRoleUpdate(null)
       setEditingRoleId(null)
@@ -1024,11 +1045,11 @@ function UsersSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
-      toast({ title: 'User removed' })
+      toast({ title: t('toasts.userRemoved') })
       setConfirmDeleteId(null)
     },
     onError: (error: any) => {
-      toast({ title: 'Failed to remove user', description: error?.message, variant: 'destructive' })
+      toast({ title: t('toasts.userRemoveFailed'), description: error?.message, variant: 'destructive' })
       setConfirmDeleteId(null)
     },
   })
@@ -1088,9 +1109,9 @@ function UsersSection() {
           <div>
             <h2 className="text-base font-medium flex items-center gap-2">
               <Users className="w-4 h-4" />
-              Users
+              {t('users.heading')}
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Staff &amp; internal accounts. Add an account email to grant access; staff sign in with Google using that email. Property owners are managed in the Owners tab and sign in with email/password.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('users.description')}</p>
           </div>
           <Button
             size="sm"
@@ -1099,21 +1120,21 @@ function UsersSection() {
             data-testid="button-add-user"
           >
             <UserPlus className="w-3.5 h-3.5" />
-            Add User
+            {t('users.addUser')}
           </Button>
         </div>
 
         {isError ? (
-          <ErrorState title="Couldn't load users" onRetry={() => refetch()} />
+          <ErrorState title={t('users.errorTitle')} onRetry={() => refetch()} />
         ) : (
         <div className="rounded-lg border border-border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-muted/80 border-b border-border">
               <tr>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Name</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Role</th>
-                <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('users.colName')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('users.colEmail')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('users.colRole')}</th>
+                <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('users.colActions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1127,7 +1148,7 @@ function UsersSection() {
                 ))
               ) : !users?.length ? (
                 <tr>
-                  <td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">No users found</td>
+                  <td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">{t('users.noUsersFound')}</td>
                 </tr>
               ) : (
                 users.map((u: any) => {
@@ -1156,7 +1177,7 @@ function UsersSection() {
                               type="button"
                               className="flex items-center gap-1 group/name text-left"
                               onClick={() => { setEditingLabelId(u.id); setLabelDraft(u.label ?? '') }}
-                              title="Click to rename"
+                              title={t('users.renameTitle')}
                               data-testid={`button-rename-user-${u.id}`}
                             >
                               {u.label}
@@ -1165,12 +1186,12 @@ function UsersSection() {
                           )}
                           {hasCustom && (
                             <span className={`text-2xs font-medium px-1 py-0.5 rounded border ${TONE_SOFT.warning}`}>
-                              Custom
+                              {t('users.customBadge')}
                             </span>
                           )}
                         </span>
                       </td>
-                      <td className="py-2 px-3 text-xs text-muted-foreground">{u.google_email || <span className="italic">not set</span>}</td>
+                      <td className="py-2 px-3 text-xs text-muted-foreground">{u.google_email || <span className="italic">{t('users.notSet')}</span>}</td>
                       <td className="py-2 px-3">
                         {editingRoleId === u.id ? (
                           <div className="flex items-center gap-1">
@@ -1182,7 +1203,7 @@ function UsersSection() {
                               onChange={e => handleRoleChange(u.id, e.target.value)}
                             >
                               {allRoleOptions.map(o => (
-                                <option key={o.value} value={o.value}>{o.label}</option>
+                                <option key={o.value} value={o.value}>{roleDisplayLabel(t, o.value, o.label)}</option>
                               ))}
                             </select>
                           </div>
@@ -1190,7 +1211,7 @@ function UsersSection() {
                           <button
                             className="flex items-center gap-1 group/role"
                             onClick={() => setEditingRoleId(u.id)}
-                            title="Click to change role"
+                            title={t('users.changeRoleTitle')}
                           >
                             <RoleBadge role={u.role} />
                             <Pencil className="w-3 h-3 text-muted-foreground opacity-0 group-hover/role:opacity-100 transition-opacity" />
@@ -1206,7 +1227,7 @@ function UsersSection() {
                               size="sm"
                               className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                               onClick={() => setCustomizeUser(u)}
-                              title="Customize view access"
+                              title={t('users.customizeTitle')}
                             >
                               <SlidersHorizontal className="w-3.5 h-3.5" />
                             </Button>
@@ -1218,7 +1239,7 @@ function UsersSection() {
                               size="sm"
                               className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                               onClick={() => handleViewAs(u)}
-                              title={`Preview as ${u.label}`}
+                              title={t('users.previewAsTitle', { name: u.label })}
                             >
                               <Eye className="w-3.5 h-3.5" />
                             </Button>
@@ -1226,7 +1247,7 @@ function UsersSection() {
                           {/* Delete */}
                           {confirmDeleteId === u.id ? (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-xs text-muted-foreground">Remove?</span>
+                              <span className="text-xs text-muted-foreground">{t('users.removeConfirm')}</span>
                               <Button
                                 variant="destructive"
                                 size="sm"
@@ -1235,7 +1256,7 @@ function UsersSection() {
                                 onClick={() => deleteUser(u.id)}
                                 data-testid={`button-confirm-delete-user-${u.id}`}
                               >
-                                {deleting ? 'Removing…' : 'Confirm'}
+                                {deleting ? t('users.removing') : t('common.actions.confirm')}
                               </Button>
                               <Button
                                 variant="outline"
@@ -1244,7 +1265,7 @@ function UsersSection() {
                                 disabled={deleting}
                                 onClick={() => setConfirmDeleteId(null)}
                               >
-                                Cancel
+                                {t('common.actions.cancel')}
                               </Button>
                             </div>
                           ) : (
@@ -1253,7 +1274,7 @@ function UsersSection() {
                               size="sm"
                               className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
                               onClick={() => setConfirmDeleteId(u.id)}
-                              aria-label={`Remove ${u.label}`}
+                              aria-label={t('users.removeAria', { name: u.label })}
                               data-testid={`button-delete-user-${u.id}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1275,16 +1296,14 @@ function UsersSection() {
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Add Staff User</DialogTitle>
+            <DialogTitle>{t('users.addDialogTitle')}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground -mt-2">
-            For staff/internal accounts. Enter the account email - staff sign in with Google using
-            this email and can access immediately. (Property owners are added in the Owners tab and
-            sign in with email/password.)
+            {t('users.addDialogDesc')}
           </p>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Account email</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('users.accountEmailLabel')}</label>
               <Input
                 type="email"
                 value={newEmail}
@@ -1295,7 +1314,7 @@ function UsersSection() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Display Name</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('users.displayNameLabel')}</label>
               <Input
                 value={newLabel}
                 onChange={e => setNewLabel(e.target.value)}
@@ -1305,7 +1324,7 @@ function UsersSection() {
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground">Role</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('users.roleLabel')}</label>
               <select
                 value={newRole}
                 onChange={e => setNewRole(e.target.value)}
@@ -1313,7 +1332,7 @@ function UsersSection() {
                 data-testid="select-new-user-role"
               >
                 {allRoleOptions.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <option key={o.value} value={o.value}>{roleDisplayLabel(t, o.value, o.label)}</option>
                 ))}
               </select>
             </div>
@@ -1325,7 +1344,7 @@ function UsersSection() {
               onClick={() => inviteUser({ email: newEmail, label: newLabel.trim(), role: newRole })}
               data-testid="button-confirm-add-user"
             >
-              {inviting ? 'Adding…' : 'Add User'}
+              {inviting ? t('users.addingButton') : t('users.addUser')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1351,6 +1370,7 @@ function UsersSection() {
 function NotificationsSection() {
   const { user } = useAuth()
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const [testing, setTesting] = useState(false)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
@@ -1419,7 +1439,7 @@ function NotificationsSection() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/notif-prefs'] }),
-    onError: (e: any) => toast({ title: 'Save failed', description: e.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.saveFailed'), description: e.message, variant: 'destructive' }),
   })
 
   async function handleTestEmail() {
@@ -1427,8 +1447,8 @@ function NotificationsSection() {
     const { sendTestEmail } = await import('@/lib/notify')
     const r = await sendTestEmail()
     setTesting(false)
-    if (r.ok) toast({ title: 'Test email sent', description: `Sent to ${r.sentTo}` })
-    else toast({ title: 'Test failed', description: r.error, variant: 'destructive' })
+    if (r.ok) toast({ title: t('toasts.testEmailSent'), description: t('toasts.testEmailSentDesc', { email: r.sentTo ?? '' }) })
+    else toast({ title: t('toasts.testEmailFailed'), description: r.error, variant: 'destructive' })
   }
 
   const isAdmin = user?.role === 'admin'
@@ -1441,14 +1461,14 @@ function NotificationsSection() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-base font-medium flex items-center gap-2">
-            <Users className="w-4 h-4" /> Email Notifications
+            <Users className="w-4 h-4" /> {t('notifMatrix.heading')}
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Each user only receives notifications for events tied to views they can access.
+            {t('notifMatrix.description')}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={handleTestEmail} disabled={testing}>
-          {testing ? 'Sending…' : 'Send test email to me'}
+          {testing ? t('notifMatrix.sending') : t('notifMatrix.sendTest')}
         </Button>
       </div>
 
@@ -1479,9 +1499,9 @@ function NotificationsSection() {
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   {prefs.email_enabled ? (
-                    <span className="text-success">on · {prefs.digest_frequency}</span>
+                    <span className="text-success">{t('notifMatrix.statusOnPrefix')}{t(`notifMatrix.freqShort.${prefs.digest_frequency || 'instant'}`, undefined, prefs.digest_frequency)}</span>
                   ) : (
-                    <span className="text-muted-foreground">off</span>
+                    <span className="text-muted-foreground">{t('notifMatrix.statusOff')}</span>
                   )}
                 </div>
               </button>
@@ -1495,19 +1515,19 @@ function NotificationsSection() {
                         disabled={!canEditThis}
                         onCheckedChange={(v) => savePref.mutate({ ...prefs, email_enabled: !!v })}
                       />
-                      Email enabled
+                      {t('notifMatrix.emailEnabled')}
                     </label>
                     <label className="flex items-center gap-2 text-sm">
-                      Frequency:
+                      {t('notifMatrix.frequencyLabel')}
                       <select
                         value={prefs.digest_frequency || 'instant'}
                         disabled={!canEditThis}
                         onChange={(e) => savePref.mutate({ ...prefs, digest_frequency: e.target.value })}
                         className="h-7 text-xs border border-input rounded px-2 bg-background"
                       >
-                        <option value="instant">Instant</option>
-                        <option value="daily">Daily digest (8am ET)</option>
-                        <option value="off">Off</option>
+                        <option value="instant">{t('notifMatrix.freqInstant')}</option>
+                        <option value="daily">{t('notifMatrix.freqDaily')}</option>
+                        <option value="off">{t('notifMatrix.freqOff')}</option>
                       </select>
                     </label>
                   </div>
@@ -1522,7 +1542,7 @@ function NotificationsSection() {
                       <div className="space-y-2">
                         {!emailActive && (
                           <p className="text-2xs text-muted-foreground">
-                            {prefs.email_enabled ? 'Frequency is set to Off' : 'Email is disabled'} - these events won’t send. Your selections are kept for when you re-enable.
+                            {prefs.email_enabled ? t('notifMatrix.frequencyOffNote') : t('notifMatrix.emailDisabledNote')}{t('notifMatrix.noteSuffix')}
                           </p>
                         )}
                         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>
@@ -1534,14 +1554,14 @@ function NotificationsSection() {
                               <label
                                 key={ev.field}
                                 className={`flex items-center gap-2 text-sm px-2 py-1.5 rounded border ${active ? 'border-border' : 'border-border/50 opacity-60'}`}
-                                title={!hasAccess ? `Requires ${ev.view} access` : (!emailActive ? 'Enable email to use' : '')}
+                                title={!hasAccess ? t('notifMatrix.requiresAccess', { view: ev.view }) : (!emailActive ? t('notifMatrix.enableEmailToUse') : '')}
                               >
                                 <Checkbox
                                   checked={active && checked}
                                   disabled={!canEditThis || !active}
                                   onCheckedChange={(v) => savePref.mutate({ ...prefs, [ev.field]: !!v })}
                                 />
-                                <span className="flex-1">{ev.label}</span>
+                                <span className="flex-1">{t(`notifMatrix.notifEvents.${ev.field}`, undefined, ev.label)}</span>
                                 {!hasAccess && <Lock className="w-3 h-3 text-muted-foreground" />}
                               </label>
                             )
@@ -1563,6 +1583,7 @@ function NotificationsSection() {
 }
 
 function NotificationLogViewer() {
+  const { t } = useLocale('settingsPage')
   const { data: logs, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['/supabase/notif-log'],
     // High-churn log; viewer has an explicit Refresh button (refetch). Keep
@@ -1586,18 +1607,18 @@ function NotificationLogViewer() {
   return (
     <div className="border-t border-border pt-4 mt-2 space-y-2">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Recent send log</h3>
+        <h3 className="text-sm font-medium">{t('notifMatrix.log.heading')}</h3>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">{sentCt} sent · {failedCt} failed (last {total})</span>
+          <span className="text-xs text-muted-foreground">{t('notifMatrix.log.summary', { sent: sentCt, failed: failedCt, total })}</span>
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => refetch()} disabled={isFetching}>
-            {isFetching ? 'Refreshing…' : 'Refresh'}
+            {isFetching ? t('notifMatrix.log.refreshing') : t('notifMatrix.log.refresh')}
           </Button>
         </div>
       </div>
       {isLoading ? (
         <Skeleton className="h-32 w-full" />
       ) : total === 0 ? (
-        <p className="text-xs text-muted-foreground py-3 text-center">No notifications sent yet.</p>
+        <p className="text-xs text-muted-foreground py-3 text-center">{t('notifMatrix.log.empty')}</p>
       ) : (
         <div className="max-h-72 overflow-auto rounded border border-border">
           {/* Mobile: stacked cards */}
@@ -1606,7 +1627,7 @@ function NotificationLogViewer() {
               <div key={l.id} className="p-2.5 space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium truncate">{l.event_type}</span>
-                  <span className={`text-xs flex-shrink-0 ${l.status === 'sent' ? 'text-success' : l.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{l.status}</span>
+                  <span className={`text-xs flex-shrink-0 ${l.status === 'sent' ? 'text-success' : l.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>{t(`notifMatrix.log.status.${l.status}`, undefined, l.status)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate">{l.recipient_email}</p>
                 <p className="text-2xs text-muted-foreground">{new Date(l.sent_at).toLocaleString()}</p>
@@ -1618,11 +1639,11 @@ function NotificationLogViewer() {
           <table className="w-full text-xs hidden sm:table">
             <thead className="sticky top-0 bg-muted">
               <tr>
-                <th className="text-left px-2 py-1.5 font-medium">When</th>
-                <th className="text-left px-2 py-1.5 font-medium">Event</th>
-                <th className="text-left px-2 py-1.5 font-medium">Recipient</th>
-                <th className="text-left px-2 py-1.5 font-medium">Status</th>
-                <th className="text-left px-2 py-1.5 font-medium">Notes</th>
+                <th className="text-left px-2 py-1.5 font-medium">{t('notifMatrix.log.colWhen')}</th>
+                <th className="text-left px-2 py-1.5 font-medium">{t('notifMatrix.log.colEvent')}</th>
+                <th className="text-left px-2 py-1.5 font-medium">{t('notifMatrix.log.colRecipient')}</th>
+                <th className="text-left px-2 py-1.5 font-medium">{t('notifMatrix.log.colStatus')}</th>
+                <th className="text-left px-2 py-1.5 font-medium">{t('notifMatrix.log.colNotes')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1633,7 +1654,7 @@ function NotificationLogViewer() {
                   <td className="px-2 py-1 truncate max-w-[180px]">{l.recipient_email}</td>
                   <td className="px-2 py-1">
                     <span className={l.status === 'sent' ? 'text-success' : l.status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>
-                      {l.status}
+                      {t(`notifMatrix.log.status.${l.status}`, undefined, l.status)}
                     </span>
                   </td>
                   <td className="px-2 py-1 text-muted-foreground truncate max-w-[280px]" title={l.error || l.subject || ''}>
@@ -1655,6 +1676,7 @@ const STAGES = ['Lead', 'Quote', 'Onboarding', 'Active', 'Offboarding', 'Offboar
 
 function WorkflowTemplatesSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const [addOpen, setAddOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
@@ -1682,16 +1704,19 @@ function WorkflowTemplatesSection() {
     },
   })
 
-  // Group by transition
+  // Group by transition. Stage names are looked up via common.stage.* (slug),
+  // falling back to the raw canonical-English stage value.
+  const stageLabel = (stage: string) => t(`common.stage.${slugify(stage)}`, undefined, stage)
   const groups = useMemo(() => {
     const map = new Map<string, any[]>()
-    for (const t of (templates || [])) {
-      const key = `${t.from_stage || 'Any'} → ${t.to_stage}`
+    for (const tpl of (templates || [])) {
+      const key = `${tpl.from_stage ? stageLabel(tpl.from_stage) : t('templates.any')} → ${stageLabel(tpl.to_stage)}`
       if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(t)
+      map.get(key)!.push(tpl)
     }
     return Array.from(map.entries())
-  }, [templates])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, t])
 
   async function saveTemplate() {
     const checklist = form.checklist_items.split('\n').map(s => s.trim()).filter(Boolean)
@@ -1711,23 +1736,23 @@ function WorkflowTemplatesSection() {
       await supabase.from('stage_workflow_templates').insert({ ...payload, sort_order: (templates?.length || 0) + 1 })
     }
     qc.invalidateQueries({ queryKey: ['/supabase/workflow-templates'] })
-    toast({ title: editId ? 'Template updated' : 'Template created' })
+    toast({ title: editId ? t('toasts.templateUpdated') : t('toasts.templateCreated') })
     setAddOpen(false)
     setEditId(null)
     setForm({ from_stage: '', to_stage: 'Onboarding', title: '', description: '', default_assignee_name: '', due_offset_days: '0', checklist_items: '' })
   }
 
-  function startEdit(t: any) {
+  function startEdit(tpl: any) {
     setForm({
-      from_stage: t.from_stage || '',
-      to_stage: t.to_stage,
-      title: t.title,
-      description: t.description || '',
-      default_assignee_name: t.default_assignee_name || '',
-      due_offset_days: String(t.due_offset_days || 0),
-      checklist_items: Array.isArray(t.checklist_items) ? t.checklist_items.join('\n') : '',
+      from_stage: tpl.from_stage || '',
+      to_stage: tpl.to_stage,
+      title: tpl.title,
+      description: tpl.description || '',
+      default_assignee_name: tpl.default_assignee_name || '',
+      due_offset_days: String(tpl.due_offset_days || 0),
+      checklist_items: Array.isArray(tpl.checklist_items) ? tpl.checklist_items.join('\n') : '',
     })
-    setEditId(t.id)
+    setEditId(tpl.id)
     setAddOpen(true)
   }
 
@@ -1737,10 +1762,10 @@ function WorkflowTemplatesSection() {
   }
 
   async function deleteTemplate(id: string) {
-    if (!confirm('Delete this workflow template?')) return
+    if (!confirm(t('templates.confirmDelete'))) return
     await supabase.from('stage_workflow_templates').delete().eq('id', id)
     qc.invalidateQueries({ queryKey: ['/supabase/workflow-templates'] })
-    toast({ title: 'Template deleted' })
+    toast({ title: t('toasts.templateDeleted') })
   }
 
   return (
@@ -1748,37 +1773,37 @@ function WorkflowTemplatesSection() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-base font-medium flex items-center gap-2">
-            <SlidersHorizontal className="w-4 h-4" /> Stage Workflows
+            <SlidersHorizontal className="w-4 h-4" /> {t('templates.workflowHeading')}
           </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Auto-create tasks when properties change stage</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('templates.workflowDesc')}</p>
         </div>
         <Button size="sm" variant="outline" onClick={() => { setEditId(null); setForm({ from_stage: '', to_stage: 'Onboarding', title: '', description: '', default_assignee_name: '', due_offset_days: '0', checklist_items: '' }); setAddOpen(true) }}>
-          <Plus className="w-3.5 h-3.5 mr-1" /> Add Template
+          <Plus className="w-3.5 h-3.5 mr-1" /> {t('templates.addTemplateButton')}
         </Button>
       </div>
 
       {isLoading ? (
         <Skeleton className="h-24 w-full" />
       ) : groups.length === 0 ? (
-        <p className="text-xs text-muted-foreground text-center py-4">No workflow templates configured.</p>
+        <p className="text-xs text-muted-foreground text-center py-4">{t('templates.noTemplates')}</p>
       ) : (
         <div className="space-y-4">
           {groups.map(([label, items]) => (
             <div key={label}>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{label}</p>
               <div className="space-y-1">
-                {items.map((t: any) => (
-                  <div key={t.id} className={`flex items-center gap-3 text-xs rounded-md border px-3 py-2 ${t.enabled ? 'border-border' : 'border-border/50 opacity-50'}`}>
-                    <Checkbox checked={t.enabled} onCheckedChange={(v) => toggleEnabled(t.id, !!v)} />
+                {items.map((tpl: any) => (
+                  <div key={tpl.id} className={`flex items-center gap-3 text-xs rounded-md border px-3 py-2 ${tpl.enabled ? 'border-border' : 'border-border/50 opacity-50'}`}>
+                    <Checkbox checked={tpl.enabled} onCheckedChange={(v) => toggleEnabled(tpl.id, !!v)} />
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{t.title}</p>
+                      <p className="font-medium truncate">{tpl.title}</p>
                       <p className="text-muted-foreground">
-                        {t.default_assignee_name || 'Unassigned'} · +{t.due_offset_days}d
-                        {Array.isArray(t.checklist_items) && t.checklist_items.length > 0 && ` · ${t.checklist_items.length} items`}
+                        {tpl.default_assignee_name || t('templates.unassigned')} · +{tpl.due_offset_days}d
+                        {Array.isArray(tpl.checklist_items) && tpl.checklist_items.length > 0 && t('templates.itemsSuffix', { count: tpl.checklist_items.length })}
                       </p>
                     </div>
-                    <button onClick={() => startEdit(t)} className="text-muted-foreground hover:text-foreground"><Pencil className="w-3 h-3" /></button>
-                    <button onClick={() => deleteTemplate(t.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
+                    <button onClick={() => startEdit(tpl)} className="text-muted-foreground hover:text-foreground"><Pencil className="w-3 h-3" /></button>
+                    <button onClick={() => deleteTemplate(tpl.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="w-3 h-3" /></button>
                   </div>
                 ))}
               </div>
@@ -1789,52 +1814,52 @@ function WorkflowTemplatesSection() {
 
       <Dialog open={addOpen} onOpenChange={v => { if (!v) { setAddOpen(false); setEditId(null) } }}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>{editId ? 'Edit Template' : 'Add Workflow Template'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editId ? t('templates.editDialogTitle') : t('templates.addDialogTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">From Stage</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.fromStageLabel')}</label>
                 <select value={form.from_stage} onChange={e => setForm(f => ({ ...f, from_stage: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  <option value="">Any</option>
-                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                  <option value="">{t('templates.any')}</option>
+                  {STAGES.map(s => <option key={s} value={s}>{stageLabel(s)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">To Stage *</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.toStageLabel')}</label>
                 <select value={form.to_stage} onChange={e => setForm(f => ({ ...f, to_stage: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {STAGES.map(s => <option key={s} value={s}>{stageLabel(s)}</option>)}
                 </select>
               </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Task Title * <span className="text-muted-foreground/60">(use {'{property_name}'} placeholder)</span></label>
-              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="h-8 text-xs" placeholder="e.g. Get access codes for {'{property_name}'}" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.taskTitleLabel')} <span className="text-muted-foreground/60">{t('templates.taskTitleHint')}</span></label>
+              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} className="h-8 text-xs" placeholder={t('templates.taskTitlePlaceholder')} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.descriptionLabel')}</label>
               <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="w-full h-16 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Default Assignee</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.defaultAssigneeLabel')}</label>
                 <select value={form.default_assignee_name} onChange={e => setForm(f => ({ ...f, default_assignee_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
-                  <option value="">Unassigned</option>
+                  <option value="">{t('templates.unassigned')}</option>
                   {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Due (days from transition)</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.dueLabel')}</label>
                 <Input type="number" value={form.due_offset_days} onChange={e => setForm(f => ({ ...f, due_offset_days: e.target.value }))} className="h-8 text-xs" />
               </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Checklist Items <span className="text-muted-foreground/60">(one per line)</span></label>
-              <textarea value={form.checklist_items} onChange={e => setForm(f => ({ ...f, checklist_items: e.target.value }))} className="w-full h-20 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" placeholder="Door code&#10;Lockbox combo&#10;Gate code" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.checklistLabel')} <span className="text-muted-foreground/60">{t('templates.checklistHint')}</span></label>
+              <textarea value={form.checklist_items} onChange={e => setForm(f => ({ ...f, checklist_items: e.target.value }))} className="w-full h-20 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" placeholder={t('templates.checklistPlaceholder')} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddOpen(false); setEditId(null) }}>Cancel</Button>
-            <Button onClick={saveTemplate} disabled={!form.title.trim() || !form.to_stage}>{editId ? 'Update' : 'Create'}</Button>
+            <Button variant="outline" onClick={() => { setAddOpen(false); setEditId(null) }}>{t('common.actions.cancel')}</Button>
+            <Button onClick={saveTemplate} disabled={!form.title.trim() || !form.to_stage}>{editId ? t('templates.update') : t('templates.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1842,15 +1867,15 @@ function WorkflowTemplatesSection() {
   )
 }
 
-function describeMapsStatus(s: GoogleMapsRuntimeStatus): string {
+function describeMapsStatus(s: GoogleMapsRuntimeStatus, t: (key: string, vars?: Record<string, string | number>, fallback?: string) => string): string {
   switch (s) {
-    case 'no_key': return 'no key on this build'
-    case 'loading': return 'not loaded yet (open a form with an address field)'
-    case 'ready': return 'loaded and active'
-    case 'script_error': return 'script failed to load - check Maps JavaScript API enablement, HTTP referrer allowlist, billing, and CSP'
-    case 'places_missing': return 'loaded without the Places library - script URL is missing libraries=places'
-    case 'timeout': return 'timed out - likely network blocked or CSP rejected maps.googleapis.com'
-    case 'gm_authFailure': return `Google rejected the key at runtime for ${window.location.origin} - add ${window.location.origin}/* to the key's HTTP referrer allowlist (then check billing / Maps JS API enablement)`
+    case 'no_key': return t('integrations.mapsStatus.no_key')
+    case 'loading': return t('integrations.mapsStatus.loading')
+    case 'ready': return t('integrations.mapsStatus.ready')
+    case 'script_error': return t('integrations.mapsStatus.script_error')
+    case 'places_missing': return t('integrations.mapsStatus.places_missing')
+    case 'timeout': return t('integrations.mapsStatus.timeout')
+    case 'gm_authFailure': return t('integrations.mapsStatus.gm_authFailure', { origin: window.location.origin })
   }
 }
 
@@ -1864,6 +1889,7 @@ function IntegrationsSection() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const [qboConnecting, setQboConnecting] = useState(false)
 
   // Click handler for the admin "Reconnect QuickBooks" button. The /api/qbo/
@@ -1877,7 +1903,7 @@ function IntegrationsSection() {
       const { data: { session } } = await supabase.auth.getSession()
       const token = session?.access_token
       if (!token) {
-        toast({ title: 'Not signed in', variant: 'destructive' })
+        toast({ title: t('toasts.qboNotSignedIn'), variant: 'destructive' })
         return
       }
       const r = await fetch('/api/qbo/authorize', {
@@ -1887,13 +1913,13 @@ function IntegrationsSection() {
       })
       if (!r.ok) {
         const txt = await r.text().catch(() => '')
-        toast({ title: `QBO authorize failed (${r.status})`, description: txt.slice(0, 200), variant: 'destructive' })
+        toast({ title: t('toasts.qboAuthorizeFailed', { status: r.status }), description: txt.slice(0, 200), variant: 'destructive' })
         return
       }
       const { url } = await r.json() as { url: string }
       window.location.href = url
     } catch (e) {
-      toast({ title: 'QBO reconnect error', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+      toast({ title: t('toasts.qboReconnectError'), description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     } finally {
       setQboConnecting(false)
     }
@@ -1910,10 +1936,10 @@ function IntegrationsSection() {
   type Status = 'connected' | 'configured' | 'not_configured' | 'unknown'
   function statusBadge(s: Status) {
     const map: Record<Status, { label: string; tone: StatusTone }> = {
-      connected: { label: 'Connected', tone: 'success' },
-      configured: { label: 'Configured', tone: 'info' },
-      not_configured: { label: 'Not configured', tone: 'warning' },
-      unknown: { label: 'Unknown', tone: 'neutral' },
+      connected: { label: t('integrations.statusConnected'), tone: 'success' },
+      configured: { label: t('integrations.statusConfigured'), tone: 'info' },
+      not_configured: { label: t('integrations.statusNotConfigured'), tone: 'warning' },
+      unknown: { label: t('integrations.statusUnknown'), tone: 'neutral' },
     }
     const m = map[s]
     return <span className={`text-2xs px-1.5 py-0.5 rounded border ${TONE_SOFT[m.tone]}`}>{m.label}</span>
@@ -1922,26 +1948,26 @@ function IntegrationsSection() {
   const integrations = [
     {
       icon: Database,
-      name: 'Supabase',
-      description: 'Primary database & authentication.',
+      name: t('integrations.supabaseName'),
+      description: t('integrations.supabaseDesc'),
       status: (supabaseUrl ? 'connected' : 'not_configured') as Status,
-      detail: supabaseUrl ? `Project URL configured` : 'VITE_SUPABASE_URL is missing - sign-in will fail.',
+      detail: supabaseUrl ? t('integrations.supabaseDetailConnected') : t('integrations.supabaseDetailMissing'),
     },
     {
       icon: MapPin,
-      name: 'Google Places API',
-      description: 'Address autocomplete on property forms.',
+      name: t('integrations.mapsName'),
+      description: t('integrations.mapsDesc'),
       status: (googleMapsKey ? 'configured' : 'not_configured') as Status,
       detail: googleMapsKey
-        ? `Public Maps JS key is configured. Autocomplete activates on supported forms (with libraries=places); runtime load can still fail due to Maps JavaScript API enablement, HTTP referrer restrictions, billing, or CSP. Address fields fall back to plain text on any failure. Runtime status: ${describeMapsStatus(mapsStatus)}.`
-        : 'Set VITE_GOOGLE_MAPS_API_KEY (Maps JS API + Places library) to enable autocomplete. Address fields fall back to plain text.',
+        ? t('integrations.mapsDetailConfigured', { status: describeMapsStatus(mapsStatus, t) })
+        : t('integrations.mapsDetailMissing'),
     },
     {
       icon: Receipt,
-      name: 'QuickBooks Online',
-      description: 'Pulls actual P&L into the Live Pro Forma.',
+      name: t('integrations.qboName'),
+      description: t('integrations.qboDesc'),
       status: 'configured' as Status,
-      detail: 'Connection is managed server-side. Actuals refresh nightly via a scheduled QBO import - no manual pull needed.',
+      detail: t('integrations.qboDetail'),
       action: isAdmin ? (
         <Button
           size="sm"
@@ -1951,18 +1977,18 @@ function IntegrationsSection() {
           onClick={startQboReconnect}
           data-testid="button-qbo-reconnect"
         >
-          {qboConnecting ? 'Opening Intuit…' : 'Reconnect QuickBooks'}
+          {qboConnecting ? t('integrations.qboOpening') : t('integrations.qboReconnect')}
         </Button>
       ) : null,
     },
     {
       icon: KeyRound,
-      name: 'Anthropic (AI Assistant)',
-      description: 'Powers the in-app AI chat.',
+      name: t('integrations.anthropicName'),
+      description: t('integrations.anthropicDesc'),
       status: (anthropicKeyPresent ? 'configured' : 'unknown') as Status,
       detail: anthropicKeyPresent
-        ? 'Public client key present - usually keys are kept server-side. Verify this is intended.'
-        : 'No public client key is exposed - the assistant calls the server-side handler.',
+        ? t('integrations.anthropicDetailPresent')
+        : t('integrations.anthropicDetailAbsent'),
     },
   ]
 
@@ -1970,11 +1996,10 @@ function IntegrationsSection() {
     <div className="space-y-3">
       <h2 className="text-base font-medium flex items-center gap-2">
         <Plug className="w-4 h-4" />
-        Integrations & API
+        {t('integrations.heading')}
       </h2>
       <p className="text-xs text-muted-foreground">
-        Status of external services this Tendwell Ops install talks to. Keys are configured via Vercel/CI environment variables
-        (read-only here - never displayed).
+        {t('integrations.description')}
       </p>
       <div className="rounded-lg border border-border divide-y divide-border">
         {integrations.map((it) => {
@@ -2011,20 +2036,21 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
 }
 
 function RoleDescriptions() {
+  const { t } = useLocale('settingsPage')
   return (
     <div className="space-y-3">
       <h2 className="text-base font-medium flex items-center gap-2">
         <Shield className="w-4 h-4" />
-        Role Reference
+        {t('roleReference.heading')}
       </h2>
       <p className="text-xs text-muted-foreground">
-        Quick descriptions of the built-in roles. Custom roles you create above inherit no defaults - set their views in the matrix.
+        {t('roleReference.description')}
       </p>
       <div className="rounded-lg border border-border divide-y divide-border">
         {Object.entries(ROLE_DESCRIPTIONS).map(([role, desc]) => (
           <div key={role} className="grid grid-cols-[110px_1fr] gap-3 p-3">
-            <div className="text-sm font-medium capitalize">{role}</div>
-            <div className="text-xs text-muted-foreground">{desc}</div>
+            <div className="text-sm font-medium capitalize">{roleDisplayLabel(t, role)}</div>
+            <div className="text-xs text-muted-foreground">{t(`roleReference.${role}`, undefined, desc)}</div>
           </div>
         ))}
       </div>
@@ -2056,6 +2082,7 @@ function AssignPropertiesDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -2124,10 +2151,10 @@ function AssignPropertiesDialog({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/owner-assignments'] })
       qc.invalidateQueries({ queryKey: ['/supabase/owner-assignment-counts'] })
-      toast({ title: 'Property access updated' })
+      toast({ title: t('toasts.ownerPropertyAccessUpdated') })
       onOpenChange(false)
     },
-    onError: (e: any) => toast({ title: 'Failed to update access', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.ownerPropertyAccessFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   function toggle(id: number, checked: boolean) {
@@ -2144,17 +2171,17 @@ function AssignPropertiesDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Property access for {owner.name || owner.email}</DialogTitle>
+          <DialogTitle>{t('owners.assign.title', { name: owner.name || owner.email })}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          Select which properties this owner can see and edit in the portal.
+          {t('owners.assign.description')}
         </p>
         <div className="relative">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search properties…"
+            placeholder={t('owners.assign.searchPlaceholder')}
             className="h-8 text-xs pl-8"
           />
         </div>
@@ -2162,7 +2189,7 @@ function AssignPropertiesDialog({
           {loadingProps || loadingAssigned ? (
             [...Array(5)].map((_, i) => <Skeleton key={i} className="h-9 w-full" />)
           ) : filtered.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-6">No properties found</p>
+            <p className="text-xs text-muted-foreground text-center py-6">{t('owners.assign.noProperties')}</p>
           ) : (
             filtered.map((p: any) => (
               <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/20 cursor-pointer">
@@ -2179,9 +2206,9 @@ function AssignPropertiesDialog({
           )}
         </div>
         <DialogFooter className="items-center">
-          <span className="text-xs text-muted-foreground mr-auto">{selected.size} selected</span>
+          <span className="text-xs text-muted-foreground mr-auto">{t('owners.assign.selectedCount', { count: selected.size })}</span>
           <Button size="sm" onClick={() => saveAssignments()} disabled={isPending}>
-            {isPending ? 'Saving…' : 'Save access'}
+            {isPending ? t('owners.assign.saving') : t('owners.assign.saveButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2200,6 +2227,7 @@ function OwnerPermissionsDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const [selectedPropId, setSelectedPropId] = useState<number | null>(null)
   // Working copy: property_id → permission map. Edited in place, saved on demand.
@@ -2269,7 +2297,7 @@ function OwnerPermissionsDialog({
       for (const p of assigned) next[p.id] = { ...current }
       return next
     })
-    toast({ title: 'Applied to all properties', description: 'Review and Save to persist.' })
+    toast({ title: t('toasts.ownerPermissionsCopied'), description: t('toasts.ownerPermissionsCopiedDesc') })
   }
 
   const { mutate: savePerms, isPending } = useMutation({
@@ -2288,10 +2316,10 @@ function OwnerPermissionsDialog({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/owner-permissions', owner?.id] })
-      toast({ title: 'Field permissions saved' })
+      toast({ title: t('toasts.ownerPermissionsSaved') })
       onOpenChange(false)
     },
-    onError: (e: any) => toast({ title: 'Failed to save permissions', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.permissionsSaveFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   if (!owner) return null
@@ -2301,24 +2329,22 @@ function OwnerPermissionsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Field permissions for {owner.name || owner.email}</DialogTitle>
+          <DialogTitle>{t('ownerPermissions.title', { name: owner.name || owner.email })}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          Choose which portal fields this owner can see and edit, per property. Hidden fields don't
-          appear in their portal; view-only fields show but can't be changed. New assignments default
-          to everything visible and editable.
+          {t('ownerPermissions.description')}
         </p>
 
         {loading ? (
           <div className="space-y-2 py-4">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
         ) : !assigned?.length ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            No properties assigned yet. Assign properties first, then configure field permissions.
+            {t('ownerPermissions.noneAssigned')}
           </p>
         ) : (
           <>
             <div className="flex items-center gap-2 flex-wrap">
-              <label className="text-xs font-medium text-muted-foreground">Property</label>
+              <label className="text-xs font-medium text-muted-foreground">{t('ownerPermissions.propertyLabel')}</label>
               <select
                 value={selectedPropId ?? ''}
                 onChange={e => setSelectedPropId(Number(e.target.value))}
@@ -2328,7 +2354,7 @@ function OwnerPermissionsDialog({
                 {assigned.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
               <Button variant="outline" size="sm" className="h-8 text-xs" onClick={copyToAll} disabled={assigned.length < 2}>
-                Copy to all
+                {t('ownerPermissions.copyToAll')}
               </Button>
             </div>
 
@@ -2336,22 +2362,23 @@ function OwnerPermissionsDialog({
               <table className="w-full text-sm">
                 <thead className="bg-muted/80 border-b border-border sticky top-0">
                   <tr>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Field</th>
-                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Visible</th>
-                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">Editable</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('ownerPermissions.colField')}</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">{t('ownerPermissions.colVisible')}</th>
+                    <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-20">{t('ownerPermissions.colEditable')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {OWNER_FIELD_DEFS.map(f => {
                     const p = current?.[f.key] ?? { visible: true, editable: true }
+                    const fieldLabel = t(`ownerPermissions.fieldLabel.${f.key}`, undefined, f.label)
                     return (
                       <tr key={f.key} className="border-b border-border/50">
-                        <td className="py-2 px-3 text-xs">{f.label}</td>
+                        <td className="py-2 px-3 text-xs">{fieldLabel}</td>
                         <td className="py-2 px-3 text-center">
                           <Checkbox
                             checked={p.visible}
                             onCheckedChange={c => setPerm(f.key, { visible: !!c })}
-                            aria-label={`${f.label} visible`}
+                            aria-label={t('ownerPermissions.visibleAria', { field: fieldLabel })}
                           />
                         </td>
                         <td className="py-2 px-3 text-center">
@@ -2359,7 +2386,7 @@ function OwnerPermissionsDialog({
                             checked={p.editable}
                             disabled={!p.visible}
                             onCheckedChange={c => setPerm(f.key, { editable: !!c })}
-                            aria-label={`${f.label} editable`}
+                            aria-label={t('ownerPermissions.editableAria', { field: fieldLabel })}
                           />
                         </td>
                       </tr>
@@ -2373,7 +2400,7 @@ function OwnerPermissionsDialog({
 
         <DialogFooter>
           <Button size="sm" onClick={() => savePerms()} disabled={isPending || loading || !assigned?.length} data-testid="button-save-owner-permissions">
-            {isPending ? 'Saving…' : 'Save permissions'}
+            {isPending ? t('ownerPermissions.saving') : t('ownerPermissions.saveButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2383,6 +2410,7 @@ function OwnerPermissionsDialog({
 
 function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const { user } = useAuth()
   const qc = useQueryClient()
   const [email, setEmail] = useState('')
@@ -2398,17 +2426,17 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   async function handleCreate() {
     const cleanEmail = email.trim().toLowerCase()
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
-      toast({ title: 'Enter a valid email', variant: 'destructive' }); return
+      toast({ title: t('toasts.ownerInvalidEmail'), variant: 'destructive' }); return
     }
     if (password.length < 8) {
-      toast({ title: 'Password must be at least 8 characters', variant: 'destructive' }); return
+      toast({ title: t('toasts.ownerPasswordTooShort'), variant: 'destructive' }); return
     }
     setSubmitting(true)
     try {
       // 1. Mint the Supabase Auth login (service-role, server-side).
       const prov = await provisionOwnerLogin(cleanEmail, password)
       if (!prov.ok) {
-        toast({ title: 'Could not create login', description: prov.error, variant: 'destructive' })
+        toast({ title: t('toasts.ownerCreateLoginFailed'), description: prov.error, variant: 'destructive' })
         return
       }
       // 2. Create the property_owners record (admin RLS).
@@ -2421,9 +2449,9 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
       if (error) {
         // Unique email → owner already exists.
         if (/unique|duplicate/i.test(error.message)) {
-          toast({ title: 'Owner already exists', description: 'An owner with that email is already set up.', variant: 'destructive' })
+          toast({ title: t('toasts.ownerAlreadyExists'), description: t('toasts.ownerAlreadyExistsDesc'), variant: 'destructive' })
         } else {
-          toast({ title: 'Login created, but record failed', description: error.message, variant: 'destructive' })
+          toast({ title: t('toasts.ownerRecordFailed'), description: error.message, variant: 'destructive' })
         }
         return
       }
@@ -2433,10 +2461,10 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
       })
       qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
       toast({
-        title: 'Owner created',
+        title: t('toasts.ownerCreated'),
         description: prov.created
-          ? `${cleanEmail} can now sign in. Assign properties to grant access.`
-          : `Login already existed - owner record linked. Assign properties to grant access.`,
+          ? t('toasts.ownerCreatedDescNew', { email: cleanEmail })
+          : t('toasts.ownerCreatedDescExisting'),
       })
       reset()
       onOpenChange(false)
@@ -2449,35 +2477,35 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o) }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Add Owner</DialogTitle>
+          <DialogTitle>{t('owners.add.title')}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          Creates an email/password portal login and an owner record. After saving, assign properties to grant access.
+          {t('owners.add.description')}
         </p>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Email</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('owners.add.emailLabel')}</label>
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="owner@example.com" className="mt-1" data-testid="input-new-owner-email" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Name</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('owners.add.nameLabel')}</label>
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="Jane Owner" className="mt-1" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Phone</label>
+            <label className="text-xs font-medium text-muted-foreground">{t('owners.add.phoneLabel')}</label>
             <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" className="mt-1" />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Temporary password</label>
-            <Input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="min 8 characters" className="mt-1" data-testid="input-new-owner-password" />
+            <label className="text-xs font-medium text-muted-foreground">{t('owners.add.passwordLabel')}</label>
+            <Input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder={t('owners.add.passwordPlaceholder')} className="mt-1" data-testid="input-new-owner-password" />
             <p className="text-2xs text-muted-foreground mt-1">
-              Share this with the owner, or have them use “Forgot password” on the login page to set their own.
+              {t('owners.add.passwordHint')}
             </p>
           </div>
         </div>
         <DialogFooter>
           <Button size="sm" disabled={submitting} onClick={handleCreate} data-testid="button-confirm-add-owner">
-            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create Owner'}
+            {submitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t('owners.add.createButton')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -2487,6 +2515,7 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
 function OwnersSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const { user, requestPasswordReset } = useAuth()
   const [search, setSearch] = useState('')
@@ -2540,9 +2569,9 @@ function OwnersSection() {
     },
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
-      toast({ title: v.active ? 'Owner access enabled' : 'Owner access disabled' })
+      toast({ title: v.active ? t('toasts.ownerAccessEnabled') : t('toasts.ownerAccessDisabled') })
     },
-    onError: (e: any) => toast({ title: 'Failed to update', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.ownerUpdateFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const { mutate: saveProfile } = useMutation({
@@ -2556,9 +2585,9 @@ function OwnersSection() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
       setEditingId(null)
-      toast({ title: 'Owner updated' })
+      toast({ title: t('toasts.ownerUpdated') })
     },
-    onError: (e: any) => toast({ title: 'Failed to update', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.ownerUpdateFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const { mutate: deleteOwner, isPending: deleting } = useMutation({
@@ -2575,19 +2604,19 @@ function OwnersSection() {
         entity_type: 'other', action: 'delete', entity_name: 'property_owner',
         field_name: owner.email, changed_by: user?.label ?? null,
       })
-      toast({ title: 'Owner removed' })
+      toast({ title: t('toasts.ownerRemoved') })
       setConfirmDeleteId(null)
     },
     onError: (e: any) => {
-      toast({ title: 'Failed to remove owner', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.ownerRemoveFailed'), description: e?.message, variant: 'destructive' })
       setConfirmDeleteId(null)
     },
   })
 
   async function handleSendReset(email: string) {
     const { error } = await requestPasswordReset(email)
-    if (error) toast({ title: 'Could not send reset email', description: error, variant: 'destructive' })
-    else toast({ title: 'Password reset email sent', description: `Sent to ${email}` })
+    if (error) toast({ title: t('toasts.resetEmailFailed'), description: error, variant: 'destructive' })
+    else toast({ title: t('toasts.resetEmailSent'), description: t('toasts.resetEmailSentDesc', { email }) })
   }
 
   function startEdit(o: OwnerRow) {
@@ -2604,37 +2633,37 @@ function OwnersSection() {
           <div>
             <h2 className="text-base font-medium flex items-center gap-2">
               <Home className="w-4 h-4" />
-              Property Owners
+              {t('owners.heading')}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Manage owner portal logins, profile info, property access, and active status.
+              {t('owners.description')}
             </p>
           </div>
           <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setAddOpen(true)} data-testid="button-add-owner">
             <UserPlus className="w-3.5 h-3.5" />
-            Add Owner
+            {t('owners.addOwner')}
           </Button>
         </div>
 
         <div className="relative max-w-xs">
           <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search owners…" className="h-8 text-xs pl-8" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder={t('owners.searchPlaceholder')} className="h-8 text-xs pl-8" />
         </div>
 
         {isError ? (
-          <ErrorState title="Couldn't load owners" onRetry={() => refetch()} />
+          <ErrorState title={t('owners.errorTitle')} onRetry={() => refetch()} />
         ) : (
           <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/80 border-b border-border">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Owner</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Email</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Phone</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Payment</th>
-                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Properties</th>
-                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Active</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colOwner')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colEmail')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colPhone')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colPayment')}</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colProperties')}</th>
+                  <th className="text-center text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colActive')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('owners.colActions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -2645,22 +2674,22 @@ function OwnersSection() {
                     </tr>
                   ))
                 ) : !filtered.length ? (
-                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">No owners yet. Click “Add Owner” to create one.</td></tr>
+                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">{t('owners.noOwners')}</td></tr>
                 ) : (
                   filtered.map(o => (
                     <React.Fragment key={o.id}>
                       <tr className="border-b border-border/50 hover:bg-muted/20 transition-colors" data-testid={`row-owner-${o.id}`}>
                         <td className="py-2 px-3 font-medium text-xs">
                           {editingId === o.id ? (
-                            <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" placeholder="Name" autoFocus />
+                            <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" placeholder={t('owners.add.nameLabel')} autoFocus />
                           ) : (
-                            o.name || <span className="italic text-muted-foreground">no name</span>
+                            o.name || <span className="italic text-muted-foreground">{t('owners.noName')}</span>
                           )}
                         </td>
                         <td className="py-2 px-3 text-xs text-muted-foreground">{o.email}</td>
                         <td className="py-2 px-3 text-xs text-muted-foreground">
                           {editingId === o.id ? (
-                            <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder="Phone" />
+                            <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder={t('owners.add.phoneLabel')} />
                           ) : (
                             <div className="space-y-0.5">
                               <div>{o.phone || <span className="italic">-</span>}</div>
@@ -2672,10 +2701,10 @@ function OwnersSection() {
                                   className="inline-flex items-center gap-1 text-2xs text-primary hover:underline"
                                   title={o.trellis_portal_url}
                                 >
-                                  <ExternalLink className="w-3 h-3" /> Trellis linked
+                                  <ExternalLink className="w-3 h-3" /> {t('owners.trellisLinked')}
                                 </a>
                               ) : (
-                                <span className="text-2xs text-muted-foreground/60 italic">No Trellis link</span>
+                                <span className="text-2xs text-muted-foreground/60 italic">{t('owners.noTrellisLink')}</span>
                               )}
                             </div>
                           )}
@@ -2684,11 +2713,11 @@ function OwnersSection() {
                           <div className="space-y-0.5">
                             <div className="text-muted-foreground">{o.preferred_payment_method || <span className="italic">-</span>}</div>
                             {o.contact_id ? (
-                              <Link href="/contacts" className="inline-flex items-center gap-1 text-2xs text-primary hover:underline" title="This owner's info is synced to a Clients record">
-                                <ExternalLink className="w-3 h-3" /> Synced to Clients
+                              <Link href="/contacts" className="inline-flex items-center gap-1 text-2xs text-primary hover:underline" title={t('owners.syncedToClientsTitle')}>
+                                <ExternalLink className="w-3 h-3" /> {t('owners.syncedToClients')}
                               </Link>
                             ) : (
-                              <span className="text-2xs text-muted-foreground/60 italic">No Clients record linked</span>
+                              <span className="text-2xs text-muted-foreground/60 italic">{t('owners.noClientsLinked')}</span>
                             )}
                           </div>
                         </td>
@@ -2696,7 +2725,7 @@ function OwnersSection() {
                           <button
                             className="text-xs underline-offset-2 hover:underline text-muted-foreground hover:text-foreground"
                             onClick={() => setAssignOwner(o)}
-                            title="Manage property access"
+                            title={t('owners.manageAccessTitle')}
                           >
                             {counts?.get(o.id) ?? 0}
                           </button>
@@ -2705,44 +2734,44 @@ function OwnersSection() {
                           <Switch
                             checked={o.active}
                             onCheckedChange={(v) => toggleActive({ id: o.id, active: !!v })}
-                            aria-label="Toggle owner access"
+                            aria-label={t('owners.toggleAccessAria')}
                           />
                         </td>
                         <td className="py-2 px-3 text-right">
                           <div className="flex items-center justify-end gap-1">
                             {editingId === o.id ? (
                               <>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => saveProfile({ id: o.id, name: editName, phone: editPhone, trellis_portal_url: editTrellisUrl })} title="Save">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => saveProfile({ id: o.id, name: editName, phone: editPhone, trellis_portal_url: editTrellisUrl })} title={t('owners.saveTitle')}>
                                   <Check className="w-3.5 h-3.5 text-success" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)} title="Cancel">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingId(null)} title={t('owners.cancelTitle')}>
                                   <X className="w-3.5 h-3.5" />
                                 </Button>
                               </>
                             ) : (
                               <>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title="Manage property access">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title={t('owners.manageAccessTitle')}>
                                   <Home className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title="Field permissions" data-testid={`button-owner-permissions-${o.id}`}>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setPermsOwner(o)} title={t('owners.fieldPermissionsTitle')} data-testid={`button-owner-permissions-${o.id}`}>
                                   <SlidersHorizontal className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title="Edit name / phone / Trellis URL">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => startEdit(o)} title={t('owners.editTitle')}>
                                   <Pencil className="w-3.5 h-3.5" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => handleSendReset(o.email)} title="Send password reset email">
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => handleSendReset(o.email)} title={t('owners.sendResetTitle')}>
                                   <Mail className="w-3.5 h-3.5" />
                                 </Button>
                                 {confirmDeleteId === o.id ? (
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-xs text-muted-foreground">Remove?</span>
+                                    <span className="text-xs text-muted-foreground">{t('owners.removeConfirm')}</span>
                                     <Button variant="destructive" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => deleteOwner(o)} data-testid={`button-confirm-delete-owner-${o.id}`}>
-                                      {deleting ? 'Removing…' : 'Confirm'}
+                                      {deleting ? t('owners.removing') : t('common.actions.confirm')}
                                     </Button>
-                                    <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => setConfirmDeleteId(null)}>Cancel</Button>
+                                    <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={deleting} onClick={() => setConfirmDeleteId(null)}>{t('common.actions.cancel')}</Button>
                                   </div>
                                 ) : (
-                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteId(o.id)} aria-label={`Remove ${o.email}`} data-testid={`button-delete-owner-${o.id}`}>
+                                  <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDeleteId(o.id)} aria-label={t('owners.removeAria', { email: o.email })} data-testid={`button-delete-owner-${o.id}`}>
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </Button>
                                 )}
@@ -2754,12 +2783,12 @@ function OwnersSection() {
                       {editingId === o.id && (
                         <tr className="border-b border-border/50 bg-muted/10">
                           <td colSpan={7} className="px-3 pb-3 pt-1">
-                            <label className="block text-2xs text-muted-foreground mb-1">Trellis portal URL</label>
+                            <label className="block text-2xs text-muted-foreground mb-1">{t('owners.trellisUrlLabel')}</label>
                             <Input
                               value={editTrellisUrl}
                               onChange={e => setEditTrellisUrl(e.target.value)}
                               className="h-7 text-xs font-mono"
-                              placeholder="https://app.trellistech.com/owner-portal/..."
+                              placeholder={t('owners.trellisUrlPlaceholder')}
                               data-testid={`input-trellis-url-${o.id}`}
                             />
                           </td>
@@ -2774,8 +2803,7 @@ function OwnersSection() {
         )}
 
         <p className="text-2xs text-muted-foreground">
-          Use the sliders icon to set per-property field permissions (which fields an owner can see and edit).
-          Disabling an owner blocks portal sign-in and revokes all property access immediately, without deleting their record or assignments.
+          {t('owners.footerNote')}
         </p>
       </div>
 
@@ -2830,6 +2858,7 @@ const AGREEMENT_STATUS_TONE: Record<string, StatusTone> = {
 
 function AgreementsSection() {
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const { user } = useAuth()
 
@@ -2879,9 +2908,9 @@ function AgreementsSection() {
       qc.invalidateQueries({ queryKey: ['agreement-config'] })
       setNewSigPng(null)
       setShowPad(false)
-      toast({ title: 'Signer config saved' })
+      toast({ title: t('toasts.signerConfigSaved') })
     },
-    onError: (e: any) => toast({ title: 'Failed to save', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.signerConfigSaveFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   // ── Send agreement dialog ──
@@ -2992,9 +3021,9 @@ function AgreementsSection() {
 
   const { mutate: sendAgreement, isPending: sending } = useMutation({
     mutationFn: async () => {
-      if (!selectedOwner || !config) throw new Error('Missing data')
-      if (!config?.tendwell_signature_png || !config?.tendwell_signer_name) throw new Error('Set up your signature first.')
-      if (ownerHasActiveAgreement) throw new Error('This owner already has an active agreement.')
+      if (!selectedOwner || !config) throw new Error(t('agreements.missingDataError'))
+      if (!config?.tendwell_signature_png || !config?.tendwell_signer_name) throw new Error(t('agreements.needSignatureError'))
+      if (ownerHasActiveAgreement) throw new Error(t('agreements.activeAgreementError'))
       const { error } = await supabase.from('owner_agreements').insert({
         owner_id: selectedOwner.id,
         status: 'sent',
@@ -3022,9 +3051,9 @@ function AgreementsSection() {
         mailing_address: '', property_addresses: '',
         effective_date: new Date().toISOString().slice(0, 10),
       })
-      toast({ title: 'Agreement sent', description: 'Owner can now review and sign.' })
+      toast({ title: t('toasts.agreementSent'), description: t('toasts.agreementSentDesc') })
     },
-    onError: (e: any) => toast({ title: 'Failed to send', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.agreementSendFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   // ── Void agreement ──
@@ -3038,15 +3067,15 @@ function AgreementsSection() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['owner-agreements-admin'] })
-      toast({ title: 'Agreement voided' })
+      toast({ title: t('toasts.agreementVoided') })
     },
-    onError: (e: any) => toast({ title: 'Failed to void', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.agreementVoidFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   async function handleDownload(id: string) {
     const result = await downloadAgreementPdf(id)
     if (!result.ok) {
-      toast({ title: 'Could not download', description: result.error, variant: 'destructive' })
+      toast({ title: t('toasts.agreementDownloadFailed'), description: result.error, variant: 'destructive' })
     }
   }
 
@@ -3060,10 +3089,10 @@ function AgreementsSection() {
           <div>
             <h2 className="text-base font-medium flex items-center gap-2">
               <FileText className="w-4 h-4" />
-              Service Agreements
+              {t('agreements.heading')}
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Configure the Tendwell signer and assign agreements to owners.
+              {t('agreements.description')}
             </p>
           </div>
           <Button
@@ -3073,30 +3102,30 @@ function AgreementsSection() {
             data-testid="button-send-agreement"
           >
             <Send className="w-3.5 h-3.5" />
-            Send Agreement
+            {t('agreements.sendButton')}
           </Button>
         </div>
 
         <div className="rounded-xl border border-border p-4 space-y-4">
-          <h3 className="text-sm font-medium">Tendwell Signer Setup</h3>
+          <h3 className="text-sm font-medium">{t('agreements.signerSetupTitle')}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-2xs text-muted-foreground uppercase tracking-wide">Signer Name</label>
+              <label className="text-2xs text-muted-foreground uppercase tracking-wide">{t('agreements.signerNameLabel')}</label>
               <Input
                 value={signerName}
                 onChange={e => setSignerName(e.target.value)}
-                placeholder="e.g. Jordan Lynde"
+                placeholder={t('agreements.signerNamePlaceholder')}
                 className="h-8 text-sm"
                 data-testid="input-signer-name"
                 disabled={configLoading}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-2xs text-muted-foreground uppercase tracking-wide">Signer Title</label>
+              <label className="text-2xs text-muted-foreground uppercase tracking-wide">{t('agreements.signerTitleLabel')}</label>
               <Input
                 value={signerTitle}
                 onChange={e => setSignerTitle(e.target.value)}
-                placeholder="e.g. Owner, CEO"
+                placeholder={t('agreements.signerTitlePlaceholder')}
                 className="h-8 text-sm"
                 data-testid="input-signer-title"
                 disabled={configLoading}
@@ -3106,13 +3135,13 @@ function AgreementsSection() {
 
           {/* Signature preview or pad */}
           <div className="space-y-2">
-            <label className="text-2xs text-muted-foreground uppercase tracking-wide">Signature</label>
+            <label className="text-2xs text-muted-foreground uppercase tracking-wide">{t('agreements.signatureLabel')}</label>
             {currentSig && !showPad ? (
               <div className="space-y-2">
                 <div className="rounded-lg border border-border bg-white p-3 inline-block">
                   <img
                     src={currentSig}
-                    alt="Current Tendwell signature"
+                    alt={t('agreements.currentSignatureAlt')}
                     className="h-20 object-contain"
                     data-testid="img-current-signature"
                   />
@@ -3126,7 +3155,7 @@ function AgreementsSection() {
                     onClick={() => { setShowPad(true); setNewSigPng(null) }}
                     data-testid="button-draw-new-signature"
                   >
-                    Draw new signature
+                    {t('agreements.drawNewSignature')}
                   </Button>
                 </div>
               </div>
@@ -3145,7 +3174,7 @@ function AgreementsSection() {
                     className="h-7 text-xs"
                     onClick={() => { setShowPad(false); setNewSigPng(null) }}
                   >
-                    Cancel
+                    {t('common.actions.cancel')}
                   </Button>
                 )}
               </div>
@@ -3160,10 +3189,10 @@ function AgreementsSection() {
               disabled={savingConfig || configLoading}
               data-testid="button-save-signer-config"
             >
-              {savingConfig ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</> : 'Save'}
+              {savingConfig ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />{t('agreements.saving')}</> : t('agreements.save')}
             </Button>
             {!config?.tendwell_signature_png && !newSigPng && (
-              <p className="text-2xs text-warning">Draw a signature before sending agreements.</p>
+              <p className="text-2xs text-warning">{t('agreements.needSignatureWarning')}</p>
             )}
           </div>
         </div>
@@ -3171,20 +3200,20 @@ function AgreementsSection() {
 
       {/* ── Agreements list ── */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Agreements</h3>
+        <h3 className="text-sm font-medium">{t('agreements.listHeading')}</h3>
         {!existingAgreements ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t('agreements.loading')}</p>
         ) : existingAgreements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No agreements sent yet.</p>
+          <p className="text-sm text-muted-foreground">{t('agreements.noAgreements')}</p>
         ) : (
           <div className="rounded-lg border border-border overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-muted/80 border-b border-border">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Owner</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sent</th>
-                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Actions</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('agreements.colOwner')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('agreements.colStatus')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('agreements.colSent')}</th>
+                  <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('agreements.colActions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -3196,7 +3225,7 @@ function AgreementsSection() {
                     </td>
                     <td className="py-2 px-3">
                       <StatusBadge tone={AGREEMENT_STATUS_TONE[row.status] ?? 'neutral'}>
-                        {row.status}
+                        {t(`agreements.status.${row.status}`, undefined, row.status)}
                       </StatusBadge>
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground">
@@ -3213,7 +3242,7 @@ function AgreementsSection() {
                             data-testid={`button-download-agreement-${row.id}`}
                           >
                             <Download className="w-3 h-3" />
-                            Download
+                            {t('agreements.download')}
                           </Button>
                         )}
                         {row.status === 'sent' && (
@@ -3222,14 +3251,14 @@ function AgreementsSection() {
                             variant="ghost"
                             className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive"
                             onClick={() => {
-                              if (confirm('Void this agreement? The owner will no longer see it.')) {
+                              if (confirm(t('agreements.confirmVoid'))) {
                                 voidAgreement(row.id)
                               }
                             }}
                             data-testid={`button-void-agreement-${row.id}`}
                           >
                             <XCircle className="w-3 h-3" />
-                            Void
+                            {t('agreements.void')}
                           </Button>
                         )}
                       </div>
@@ -3246,29 +3275,29 @@ function AgreementsSection() {
       <Dialog open={sendOpen} onOpenChange={(o) => { if (!o) { setSendOpen(false); setSelectedOwner(null); setOwnerSearch('') } }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Send Service Agreement</DialogTitle>
+            <DialogTitle>{t('agreements.send.dialogTitle')}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {/* Owner picker */}
             {!selectedOwner ? (
               <div className="space-y-2">
-                <label className="text-2xs text-muted-foreground uppercase tracking-wide">Select Owner</label>
+                <label className="text-2xs text-muted-foreground uppercase tracking-wide">{t('agreements.send.selectOwnerLabel')}</label>
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={ownerSearch}
                     onChange={e => setOwnerSearch(e.target.value)}
-                    placeholder="Search owners…"
+                    placeholder={t('agreements.send.searchPlaceholder')}
                     className="h-8 text-xs pl-8"
                     autoFocus
                   />
                 </div>
                 <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border/50">
                   {!owners ? (
-                    <p className="text-xs text-muted-foreground p-3">Loading…</p>
+                    <p className="text-xs text-muted-foreground p-3">{t('agreements.send.loading')}</p>
                   ) : filteredOwners.length === 0 ? (
-                    <p className="text-xs text-muted-foreground p-3">No active owners found.</p>
+                    <p className="text-xs text-muted-foreground p-3">{t('agreements.send.noActiveOwners')}</p>
                   ) : (
                     filteredOwners.map(o => (
                       <button
@@ -3277,7 +3306,7 @@ function AgreementsSection() {
                         onClick={() => setSelectedOwner(o)}
                         data-testid={`button-select-owner-${o.id}`}
                       >
-                        <div className="font-medium">{o.name || <span className="italic text-muted-foreground">no name</span>}</div>
+                        <div className="font-medium">{o.name || <span className="italic text-muted-foreground">{t('agreements.send.noName')}</span>}</div>
                         <div className="text-muted-foreground">{o.email}</div>
                       </button>
                     ))
@@ -3298,52 +3327,52 @@ function AgreementsSection() {
                     className="h-6 px-2 text-xs"
                     onClick={() => { setSelectedOwner(null); setOwnerSearch('') }}
                   >
-                    Change
+                    {t('agreements.send.change')}
                   </Button>
                 </div>
 
                 {ownerHasActiveAgreement && (
                   <div className="rounded-lg bg-warning/10 border border-warning/30 px-3 py-2 text-xs text-warning">
-                    This owner already has an active agreement (sent or signed).
+                    {t('agreements.send.activeAgreementWarning')}
                   </div>
                 )}
 
                 {!config?.tendwell_signature_png && (
                   <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-3 py-2 text-xs text-destructive">
-                    Set up your signature first.
+                    {t('agreements.send.needSignatureWarning')}
                   </div>
                 )}
 
                 {/* Party fields */}
                 <div className="space-y-3">
-                  <p className="text-2xs text-muted-foreground uppercase tracking-wide">Party Fields</p>
+                  <p className="text-2xs text-muted-foreground uppercase tracking-wide">{t('agreements.send.partyFieldsLabel')}</p>
                   <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1 col-span-2 sm:col-span-1">
-                      <label className="text-2xs text-muted-foreground">Owner Name</label>
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.ownerNameLabel')}</label>
                       <Input value={sendForm.owner_name} onChange={e => setSendForm(f => ({ ...f, owner_name: e.target.value }))} className="h-8 text-xs" />
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
-                      <label className="text-2xs text-muted-foreground">Entity</label>
-                      <Input value={sendForm.entity} onChange={e => setSendForm(f => ({ ...f, entity: e.target.value }))} className="h-8 text-xs" placeholder="LLC, individual, etc." />
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.entityLabel')}</label>
+                      <Input value={sendForm.entity} onChange={e => setSendForm(f => ({ ...f, entity: e.target.value }))} className="h-8 text-xs" placeholder={t('agreements.send.entityPlaceholder')} />
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
-                      <label className="text-2xs text-muted-foreground">Email</label>
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.emailLabel')}</label>
                       <Input value={sendForm.email} onChange={e => setSendForm(f => ({ ...f, email: e.target.value }))} className="h-8 text-xs" type="email" />
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
-                      <label className="text-2xs text-muted-foreground">Phone</label>
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.phoneLabel')}</label>
                       <Input value={sendForm.phone} onChange={e => setSendForm(f => ({ ...f, phone: e.target.value }))} className="h-8 text-xs" />
                     </div>
                     <div className="space-y-1 col-span-2">
-                      <label className="text-2xs text-muted-foreground">Mailing Address</label>
-                      <Input value={sendForm.mailing_address} onChange={e => setSendForm(f => ({ ...f, mailing_address: e.target.value }))} className="h-8 text-xs" placeholder="Owner mailing address" />
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.mailingAddressLabel')}</label>
+                      <Input value={sendForm.mailing_address} onChange={e => setSendForm(f => ({ ...f, mailing_address: e.target.value }))} className="h-8 text-xs" placeholder={t('agreements.send.mailingAddressPlaceholder')} />
                     </div>
                     <div className="space-y-1 col-span-2">
-                      <label className="text-2xs text-muted-foreground">Property Address(es)</label>
-                      <Input value={sendForm.property_addresses} onChange={e => setSendForm(f => ({ ...f, property_addresses: e.target.value }))} className="h-8 text-xs" placeholder="Semi-colon separated" />
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.propertyAddressesLabel')}</label>
+                      <Input value={sendForm.property_addresses} onChange={e => setSendForm(f => ({ ...f, property_addresses: e.target.value }))} className="h-8 text-xs" placeholder={t('agreements.send.propertyAddressesPlaceholder')} />
                     </div>
                     <div className="space-y-1 col-span-2 sm:col-span-1">
-                      <label className="text-2xs text-muted-foreground">Effective Date</label>
+                      <label className="text-2xs text-muted-foreground">{t('agreements.send.effectiveDateLabel')}</label>
                       <input
                         type="date"
                         value={sendForm.effective_date}
@@ -3359,16 +3388,16 @@ function AgreementsSection() {
 
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => { setSendOpen(false); setSelectedOwner(null); setOwnerSearch('') }}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button
               size="sm"
               disabled={!canSend || sending}
               onClick={() => sendAgreement()}
               data-testid="button-confirm-send-agreement"
-              title={!config?.tendwell_signature_png ? 'Set up your signature first.' : ownerHasActiveAgreement ? 'This owner already has an agreement.' : undefined}
+              title={!config?.tendwell_signature_png ? t('agreements.send.needSignatureWarning') : ownerHasActiveAgreement ? t('agreements.send.activeAgreementTitle') : undefined}
             >
-              {sending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</> : 'Send Agreement'}
+              {sending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />{t('agreements.send.sending')}</> : t('agreements.send.sendButton')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3398,6 +3427,7 @@ const REFERRAL_REWARDS = ['pending', 'earned', 'paid']
 function ReferralsSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin-referrals'],
@@ -3420,7 +3450,7 @@ function ReferralsSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-referrals'] })
       if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'referral_update', { status: vars.patch.status, referredName: vars.referredName })
     },
-    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.updateFailed'), description: e?.message ?? t('toasts.updateFailedDesc'), variant: 'destructive' }),
   })
 
   const rows = data ?? []
@@ -3428,12 +3458,12 @@ function ReferralsSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold">Referrals</h2>
-        <p className="text-sm text-muted-foreground">Referrals submitted by property owners. Update status and reward as you work them.</p>
+        <h2 className="text-lg font-semibold">{t('referrals.heading')}</h2>
+        <p className="text-sm text-muted-foreground">{t('referrals.description')}</p>
       </div>
-      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
-      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No referrals yet.</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">{t('referrals.loading')}</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>{t('referrals.retry')}</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">{t('referrals.empty')}</p>}
       <div className="space-y-3">
         {rows.map(r => (
           <div key={r.id} className="rounded-xl border border-border p-4 space-y-3">
@@ -3441,31 +3471,31 @@ function ReferralsSection() {
               <p className="text-sm font-medium">{r.referred_name}</p>
               <p className="text-xs text-muted-foreground">{[r.referred_email, r.referred_phone].filter(Boolean).join(' · ') || '—'}</p>
               <p className="text-xs text-muted-foreground">
-                Referred by {r.property_owners?.name || r.property_owners?.email || 'owner'} · {new Date(r.created_at).toLocaleDateString()}
+                {t('referrals.referredBy', { name: r.property_owners?.name || r.property_owners?.email || t('referrals.ownerFallback'), date: new Date(r.created_at).toLocaleDateString() })}
               </p>
               {r.note && <p className="text-xs text-foreground/80 mt-1">&ldquo;{r.note}&rdquo;</p>}
             </div>
             <div className="flex flex-wrap gap-3">
               <label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                Status
+                {t('referrals.statusLabel')}
                 <select
                   className="border border-border rounded-md px-2 py-1 text-sm bg-background"
                   value={r.status}
                   onChange={e => update.mutate({ id: r.id, ownerId: r.owner_id, referredName: r.referred_name, patch: { status: e.target.value } })}
                   data-testid={`select-referral-status-${r.id}`}
                 >
-                  {REFERRAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {REFERRAL_STATUSES.map(s => <option key={s} value={s}>{t(`referrals.status.${s}`, undefined, s)}</option>)}
                 </select>
               </label>
               <label className="text-xs text-muted-foreground flex items-center gap-1.5">
-                Reward
+                {t('referrals.rewardLabel')}
                 <select
                   className="border border-border rounded-md px-2 py-1 text-sm bg-background"
                   value={r.reward_status}
                   onChange={e => update.mutate({ id: r.id, patch: { reward_status: e.target.value } })}
                   data-testid={`select-referral-reward-${r.id}`}
                 >
-                  {REFERRAL_REWARDS.map(s => <option key={s} value={s}>{s}</option>)}
+                  {REFERRAL_REWARDS.map(s => <option key={s} value={s}>{t(`referrals.reward.${s}`, undefined, s)}</option>)}
                 </select>
               </label>
             </div>
@@ -3495,6 +3525,7 @@ const TESTIMONIAL_STATUSES = ['submitted', 'approved', 'published', 'declined']
 function TestimonialsSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin-testimonials'],
@@ -3517,7 +3548,7 @@ function TestimonialsSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-testimonials'] })
       if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'testimonial_update', { status: vars.patch.status })
     },
-    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.updateFailed'), description: e?.message ?? t('toasts.updateFailedDesc'), variant: 'destructive' }),
   })
 
   const rows = data ?? []
@@ -3525,39 +3556,39 @@ function TestimonialsSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold">Testimonials</h2>
-        <p className="text-sm text-muted-foreground">Testimonials submitted by owners. Review, then approve or publish. Respect each owner's display preference.</p>
+        <h2 className="text-lg font-semibold">{t('testimonials.heading')}</h2>
+        <p className="text-sm text-muted-foreground">{t('testimonials.description')}</p>
       </div>
-      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
-      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No testimonials yet.</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">{t('testimonials.loading')}</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>{t('testimonials.retry')}</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">{t('testimonials.empty')}</p>}
       <div className="space-y-3">
-        {rows.map(t => (
-          <div key={t.id} className="rounded-xl border border-border p-4 space-y-3">
+        {rows.map(item => (
+          <div key={item.id} className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs text-amber-500">{t.rating ? '★'.repeat(t.rating) : 'No rating'}</p>
-                <p className="text-sm text-foreground/90 mt-0.5">&ldquo;{t.body}&rdquo;</p>
+                <p className="text-xs text-amber-500">{item.rating ? '★'.repeat(item.rating) : t('testimonials.noRating')}</p>
+                <p className="text-sm text-foreground/90 mt-0.5">&ldquo;{item.body}&rdquo;</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {t.property_owners?.name || t.property_owners?.email || 'owner'} · show as {t.display_preference.replace('_', ' ')}
-                  {t.allow_photo ? ' · photo OK' : ''} · {new Date(t.created_at).toLocaleDateString()}
+                  {item.property_owners?.name || item.property_owners?.email || t('testimonials.ownerFallback')} · {t('testimonials.showAsPrefix')}{t(`testimonials.displayPreference.${item.display_preference}`, undefined, item.display_preference.replace('_', ' '))}
+                  {item.allow_photo ? t('testimonials.photoOk') : ''} · {new Date(item.created_at).toLocaleDateString()}
                 </p>
               </div>
               <select
                 className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
-                value={t.status}
-                onChange={e => update.mutate({ id: t.id, ownerId: t.owner_id, patch: { status: e.target.value } })}
-                data-testid={`select-testimonial-status-${t.id}`}
+                value={item.status}
+                onChange={e => update.mutate({ id: item.id, ownerId: item.owner_id, patch: { status: e.target.value } })}
+                data-testid={`select-testimonial-status-${item.id}`}
               >
-                {TESTIMONIAL_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                {TESTIMONIAL_STATUSES.map(s => <option key={s} value={s}>{t(`testimonials.status.${s}`, undefined, s)}</option>)}
               </select>
             </div>
             <Input
-              defaultValue={t.admin_note ?? ''}
-              placeholder="Internal note (optional)"
+              defaultValue={item.admin_note ?? ''}
+              placeholder={t('testimonials.notePlaceholder')}
               className="text-sm"
-              onBlur={e => { if (e.target.value !== (t.admin_note ?? '')) update.mutate({ id: t.id, patch: { admin_note: e.target.value || null } }) }}
-              data-testid={`input-testimonial-note-${t.id}`}
+              onBlur={e => { if (e.target.value !== (item.admin_note ?? '')) update.mutate({ id: item.id, patch: { admin_note: e.target.value || null } }) }}
+              data-testid={`input-testimonial-note-${item.id}`}
             />
           </div>
         ))}
@@ -3583,6 +3614,7 @@ const FEEDBACK_STATUSES = ['open', 'reviewing', 'planned', 'done', 'declined']
 function FeedbackSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['admin-feedback'],
@@ -3605,7 +3637,7 @@ function FeedbackSection() {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] })
       if (vars.patch.status && vars.ownerId) notifyOwner(vars.ownerId, 'feedback_update', { status: vars.patch.status })
     },
-    onError: (e: any) => toast({ title: 'Update failed', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.updateFailed'), description: e?.message ?? t('toasts.updateFailedDesc'), variant: 'destructive' }),
   })
 
   const rows = data ?? []
@@ -3613,38 +3645,38 @@ function FeedbackSection() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold">Feedback &amp; suggestions</h2>
-        <p className="text-sm text-muted-foreground">Feedback submitted by property owners. Triage with a status and an optional internal note.</p>
+        <h2 className="text-lg font-semibold">{t('feedback.heading')}</h2>
+        <p className="text-sm text-muted-foreground">{t('feedback.description')}</p>
       </div>
-      {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>}
-      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">No feedback yet.</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">{t('feedback.loading')}</p>}
+      {isError && <Button variant="outline" size="sm" onClick={() => refetch()}>{t('feedback.retry')}</Button>}
+      {!isLoading && !isError && rows.length === 0 && <p className="text-sm text-muted-foreground">{t('feedback.empty')}</p>}
       <div className="space-y-3">
-        {rows.map(f => (
-          <div key={f.id} className="rounded-xl border border-border p-4 space-y-3">
+        {rows.map(item => (
+          <div key={item.id} className="rounded-xl border border-border p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-2xs uppercase tracking-wide text-muted-foreground">{f.category}</p>
-                <p className="text-sm text-foreground/90 mt-0.5">{f.body}</p>
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground">{t(`feedback.category.${item.category}`, undefined, item.category)}</p>
+                <p className="text-sm text-foreground/90 mt-0.5">{item.body}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {f.property_owners?.name || f.property_owners?.email || 'owner'} · {new Date(f.created_at).toLocaleDateString()}
+                  {item.property_owners?.name || item.property_owners?.email || t('feedback.ownerFallback')} · {new Date(item.created_at).toLocaleDateString()}
                 </p>
               </div>
               <select
                 className="border border-border rounded-md px-2 py-1 text-sm bg-background shrink-0"
-                value={f.status}
-                onChange={e => update.mutate({ id: f.id, ownerId: f.owner_id, patch: { status: e.target.value } })}
-                data-testid={`select-feedback-status-${f.id}`}
+                value={item.status}
+                onChange={e => update.mutate({ id: item.id, ownerId: item.owner_id, patch: { status: e.target.value } })}
+                data-testid={`select-feedback-status-${item.id}`}
               >
-                {FEEDBACK_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                {FEEDBACK_STATUSES.map(s => <option key={s} value={s}>{t(`feedback.status.${s}`, undefined, s)}</option>)}
               </select>
             </div>
             <Input
-              defaultValue={f.admin_note ?? ''}
-              placeholder="Internal note (optional)"
+              defaultValue={item.admin_note ?? ''}
+              placeholder={t('feedback.notePlaceholder')}
               className="text-sm"
-              onBlur={e => { if (e.target.value !== (f.admin_note ?? '')) update.mutate({ id: f.id, patch: { admin_note: e.target.value || null } }) }}
-              data-testid={`input-feedback-note-${f.id}`}
+              onBlur={e => { if (e.target.value !== (item.admin_note ?? '')) update.mutate({ id: item.id, patch: { admin_note: e.target.value || null } }) }}
+              data-testid={`input-feedback-note-${item.id}`}
             />
           </div>
         ))}
@@ -3656,27 +3688,28 @@ function FeedbackSection() {
 export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
+  const { t } = useLocale('settingsPage')
 
   return (
     <PageContainer width="lg" className="space-y-6 md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Settings"
-        subtitle="Manage users, permissions, integrations, and application settings"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
       />
 
       <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start flex-wrap h-auto">
-          <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
-          <TabsTrigger value="owners" data-testid="tab-owners">Owners</TabsTrigger>
-          <TabsTrigger value="agreements" data-testid="tab-agreements">Agreements</TabsTrigger>
-          <TabsTrigger value="referrals" data-testid="tab-referrals">Referrals</TabsTrigger>
-          <TabsTrigger value="testimonials" data-testid="tab-testimonials">Testimonials</TabsTrigger>
-          <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
-          <TabsTrigger value="roles" data-testid="tab-roles">Roles &amp; Permissions</TabsTrigger>
-          <TabsTrigger value="notifications" data-testid="tab-notifications">Notifications</TabsTrigger>
-          <TabsTrigger value="app" data-testid="tab-app">App Settings</TabsTrigger>
-          <TabsTrigger value="templates" data-testid="tab-templates">Templates</TabsTrigger>
-          <TabsTrigger value="integrations" data-testid="tab-integrations">Integrations</TabsTrigger>
+          <TabsTrigger value="users" data-testid="tab-users">{t('tabs.users')}</TabsTrigger>
+          <TabsTrigger value="owners" data-testid="tab-owners">{t('tabs.owners')}</TabsTrigger>
+          <TabsTrigger value="agreements" data-testid="tab-agreements">{t('tabs.agreements')}</TabsTrigger>
+          <TabsTrigger value="referrals" data-testid="tab-referrals">{t('tabs.referrals')}</TabsTrigger>
+          <TabsTrigger value="testimonials" data-testid="tab-testimonials">{t('tabs.testimonials')}</TabsTrigger>
+          <TabsTrigger value="feedback" data-testid="tab-feedback">{t('tabs.feedback')}</TabsTrigger>
+          <TabsTrigger value="roles" data-testid="tab-roles">{t('tabs.roles')}</TabsTrigger>
+          <TabsTrigger value="notifications" data-testid="tab-notifications">{t('tabs.notifications')}</TabsTrigger>
+          <TabsTrigger value="app" data-testid="tab-app">{t('tabs.app')}</TabsTrigger>
+          <TabsTrigger value="templates" data-testid="tab-templates">{t('tabs.templates')}</TabsTrigger>
+          <TabsTrigger value="integrations" data-testid="tab-integrations">{t('tabs.integrations')}</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-y-auto mt-4">

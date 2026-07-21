@@ -9,7 +9,8 @@ import { MentionTextarea, MentionBody } from '@/components/MentionInput'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Loader2, MessageSquare } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 
 interface ContactNote {
   id: string
@@ -27,6 +28,8 @@ interface Props {
 }
 
 export function ContactNotesFeed({ contactId, title, placeholder, compact }: Props) {
+  const { t } = useLocale('contacts')
+  const { formatDistanceToNow } = useDateFormat()
   const qc = useQueryClient()
   const { toast } = useToast()
   const { user } = useAuth()
@@ -105,7 +108,7 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
       qc.invalidateQueries({ queryKey: ['/supabase/contact', contactId] })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
     },
-    onError: (e: any) => toast({ title: 'Failed to post note', description: e.message || '', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('notes.toastPostFailed'), description: e.message || '', variant: 'destructive' }),
   })
 
   const userLabels = (taggable || []).map(u => u.label)
@@ -123,7 +126,7 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
           value={draft}
           onChange={setDraft}
           users={taggable || []}
-          placeholder={placeholder ?? 'Write a note… use @ to tag someone'}
+          placeholder={placeholder ?? t('notes.composerPlaceholder')}
           rows={compact ? 2 : 3}
           dataTestId="contact-notes-composer"
         />
@@ -134,7 +137,7 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
             disabled={!draft.trim() || posting}
             data-testid="contact-notes-post"
           >
-            {posting ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />Posting…</> : 'Post'}
+            {posting ? <><Loader2 className="w-3 h-3 mr-1.5 animate-spin" />{t('notes.posting')}</> : t('notes.postButton')}
           </Button>
         </div>
       </div>
@@ -145,13 +148,13 @@ export function ContactNotesFeed({ contactId, title, placeholder, compact }: Pro
           <Skeleton className="h-10 w-full" />
         </div>
       ) : (notes || []).length === 0 ? (
-        <p className="text-xs text-muted-foreground italic">No notes yet.</p>
+        <p className="text-xs text-muted-foreground italic">{t('notes.empty')}</p>
       ) : (
         <ul className="space-y-2">
           {(notes || []).map(n => (
             <li key={n.id} className="rounded-md border border-border bg-muted/30 p-2.5">
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground mb-1">
-                <span className="font-medium text-foreground">{n.created_by || 'Unknown'}</span>
+                <span className="font-medium text-foreground">{n.created_by || t('notes.unknownAuthor')}</span>
                 <span>{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</span>
               </div>
               <div className="text-sm whitespace-pre-wrap break-words">
