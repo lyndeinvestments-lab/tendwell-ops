@@ -14,6 +14,8 @@ import {
   Building2,
   type LucideIcon,
 } from 'lucide-react'
+import { format as dfFormat } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
@@ -37,6 +39,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { slugify } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 
 // ---------------------------------------------------------------------------
 // Types — mirror the Haven /api/reviews proxy payload
@@ -105,12 +109,14 @@ async function authFetch<T>(path: string): Promise<T> {
 // Filter option models
 // ---------------------------------------------------------------------------
 
+// `key` selects the `filters.window.*` dictionary entry — kept separate from
+// `value` since `value` (e.g. '90d') isn't a clean dotted-key segment.
 const WINDOW_OPTIONS = [
-  { value: '90d', label: 'Last 90 days', days: 90 },
-  { value: '180d', label: 'Last 180 days', days: 180 },
-  { value: '365d', label: 'Last 12 months', days: 365 },
-  { value: '730d', label: 'Last 2 years', days: 730 },
-  { value: 'all', label: 'All time', days: null },
+  { value: '90d', key: 'd90', days: 90 },
+  { value: '180d', key: 'd180', days: 180 },
+  { value: '365d', key: 'd365', days: 365 },
+  { value: '730d', key: 'd730', days: 730 },
+  { value: 'all', key: 'all', days: null },
 ] as const
 type WindowValue = (typeof WINDOW_OPTIONS)[number]['value']
 
@@ -172,17 +178,20 @@ function parseReviewCategories(
   return out
 }
 
+// `id` selects the `categories.*` dictionary entry and is also used for
+// display-logic comparisons (e.g. "is this the Cleanliness row") so those
+// comparisons stay stable regardless of the active locale.
 const CATEGORY_DEFS: ReadonlyArray<{
-  label: string
+  id: string
   icon: LucideIcon
   keys: readonly string[]
 }> = [
-  { label: 'Cleanliness', icon: Sparkles, keys: ['cleanliness'] },
-  { label: 'Check-in', icon: KeyRound, keys: ['checkin'] },
-  { label: 'Communication', icon: MessageSquare, keys: ['communication'] },
-  { label: 'Value', icon: DollarSign, keys: ['value'] },
-  { label: 'Location', icon: MapPin, keys: ['location'] },
-  { label: 'Accuracy', icon: BadgeCheck, keys: ['accuracy'] },
+  { id: 'cleanliness', icon: Sparkles, keys: ['cleanliness'] },
+  { id: 'checkin', icon: KeyRound, keys: ['checkin'] },
+  { id: 'communication', icon: MessageSquare, keys: ['communication'] },
+  { id: 'value', icon: DollarSign, keys: ['value'] },
+  { id: 'location', icon: MapPin, keys: ['location'] },
+  { id: 'accuracy', icon: BadgeCheck, keys: ['accuracy'] },
 ]
 
 function categoryRating(review: HostawayReview, keys: readonly string[]): number | null {
@@ -203,15 +212,11 @@ function isoDaysAgo(days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null, locale: 'en' | 'es' = 'en'): string {
   if (!value) return '—'
   const date = new Date(`${value.slice(0, 10)}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(date)
+  return dfFormat(date, 'MMM d, yyyy', locale === 'es' ? { locale: dateFnsEs } : undefined)
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +225,7 @@ function formatDate(value: string | null): string {
 
 export default function ReviewsPage() {
   usePageTitle('Reviews')
+  const { t, locale } = useLocale('reviews')
 
   const [search, setSearch] = useState('')
   const [windowValue, setWindowValue] = useState<WindowValue>('365d')
@@ -365,28 +371,29 @@ export default function ReviewsPage() {
         .map((r) => categoryRating(r, def.keys))
         .filter((v): v is number => typeof v === 'number')
       return {
-        label: def.label,
+        id: def.id,
+        label: t(`categories.${def.id}`),
         icon: def.icon,
         average: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null,
         count: vals.length,
       }
     })
-  }, [filtered])
+  }, [filtered, t])
 
   const showCategories = categoryScores.some((c) => c.count > 0)
 
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Reviews"
-        subtitle="Live Hostaway guest feedback from Haven - cleanliness, ratings, and response status by property."
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Property, guest, text…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 w-56 pl-8 text-sm"
@@ -400,7 +407,7 @@ export default function ReviewsPage() {
               <SelectContent>
                 {WINDOW_OPTIONS.map((w) => (
                   <SelectItem key={w.value} value={w.value}>
-                    {w.label}
+                    {t(`filters.window.${w.key}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -410,12 +417,12 @@ export default function ReviewsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All ratings</SelectItem>
-                <SelectItem value="5">5.0 only</SelectItem>
-                <SelectItem value="4.5">4.5+</SelectItem>
-                <SelectItem value="4">4.0+</SelectItem>
-                <SelectItem value="below4">Below 4.0</SelectItem>
-                <SelectItem value="unrated">Unrated</SelectItem>
+                <SelectItem value="all">{t('filters.rating.all')}</SelectItem>
+                <SelectItem value="5">{t('filters.rating.r5')}</SelectItem>
+                <SelectItem value="4.5">{t('filters.rating.r45')}</SelectItem>
+                <SelectItem value="4">{t('filters.rating.r4')}</SelectItem>
+                <SelectItem value="below4">{t('filters.rating.below4')}</SelectItem>
+                <SelectItem value="unrated">{t('filters.rating.unrated')}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={responseFilter} onValueChange={(v) => setResponseFilter(v as ResponseState)}>
@@ -423,9 +430,9 @@ export default function ReviewsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All responses</SelectItem>
-                <SelectItem value="responded">Responded</SelectItem>
-                <SelectItem value="needs_response">Needs response</SelectItem>
+                <SelectItem value="all">{t('filters.response.all')}</SelectItem>
+                <SelectItem value="responded">{t('filters.response.responded')}</SelectItem>
+                <SelectItem value="needs_response">{t('filters.response.needsResponse')}</SelectItem>
               </SelectContent>
             </Select>
             {statusOptions.length > 0 && (
@@ -434,10 +441,10 @@ export default function ReviewsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="all">{t('filters.status.all')}</SelectItem>
                   {statusOptions.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {s}
+                      {t(`status.${slugify(s)}`, undefined, s)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -448,12 +455,12 @@ export default function ReviewsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="newest_departure">Newest departure</SelectItem>
-                <SelectItem value="oldest_departure">Oldest departure</SelectItem>
-                <SelectItem value="lowest_rating">Lowest rating</SelectItem>
-                <SelectItem value="highest_rating">Highest rating</SelectItem>
-                <SelectItem value="lowest_cleanliness">Lowest cleanliness</SelectItem>
-                <SelectItem value="listing">Property</SelectItem>
+                <SelectItem value="newest_departure">{t('filters.sort.newestDeparture')}</SelectItem>
+                <SelectItem value="oldest_departure">{t('filters.sort.oldestDeparture')}</SelectItem>
+                <SelectItem value="lowest_rating">{t('filters.sort.lowestRating')}</SelectItem>
+                <SelectItem value="highest_rating">{t('filters.sort.highestRating')}</SelectItem>
+                <SelectItem value="lowest_cleanliness">{t('filters.sort.lowestCleanliness')}</SelectItem>
+                <SelectItem value="listing">{t('filters.sort.property')}</SelectItem>
               </SelectContent>
             </Select>
           </>
@@ -463,48 +470,48 @@ export default function ReviewsPage() {
       {/* Summary strip — cleanliness leads for the cleaning-ops lens */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
         <StatCard
-          title="Cleanliness"
+          title={t('tiles.cleanliness')}
           value={summary.cleanAvg != null ? `${formatFiveStar(summary.cleanAvg, 2)}` : '—'}
           subtitle={
             summary.cleanCount > 0
-              ? `${formatTenPoint(summary.cleanAvg, 1)}/10 · ${summary.cleanCount} rated`
-              : 'No category data'
+              ? t('tiles.cleanlinessSubtitle', { ten: formatTenPoint(summary.cleanAvg, 1), count: summary.cleanCount })
+              : t('tiles.noCategoryData')
           }
           icon={Sparkles}
           tone="success"
           loading={isLoading}
         />
         <StatCard
-          title="Avg rating"
+          title={t('tiles.avgRating')}
           value={summary.avg != null ? `${formatFiveStar(summary.avg, 2)}` : '—'}
-          subtitle={summary.avg != null ? `${formatTenPoint(summary.avg, 1)}/10 raw` : undefined}
+          subtitle={summary.avg != null ? t('tiles.avgRatingSubtitle', { ten: formatTenPoint(summary.avg, 1) }) : undefined}
           icon={Star}
           tone="primary"
           loading={isLoading}
         />
         <StatCard
-          title="Reviews"
+          title={t('tiles.reviews')}
           value={String(summary.count)}
           icon={MessageSquareText}
           tone="info"
           loading={isLoading}
         />
         <StatCard
-          title="Needs response"
+          title={t('tiles.needsResponse')}
           value={String(summary.needsResponse)}
           icon={AlertCircle}
           tone="warning"
           loading={isLoading}
         />
         <StatCard
-          title="Below 4.0"
+          title={t('tiles.belowFour')}
           value={String(summary.belowFour)}
           icon={AlertCircle}
           tone="destructive"
           loading={isLoading}
         />
         <StatCard
-          title="Properties"
+          title={t('tiles.properties')}
           value={String(summary.properties)}
           icon={Building2}
           tone="neutral"
@@ -517,7 +524,7 @@ export default function ReviewsPage() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {categoryScores.map((c) => (
             <div
-              key={c.label}
+              key={c.id}
               className="rounded-2xl border border-border bg-card p-3 shadow-sm"
             >
               <div className="flex items-center gap-1.5 text-2xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -528,7 +535,7 @@ export default function ReviewsPage() {
                 {c.average != null ? formatFiveStar(c.average, 2) : '—'}
               </div>
               <div className="text-2xs text-muted-foreground">
-                {c.count > 0 ? `${formatTenPoint(c.average, 1)}/10 · ${c.count}` : 'No data'}
+                {c.count > 0 ? t('tiles.ratedCount', { ten: formatTenPoint(c.average, 1), count: c.count }) : t('tiles.noData')}
               </div>
             </div>
           ))}
@@ -537,8 +544,8 @@ export default function ReviewsPage() {
 
       {isError ? (
         <ErrorState
-          title="Couldn't load reviews"
-          description={error instanceof Error ? error.message : 'Something went wrong fetching reviews.'}
+          title={t('page.errorTitle')}
+          description={error instanceof Error ? error.message : t('page.errorDescriptionFallback')}
           onRetry={() => refetch()}
         />
       ) : (
@@ -548,13 +555,13 @@ export default function ReviewsPage() {
             <table className="w-full min-w-[920px] text-sm">
               <thead className="sticky top-0 z-10 border-b border-border bg-muted/80 backdrop-blur">
                 <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2 font-medium">Departure</th>
-                  <th className="px-3 py-2 font-medium">Property</th>
-                  <th className="px-3 py-2 font-medium">Guest</th>
-                  <th className="px-3 py-2 font-medium">Rating</th>
-                  <th className="px-3 py-2 font-medium">Cleanliness</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2 font-medium">Feedback</th>
+                  <th className="px-4 py-2 font-medium">{t('table.departure')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.property')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.guest')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.rating')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.cleanliness')}</th>
+                  <th className="px-3 py-2 font-medium">{t('table.status')}</th>
+                  <th className="px-4 py-2 font-medium">{t('table.feedback')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -573,8 +580,8 @@ export default function ReviewsPage() {
                     <td colSpan={7} className="py-12">
                       <EmptyState
                         icon={MessageSquareText}
-                        title="No matching reviews"
-                        description="Try widening the date window or clearing filters."
+                        title={t('table.emptyTitle')}
+                        description={t('table.emptyDescription')}
                       />
                     </td>
                   </tr>
@@ -590,17 +597,17 @@ export default function ReviewsPage() {
                       >
                         <td className="whitespace-nowrap px-4 py-3 text-2xs text-muted-foreground">
                           <div className="font-semibold text-foreground">
-                            {formatDate(review.departureDate)}
+                            {formatDate(review.departureDate, locale)}
                           </div>
-                          <div>Arr {formatDate(review.arrivalDate)}</div>
+                          <div>{t('table.arrivalPrefix', { date: formatDate(review.arrivalDate, locale) })}</div>
                         </td>
                         <td className="max-w-[200px] px-3 py-3 font-medium">
                           <div className="line-clamp-2">
                             {review.listingName ||
-                              `Listing ${review.listingMapId ?? 'unknown'}`}
+                              t('table.listingFallback', { id: review.listingMapId ?? 'unknown' })}
                           </div>
                         </td>
-                        <td className="px-3 py-3">{review.guestName || 'Unknown'}</td>
+                        <td className="px-3 py-3">{review.guestName || t('table.unknownGuest')}</td>
                         <td className="px-3 py-3">
                           <RatingCell rating={review.rating} />
                         </td>
@@ -617,7 +624,7 @@ export default function ReviewsPage() {
                         <td className="px-3 py-3">
                           {review.status ? (
                             <StatusBadge status={review.status} variant="soft">
-                              {review.status}
+                              {t(`status.${slugify(review.status)}`, undefined, review.status)}
                             </StatusBadge>
                           ) : null}
                         </td>
@@ -627,7 +634,7 @@ export default function ReviewsPage() {
                               {review.publicReview}
                             </p>
                           ) : (
-                            <span className="text-2xs text-muted-foreground">No public review</span>
+                            <span className="text-2xs text-muted-foreground">{t('table.noPublicReview')}</span>
                           )}
                         </td>
                       </tr>
@@ -645,8 +652,8 @@ export default function ReviewsPage() {
             ) : filtered.length === 0 ? (
               <EmptyState
                 icon={MessageSquareText}
-                title="No matching reviews"
-                description="Try widening the date window or clearing filters."
+                title={t('table.emptyTitle')}
+                description={t('table.emptyDescription')}
               />
             ) : (
               filtered.map((review) => {
@@ -660,12 +667,12 @@ export default function ReviewsPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="font-medium">
-                        {review.listingName || `Listing ${review.listingMapId ?? '?'}`}
+                        {review.listingName || t('table.listingFallback', { id: review.listingMapId ?? '?' })}
                       </div>
                       <RatingCell rating={review.rating} />
                     </div>
                     <div className="mt-1 text-2xs text-muted-foreground">
-                      {review.guestName || 'Unknown'} · {formatDate(review.departureDate)}
+                      {review.guestName || t('table.unknownGuest')} · {formatDate(review.departureDate, locale)}
                     </div>
                     {review.publicReview && (
                       <p className="mt-2 line-clamp-2 text-sm">{review.publicReview}</p>
@@ -673,7 +680,7 @@ export default function ReviewsPage() {
                     <div className="mt-2 flex items-center justify-between">
                       {review.status ? (
                         <StatusBadge status={review.status} variant="soft">
-                          {review.status}
+                          {t(`status.${slugify(review.status)}`, undefined, review.status)}
                         </StatusBadge>
                       ) : (
                         <span />
@@ -681,7 +688,7 @@ export default function ReviewsPage() {
                       {clean != null && (
                         <span className="inline-flex items-center gap-1 text-2xs font-medium text-success">
                           <Sparkles className="h-3 w-3" />
-                          Clean {formatFiveStar(clean)}
+                          {t('table.cleanPrefix', { score: formatFiveStar(clean) })}
                         </span>
                       )}
                     </div>
@@ -721,6 +728,7 @@ function ReviewDrawer({
   review: HostawayReview | null
   onClose: () => void
 }) {
+  const { t, locale } = useLocale('reviews')
   return (
     <Sheet open={!!review} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
@@ -728,7 +736,7 @@ function ReviewDrawer({
           <>
             <SheetHeader>
               <SheetTitle className="pr-6">
-                {review.listingName || `Listing ${review.listingMapId ?? 'unknown'}`}
+                {review.listingName || t('table.listingFallback', { id: review.listingMapId ?? 'unknown' })}
               </SheetTitle>
             </SheetHeader>
 
@@ -736,7 +744,7 @@ function ReviewDrawer({
               <div className="flex flex-wrap items-center gap-2">
                 {review.status && (
                   <StatusBadge status={review.status} variant="soft">
-                    {review.status}
+                    {t(`status.${slugify(review.status)}`, undefined, review.status)}
                   </StatusBadge>
                 )}
                 <span className="inline-flex items-center gap-1 font-semibold tabular-nums">
@@ -749,18 +757,19 @@ function ReviewDrawer({
               </div>
 
               <dl className="grid grid-cols-2 gap-3 rounded-xl border border-border bg-muted/30 p-3 text-2xs">
-                <Meta label="Guest" value={review.guestName || 'Unknown'} />
-                <Meta label="Reservation" value={review.reservationId ? String(review.reservationId) : '—'} />
-                <Meta label="Arrival" value={formatDate(review.arrivalDate)} />
-                <Meta label="Departure" value={formatDate(review.departureDate)} />
-                <Meta label="Received" value={formatDate(review.insertedOn)} />
-                <Meta label="Listing ID" value={review.listingMapId ? String(review.listingMapId) : '—'} />
+                <Meta label={t('detail.guest')} value={review.guestName || t('detail.unknownGuest')} />
+                <Meta label={t('detail.reservation')} value={review.reservationId ? String(review.reservationId) : '—'} />
+                <Meta label={t('detail.arrival')} value={formatDate(review.arrivalDate, locale)} />
+                <Meta label={t('detail.departure')} value={formatDate(review.departureDate, locale)} />
+                <Meta label={t('detail.received')} value={formatDate(review.insertedOn, locale)} />
+                <Meta label={t('detail.listingId')} value={review.listingMapId ? String(review.listingMapId) : '—'} />
               </dl>
 
               {/* Category breakdown */}
               {(() => {
                 const cats = CATEGORY_DEFS.map((def) => ({
-                  label: def.label,
+                  id: def.id,
+                  label: t(`categories.${def.id}`),
                   icon: def.icon,
                   value: categoryRating(review, def.keys),
                 })).filter((c) => c.value != null)
@@ -768,15 +777,15 @@ function ReviewDrawer({
                 return (
                   <div>
                     <h3 className="mb-2 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Category scores
+                      {t('detail.categoryScores')}
                     </h3>
                     <div className="space-y-2">
                       {cats.map((c) => (
-                        <div key={c.label} className="flex items-center gap-2">
+                        <div key={c.id} className="flex items-center gap-2">
                           <c.icon
                             className={cn(
                               'h-3.5 w-3.5',
-                              c.label === 'Cleanliness' ? 'text-success' : 'text-muted-foreground',
+                              c.id === 'cleanliness' ? 'text-success' : 'text-muted-foreground',
                             )}
                           />
                           <span className="w-28 text-xs">{c.label}</span>
@@ -784,7 +793,7 @@ function ReviewDrawer({
                             <div
                               className={cn(
                                 'h-full rounded-full',
-                                c.label === 'Cleanliness' ? 'bg-success' : 'bg-primary',
+                                c.id === 'cleanliness' ? 'bg-success' : 'bg-primary',
                               )}
                               style={{ width: `${((c.value as number) / 10) * 100}%` }}
                             />
@@ -800,17 +809,17 @@ function ReviewDrawer({
               })()}
 
               {review.publicReview && (
-                <Section title="Public review">{review.publicReview}</Section>
+                <Section title={t('detail.publicReview')}>{review.publicReview}</Section>
               )}
               {review.privateFeedback && (
-                <Section title="Private feedback">{review.privateFeedback}</Section>
+                <Section title={t('detail.privateFeedback')}>{review.privateFeedback}</Section>
               )}
-              <Section title="Host response">
+              <Section title={t('detail.hostResponse')}>
                 {review.revieweeResponse ? (
                   review.revieweeResponse
                 ) : (
                   <span className="text-muted-foreground">
-                    No response yet - this review needs a reply on Hostaway.
+                    {t('detail.noResponseYet')}
                   </span>
                 )}
               </Section>

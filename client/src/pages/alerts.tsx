@@ -15,6 +15,8 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { StatusTone, TONE_TEXT } from '@/lib/status-colors'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -304,6 +306,7 @@ type SeverityFilter = 'all' | 'critical' | 'warning' | 'info'
 
 export default function AlertsPage() {
   usePageTitle('Alerts')
+  const { t } = useLocale('alerts')
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
   const { alerts, dismissedSet, isError, refetch } = useAlerts()
@@ -402,16 +405,22 @@ export default function AlertsPage() {
   const dismissedCount = alerts.filter(a => dismissedSet.has(a.id)).length
 
   const SEVERITY_PILLS: Array<{ value: SeverityFilter; label: string; count: number; cls: string }> = [
-    { value: 'all', label: 'All', count: criticalCount + warningCount + infoCount, cls: 'border-border' },
-    { value: 'critical', label: 'Critical', count: criticalCount, cls: `border-destructive/40 ${TONE_TEXT.destructive}` },
-    { value: 'warning', label: 'Warning', count: warningCount, cls: `border-warning/40 ${TONE_TEXT.warning}` },
-    { value: 'info', label: 'Info', count: infoCount, cls: `border-info/40 ${TONE_TEXT.info}` },
+    { value: 'all', label: t('severity.all'), count: criticalCount + warningCount + infoCount, cls: 'border-border' },
+    { value: 'critical', label: t('severity.critical'), count: criticalCount, cls: `border-destructive/40 ${TONE_TEXT.destructive}` },
+    { value: 'warning', label: t('severity.warning'), count: warningCount, cls: `border-warning/40 ${TONE_TEXT.warning}` },
+    { value: 'info', label: t('severity.info'), count: infoCount, cls: `border-info/40 ${TONE_TEXT.info}` },
+  ]
+
+  const snoozeOptions = [
+    { days: 1, label: t('filters.snooze1Day') },
+    { days: 3, label: t('filters.snooze3Days') },
+    { days: 7, label: t('filters.snooze1Week') },
   ]
 
   if (isError) {
     return (
       <PageContainer>
-        <PageHeader title="Alerts" />
+        <PageHeader title={t('page.title')} />
         <ErrorState onRetry={() => refetch()} />
       </PageContainer>
     )
@@ -420,13 +429,13 @@ export default function AlertsPage() {
   return (
     <PageContainer>
       <PageHeader
-        title="Alerts"
+        title={t('page.title')}
         subtitle={
           <span className="flex items-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-destructive" /> {criticalCount} critical</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning" /> {warningCount} warning</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-info" /> {infoCount} info</span>
-            {dismissedCount > 0 && <span className="text-muted-foreground/70">· {dismissedCount} dismissed</span>}
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-destructive" /> {t('page.subtitleCritical', { count: criticalCount })}</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-warning" /> {t('page.subtitleWarning', { count: warningCount })}</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-info" /> {t('page.subtitleInfo', { count: infoCount })}</span>
+            {dismissedCount > 0 && <span className="text-muted-foreground/70">· {t('page.subtitleDismissed', { count: dismissedCount })}</span>}
           </span>
         }
         actions={
@@ -439,12 +448,12 @@ export default function AlertsPage() {
                 ))
                 qcAlerts.invalidateQueries({ queryKey: ['/supabase/alert-dismissals'] })
               }}>
-                Dismiss All Warnings ({warningCount})
+                {t('page.dismissAllWarnings', { count: warningCount })}
               </Button>
             )}
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <Switch checked={showDismissed} onCheckedChange={setShowDismissed} />
-              Show dismissed ({dismissedCount})
+              {t('page.showDismissed', { count: dismissedCount })}
             </label>
           </>
         }
@@ -452,7 +461,7 @@ export default function AlertsPage() {
 
       {/* Severity filter pills */}
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Severity</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">{t('filters.severityLabel')}</span>
         {SEVERITY_PILLS.map(p => (
           <button
             key={p.value}
@@ -469,9 +478,11 @@ export default function AlertsPage() {
         ))}
       </div>
 
-      {/* Category filter tabs */}
+      {/* Category filter tabs — `cat` stays canonical English for the
+          categoryFilter/categoryCounts/alert.category equality checks;
+          only the rendered label is translated (slug lookup, raw fallback). */}
       <div className="flex items-center gap-1.5 flex-wrap -mt-1">
-        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">Category</span>
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">{t('filters.categoryLabel')}</span>
         {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM', 'Issues']
           .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
           .map(cat => (
@@ -484,7 +495,7 @@ export default function AlertsPage() {
                   : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
-              {cat}
+              {t(`category.${slugify(cat)}`, undefined, cat)}
               <span className="ml-1.5 tabular-nums opacity-70">{categoryCounts[cat] || 0}</span>
             </button>
           ))}
@@ -494,20 +505,20 @@ export default function AlertsPage() {
       {selectableVisible.length > 0 && (
         <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-md border border-border bg-muted/40">
           <label className="flex items-center gap-2 text-xs">
-            <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label="Select all visible alerts" />
+            <Checkbox checked={allVisibleSelected} onCheckedChange={toggleSelectAll} aria-label={t('filters.selectAllAria')} />
             <span className="text-muted-foreground">
-              {selectedIds.size > 0 ? `${selectedIds.size} selected` : `Select all (${selectableVisible.length})`}
+              {selectedIds.size > 0 ? t('filters.selectedCount', { count: selectedIds.size }) : t('filters.selectAllCount', { count: selectableVisible.length })}
             </span>
           </label>
           <div className="flex items-center gap-1.5">
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled={selectedIds.size === 0}>
-                  <Clock className="w-3 h-3" /> Snooze
+                  <Clock className="w-3 h-3" /> {t('filters.snooze')}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-36 p-1">
-                {[{ label: '1 day', days: 1 }, { label: '3 days', days: 3 }, { label: '1 week', days: 7 }].map(opt => (
+                {snoozeOptions.map(opt => (
                   <button
                     key={opt.days}
                     onClick={() => bulkSnooze(opt.days)}
@@ -519,7 +530,7 @@ export default function AlertsPage() {
               </PopoverContent>
             </Popover>
             <Button variant="outline" size="sm" className="h-7 text-xs gap-1" disabled={selectedIds.size === 0} onClick={bulkDismiss}>
-              <X className="w-3 h-3" /> Dismiss
+              <X className="w-3 h-3" /> {t('filters.dismiss')}
             </Button>
           </div>
         </div>
@@ -530,11 +541,11 @@ export default function AlertsPage() {
           <Card className="border-success/25 bg-success/5 shadow-xs">
             <CardContent className="p-8 text-center space-y-1">
               <CheckCircle2 className="w-7 h-7 text-success mx-auto" />
-              <p className="text-sm text-success font-medium">All clear! No active alerts.</p>
+              <p className="text-sm text-success font-medium">{t('page.allClearTitle')}</p>
               <p className="text-xs text-muted-foreground">
                 {categoryFilter !== 'All' || severityFilter !== 'all'
-                  ? 'Try clearing filters above to see alerts in other categories or severities.'
-                  : 'New alerts surface automatically when issues are detected.'}
+                  ? t('page.allClearFilteredHint')
+                  : t('page.allClearDefaultHint')}
               </p>
             </CardContent>
           </Card>
@@ -552,18 +563,22 @@ export default function AlertsPage() {
                       className="mt-0.5"
                       checked={isSelected}
                       onCheckedChange={() => toggleSelect(alert.id)}
-                      aria-label={`Select alert: ${alert.title}`}
+                      aria-label={t('filters.selectAlertAria', { title: alert.title })}
                     />
                   )}
                   <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${TONE_TEXT[config.tone]}`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {/* alert.title/description are generated display copy from
+                          useAlerts() — kept in English (see alerts.en.ts header
+                          comment); category/severity below are display-only
+                          translations of the canonical values used for filtering. */}
                       <p className={`text-sm font-medium ${TONE_TEXT[config.tone]}`}>{alert.title}</p>
                       <StatusBadge tone="neutral" className="font-normal">
-                        {alert.category}
+                        {t(`category.${slugify(alert.category)}`, undefined, alert.category)}
                       </StatusBadge>
                       <StatusBadge tone={config.tone} className="font-normal capitalize">
-                        {alert.severity}
+                        {t(`severity.${alert.severity}`, undefined, alert.severity)}
                       </StatusBadge>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">{alert.description}</p>
@@ -573,7 +588,7 @@ export default function AlertsPage() {
                       <Button
                         variant="ghost" size="sm" className="h-6 w-6 p-0"
                         onClick={() => openPropertyModal(alert.propertyId!)}
-                        aria-label={`View property: ${alert.title}`}
+                        aria-label={t('filters.viewPropertyAria', { title: alert.title })}
                       >
                         <ExternalLink className="w-3 h-3" />
                       </Button>
@@ -583,37 +598,37 @@ export default function AlertsPage() {
                         variant="ghost" size="sm" className="h-6 px-2 text-xs"
                         onClick={() => navigate(alert.actionRoute!)}
                       >
-                        Go
+                        {t('page.go')}
                       </Button>
                     )}
                     {!dismissed && (
                       <>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={`Snooze alert: ${alert.title}`}>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={t('filters.snoozeAlertAria', { title: alert.title })}>
                               <Clock className="w-3 h-3" />
                             </Button>
                           </PopoverTrigger>
                           <PopoverContent className="w-32 p-1">
-                            {[{ label: '1 day', days: 1 }, { label: '3 days', days: 3 }, { label: '1 week', days: 7 }].map(opt => (
+                            {snoozeOptions.map(opt => (
                               <button
                                 key={opt.days}
                                 onClick={() => handleSnooze(alert.id, opt.days)}
                                 className="w-full text-left text-xs px-2 py-1.5 rounded hover:bg-muted"
                               >
-                                Snooze {opt.label}
+                                {t('filters.snoozeOption', { label: opt.label })}
                               </button>
                             ))}
                           </PopoverContent>
                         </Popover>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} aria-label={`Dismiss alert: ${alert.title}`}>
+                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => handleDismiss(alert.id)} aria-label={t('filters.dismissAlertAria', { title: alert.title })}>
                           <X className="w-3 h-3" />
                         </Button>
                       </>
                     )}
                     {dismissed && (
                       <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => handleUndismiss(alert.id)}>
-                        Restore
+                        {t('page.restore')}
                       </Button>
                     )}
                   </div>
