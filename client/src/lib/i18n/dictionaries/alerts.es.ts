@@ -1,4 +1,52 @@
 import type { alertsEn } from './alerts.en'
 
 /** Spanish (Latin American) strings for the alerts surface. */
-export const alertsEs: typeof alertsEn = {}
+export const alertsEs: typeof alertsEn = {
+  page: {
+    title: 'Alertas',
+    subtitleCritical: '{{count}} críticas',
+    subtitleWarning: '{{count}} de advertencia',
+    subtitleInfo: '{{count}} informativas',
+    subtitleDismissed: '{{count}} descartadas',
+    dismissAllWarnings: 'Descartar Todas las Advertencias ({{count}})',
+    showDismissed: 'Mostrar descartadas ({{count}})',
+    allClearTitle: '¡Todo despejado! No hay alertas activas.',
+    allClearFilteredHint: 'Prueba a borrar los filtros para ver alertas de otras categorías o niveles de severidad.',
+    allClearDefaultHint: 'Las nuevas alertas aparecen automáticamente cuando se detectan problemas.',
+    go: 'Ir',
+    restore: 'Restaurar',
+  },
+  filters: {
+    severityLabel: 'Severidad',
+    categoryLabel: 'Categoría',
+    selectAllAria: 'Seleccionar todas las alertas visibles',
+    selectedCount: '{{count}} seleccionadas',
+    selectAllCount: 'Seleccionar todas ({{count}})',
+    snooze: 'Posponer',
+    dismiss: 'Descartar',
+    snooze1Day: '1 día',
+    snooze3Days: '3 días',
+    snooze1Week: '1 semana',
+    snoozeOption: 'Posponer {{label}}',
+    selectAlertAria: 'Seleccionar alerta: {{title}}',
+    dismissAlertAria: 'Descartar alerta: {{title}}',
+    snoozeAlertAria: 'Posponer alerta: {{title}}',
+    viewPropertyAria: 'Ver propiedad: {{title}}',
+  },
+  severity: {
+    all: 'Todas',
+    critical: 'Crítico',
+    warning: 'Advertencia',
+    info: 'Info',
+  },
+  category: {
+    all: 'Todas',
+    financial: 'Financiero',
+    data_quality: 'Calidad de Datos',
+    maintenance: 'Mantenimiento',
+    inventory: 'Inventario',
+    onboarding: 'Incorporación',
+    crm: 'CRM',
+    issues: 'Incidencias',
+  },
+}

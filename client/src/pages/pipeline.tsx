@@ -29,10 +29,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ChevronDown, ChevronRight, Eye, EyeOff, Minimize2, ArrowUp, CalendarDays, Search, Plus, X, GripVertical, AlertTriangle } from 'lucide-react'
-import { format } from 'date-fns'
 import { PageHeader } from '@/components/PageHeader'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { slugify } from '@/lib/issues'
 
 // Kanban-optimised collision: pointer-within first, fall back to closestCenter.
 // closestCenter alone misfires on horizontal boards when card centers don't
@@ -56,25 +58,28 @@ const FOLLOW_UP_STAGES = new Set(['Lead', 'Quote', 'Onboarding'])
 
 // ── Profit badge ──────────────────────────────────────────────────────────────
 function ProfitBadge({ pct, stageName }: { pct: number | null | undefined; stageName: string }) {
+  const { t } = useLocale('pipeline')
   const isOnboarding = stageName === 'Onboarding'
   if (pct == null) {
     if (isOnboarding) {
-      return <StatusBadge tone="neutral">No data</StatusBadge>
+      return <StatusBadge tone="neutral">{t('card.noData')}</StatusBadge>
     }
     return null
   }
-  const t = profitTier(pct)
-  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
+  const tierValue = profitTier(pct)
+  const tierLabel = tierValue === 'high' ? t('card.profitTier.high') : tierValue === 'mid' ? t('card.profitTier.mid') : t('card.profitTier.low')
+  const tone = tierValue === 'high' ? 'success' : tierValue === 'mid' ? 'warning' : 'destructive'
   return (
     <StatusBadge tone={tone} className="tabular-nums">
-      {pct.toFixed(0)}%<span className="sr-only"> ({tier} profit)</span>
+      {pct.toFixed(0)}%<span className="sr-only"> ({tierLabel})</span>
     </StatusBadge>
   )
 }
 
 // ── Stage history tooltip ──────────────────────────────────────────────────────
 function StageHistoryTooltip({ transitions, children }: { transitions: any[]; children: React.ReactNode }) {
+  const { t } = useLocale('pipeline')
+  const { format: formatDate } = useDateFormat()
   if (!transitions || transitions.length === 0) return <>{children}</>
   return (
     <Tooltip>
@@ -82,12 +87,12 @@ function StageHistoryTooltip({ transitions, children }: { transitions: any[]; ch
         <div className="cursor-help">{children}</div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-xs p-2 space-y-1">
-        <p className="text-xs font-medium mb-1">Stage History</p>
-        {transitions.map((t: any, i: number) => (
+        <p className="text-xs font-medium mb-1">{t('card.stageHistory')}</p>
+        {transitions.map((tr: any, i: number) => (
           <div key={i} className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <span>{t.pipeline_stages?.name ?? '—'}</span>
+            <span>{tr.pipeline_stages?.name ? t(`common.stage.${slugify(tr.pipeline_stages.name)}`, undefined, tr.pipeline_stages.name) : '—'}</span>
             <span className="text-muted-foreground/60">·</span>
-            <span>{format(new Date(t.created_at), 'MMM d, yyyy')}</span>
+            <span>{formatDate(new Date(tr.created_at), 'MMM d, yyyy')}</span>
           </div>
         ))}
       </TooltipContent>
@@ -107,9 +112,11 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
   transitionsByProperty?: Record<string, any[]>
   onboardingProgress?: Record<string, { completed: number; total: number }>
 }) {
+  const { t } = useLocale('pipeline')
   const { isOver, setNodeRef } = useDroppable({ id: stage.id })
   const color = STAGE_COLORS[stage.name] || '#6b7280'
   const displayProps = collapsed ? [] : properties
+  const stageLabel = t(`common.stage.${slugify(stage.name)}`, undefined, stage.name)
 
   return (
     <div
@@ -125,12 +132,12 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
           onClick={onToggleCollapse}
           className="p-0.5 rounded-md hover:bg-background/60 transition-colors"
           data-testid={`toggle-collapse-${stage.name}`}
-          aria-label={collapsed ? `Expand ${stage.name} column` : `Collapse ${stage.name} column`}
+          aria-label={collapsed ? t('board.expandColumn', { stage: stageLabel }) : t('board.collapseColumn', { stage: stageLabel })}
         >
           {collapsed ? <ChevronRight className="w-3 h-3 text-muted-foreground" /> : <ChevronDown className="w-3 h-3 text-muted-foreground" />}
         </button>
         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-2 ring-background" style={{ backgroundColor: color }} />
-        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80 truncate">{stage.name}</span>
+        <span className="text-xs font-semibold uppercase tracking-wide text-foreground/80 truncate">{stageLabel}</span>
         <span className="ml-auto text-2xs font-semibold tabular-nums bg-background/70 text-foreground rounded-full px-1.5 py-0.5 flex-shrink-0">{properties.length}</span>
       </div>
       <div
@@ -141,7 +148,7 @@ function StageColumn({ stage, properties, onNameClick, compact, collapsed, onTog
         {collapsed ? (
           <div className="flex items-center justify-center py-4 h-full">
             <span className="text-xs text-muted-foreground" style={{ writingMode: 'vertical-lr', textOrientation: 'mixed' }}>
-              {properties.length} properties
+              {t('board.propertiesCount', { count: properties.length })}
             </span>
           </div>
         ) : (
@@ -169,9 +176,12 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
   onFollowUpChange: (date: string) => void
   onboardingProgress?: { completed: number; total: number }
 }) {
+  const { t } = useLocale('pipeline')
+  const { format: formatDate } = useDateFormat()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: property.id })
   const showFollowUp = FOLLOW_UP_STAGES.has(stageName)
   const transitions: any[] = property._transitions ?? []
+  const stageLabel = t(`common.stage.${slugify(stageName)}`, undefined, stageName)
 
   const isStale = useMemo(() => {
     if (stageName !== 'Lead' && stageName !== 'Quote') return false
@@ -227,26 +237,26 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
           </button>
           <div className="flex items-center gap-1 flex-shrink-0">
             {isStale && (
-              <StatusBadge tone="warning">Stale</StatusBadge>
+              <StatusBadge tone="warning">{t('card.stale')}</StatusBadge>
             )}
           </div>
         </div>
         {enteredStageDate && (
           <p className="text-2xs text-muted-foreground/70 mt-0.5">
-            In {stageName} since {format(new Date(enteredStageDate), 'MMM d, yyyy')}
+            {t('card.inStageSince', { stage: stageLabel, date: formatDate(new Date(enteredStageDate), 'MMM d, yyyy') })}
           </p>
         )}
         {showFollowUp && (
           <div className="flex items-center gap-1 mt-0.5" onClick={handleDateClick}>
             <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-            <span className="text-xs text-muted-foreground/70 shrink-0">Follow-up:</span>
+            <span className="text-xs text-muted-foreground/70 shrink-0">{t('card.followUp')}</span>
             <input
               type="date"
               value={property.follow_up_date || ''}
               onChange={handleDateChange}
               min={new Date().toISOString().split('T')[0]}
               className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
-              aria-label={`Follow-up date for ${property.name}`}
+              aria-label={t('card.followUpAria', { name: property.name })}
             />
           </div>
         )}
@@ -278,8 +288,8 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
             <p className="text-xs font-medium">{property.contacts.full_name}</p>
             {property.contacts.phone && <p className="text-xs text-muted-foreground">{property.contacts.phone}</p>}
             {property.contacts.email && <p className="text-xs text-muted-foreground">{property.contacts.email}</p>}
-            {property.contacts.payment_method && <p className="text-xs text-muted-foreground">Payment: {property.contacts.payment_method}</p>}
-            {property.contacts.client_since && <p className="text-xs text-muted-foreground">Client since {property.contacts.client_since}</p>}
+            {property.contacts.payment_method && <p className="text-xs text-muted-foreground">{t('card.payment', { method: property.contacts.payment_method })}</p>}
+            {property.contacts.client_since && <p className="text-xs text-muted-foreground">{t('card.clientSince', { date: property.contacts.client_since })}</p>}
           </TooltipContent>
         </Tooltip>
       )}
@@ -291,14 +301,14 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
       )}
       {enteredStageDate && (
         <p className="text-2xs text-muted-foreground/70 mt-1">
-          In {stageName} since {format(new Date(enteredStageDate), 'MMM d, yyyy')}
+          {t('card.inStageSince', { stage: stageLabel, date: formatDate(new Date(enteredStageDate), 'MMM d, yyyy') })}
         </p>
       )}
       <div className="flex items-center justify-end mt-2 gap-1">
         <div className="flex items-center gap-1 flex-shrink-0">
           {isStale && (
             <span className="text-xs px-1 py-0.5 rounded bg-warning/15 text-warning font-medium">
-              Stale
+              {t('card.stale')}
             </span>
           )}
         </div>
@@ -307,21 +317,21 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
         <StageHistoryTooltip transitions={transitions}>
           <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-border/40" onClick={handleDateClick}>
             <CalendarDays className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-            <span className="text-xs text-muted-foreground/70 shrink-0">Follow-up:</span>
+            <span className="text-xs text-muted-foreground/70 shrink-0">{t('card.followUp')}</span>
             <input
               type="date"
               value={property.follow_up_date || ''}
               onChange={handleDateChange}
               min={new Date().toISOString().split('T')[0]}
               className="text-xs text-muted-foreground bg-transparent border-none outline-none cursor-pointer w-full"
-              placeholder="Add follow-up"
-              aria-label={`Follow-up date for ${property.name}`}
+              placeholder={t('card.addFollowUp')}
+              aria-label={t('card.followUpAria', { name: property.name })}
             />
           </div>
         </StageHistoryTooltip>
       )}
       {(stageName === 'Active' || stageName === 'Onboarding') && property.cleaner_pay && (
-        <span className="text-xs text-muted-foreground mt-1 block">${Number(property.cleaner_pay).toFixed(0)} pay</span>
+        <span className="text-xs text-muted-foreground mt-1 block">{t('card.cleanerPay', { amount: `$${Number(property.cleaner_pay).toFixed(0)}` })}</span>
       )}
       {stageName === 'Onboarding' && (
         <div className="mt-1.5 pt-1.5 border-t border-border/40">
@@ -336,10 +346,10 @@ function DraggableCard({ property, stageName, stageColor, onNameClick, compact, 
                   style={{ width: `${(onboardingProgress.completed / onboardingProgress.total) * 100}%` }}
                 />
               </div>
-              <span className="text-xs text-muted-foreground mt-0.5 block">{onboardingProgress.completed} of {onboardingProgress.total} tasks</span>
+              <span className="text-xs text-muted-foreground mt-0.5 block">{t('card.onboardingTasks', { completed: onboardingProgress.completed, total: onboardingProgress.total })}</span>
             </>
           ) : (
-            <button onClick={handleNameClick} className="text-xs text-primary hover:underline">Setup checklist →</button>
+            <button onClick={handleNameClick} className="text-xs text-primary hover:underline">{t('card.setupChecklist')}</button>
           )}
         </div>
       )}
@@ -357,6 +367,7 @@ function PropertyCardOverlay({ property }: { property: any }) {
 }
 
 export default function PipelinePage() {
+  const { t } = useLocale('pipeline')
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
@@ -538,7 +549,7 @@ export default function PipelinePage() {
     },
     onError: (error: any) => {
       setLocalProperties(properties ?? null)
-      toast({ title: 'Failed to move property', description: error?.message, variant: 'destructive' })
+      toast({ title: t('toasts.moveFailed'), description: error?.message, variant: 'destructive' })
     },
   })
 
@@ -556,7 +567,7 @@ export default function PipelinePage() {
       // master-list, pro-forma, etc.
       invalidateAllPropertyQueries(qc)
     },
-    onError: (error: any) => toast({ title: 'Failed to save follow-up date', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.followUpFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const leadStage = stages?.find((s: any) => s.name === 'Lead')
@@ -604,11 +615,11 @@ export default function PipelinePage() {
       // Without the registry walk, the dashboard "Active properties" and
       // unassigned counts both stayed stale until window-focus refetch.
       invalidateAllPropertyQueries(qc)
-      toast({ title: 'Lead added to pipeline' })
+      toast({ title: t('toasts.leadAdded') })
       setAddLeadOpen(false)
       resetAddLeadForm()
     },
-    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed to add lead'), variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.addLeadErrorPrefix') + (e.message || t('toasts.addLeadErrorFallback')), variant: 'destructive' }),
   })
 
   function handleFollowUpChange(propId: string, date: string) {
@@ -718,13 +729,13 @@ export default function PipelinePage() {
   return (
     <div className="p-5 h-full flex flex-col">
       <PageHeader
-        title="Pipeline"
+        title={t('page.title')}
         subtitle={
           <span>
-            Drag properties between stages
+            {t('page.subtitle')}
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="ml-1.5 text-xs text-muted-foreground/60 cursor-help underline decoration-dotted">profit legend</span>
+                <span className="ml-1.5 text-xs text-muted-foreground/60 cursor-help underline decoration-dotted">{t('page.profitLegend')}</span>
               </TooltipTrigger>
               <TooltipContent className="text-xs space-y-1">
                 <p><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1.5" />{PROFIT_TIER_LABELS.high}</p>
@@ -739,7 +750,7 @@ export default function PipelinePage() {
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search properties..."
+              placeholder={t('page.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8 pr-8 h-8 text-sm w-full"
@@ -749,30 +760,30 @@ export default function PipelinePage() {
               <button
                 onClick={() => setSearch('')}
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label="Clear search"
+                aria-label={t('page.clearSearch')}
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
           <Button size="sm" variant="outline" onClick={() => setAddLeadOpen(true)} data-testid="button-add-lead">
-            <Plus className="w-3.5 h-3.5 mr-1" /> Add Lead
+            <Plus className="w-3.5 h-3.5 mr-1" /> {t('page.addLead')}
           </Button>
           <div className="flex items-center gap-2">
             <Switch id="compact-mode" checked={compact} onCheckedChange={v => { setCompact(v); try { localStorage.setItem('tendwell-pipeline-compact', String(v)) } catch {} }} data-testid="switch-compact" />
             <Tooltip>
               <TooltipTrigger asChild>
                 <Label htmlFor="compact-mode" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
-                  <Minimize2 className="w-3 h-3" /> Compact
+                  <Minimize2 className="w-3 h-3" /> {t('page.compact')}
                 </Label>
               </TooltipTrigger>
-              <TooltipContent>Show cards with less detail</TooltipContent>
+              <TooltipContent>{t('page.compactTooltip')}</TooltipContent>
             </Tooltip>
           </div>
           <div className="flex items-center gap-2">
             <Switch id="hide-empty" checked={hideEmpty} onCheckedChange={v => { setHideEmpty(v); try { localStorage.setItem('tendwell-pipeline-hide-empty', String(v)) } catch {} }} data-testid="switch-hide-empty" />
             <Label htmlFor="hide-empty" className="text-xs text-muted-foreground cursor-pointer flex items-center gap-1">
-              {hideEmpty ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} Hide empty
+              {hideEmpty ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />} {t('page.hideEmpty')}
             </Label>
           </div>
         </div>}
@@ -805,7 +816,8 @@ export default function PipelinePage() {
             >
               {visibleStages.map((stage: any) => {
                 const count = displayProperties?.filter((p: any) => String(p.stage_id) === String(stage.id)).length ?? 0
-                return <option key={stage.id} value={stage.id}>{stage.name} ({count})</option>
+                const stageLabel = t(`common.stage.${slugify(stage.name)}`, undefined, stage.name)
+                return <option key={stage.id} value={stage.id}>{t('board.mobileStageOption', { stage: stageLabel, count })}</option>
               })}
             </select>
           </div>
@@ -867,7 +879,7 @@ export default function PipelinePage() {
             <button
               onClick={() => scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
               className="fixed bottom-6 right-6 w-8 h-8 rounded-full bg-primary text-primary-foreground shadow-md flex items-center justify-center hover:bg-primary/90 transition-colors z-50"
-              aria-label="Scroll to top"
+              aria-label={t('page.scrollToTop')}
             >
               <ArrowUp className="w-4 h-4" />
             </button>
@@ -891,16 +903,16 @@ export default function PipelinePage() {
       <Dialog open={addLeadOpen} onOpenChange={(open) => { setAddLeadOpen(open); if (!open) resetAddLeadForm() }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Add New Lead</DialogTitle>
+            <DialogTitle>{t('addLead.dialogTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             {/* Row 1: Property Name */}
             <div>
               <div className="space-y-2">
-                <Label htmlFor="lead-name">Property Name *</Label>
+                <Label htmlFor="lead-name">{t('addLead.nameLabel')}</Label>
                 <Input
                   id="lead-name"
-                  placeholder="Enter property name"
+                  placeholder={t('addLead.namePlaceholder')}
                   value={newLeadName}
                   onChange={(e) => setNewLeadName(e.target.value)}
                   data-testid="input-lead-name"
@@ -911,7 +923,7 @@ export default function PipelinePage() {
                   return match ? (
                     <p className="text-xs text-warning flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
-                      A property named "{match.name}" already exists. Create anyway?
+                      {t('addLead.duplicateWarning', { name: match.name })}
                     </p>
                   ) : null
                 })()}
@@ -919,10 +931,10 @@ export default function PipelinePage() {
             </div>
             {/* Row 2: Property Address (full width) */}
             <div className="space-y-2">
-              <Label htmlFor="lead-address">Property Address</Label>
+              <Label htmlFor="lead-address">{t('addLead.addressLabel')}</Label>
               <AddressAutocomplete
                 id="lead-address"
-                placeholder="Enter property address"
+                placeholder={t('addLead.addressPlaceholder')}
                 value={newLeadAddress}
                 onChange={setNewLeadAddress}
                 testId="input-lead-address"
@@ -931,22 +943,22 @@ export default function PipelinePage() {
             {/* Row 3: Email + Phone */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="lead-email">Email</Label>
+                <Label htmlFor="lead-email">{t('addLead.emailLabel')}</Label>
                 <Input
                   id="lead-email"
                   type="email"
-                  placeholder="owner@example.com"
+                  placeholder={t('addLead.emailPlaceholder')}
                   value={newLeadEmail}
                   onChange={(e) => setNewLeadEmail(e.target.value)}
                   data-testid="input-lead-email"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lead-phone">Phone</Label>
+                <Label htmlFor="lead-phone">{t('addLead.phoneLabel')}</Label>
                 <Input
                   id="lead-phone"
                   type="tel"
-                  placeholder="(555) 000-0000"
+                  placeholder={t('addLead.phonePlaceholder')}
                   value={newLeadPhone}
                   onChange={(e) => setNewLeadPhone(e.target.value)}
                   data-testid="input-lead-phone"
@@ -956,39 +968,41 @@ export default function PipelinePage() {
             {/* Row 4: Estimated Bedrooms + Source */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
-                <Label htmlFor="lead-bedrooms">Estimated Bedrooms</Label>
+                <Label htmlFor="lead-bedrooms">{t('addLead.bedroomsLabel')}</Label>
                 <Input
                   id="lead-bedrooms"
                   type="number"
                   min={0}
-                  placeholder="e.g. 3"
+                  placeholder={t('addLead.bedroomsPlaceholder')}
                   value={newLeadBedrooms}
                   onChange={(e) => setNewLeadBedrooms(e.target.value)}
                   data-testid="input-lead-bedrooms"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lead-source">Source</Label>
+                <Label htmlFor="lead-source">{t('addLead.sourceLabel')}</Label>
                 <Select value={newLeadSource} onValueChange={setNewLeadSource}>
                   <SelectTrigger id="lead-source" data-testid="select-lead-source">
-                    <SelectValue placeholder="Select source" />
+                    <SelectValue placeholder={t('addLead.sourcePlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="Referral">Referral</SelectItem>
-                    <SelectItem value="Website">Website</SelectItem>
-                    <SelectItem value="Cold Outreach">Cold Outreach</SelectItem>
-                    <SelectItem value="Word of Mouth">Word of Mouth</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
+                    {/* Values stay canonical English — they're written verbatim into the
+                        lead's notes field (`Source: ${newLeadSource}`) as free-text audit data. */}
+                    <SelectItem value="Referral">{t('addLead.sourceReferral')}</SelectItem>
+                    <SelectItem value="Website">{t('addLead.sourceWebsite')}</SelectItem>
+                    <SelectItem value="Cold Outreach">{t('addLead.sourceColdOutreach')}</SelectItem>
+                    <SelectItem value="Word of Mouth">{t('addLead.sourceWordOfMouth')}</SelectItem>
+                    <SelectItem value="Other">{t('addLead.sourceOther')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             {/* Row 5: Notes (full width) */}
             <div className="space-y-2">
-              <Label htmlFor="lead-notes">Notes</Label>
+              <Label htmlFor="lead-notes">{t('addLead.notesLabel')}</Label>
               <Textarea
                 id="lead-notes"
-                placeholder="Any additional notes..."
+                placeholder={t('addLead.notesPlaceholder')}
                 rows={2}
                 value={newLeadNotes}
                 onChange={(e) => setNewLeadNotes(e.target.value)}
@@ -998,9 +1012,9 @@ export default function PipelinePage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => { setAddLeadOpen(false); resetAddLeadForm() }}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => { setAddLeadOpen(false); resetAddLeadForm() }}>{t('addLead.cancel')}</Button>
             <Button size="sm" onClick={() => addLead()} disabled={!newLeadName.trim() || addLeadPending} data-testid="button-save-lead">
-              {addLeadPending ? 'Saving...' : 'Add Lead'}
+              {addLeadPending ? t('addLead.saving') : t('addLead.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

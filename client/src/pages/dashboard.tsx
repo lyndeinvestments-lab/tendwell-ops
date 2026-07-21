@@ -15,19 +15,28 @@ import { StatCard } from '@/components/StatCard'
 import { ErrorState } from '@/components/ErrorState'
 import { TONE_SOFT } from '@/lib/status-colors'
 import { Building2, TrendingUp, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
-import { formatDistanceToNow, format } from 'date-fns'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts } from '@/hooks/use-contacts'
 import { useAlerts } from '@/pages/alerts'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+
+/** `'Active'` → `'active'`; used to look up the shared `common.stage.*` display name for `pipeline_stages.name` (DB value stays canonical English). Copied from `lib/issues.ts`'s `slugify`. */
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
 
 /**
  * Thin adapter over the shared StatCard — preserves this page's
  * `data-testid="kpi-…"` contract on the value and the `hint` tooltip.
+ * `testId` is a stable, English, translation-independent identifier for the
+ * `data-testid` — kept separate from the (translatable) `title` so switching
+ * locale never changes the testid.
  */
-function KpiCard({ title, value, subtitle, icon, loading, alert, onClick, hint }: {
-  title: string; value: string | number; subtitle?: string
+function KpiCard({ title, testId, value, subtitle, icon, loading, alert, onClick, hint }: {
+  title: string; testId: string; value: string | number; subtitle?: string
   icon: React.ComponentType<{ className?: string }>; loading: boolean; alert?: boolean
   onClick?: () => void; hint?: string
 }) {
@@ -37,7 +46,7 @@ function KpiCard({ title, value, subtitle, icon, loading, alert, onClick, hint }
         title={title}
         value={
           <span
-            data-testid={`kpi-${title.toLowerCase().replace(/\s+/g,'-')}`}
+            data-testid={`kpi-${testId}`}
             className={alert ? 'text-destructive' : undefined}
           >
             {value}
@@ -58,6 +67,8 @@ export default function DashboardPage() {
   const [, navigate] = useLocation()
   const { openPropertyModal } = usePropertyModal()
   usePageTitle('Dashboard')
+  const { t } = useLocale('dashboard')
+  const { format, formatDistanceToNow } = useDateFormat()
   const { effectiveUser } = useAuth()
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
@@ -96,17 +107,17 @@ export default function DashboardPage() {
       const label =
         customFrom && customTo
           ? `${format(new Date(customFrom), 'MMM d')}-${format(new Date(customTo), 'MMM d')}`
-          : '30 days'
+          : t('period.thirtyDays')
       return { sinceDate: since, untilDate: until, periodLabel: label }
     }
     const days = preset === '7d' ? 7 : preset === '90d' ? 90 : 30
-    const label = preset === '7d' ? '7 days' : preset === '90d' ? '90 days' : '30 days'
+    const label = preset === '7d' ? t('period.sevenDays') : preset === '90d' ? t('period.ninetyDays') : t('period.thirtyDays')
     return {
       sinceDate: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
       untilDate: new Date().toISOString(),
       periodLabel: label,
     }
-  }, [preset, customFrom, customTo])
+  }, [preset, customFrom, customTo, format, t])
 
   const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/dashboard-stats'],
@@ -357,12 +368,12 @@ export default function DashboardPage() {
     const new30 = crmContacts.filter(c => c.created_at != null && c.created_at >= thirtyDaysAgo).length
     const payMap: Record<string, number> = {}
     for (const c of crmContacts) {
-      const m = c.payment_method || 'Unknown'
+      const m = c.payment_method || t('crm.unknownPaymentMethod')
       payMap[m] = (payMap[m] || 0) + 1
     }
     const paymentBreakdown = Object.entries(payMap).map(([method, count]) => ({ method, count })).sort((a, b) => b.count - a.count)
     return { total: crmContacts.length, new30, paymentBreakdown }
-  }, [crmContacts])
+  }, [crmContacts, t])
 
   const stageMap = stages?.reduce((acc: Record<number, any>, s: any) => ({ ...acc, [s.id]: s }), {}) || {}
 
@@ -386,7 +397,7 @@ export default function DashboardPage() {
       const overdue = p.follow_up_date < todayStr
       return {
         key: `fu_${p.id}`, kind: 'follow-up' as const, name: p.name,
-        detail: overdue ? 'Follow-up overdue' : 'Follow-up due today',
+        detail: overdue ? t('todayActions.followUpOverdue') : t('todayActions.followUpDueToday'),
         overdue, propertyId: String(p.id),
       }
     }),
@@ -452,11 +463,11 @@ export default function DashboardPage() {
 
   return (
     <PageContainer className="space-y-5">
-      <PageHeader title="Dashboard" subtitle="Operations overview" />
+      <PageHeader title={t('page.title')} subtitle={t('page.subtitle')} />
 
       {isError && (
         <ErrorState
-          title="Failed to load dashboard data"
+          title={t('page.errorTitle')}
           onRetry={() => refetch()}
         />
       )}
@@ -467,7 +478,7 @@ export default function DashboardPage() {
           <div className="flex flex-col lg:flex-row lg:items-end gap-6">
             {canViewFinancials ? (
               <div className="min-w-0">
-                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Monthly Revenue (active)</p>
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('hero.monthlyRevenue')}</p>
                 <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
                   <button
                     onClick={() => navigate('/revenue-report')}
@@ -476,18 +487,18 @@ export default function DashboardPage() {
                     ${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}
                   </button>
                   <span className="text-sm font-medium text-muted-foreground">
-                    ${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} profit
+                    ${totalProfit.toLocaleString('en-US', { maximumFractionDigits: 0 })} {t('hero.profitLabel')}
                     <span className="mx-1.5 text-border">•</span>
-                    <span className={avgProfit < 15 ? 'text-destructive font-semibold' : 'text-success font-semibold'}>{avgProfit.toFixed(1)}% margin</span>
+                    <span className={avgProfit < 15 ? 'text-destructive font-semibold' : 'text-success font-semibold'}>{avgProfit.toFixed(1)}% {t('hero.marginLabel')}</span>
                   </span>
                 </div>
               </div>
             ) : (
               <div>
-                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">Portfolio</p>
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('hero.portfolio')}</p>
                 <div className="mt-1.5 flex items-baseline gap-3">
                   <span className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent">{active}</span>
-                  <span className="text-sm font-medium text-muted-foreground">active of {total} properties</span>
+                  <span className="text-sm font-medium text-muted-foreground">{t('hero.activeOfTotal', { total })}</span>
                 </div>
               </div>
             )}
@@ -496,8 +507,8 @@ export default function DashboardPage() {
             {canViewFinancials && financialProps.length > 0 && (
               <div className="flex-1 min-w-[200px] lg:max-w-md">
                 <div className="flex items-center justify-between text-2xs text-muted-foreground mb-1.5">
-                  <span className="uppercase tracking-wider font-semibold">Active profit mix</span>
-                  <span className="tabular-nums">{financialProps.length} props</span>
+                  <span className="uppercase tracking-wider font-semibold">{t('hero.profitMix')}</span>
+                  <span className="tabular-nums">{t('hero.propsCount', { count: financialProps.length })}</span>
                 </div>
                 <div className="flex h-2.5 rounded-full overflow-hidden bg-muted ring-1 ring-border/50">
                   {[
@@ -526,9 +537,9 @@ export default function DashboardPage() {
             {/* Portfolio chips */}
             <div className="flex gap-2 flex-wrap lg:ml-auto">
               {[
-                { label: 'Active', value: active, to: '/master-list?stage=Active' },
-                { label: 'Onboarding', value: onboarding, to: '/master-list?stage=Onboarding' },
-                { label: 'Total', value: total, to: '/master-list' },
+                { label: t('common.stage.active', undefined, 'Active'), value: active, to: '/master-list?stage=Active' },
+                { label: t('common.stage.onboarding', undefined, 'Onboarding'), value: onboarding, to: '/master-list?stage=Onboarding' },
+                { label: t('common.labels.total', undefined, 'Total'), value: total, to: '/master-list' },
               ].map(s => (
                 <button
                   key={s.label}
@@ -553,7 +564,7 @@ export default function DashboardPage() {
             size="sm"
             onClick={() => setPreset(p)}
           >
-            {p === '7d' ? '7 Days' : p === '30d' ? '30 Days' : p === '90d' ? '90 Days' : 'Custom'}
+            {p === '7d' ? t('filterBar.sevenDays') : p === '30d' ? t('filterBar.thirtyDays') : p === '90d' ? t('filterBar.ninetyDays') : t('filterBar.custom')}
           </Button>
         ))}
         {preset === 'custom' && (
@@ -563,21 +574,21 @@ export default function DashboardPage() {
               value={customFrom}
               onChange={(e) => setCustomFrom(e.target.value)}
               className="w-auto"
-              aria-label="From date"
+              aria-label={t('filterBar.fromDateAria')}
             />
-            <span className="text-sm text-muted-foreground">to</span>
+            <span className="text-sm text-muted-foreground">{t('filterBar.to')}</span>
             <Input
               type="date"
               value={customTo}
               onChange={(e) => setCustomTo(e.target.value)}
               className="w-auto"
-              aria-label="To date"
+              aria-label={t('filterBar.toDateAria')}
             />
           </>
         )}
         {preset === 'custom' && customFrom && customTo && (
           <span className="text-xs text-primary font-medium">
-            Showing {format(new Date(customFrom), 'MMM d')}-{format(new Date(customTo), 'MMM d, yyyy')}
+            {t('filterBar.showingRange', { from: format(new Date(customFrom), 'MMM d'), to: format(new Date(customTo), 'MMM d, yyyy') })}
           </span>
         )}
       </div>
@@ -590,13 +601,13 @@ export default function DashboardPage() {
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-3">
                 <ClipboardCheck className="w-4 h-4 text-primary" />
-                <span className="text-sm font-semibold">Today's Actions</span>
+                <span className="text-sm font-semibold">{t('todayActions.title')}</span>
                 {actionItems.length > 0 && (
                   <span className="ml-1 text-xs font-medium text-primary bg-primary/10 rounded-full px-2 py-0.5 tabular-nums">{actionItems.length}</span>
                 )}
               </div>
               {actionItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground">All caught up - nothing needs action today.</p>
+                <p className="text-xs text-muted-foreground">{t('todayActions.empty')}</p>
               ) : (
                 <div className="space-y-1 max-h-72 overflow-y-auto">
                   {actionItems.map((it) => (
@@ -610,7 +621,7 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
                         <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
-                          {it.kind === 'follow-up' ? (it.overdue ? 'Overdue' : 'Today') : 'Stalled'}
+                          {it.kind === 'follow-up' ? (it.overdue ? t('todayActions.badgeOverdue') : t('todayActions.badgeToday')) : t('todayActions.badgeStalled')}
                         </span>
                       </div>
                     </div>
@@ -618,7 +629,7 @@ export default function DashboardPage() {
                 </div>
               )}
               <button onClick={() => navigate('/alerts')} className="text-xs text-primary hover:underline mt-2 block">
-                View all alerts →
+                {t('todayActions.viewAllAlerts')}
               </button>
             </CardContent>
           </Card>
@@ -629,19 +640,19 @@ export default function DashboardPage() {
               <CardContent className="p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <AlertTriangle className="w-4 h-4 text-warning" />
-                  <span className="text-sm font-semibold">Needs Attention</span>
+                  <span className="text-sm font-semibold">{t('attention.title')}</span>
                   {(negativeProfit.length + missingData.length) > 0 && (
                     <span className="ml-1 text-xs font-medium text-warning bg-warning/10 rounded-full px-2 py-0.5 tabular-nums">{negativeProfit.length + missingData.length}</span>
                   )}
                 </div>
                 {negativeProfit.length === 0 && missingData.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No data issues - all active properties look healthy.</p>
+                  <p className="text-xs text-muted-foreground">{t('attention.empty')}</p>
                 ) : (
                   <div className="space-y-3 max-h-72 overflow-y-auto">
                     {negativeProfit.length > 0 && (
                       <div>
                         <span className="inline-flex items-center gap-1 text-2xs font-semibold text-destructive bg-destructive/10 rounded-full px-2 py-0.5 mb-1.5">
-                          <AlertTriangle className="w-3 h-3" /> {negativeProfit.length} negative profit
+                          <AlertTriangle className="w-3 h-3" /> {t('attention.negativeProfitChip', { count: negativeProfit.length })}
                         </span>
                         <div className="space-y-1 mt-1.5">
                           {negativeProfit.slice(0, 5).map((p: any) => (
@@ -651,7 +662,7 @@ export default function DashboardPage() {
                             </div>
                           ))}
                           {negativeProfit.length > 5 && (
-                            <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline">View all {negativeProfit.length} →</button>
+                            <button onClick={() => navigate('/cost-tracking')} className="text-xs text-primary hover:underline">{t('attention.viewAllCount', { count: negativeProfit.length })}</button>
                           )}
                         </div>
                       </div>
@@ -660,7 +671,7 @@ export default function DashboardPage() {
                       <div>
                         <button className="flex items-center gap-1.5 w-full text-left" onClick={() => setMissingCollapsed(v => !v)}>
                           <span className="inline-flex items-center gap-1 text-2xs font-semibold text-warning bg-warning/10 rounded-full px-2 py-0.5">
-                            <AlertCircle className="w-3 h-3" /> {missingData.length} missing data
+                            <AlertCircle className="w-3 h-3" /> {t('attention.missingDataChip', { count: missingData.length })}
                           </span>
                           <span className="ml-auto text-muted-foreground">
                             {missingCollapsed ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
@@ -675,7 +686,13 @@ export default function DashboardPage() {
                               if (!p.square_footage) missingFields.push('square_footage')
                               if (!p.bedrooms) missingFields.push('bedrooms')
                               if (!p.address) missingFields.push('address')
-                              const missingLabels = missingFields.map(f => ({ ce_charged: 'CE', cleaner_pay: 'Pay', square_footage: 'SqFt', bedrooms: 'Beds', address: 'Address' }[f] ?? f))
+                              const missingLabels = missingFields.map(f => ({
+                                ce_charged: t('attention.missingFields.ce'),
+                                cleaner_pay: t('attention.missingFields.pay'),
+                                square_footage: t('attention.missingFields.sqft'),
+                                bedrooms: t('attention.missingFields.beds'),
+                                address: t('attention.missingFields.address'),
+                              }[f] ?? f))
                               return (
                                 <div key={p.id} className="flex items-center justify-between text-xs gap-2">
                                   <span className="truncate cursor-pointer hover:underline" onClick={() => navigate('/master-list?highlight=' + p.id)}>{p.name}</span>
@@ -688,14 +705,14 @@ export default function DashboardPage() {
                                       onClick={() => openPropertyModal(p.id, 'dashboard-missing', missingFields)}
                                       data-testid={`button-fix-missing-${p.id}`}
                                     >
-                                      <Wrench className="w-2.5 h-2.5" /> Fix
+                                      <Wrench className="w-2.5 h-2.5" /> {t('attention.fixButton')}
                                     </Button>
                                   </div>
                                 </div>
                               )
                             })}
                             {missingData.length > 5 && (
-                              <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline">View all {missingData.length} →</button>
+                              <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline">{t('attention.viewAllCount', { count: missingData.length })}</button>
                             )}
                           </div>
                         )}
@@ -711,57 +728,60 @@ export default function DashboardPage() {
 
       {/* Redesign: compact KPI strip — Revenue & Avg Profit % now live in the hero */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <KpiCard title="Total Properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
-        <KpiCard title="Active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
-        <KpiCard title="Onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
-        <KpiCard title="Offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Offboarding')} />
+        <KpiCard title={t('tiles.totalProperties')} testId="total-properties" value={total} icon={Building2} loading={isLoading} onClick={() => navigate('/master-list')} />
+        <KpiCard title={t('common.stage.active', undefined, 'Active')} testId="active" value={active} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Active')} />
+        <KpiCard title={t('common.stage.onboarding', undefined, 'Onboarding')} testId="onboarding" value={onboarding} icon={TrendingUp} loading={isLoading} onClick={() => navigate('/master-list?stage=Onboarding')} />
+        <KpiCard title={t('common.stage.offboarding', undefined, 'Offboarding')} testId="offboarding" value={offboarding} icon={Activity} loading={isLoading} onClick={() => navigate('/master-list?stage=Offboarding')} />
         <KpiCard
-          title="Conversions"
+          title={t('tiles.conversions')}
+          testId="conversions"
           value={onboardingVelocity?.conversions ?? 0}
-          subtitle={`in ${periodLabel}`}
+          subtitle={t('tiles.conversionsSubtitle', { period: periodLabel })}
           icon={UserCheck}
           loading={isLoading || !onboardingVelocity}
-          hint="Properties that moved to Active stage during this period"
+          hint={t('tiles.conversionsHint')}
           onClick={() => navigate('/pipeline')}
         />
         <KpiCard
-          title="Avg Onboarding"
+          title={t('tiles.avgOnboarding')}
+          testId="avg-onboarding"
           value={
             onboardingVelocity?.avgDays != null ? `${onboardingVelocity.avgDays}d`
             : onboardingVelocity?.currentAvgDays != null ? `${onboardingVelocity.currentAvgDays}d`
-            : 'No data'
+            : t('tiles.noData')
           }
           subtitle={
-            onboardingVelocity?.avgDays != null ? 'days to active (this period)'
-            : onboardingVelocity?.currentAvgDays != null ? `days in progress (${onboardingVelocity.currentCount} open)`
-            : 'no transitions yet'
+            onboardingVelocity?.avgDays != null ? t('tiles.avgOnboardingSubtitleConversion')
+            : onboardingVelocity?.currentAvgDays != null ? t('tiles.avgOnboardingSubtitleCurrent', { count: onboardingVelocity.currentCount })
+            : t('tiles.avgOnboardingSubtitleNoData')
           }
           icon={Activity}
           loading={isLoading || !onboardingVelocity}
           hint={
             onboardingVelocity?.avgDays != null
-              ? "Average days from Onboarding to Active stage for conversions in the selected period."
+              ? t('tiles.avgOnboardingHintConversion')
               : onboardingVelocity?.currentAvgDays != null
-                ? "No conversions in the selected period - showing how long properties currently in Onboarding have been there."
-                : "No onboarding activity recorded. A property needs at least one stage_transitions row to appear here."
+                ? t('tiles.avgOnboardingHintCurrent')
+                : t('tiles.avgOnboardingHintNoData')
           }
         />
         <KpiCard
-          title="Trellis Tasks Today"
+          title={t('tiles.trellisTasksToday')}
+          testId="trellis-tasks-today"
           value={trellisError ? '—' : (trellisTasks?.count ?? 0)}
           subtitle={
-            trellisError ? 'Unavailable'
+            trellisError ? t('tiles.trellisUnavailable')
             : trellisTasks?.syncedAt
-              ? `as of ${new Date(trellisTasks.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
-              : `due ${trellisTasks?.date ?? 'today'}`
+              ? t('tiles.trellisAsOf', { time: new Date(trellisTasks.syncedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })
+              : t('tiles.trellisDue', { date: trellisTasks?.date ?? t('tiles.trellisDueToday') })
           }
           icon={ClipboardCheck}
           loading={trellisLoading}
           onClick={() => navigate('/trellis-tasks')}
           hint={
             trellisError
-              ? `Couldn't load Trellis snapshot: ${trellisError instanceof Error ? trellisError.message : String(trellisError)}`
-              : 'Open Trellis tasks due today (America/Chicago), counted from the synced snapshot. Click for the full task tracker.'
+              ? t('tiles.trellisErrorHint', { message: trellisError instanceof Error ? trellisError.message : String(trellisError) })
+              : t('tiles.trellisHint')
           }
         />
       </div>
@@ -772,7 +792,7 @@ export default function DashboardPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserCheck className="w-4 h-4 text-info" />
-              <span className="text-sm font-medium">New Properties ({periodLabel})</span>
+              <span className="text-sm font-medium">{t('activityMetrics.newProperties', { period: periodLabel })}</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
                 <span className="ml-auto text-sm font-semibold tabular-nums text-info">{newProps30Deduped.length}</span>
               )}
@@ -780,13 +800,13 @@ export default function DashboardPage() {
             {trans30Loading ? (
               <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
             ) : newProps30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No new properties in this period</p>
+              <p className="text-xs text-muted-foreground">{t('activityMetrics.newPropertiesEmpty')}</p>
             ) : (
               <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                {newProps30Deduped.map((t: any) => (
-                  <div key={t.property_id} className="flex justify-between text-xs">
-                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{t.properties?.name}</span>
-                    <span className="text-muted-foreground whitespace-nowrap">{t.pipeline_stages?.name}</span>
+                {newProps30Deduped.map((tr: any) => (
+                  <div key={tr.property_id} className="flex justify-between text-xs">
+                    <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/pipeline')}>{tr.properties?.name}</span>
+                    <span className="text-muted-foreground whitespace-nowrap">{tr.pipeline_stages?.name ? t(`common.stage.${slugify(tr.pipeline_stages.name)}`, undefined, tr.pipeline_stages.name) : ''}</span>
                   </div>
                 ))}
               </div>
@@ -798,7 +818,7 @@ export default function DashboardPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-2">
               <UserMinus className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Offboarded ({periodLabel})</span>
+              <span className="text-sm font-medium">{t('activityMetrics.offboarded', { period: periodLabel })}</span>
               {trans30Loading ? <Skeleton className="h-4 w-6" /> : (
                 <span className="ml-auto text-sm font-semibold tabular-nums text-muted-foreground">{offboarded30Deduped.length}</span>
               )}
@@ -806,19 +826,19 @@ export default function DashboardPage() {
             {trans30Loading ? (
               <div className="space-y-1">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-4 w-full" />)}</div>
             ) : offboarded30Deduped.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No offboarded properties in this period</p>
+              <p className="text-xs text-muted-foreground">{t('activityMetrics.offboardedEmpty')}</p>
             ) : (
               <>
                 <div className="space-y-0.5 max-h-28 overflow-y-auto">
-                  {offboarded30Deduped.map((t: any) => (
-                    <div key={t.property_id} className="flex justify-between text-xs">
-                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/master-list')}>{t.properties?.name}</span>
-                      <span className="text-muted-foreground whitespace-nowrap">{format(new Date(t.created_at), 'MMM d')}</span>
+                  {offboarded30Deduped.map((tr: any) => (
+                    <div key={tr.property_id} className="flex justify-between text-xs">
+                      <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => navigate('/master-list')}>{tr.properties?.name}</span>
+                      <span className="text-muted-foreground whitespace-nowrap">{format(new Date(tr.created_at), 'MMM d')}</span>
                     </div>
                   ))}
                 </div>
                 <button onClick={() => navigate('/master-list')} className="text-xs text-primary hover:underline mt-2 block">
-                  View All →
+                  {t('activityMetrics.viewAll')}
                 </button>
               </>
             )}
@@ -832,13 +852,13 @@ export default function DashboardPage() {
         {canViewFinancials && (
         <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Profit Distribution (Active)<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
+            <CardTitle className="text-sm font-medium">{t('insights.profitDistribution')}<span className="font-normal text-xs text-muted-foreground ml-1.5">{t('insights.currentSuffix')}</span></CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {isLoading || !stages ? (
               <div className="space-y-2">{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-7 w-full" />)}</div>
             ) : financialProps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No active properties with financial data.</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">{t('insights.profitDistributionEmpty')}</p>
             ) : (
               <div className="space-y-4">
                 {[
@@ -870,7 +890,7 @@ export default function DashboardPage() {
         {/* Properties by Stage */}
         <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Properties by Stage<span className="font-normal text-xs text-muted-foreground ml-1.5">(current)</span></CardTitle>
+            <CardTitle className="text-sm font-medium">{t('insights.propertiesByStage')}<span className="font-normal text-xs text-muted-foreground ml-1.5">{t('insights.currentSuffix')}</span></CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {isLoading ? (
@@ -885,7 +905,7 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-sm flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: stage.color }} />
-                          {stage.name}
+                          {t(`common.stage.${slugify(stage.name)}`, undefined, stage.name)}
                         </span>
                         <span data-testid={`stage-count-${stage.name}`} className="text-sm font-bold tabular-nums">{count}</span>
                       </div>
@@ -903,32 +923,32 @@ export default function DashboardPage() {
         {/* Recent Stage Transitions */}
         <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
-            <CardTitle className="text-sm font-medium">Recent Transitions ({periodLabel})</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('insights.recentTransitions', { period: periodLabel })}</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             {transLoading ? (
               <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
             ) : transitions && transitions.length > 0 ? (
               <div className="space-y-2">
-                {transitions.map((t: any) => {
-                  const fromStage = stageMap[t.from_stage_id]
-                  const toStage = stageMap[t.to_stage_id]
+                {transitions.map((tr: any) => {
+                  const fromStage = stageMap[tr.from_stage_id]
+                  const toStage = stageMap[tr.to_stage_id]
                   return (
-                    <div key={t.id} className="flex items-start justify-between gap-2 py-1 border-b border-border/40 last:border-0">
+                    <div key={tr.id} className="flex items-start justify-between gap-2 py-1 border-b border-border/40 last:border-0">
                       <div>
                         <p
                           className="text-sm font-medium leading-none cursor-pointer hover:underline"
-                          onClick={() => t.property_id && openPropertyModal(t.property_id)}
-                          data-testid={`link-transition-${t.id}`}
+                          onClick={() => tr.property_id && openPropertyModal(tr.property_id)}
+                          data-testid={`link-transition-${tr.id}`}
                         >
-                          {t.properties?.name}
+                          {tr.properties?.name}
                         </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
-                          {fromStage?.name ?? 'New'} → {toStage?.name ?? '—'}
+                          {fromStage?.name ? t(`common.stage.${slugify(fromStage.name)}`, undefined, fromStage.name) : t('insights.newStageFallback')} → {toStage?.name ? t(`common.stage.${slugify(toStage.name)}`, undefined, toStage.name) : '—'}
                         </p>
                       </div>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDistanceToNow(new Date(t.created_at), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(tr.created_at), { addSuffix: true })}
                       </span>
                     </div>
                   )
@@ -937,13 +957,13 @@ export default function DashboardPage() {
                   href="/master-list?stageChangeLast30=true"
                   className="block text-xs text-primary hover:underline text-right mt-1 pt-1 border-t border-border/40"
                 >
-                  View All Transitions →
+                  {t('insights.viewAllTransitions')}
                 </Link>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Activity className="w-8 h-8 text-muted-foreground/40 mb-2" />
-                <p className="text-sm text-muted-foreground">No transitions in this period</p>
+                <p className="text-sm text-muted-foreground">{t('insights.recentTransitionsEmpty')}</p>
               </div>
             )}
           </CardContent>
@@ -955,7 +975,7 @@ export default function DashboardPage() {
         <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <ClipboardCheck className="w-4 h-4 text-primary" /> Quality Leaderboard
+              <ClipboardCheck className="w-4 h-4 text-primary" /> {t('quality.title')}
             </CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -964,10 +984,10 @@ export default function DashboardPage() {
                 return (
                   <div className="flex flex-col items-center justify-center py-6 text-center">
                     <ClipboardCheck className="w-8 h-8 text-muted-foreground/40 mb-2" />
-                    <p className="text-sm text-muted-foreground">No inspections logged yet</p>
-                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">Log at least 3 inspections to see your top and bottom performing properties ranked by score.</p>
+                    <p className="text-sm text-muted-foreground">{t('quality.emptyTitle')}</p>
+                    <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">{t('quality.emptyDescription')}</p>
                     <Button size="sm" variant="outline" className="mt-2 text-xs" onClick={() => navigate('/inspections')}>
-                      Log First Inspection
+                      {t('quality.logFirstInspection')}
                     </Button>
                   </div>
                 )
@@ -992,7 +1012,7 @@ export default function DashboardPage() {
               return (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2">Top Performers</p>
+                    <p className="text-xs text-muted-foreground mb-2">{t('quality.topPerformers')}</p>
                     {top.map(p => (
                       <div key={p.propId} className="flex items-center justify-between text-xs py-1">
                         <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
@@ -1004,7 +1024,7 @@ export default function DashboardPage() {
                     ))}
                   </div>
                   <div>
-                    <p className="text-xs text-muted-foreground mb-2">Needs Attention</p>
+                    <p className="text-xs text-muted-foreground mb-2">{t('quality.needsAttention')}</p>
                     {bottom.map(p => (
                       <div key={p.propId} className="flex items-center justify-between text-xs py-1">
                         <span className="truncate mr-2 cursor-pointer hover:underline" onClick={() => openPropertyModal(p.propId)}>{p.name}</span>
@@ -1025,13 +1045,13 @@ export default function DashboardPage() {
           <CardContent className="p-4">
             <div className="flex items-start justify-between">
               <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Scheduled This Week</p>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{t('scheduled.title')}</p>
                 <p className="text-xl font-semibold mt-1">{scheduledThisWeek?.length ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">cleaning assignments</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('scheduled.subtitle')}</p>
                 {(scheduledThisWeek?.length ?? 0) === 0 && active > 0 && (
                   <p className="text-xs text-warning mt-1 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3" />
-                    <button onClick={() => navigate('/cleaners')} className="hover:underline">Set up assignments →</button>
+                    <button onClick={() => navigate('/cleaners')} className="hover:underline">{t('scheduled.setupAssignments')}</button>
                   </p>
                 )}
               </div>
@@ -1043,7 +1063,7 @@ export default function DashboardPage() {
             {recentInspections && recentInspections.filter((i: any) => (i.overall_score || 10) < 7).length > 0 && (
               <div className="mt-4 pt-3 border-t border-border/40">
                 <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-destructive" /> Quality Alerts
+                  <AlertTriangle className="w-3 h-3 text-destructive" /> {t('scheduled.qualityAlertsTitle')}
                 </p>
                 {recentInspections.filter((i: any) => (i.overall_score || 10) < 7).slice(0, 3).map((i: any) => (
                   <div key={i.property_id + i.inspected_at} className="flex items-center justify-between text-xs py-0.5">
@@ -1063,24 +1083,24 @@ export default function DashboardPage() {
       <Card className="rounded-2xl border-card-border shadow-sm hover:shadow-md transition-shadow">
         <CardHeader className="pb-2 pt-4 px-4">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <Users className="w-4 h-4 text-primary" /> CRM Overview
+            <Users className="w-4 h-4 text-primary" /> {t('crm.title')}
           </CardTitle>
         </CardHeader>
         <CardContent className="px-4 pb-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
             <div>
-              <p className="text-xs text-muted-foreground">Total Clients</p>
+              <p className="text-xs text-muted-foreground">{t('crm.totalClients')}</p>
               <p className="text-lg font-semibold tabular-nums">{crmStats.total}</p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">New (30 days)</p>
+              <p className="text-xs text-muted-foreground">{t('crm.new30Days')}</p>
               <p className="text-lg font-semibold tabular-nums">
                 {crmStats.new30}
                 {crmStats.new30 > 0 && <span className="text-xs font-normal text-success ml-1">+{crmStats.new30}</span>}
               </p>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground">Unassigned Properties</p>
+              <p className="text-xs text-muted-foreground">{t('crm.unassignedProperties')}</p>
               <p
                 className="text-lg font-semibold tabular-nums cursor-pointer hover:text-primary transition-colors"
                 onClick={() => navigate('/property-list')}
@@ -1091,13 +1111,13 @@ export default function DashboardPage() {
           </div>
           {crmStats.total === 0 && (
             <p className="text-xs text-muted-foreground">
-              No clients yet.{' '}
-              <button onClick={() => navigate('/contacts')} className="text-primary hover:underline">Import from Properties →</button>
+              {t('crm.noClientsYet')}{' '}
+              <button onClick={() => navigate('/contacts')} className="text-primary hover:underline">{t('crm.importFromProperties')}</button>
             </p>
           )}
           {crmStats.paymentBreakdown.length > 0 && (
             <div>
-              <p className="text-xs text-muted-foreground mb-2">Payment Methods</p>
+              <p className="text-xs text-muted-foreground mb-2">{t('crm.paymentMethods')}</p>
               <div className="space-y-1.5">
                 {crmStats.paymentBreakdown.map((pm, i) => {
                   const pct = crmStats.total > 0 ? (pm.count / crmStats.total * 100) : 0

@@ -11,23 +11,28 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 import {
   Pencil, Search, X, RotateCcw, Activity,
   Building2, GitBranch, ClipboardCheck, UserCheck, Users,
   Plus, Trash2, ArrowRight,
 } from 'lucide-react'
-import { format, isToday, isYesterday, parseISO } from 'date-fns'
+import { isToday, isYesterday, parseISO } from 'date-fns'
 
 type FilterType = 'all' | 'properties' | 'pipeline' | 'inspections' | 'cleaners' | 'contacts' | 'owners'
 
-const FILTER_OPTIONS: { key: FilterType; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'owners', label: 'Owner Portal' },
-  { key: 'properties', label: 'Properties' },
-  { key: 'pipeline', label: 'Pipeline' },
-  { key: 'inspections', label: 'Inspections' },
-  { key: 'cleaners', label: 'Cleaners' },
-  { key: 'contacts', label: 'Clients' },
+// `key` stays canonical (drives filter-state comparisons); `labelKey` is a
+// display-only lookup into `activity.filters.*`.
+const FILTER_OPTIONS: { key: FilterType; labelKey: string }[] = [
+  { key: 'all', labelKey: 'all' },
+  { key: 'owners', labelKey: 'owners' },
+  { key: 'properties', labelKey: 'properties' },
+  { key: 'pipeline', labelKey: 'pipeline' },
+  { key: 'inspections', labelKey: 'inspections' },
+  { key: 'cleaners', labelKey: 'cleaners' },
+  { key: 'contacts', labelKey: 'contacts' },
 ]
 
 // Owner-portal edits are attributed as "<name> (owner)" by the DB triggers
@@ -78,12 +83,15 @@ function getActionColor(action: string): string {
   return 'bg-primary/10 text-primary'
 }
 
-function dateGroupLabel(dateStr: string): string {
+// `formatDate` is the locale-aware wrapper from `useDateFormat()` — needed
+// here (not plain date-fns `format`) because `'MMMM d, yyyy'` renders a
+// month NAME, which must follow the app locale.
+function dateGroupLabel(dateStr: string, t: TFunc, formatDate: (date: Date | number, pattern: string) => string): string {
   try {
     const d = parseISO(dateStr)
-    if (isToday(d)) return 'Today'
-    if (isYesterday(d)) return 'Yesterday'
-    return format(d, 'MMMM d, yyyy')
+    if (isToday(d)) return t('page.today', undefined, 'Today')
+    if (isYesterday(d)) return t('page.yesterday', undefined, 'Yesterday')
+    return formatDate(d, 'MMMM d, yyyy')
   } catch {
     return dateStr
   }
@@ -128,18 +136,34 @@ const FIELD_LABELS: Record<string, string> = {
   wifi_info: 'WiFi Info',
 }
 
-function formatFieldName(field: string) {
+// English fallback for a field with no `FIELD_LABELS`/dictionary entry — new
+// columns don't need a translation PR to show up legibly.
+function humanizeFieldName(field: string) {
   if (FIELD_LABELS[field]) return FIELD_LABELS[field]
   return field.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function formatEntityLabel(entry: any): string {
+// Display-only translation of `activity_log`/`property_edit_log` field
+// names — DB column names stay canonical; this only affects what's shown.
+function fieldLabel(field: string, t: TFunc): string {
+  return t(`field.${field}`, undefined, humanizeFieldName(field))
+}
+
+// Display-only translation of the `action` verb (`create`/`update`/`delete`/
+// `stage_change`) — canonical value still drives `getActionIcon`/`getActionColor`.
+function actionLabel(action: string, t: TFunc): string {
+  return t(`action.${action}`, undefined, action.replace('_', ' '))
+}
+
+// entity_name/property name are DB data and stay as-is; only the "no name
+// at all" fallback is translated page chrome.
+function formatEntityLabel(entry: any, t: TFunc): string {
   // New activity_log format
   if (entry.entity_name) return entry.entity_name
   // Legacy property_edit_log format
   const propName = entry.properties?.name
   if (propName) return propName
-  return 'Unknown'
+  return t('page.unknownEntity', undefined, 'Unknown')
 }
 
 // Normalise a row from either table into a unified shape
@@ -170,6 +194,8 @@ const FINANCIAL_FIELDS = new Set(['ce_charged', 'cleaner_pay', 'estimated_profit
 
 export default function ActivityFeedPage() {
   usePageTitle('Activity')
+  const { t } = useLocale('activity')
+  const { format: formatDate } = useDateFormat()
   const { openPropertyModal } = usePropertyModal()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -274,7 +300,7 @@ export default function ActivityFeedPage() {
       // Text search
       if (search.trim()) {
         const q = search.toLowerCase()
-        const name = formatEntityLabel(entry).toLowerCase()
+        const name = formatEntityLabel(entry, t).toLowerCase()
         const field = (entry.field_name ?? '').toLowerCase()
         const oldVal = String(entry.old_value ?? '').toLowerCase()
         const newVal = String(entry.new_value ?? '').toLowerCase()
@@ -284,7 +310,7 @@ export default function ActivityFeedPage() {
       }
       return true
     })
-  }, [allEntries, filter, search, dateFrom, dateTo, canViewFinancials])
+  }, [allEntries, filter, search, dateFrom, dateTo, canViewFinancials, t])
 
   // Group by date
   const grouped = useMemo(() => {
@@ -297,11 +323,11 @@ export default function ActivityFeedPage() {
     return Object.keys(map)
       .sort((a, b) => b.localeCompare(a))
       .map(key => ({
-        label: dateGroupLabel(key + 'T12:00:00'),
+        label: dateGroupLabel(key + 'T12:00:00', t, formatDate),
         dateKey: key,
         entries: map[key],
       }))
-  }, [filtered])
+  }, [filtered, t, formatDate])
 
   async function handleRevert(entry: any) {
     // Only revert property field updates
@@ -334,9 +360,9 @@ export default function ActivityFeedPage() {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      toast({ title: `Reverted ${formatFieldName(fieldName)} to "${oldValue}"` })
+      toast({ title: t('toasts.reverted', { field: fieldLabel(fieldName, t), value: oldValue }) })
     } catch (e: any) {
-      toast({ title: 'Revert failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('toasts.revertFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setReverting(null)
     }
@@ -345,15 +371,15 @@ export default function ActivityFeedPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Activity Feed"
-        subtitle="Audit log of all changes across the app"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search…"
+                placeholder={t('filters.searchPlaceholder')}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
@@ -368,14 +394,14 @@ export default function ActivityFeedPage() {
               )}
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-              <label>From</label>
+              <label>{t('filters.from')}</label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
                 className="h-8 text-xs border border-input rounded px-2 bg-background"
               />
-              <label>To</label>
+              <label>{t('filters.to')}</label>
               <input
                 type="date"
                 value={dateTo}
@@ -387,7 +413,8 @@ export default function ActivityFeedPage() {
         }
       />
 
-      {/* Filter chips */}
+      {/* Filter chips — `opt.key` stays canonical (drives `filter` state
+          equality below); only the rendered label is translated. */}
       <div className="flex items-center gap-2 flex-wrap">
         {FILTER_OPTIONS.map(opt => (
           <button
@@ -399,10 +426,10 @@ export default function ActivityFeedPage() {
                 : 'bg-background border-border hover:bg-muted'
             }`}
           >
-            {opt.label}
+            {t(`filters.${opt.labelKey}`)}
           </button>
         ))}
-        <span className="text-xs text-muted-foreground ml-auto">{filtered.length} entries</span>
+        <span className="text-xs text-muted-foreground ml-auto">{t('page.entriesCount', { count: filtered.length })}</span>
       </div>
 
       {/* Feed */}
@@ -422,8 +449,8 @@ export default function ActivityFeedPage() {
         ) : grouped.length === 0 ? (
           <EmptyState
             icon={Activity}
-            title="No activity"
-            description="No changes match your current filters. Try widening the date range or clearing the search."
+            title={t('page.emptyTitle')}
+            description={t('page.emptyDescription')}
           />
         ) : (
           <div className="space-y-6">
@@ -436,7 +463,7 @@ export default function ActivityFeedPage() {
                 </div>
                 <div className="space-y-0 border border-border rounded-2xl shadow-sm overflow-hidden">
                   {group.entries.map((entry: any, idx: number) => {
-                    const entityLabel = formatEntityLabel(entry)
+                    const entityLabel = formatEntityLabel(entry, t)
                     const entityType = entry.entity_type ?? 'property'
                     const action = entry.action ?? 'update'
                     const propertyId = entry._property_id ?? (entityType === 'property' ? entry.entity_id : null)
@@ -472,18 +499,19 @@ export default function ActivityFeedPage() {
                             {entry.field_name && (
                               <>
                                 <span className="text-muted-foreground">·</span>
-                                <span className="text-muted-foreground">{formatFieldName(entry.field_name)}</span>
+                                <span className="text-muted-foreground">{fieldLabel(entry.field_name, t)}</span>
                               </>
                             )}
                             {!entry.field_name && action !== 'update' && (
                               <>
                                 <span className="text-muted-foreground">·</span>
-                                <span className="text-muted-foreground capitalize">{action.replace('_', ' ')}</span>
+                                <span className="text-muted-foreground capitalize">{actionLabel(action, t)}</span>
                               </>
                             )}
                           </div>
 
-                          {/* Value change */}
+                          {/* Value change — entry.old_value/new_value are the
+                              literal stored DB values, never translated. */}
                           {(entry.old_value != null || entry.new_value != null) && (
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                               {entry.old_value != null && (
@@ -500,7 +528,7 @@ export default function ActivityFeedPage() {
 
                           {/* Timestamp + user */}
                           <p className="text-muted-foreground mt-0.5">
-                            {format(parseISO(entry.created_at), 'h:mm a')}
+                            {formatDate(parseISO(entry.created_at), 'h:mm a')}
                             {entry.changed_by ? ` · ${entry.changed_by}` : ''}
                           </p>
                         </div>
@@ -511,10 +539,10 @@ export default function ActivityFeedPage() {
                             onClick={() => handleRevert(entry)}
                             disabled={reverting === entry.id}
                             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors flex-shrink-0 mt-0.5 disabled:opacity-50"
-                            title={`Revert to "${entry.old_value}"`}
+                            title={t('table.revertTooltip', { value: entry.old_value })}
                           >
                             <RotateCcw className={`w-3.5 h-3.5 ${reverting === entry.id ? 'animate-spin' : ''}`} />
-                            <span>Revert</span>
+                            <span>{t('table.revert')}</span>
                           </button>
                         )}
                       </div>

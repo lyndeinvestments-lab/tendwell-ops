@@ -16,6 +16,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import { slugify } from '@/lib/issues'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { format as dfFormat } from 'date-fns'
+import { es as dateFnsEs } from 'date-fns/locale'
 import {
   AlertTriangle, CalendarClock, CheckCircle2, ClipboardCheck, Clock,
   RefreshCw, Search, UserPlus, ExternalLink,
@@ -91,16 +95,21 @@ function daysOverdue(scheduled: string | null, today: string): number {
   return Math.max(0, Math.round(ms / 86400000))
 }
 
-function formatDay(d: string | null): string {
+function formatDay(d: string | null, locale: 'en' | 'es' = 'en'): string {
   if (!d) return '—'
   const [y, m, day] = d.split('-').map(Number)
-  return new Date(y, m - 1, day).toLocaleDateString([], { month: 'short', day: 'numeric' })
+  return dfFormat(new Date(y, m - 1, day), 'MMM d', locale === 'es' ? { locale: dateFnsEs } : undefined)
+}
+
+function formatSyncedAt(value: string, locale: 'en' | 'es' = 'en'): string {
+  return dfFormat(new Date(value), 'MMM d, h:mm a', locale === 'es' ? { locale: dateFnsEs } : undefined)
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TrellisTasksPage() {
   usePageTitle('Trellis Tasks')
+  const { t, locale } = useLocale('trellisTasks')
   const { effectiveUser } = useAuth()
   const isAdmin = effectiveUser?.role === 'admin'
   const { toast } = useToast()
@@ -183,11 +192,11 @@ export default function TrellisTasksPage() {
       return m
     },
     onSuccess: (m) => {
-      toast({ title: `${m.name ?? m.email} added to Cleaners`, description: 'Set pay rate and send an app invite from the Cleaners page.' })
+      toast({ title: t('toasts.addedTitle', { name: m.name ?? m.email ?? '' }), description: t('toasts.addedDescription') })
       invalidateRosterGap()
       qc.invalidateQueries({ queryKey: ['cleaners'] })
     },
-    onError: (e: any) => toast({ title: 'Could not add cleaner', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('toasts.addFailedTitle'), description: e?.message, variant: 'destructive' }),
   })
 
   const dismissMember = useMutation({
@@ -198,8 +207,8 @@ export default function TrellisTasksPage() {
       if (error) throw error
       return m
     },
-    onSuccess: (m) => { toast({ title: `${m.name ?? m.email} dismissed` }); invalidateRosterGap() },
-    onError: (e: any) => toast({ title: 'Could not dismiss', description: e?.message, variant: 'destructive' }),
+    onSuccess: (m) => { toast({ title: t('toasts.dismissedTitle', { name: m.name ?? m.email ?? '' }) }); invalidateRosterGap() },
+    onError: (e: any) => toast({ title: t('toasts.dismissFailedTitle'), description: e?.message, variant: 'destructive' }),
   })
 
   const restoreMember = useMutation({
@@ -208,8 +217,8 @@ export default function TrellisTasksPage() {
       if (error) throw error
       return m
     },
-    onSuccess: (m) => { toast({ title: `${m.name ?? m.email} restored` }); invalidateRosterGap() },
-    onError: (e: any) => toast({ title: 'Could not restore', description: e?.message, variant: 'destructive' }),
+    onSuccess: (m) => { toast({ title: t('toasts.restoredTitle', { name: m.name ?? m.email ?? '' }) }); invalidateRosterGap() },
+    onError: (e: any) => toast({ title: t('toasts.restoreFailedTitle'), description: e?.message, variant: 'destructive' }),
   })
 
   // Refresh: trigger the on-demand server-side sync (same endpoint as API Sync).
@@ -227,14 +236,14 @@ export default function TrellisTasksPage() {
       return res.json()
     },
     onSuccess: () => {
-      toast({ title: 'Sync started', description: 'Tasks refresh in a minute or two - data updates automatically.' })
+      toast({ title: t('toasts.syncStartedTitle'), description: t('toasts.syncStartedDescription') })
       // Re-pull after the sync has had time to finish.
       setTimeout(() => {
         qc.invalidateQueries({ queryKey: ['/supabase/trellis-tasks'] })
         qc.invalidateQueries({ queryKey: ['/supabase/trellis-tasks-today'] })
       }, 90_000)
     },
-    onError: (e: unknown) => toast({ title: 'Could not start sync', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: t('toasts.syncFailedTitle'), description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
   // ── Derived buckets ────────────────────────────────────────────────────────
@@ -276,27 +285,27 @@ export default function TrellisTasksPage() {
   const lastSynced = tileData?.syncedAt ?? tasks[0]?.synced_at ?? null
 
   const TABS: Array<{ id: TabId; label: string; count: number }> = [
-    { id: 'overdue', label: 'Overdue', count: buckets.overdue.length },
-    { id: 'today', label: 'Due Today', count: buckets.dueToday.length },
-    { id: 'completed', label: 'Completed', count: buckets.completedToday.length },
-    { id: 'all', label: 'All', count: tasks.length },
+    { id: 'overdue', label: t('filters.tabs.overdue'), count: buckets.overdue.length },
+    { id: 'today', label: t('filters.tabs.today'), count: buckets.dueToday.length },
+    { id: 'completed', label: t('filters.tabs.completed'), count: buckets.completedToday.length },
+    { id: 'all', label: t('filters.tabs.all'), count: tasks.length },
   ]
 
   return (
     <PageContainer className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Trellis Tasks"
-        subtitle="Cleaning and ops tasks from the Trellis snapshot - synced hourly."
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <div className="flex items-center gap-2">
             <span className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
               <Clock className="w-3.5 h-3.5" />
-              {lastSynced ? `Synced ${new Date(lastSynced).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}` : 'Not synced yet'}
+              {lastSynced ? t('page.syncedPrefix', { date: formatSyncedAt(lastSynced, locale) }) : t('page.notSyncedYet')}
             </span>
             {isAdmin && (
               <Button size="sm" variant="outline" onClick={() => triggerSync.mutate()} disabled={triggerSync.isPending} data-testid="button-refresh-trellis-tasks">
                 <RefreshCw className={cn('w-4 h-4 mr-1.5', triggerSync.isPending && 'animate-spin')} />
-                Refresh
+                {t('page.refresh')}
               </Button>
             )}
           </div>
@@ -306,9 +315,9 @@ export default function TrellisTasksPage() {
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
-          title="Overdue"
+          title={t('tiles.overdue')}
           value={buckets.overdue.length}
-          subtitle={buckets.overdueUnassigned.length > 0 ? `+${buckets.overdueUnassigned.length} unassigned past due` : 'assigned, past due'}
+          subtitle={buckets.overdueUnassigned.length > 0 ? t('tiles.overdueSubtitleUnassigned', { count: buckets.overdueUnassigned.length }) : t('tiles.overdueSubtitleDefault')}
           icon={AlertTriangle}
           tone={buckets.overdue.length > 0 ? 'destructive' : 'success'}
           loading={tasksQuery.isLoading}
@@ -316,7 +325,7 @@ export default function TrellisTasksPage() {
           testId="stat-overdue"
         />
         <StatCard
-          title="Due Today"
+          title={t('tiles.dueToday')}
           value={buckets.dueToday.length}
           subtitle={today}
           icon={CalendarClock}
@@ -326,9 +335,12 @@ export default function TrellisTasksPage() {
           testId="stat-due-today"
         />
         <StatCard
-          title="Turn Cleans Today"
+          title={t('tiles.turnCleansToday')}
           value={buckets.turnToday.length}
-          subtitle={`${buckets.turnToday.filter(t => t.status === 'COMPLETED').length} done · ${buckets.turnToday.filter(t => OPEN_STATUSES.includes(t.status ?? '')).length} open`}
+          subtitle={t('tiles.turnCleansSubtitle', {
+            done: buckets.turnToday.filter(t => t.status === 'COMPLETED').length,
+            open: buckets.turnToday.filter(t => OPEN_STATUSES.includes(t.status ?? '')).length,
+          })}
           icon={ClipboardCheck}
           tone="warning"
           loading={tasksQuery.isLoading}
@@ -336,9 +348,9 @@ export default function TrellisTasksPage() {
           testId="stat-turn-cleans"
         />
         <StatCard
-          title="Completed Today"
+          title={t('tiles.completedToday')}
           value={buckets.completedToday.length}
-          subtitle="of today's scheduled"
+          subtitle={t('tiles.completedTodaySubtitle')}
           icon={CheckCircle2}
           tone="success"
           loading={tasksQuery.isLoading}
@@ -353,8 +365,8 @@ export default function TrellisTasksPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-2 mb-3">
               <UserPlus className="w-4 h-4 text-warning" />
-              <span className="text-sm font-medium">In Trellis, not in Ops</span>
-              <span className="text-xs text-muted-foreground">{rosterGapQuery.data!.gap.length} people</span>
+              <span className="text-sm font-medium">{t('roster.heading')}</span>
+              <span className="text-xs text-muted-foreground">{t('roster.peopleCount', { count: rosterGapQuery.data!.gap.length })}</span>
               {(rosterGapQuery.data?.dismissed.length ?? 0) > 0 && (
                 <button
                   type="button"
@@ -362,7 +374,7 @@ export default function TrellisTasksPage() {
                   className="ml-auto text-xs text-muted-foreground hover:text-foreground hover:underline"
                   data-testid="toggle-show-dismissed"
                 >
-                  {showDismissed ? 'Hide dismissed' : `Show dismissed (${rosterGapQuery.data!.dismissed.length})`}
+                  {showDismissed ? t('roster.hideDismissed') : t('roster.showDismissed', { count: rosterGapQuery.data!.dismissed.length })}
                 </button>
               )}
             </div>
@@ -370,8 +382,8 @@ export default function TrellisTasksPage() {
               {rosterGapQuery.data!.gap.map(m => (
                 <div key={m.user_id} className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 min-w-0" data-testid={`roster-gap-${m.user_id}`}>
                   <div className="min-w-0">
-                    <p className="text-xs font-medium truncate">{m.name ?? '(no name)'}</p>
-                    <p className="text-2xs text-muted-foreground truncate">{m.email ?? 'no email'} · {(m.role ?? '').toLowerCase()}</p>
+                    <p className="text-xs font-medium truncate">{m.name ?? t('roster.noName')}</p>
+                    <p className="text-2xs text-muted-foreground truncate">{m.email ?? t('roster.noEmail')} · {(m.role ?? '').toLowerCase()}</p>
                   </div>
                   <div className="ml-auto flex items-center gap-1 shrink-0">
                     {m.email && (
@@ -381,10 +393,10 @@ export default function TrellisTasksPage() {
                         className="h-6 px-2 text-2xs"
                         disabled={addCleaner.isPending}
                         onClick={() => addCleaner.mutate(m)}
-                        title="Add to the Ops cleaners list"
+                        title={t('roster.addTitle')}
                         data-testid={`roster-add-${m.user_id}`}
                       >
-                        <UserPlus className="w-3 h-3 mr-1" /> Add
+                        <UserPlus className="w-3 h-3 mr-1" /> {t('roster.add')}
                       </Button>
                     )}
                     <Button
@@ -393,27 +405,27 @@ export default function TrellisTasksPage() {
                       className="h-6 px-2 text-2xs text-muted-foreground"
                       disabled={dismissMember.isPending}
                       onClick={() => dismissMember.mutate(m)}
-                      title="Dismiss - hide this person from the list"
+                      title={t('roster.dismissTitle')}
                       data-testid={`roster-dismiss-${m.user_id}`}
                     >
-                      Dismiss
+                      {t('roster.dismiss')}
                     </Button>
                   </div>
                 </div>
               ))}
               {rosterGapQuery.data!.gap.length === 0 && (
-                <p className="text-xs text-muted-foreground col-span-full">Everyone left is dismissed - nothing to review.</p>
+                <p className="text-xs text-muted-foreground col-span-full">{t('roster.allDismissed')}</p>
               )}
             </div>
             {showDismissed && rosterGapQuery.data!.dismissed.length > 0 && (
               <div className="mt-3 pt-3 border-t border-border/60">
-                <p className="text-2xs uppercase tracking-wide text-muted-foreground mb-1.5">Dismissed</p>
+                <p className="text-2xs uppercase tracking-wide text-muted-foreground mb-1.5">{t('roster.dismissedHeading')}</p>
                 <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
                   {rosterGapQuery.data!.dismissed.map(m => (
                     <div key={m.user_id} className="flex items-center gap-2 rounded-md border border-border/50 px-2.5 py-1.5 min-w-0 opacity-70" data-testid={`roster-dismissed-${m.user_id}`}>
                       <div className="min-w-0">
-                        <p className="text-xs font-medium truncate">{m.name ?? '(no name)'}</p>
-                        <p className="text-2xs text-muted-foreground truncate">{m.email ?? 'no email'}</p>
+                        <p className="text-xs font-medium truncate">{m.name ?? t('roster.noName')}</p>
+                        <p className="text-2xs text-muted-foreground truncate">{m.email ?? t('roster.noEmail')}</p>
                       </div>
                       <Button
                         size="sm"
@@ -423,7 +435,7 @@ export default function TrellisTasksPage() {
                         onClick={() => restoreMember.mutate(m)}
                         data-testid={`roster-restore-${m.user_id}`}
                       >
-                        Restore
+                        {t('roster.restore')}
                       </Button>
                     </div>
                   ))}
@@ -437,18 +449,18 @@ export default function TrellisTasksPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-lg border border-border p-0.5 bg-muted/40">
-          {TABS.map(t => (
+          {TABS.map(tb => (
             <button
-              key={t.id}
+              key={tb.id}
               type="button"
-              onClick={() => setTab(t.id)}
-              data-testid={`tab-${t.id}`}
+              onClick={() => setTab(tb.id)}
+              data-testid={`tab-${tb.id}`}
               className={cn(
                 'px-3 py-1.5 text-xs font-medium rounded-md transition-colors',
-                tab === t.id ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                tab === tb.id ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {t.label} <span className="tabular-nums text-muted-foreground">{t.count}</span>
+              {tb.label} <span className="tabular-nums text-muted-foreground">{tb.count}</span>
             </button>
           ))}
         </div>
@@ -461,20 +473,20 @@ export default function TrellisTasksPage() {
             turnOnly ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
           )}
         >
-          Turn cleans only
+          {t('filters.turnCleansOnly')}
         </button>
         {tab === 'overdue' && (
           <button
             type="button"
             onClick={() => setIncludeUnassigned(v => !v)}
             data-testid="toggle-include-unassigned"
-            title="Trellis buckets vendor-held and unassigned tasks separately from Overdue - toggle to see them here too."
+            title={t('filters.includeUnassignedTitle')}
             className={cn(
               'px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors',
               includeUnassigned ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground',
             )}
           >
-            Include unassigned ({buckets.overdueUnassigned.length})
+            {t('filters.includeUnassigned', { count: buckets.overdueUnassigned.length })}
           </button>
         )}
         <div className="relative ml-auto w-full sm:w-64">
@@ -482,7 +494,7 @@ export default function TrellisTasksPage() {
           <Input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search property, task, assignee…"
+            placeholder={t('filters.searchPlaceholder')}
             className="pl-8 h-8 text-sm"
             data-testid="input-task-search"
           />
@@ -491,14 +503,14 @@ export default function TrellisTasksPage() {
 
       {/* Table / cards */}
       {tasksQuery.error ? (
-        <ErrorState title="Couldn't load Trellis tasks" onRetry={() => tasksQuery.refetch()} />
+        <ErrorState title={t('page.errorTitle')} onRetry={() => tasksQuery.refetch()} />
       ) : tasksQuery.isLoading ? (
         <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
       ) : visible.length === 0 ? (
         <EmptyState
           icon={ClipboardCheck}
-          title="No tasks here"
-          description={tab === 'overdue' ? 'Nothing overdue - all caught up.' : 'No tasks match the current filters.'}
+          title={t('table.emptyTitle')}
+          description={tab === 'overdue' ? t('table.emptyOverdue') : t('table.emptyFiltered')}
         />
       ) : (
         <>
@@ -508,54 +520,54 @@ export default function TrellisTasksPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                   <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">Property</th>
-                    <th className="px-3 py-2 font-medium">Task</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Due</th>
-                    <th className="px-3 py-2 font-medium">Assignee</th>
-                    <th className="px-3 py-2 font-medium">Source</th>
+                    <th className="px-3 py-2 font-medium">{t('table.property')}</th>
+                    <th className="px-3 py-2 font-medium">{t('table.task')}</th>
+                    <th className="px-3 py-2 font-medium">{t('table.status')}</th>
+                    <th className="px-3 py-2 font-medium">{t('table.due')}</th>
+                    <th className="px-3 py-2 font-medium">{t('table.assignee')}</th>
+                    <th className="px-3 py-2 font-medium">{t('table.source')}</th>
                     <th className="px-3 py-2 font-medium w-10" />
                   </tr>
                 </thead>
                 <tbody>
-                  {visible.map(t => {
-                    const od = OPEN_STATUSES.includes(t.status ?? '') ? daysOverdue(t.scheduled_date, today) : 0
+                  {visible.map(t2 => {
+                    const od = OPEN_STATUSES.includes(t2.status ?? '') ? daysOverdue(t2.scheduled_date, today) : 0
                     return (
-                      <tr key={t.trellis_task_id} className="border-t border-border/60 hover:bg-muted/30" data-testid={`row-task-${t.trellis_task_id}`}>
+                      <tr key={t2.trellis_task_id} className="border-t border-border/60 hover:bg-muted/30" data-testid={`row-task-${t2.trellis_task_id}`}>
                         <td className="px-3 py-2 font-medium max-w-56 truncate">
                           <a
-                            href={trellisTaskUrl(t.trellis_task_id, t.status)}
+                            href={trellisTaskUrl(t2.trellis_task_id, t2.status)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="hover:text-primary hover:underline"
-                            title="Open this task in Trellis"
-                            data-testid={`link-task-${t.trellis_task_id}`}
+                            title={t('table.openInTrellis')}
+                            data-testid={`link-task-${t2.trellis_task_id}`}
                           >
-                            {t.property_name ?? '—'}
+                            {t2.property_name ?? '—'}
                           </a>
                         </td>
-                        <td className="px-3 py-2 max-w-64 truncate">{t.title ?? '—'}</td>
+                        <td className="px-3 py-2 max-w-64 truncate">{t2.title ?? '—'}</td>
                         <td className="px-3 py-2">
-                          <StatusBadge tone={t.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
-                            {(t.status ?? 'unknown').toLowerCase()}
+                          <StatusBadge tone={t2.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
+                            {t(`status.${slugify(t2.status ?? 'unknown')}`, undefined, (t2.status ?? 'unknown').toLowerCase())}
                           </StatusBadge>
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
-                          <span className="tabular-nums">{formatDay(t.scheduled_date)}</span>
-                          {od > 0 && <span className="ml-1.5 text-2xs font-medium text-destructive">{od}d late</span>}
+                          <span className="tabular-nums">{formatDay(t2.scheduled_date, locale)}</span>
+                          {od > 0 && <span className="ml-1.5 text-2xs font-medium text-destructive">{t('table.daysLate', { count: od })}</span>}
                         </td>
-                        <td className="px-3 py-2 max-w-44 truncate">{t.assigned_to_name ?? '—'}</td>
+                        <td className="px-3 py-2 max-w-44 truncate">{t2.assigned_to_name ?? '—'}</td>
                         <td className="px-3 py-2">
-                          <StatusBadge tone="neutral">{t.workspace === 'A' ? 'Tendwell' : 'Haven'}</StatusBadge>
+                          <StatusBadge tone="neutral">{t2.workspace === 'A' ? 'Tendwell' : 'Haven'}</StatusBadge>
                         </td>
                         <td className="px-3 py-2 text-right">
                           <a
-                            href={trellisTaskUrl(t.trellis_task_id, t.status)}
+                            href={trellisTaskUrl(t2.trellis_task_id, t2.status)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex text-muted-foreground hover:text-primary transition-colors"
-                            title="Open this task in Trellis"
-                            aria-label="Open in Trellis"
+                            title={t('table.openInTrellis')}
+                            aria-label={t('table.openInTrellisAria')}
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -570,34 +582,34 @@ export default function TrellisTasksPage() {
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {visible.map(t => {
-              const od = OPEN_STATUSES.includes(t.status ?? '') ? daysOverdue(t.scheduled_date, today) : 0
+            {visible.map(t2 => {
+              const od = OPEN_STATUSES.includes(t2.status ?? '') ? daysOverdue(t2.scheduled_date, today) : 0
               return (
                 <a
-                  key={t.trellis_task_id}
-                  href={trellisTaskUrl(t.trellis_task_id, t.status)}
+                  key={t2.trellis_task_id}
+                  href={trellisTaskUrl(t2.trellis_task_id, t2.status)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="block"
-                  data-testid={`card-task-${t.trellis_task_id}`}
+                  data-testid={`card-task-${t2.trellis_task_id}`}
                 >
                   <Card className="border-card-border active:bg-muted/40 transition-colors">
                     <CardContent className="p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate flex items-center gap-1">
-                            {t.property_name ?? '—'}
+                            {t2.property_name ?? '—'}
                             <ExternalLink className="w-3 h-3 text-muted-foreground shrink-0" />
                           </p>
-                          <p className="text-xs text-muted-foreground truncate">{t.title ?? '—'} · {t.assigned_to_name ?? 'unassigned'}</p>
+                          <p className="text-xs text-muted-foreground truncate">{t2.title ?? '—'} · {t2.assigned_to_name ?? t('table.unassignedFallback')}</p>
                         </div>
-                        <StatusBadge tone={t.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
-                          {(t.status ?? 'unknown').toLowerCase()}
+                        <StatusBadge tone={t2.status === 'COMPLETED' ? 'success' : od > 0 ? 'destructive' : 'info'}>
+                          {t(`status.${slugify(t2.status ?? 'unknown')}`, undefined, (t2.status ?? 'unknown').toLowerCase())}
                         </StatusBadge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
-                        Due {formatDay(t.scheduled_date)}
-                        {od > 0 && <span className="ml-1.5 font-medium text-destructive">{od}d late</span>}
+                        {t('table.dueDay', { date: formatDay(t2.scheduled_date, locale) })}
+                        {od > 0 && <span className="ml-1.5 font-medium text-destructive">{t('table.daysLate', { count: od })}</span>}
                       </p>
                     </CardContent>
                   </Card>

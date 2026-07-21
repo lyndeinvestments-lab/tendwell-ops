@@ -25,9 +25,12 @@ import {
   List, Eye, EyeOff, UserPlus, Users2, Palette, Settings2, Lock, Globe, Trash2,
   Layers, CornerDownRight,
 } from 'lucide-react'
-import { format, differenceInDays, isPast, isToday } from 'date-fns'
+import { differenceInDays, isPast, isToday } from 'date-fns'
 import Papa from 'papaparse'
 import { DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable, useDraggable } from '@dnd-kit/core'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 const LIST_COLORS = ['#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#14b8a6', '#f97316', '#64748b']
 
@@ -38,6 +41,36 @@ type SortKey = 'title' | 'status' | 'priority' | 'due_date' | 'assignee_name' | 
 const STATUSES = ['To Do', 'In Progress', 'Done', 'Blocked']
 const PRIORITIES = ['Urgent', 'High', 'Medium', 'Low']
 const CATEGORIES = ['General', 'Cleaning', 'Maintenance', 'Onboarding', 'Client', 'Finance', 'Admin']
+
+/** `'To Do'` → `'to_do'`; used to look up `status.*`/`priority.*`/`category.*`/`assigneeRole.*` display names (DB values stay canonical English). Copied from `lib/issues.ts`'s `slugify`. */
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
+
+/** Translated task status display name, falling back to the raw DB value if no dictionary key matches. */
+function taskStatusLabel(status: string, t: TFunc): string {
+  return t(`status.${slugify(status)}`, undefined, status)
+}
+
+/** Translated task priority display name, falling back to the raw DB value if no dictionary key matches. */
+function taskPriorityLabel(priority: string, t: TFunc): string {
+  return t(`priority.${slugify(priority)}`, undefined, priority)
+}
+
+/** Translated task category display name, falling back to the raw DB value if no dictionary key matches. */
+function taskCategoryLabel(category: string, t: TFunc): string {
+  return t(`category.${slugify(category)}`, undefined, category)
+}
+
+/** Translated `task_assignees.role` display name ('primary'/'secondary'), falling back to the raw DB value if no dictionary key matches. */
+function assigneeRoleLabel(role: string, t: TFunc): string {
+  return t(`assigneeRole.${slugify(role)}`, undefined, role)
+}
+
+/** Translated `task_list_members.role` display name ('owner'/'member'), falling back to the raw DB value if no dictionary key matches. */
+function listMemberRoleLabel(role: string, t: TFunc): string {
+  return t(`listMemberRole.${slugify(role)}`, undefined, role)
+}
 
 // ─── Mention input + comment renderer ──────────────────────────────────────
 function MentionInput({
@@ -163,10 +196,12 @@ const TASK_STATUS_TONES: Record<string, StatusTone> = {
 }
 
 function TaskStatusBadge({ status }: { status: string }) {
-  return <StatusBadge status={status} tone={TASK_STATUS_TONES[status] ?? 'neutral'} />
+  const { t } = useLocale('tasks')
+  return <StatusBadge status={status} tone={TASK_STATUS_TONES[status] ?? 'neutral'}>{taskStatusLabel(status, t)}</StatusBadge>
 }
 
 function PriorityBadge({ priority }: { priority: string }) {
+  const { t } = useLocale('tasks')
   const cls = {
     'Urgent': TONE_TEXT.destructive,
     'High': TONE_TEXT.warning,
@@ -174,16 +209,18 @@ function PriorityBadge({ priority }: { priority: string }) {
     'Low': TONE_TEXT.neutral,
   }[priority] || ''
   const icon = priority === 'Urgent' ? '🔴' : priority === 'High' ? '🟠' : priority === 'Medium' ? '🔵' : '⚪'
-  return <span className={`text-xs ${cls}`}>{icon} {priority}</span>
+  return <span className={`text-xs ${cls}`}>{icon} {taskPriorityLabel(priority, t)}</span>
 }
 
 function DueDateLabel({ date }: { date: string | null }) {
-  if (!date) return <span className="text-xs text-muted-foreground">No date</span>
+  const { t } = useLocale('tasks')
+  const { format: formatDate } = useDateFormat()
+  if (!date) return <span className="text-xs text-muted-foreground">{t('common.noDate')}</span>
   const d = new Date(date + 'T00:00:00')
   const overdue = isPast(d) && !isToday(d)
   const today = isToday(d)
   const daysUntil = differenceInDays(d, new Date())
-  const label = today ? 'Today' : overdue ? `${Math.abs(daysUntil)}d overdue` : daysUntil <= 7 ? `${daysUntil}d` : format(d, 'MMM d')
+  const label = today ? t('common.dueToday') : overdue ? t('common.overdueDays', { count: Math.abs(daysUntil) }) : daysUntil <= 7 ? t('common.dueInDays', { count: daysUntil }) : formatDate(d, 'MMM d')
   const cls = overdue ? 'text-destructive font-medium' : today ? 'text-warning font-medium' : 'text-muted-foreground'
   return <span className={`text-xs ${cls}`}>{label}</span>
 }
@@ -199,6 +236,8 @@ function DraggableCard({ task, children }: { task: any; children: React.ReactNod
 }
 
 function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: any) => void }) {
+  const { t } = useLocale('tasks')
+  const { format: formatDate } = useDateFormat()
   const [monthOffset, setMonthOffset] = useState(0)
   const baseDate = new Date()
   baseDate.setMonth(baseDate.getMonth() + monthOffset)
@@ -206,7 +245,8 @@ function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: a
   const month = baseDate.getMonth()
   const firstDay = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
-  const monthLabel = format(new Date(year, month, 1), 'MMMM yyyy')
+  const monthLabel = formatDate(new Date(year, month, 1), 'MMMM yyyy')
+  const WEEKDAY_KEYS = ['weekdaySun', 'weekdayMon', 'weekdayTue', 'weekdayWed', 'weekdayThu', 'weekdayFri', 'weekdaySat'] as const
 
   const days = Array.from({ length: 42 }, (_, i) => {
     const day = i - firstDay + 1
@@ -235,8 +275,8 @@ function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: a
         <Button variant="outline" size="sm" onClick={() => setMonthOffset(m => m + 1)}>&gt;</Button>
       </div>
       <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden border border-border">
-        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-          <div key={d} className="bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground text-center">{d}</div>
+        {WEEKDAY_KEYS.map(k => (
+          <div key={k} className="bg-muted px-2 py-1.5 text-xs font-medium text-muted-foreground text-center">{t(`calendar.${k}`)}</div>
         ))}
         {days.map((day, i) => {
           if (day === null) return <div key={i} className="bg-background min-h-[80px]" />
@@ -257,7 +297,7 @@ function CalendarView({ tasks, onTaskClick }: { tasks: any[]; onTaskClick: (t: a
                     {t.title}
                   </button>
                 ))}
-                {dayTasks.length > 3 && <span className="text-xs text-muted-foreground">+{dayTasks.length - 3} more</span>}
+                {dayTasks.length > 3 && <span className="text-xs text-muted-foreground">{t('calendar.more', { count: dayTasks.length - 3 })}</span>}
               </div>
             </div>
           )
@@ -279,6 +319,7 @@ function ReparentPopover({
   onCreateParent: (title: string) => void
   align?: 'start' | 'center' | 'end'
 }) {
+  const { t } = useLocale('tasks')
   const [mode, setMode] = useState<'existing' | 'new'>('existing')
   const [query, setQuery] = useState('')
   const [newTitle, setNewTitle] = useState('')
@@ -298,8 +339,6 @@ function ReparentPopover({
     return pool.filter((t: any) => (t.title || '').toLowerCase().includes(q)).slice(0, 20)
   }, [candidates, taskIds, query])
 
-  const countLabel = taskIds.length === 1 ? '1 task' : `${taskIds.length} tasks`
-
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
@@ -308,11 +347,11 @@ function ReparentPopover({
           <button
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${mode === 'existing' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => setMode('existing')}
-          >Existing task</button>
+          >{t('reparent.tabExisting')}</button>
           <button
             className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${mode === 'new' ? 'border-b-2 border-primary text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
             onClick={() => setMode('new')}
-          >New parent</button>
+          >{t('reparent.tabNew')}</button>
         </div>
         {mode === 'existing' ? (
           <div className="p-2">
@@ -320,34 +359,34 @@ function ReparentPopover({
               autoFocus
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder="Search tasks…"
+              placeholder={t('reparent.searchPlaceholder')}
               className="h-8 text-xs mb-2"
             />
             <div className="max-h-60 overflow-y-auto">
               {matches.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">
-                  {query ? 'No matching top-level tasks' : 'No eligible parents available'}
+                  {query ? t('reparent.noMatchesSearch') : t('reparent.noEligibleParents')}
                 </p>
-              ) : matches.map((t: any) => (
+              ) : matches.map((candidate: any) => (
                 <button
-                  key={t.id}
-                  onClick={() => onPickExisting(t.id)}
+                  key={candidate.id}
+                  onClick={() => onPickExisting(candidate.id)}
                   className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent"
                 >
-                  <div className="font-medium truncate">{t.title}</div>
-                  {t.property_name && <div className="text-muted-foreground text-2xs truncate">{t.property_name}</div>}
+                  <div className="font-medium truncate">{candidate.title}</div>
+                  {candidate.property_name && <div className="text-muted-foreground text-2xs truncate">{candidate.property_name}</div>}
                 </button>
               ))}
             </div>
           </div>
         ) : (
           <div className="p-2 space-y-2">
-            <label className="text-xs font-medium text-muted-foreground block">Parent task title</label>
+            <label className="text-xs font-medium text-muted-foreground block">{t('reparent.parentTitleLabel')}</label>
             <Input
               autoFocus
               value={newTitle}
               onChange={e => setNewTitle(e.target.value)}
-              placeholder="e.g. Onboarding - 123 Main St"
+              placeholder={t('reparent.parentTitlePlaceholder')}
               className="h-8 text-xs"
               onKeyDown={e => { if (e.key === 'Enter' && newTitle.trim()) onCreateParent(newTitle.trim()) }}
             />
@@ -357,9 +396,9 @@ function ReparentPopover({
               disabled={!newTitle.trim()}
               onClick={() => onCreateParent(newTitle.trim())}
             >
-              Create & move {countLabel}
+              {t('reparent.createAndMove', { count: taskIds.length })}
             </Button>
-            <p className="text-2xs text-muted-foreground">List, priority, and category inherit from the first selected task. You can edit details after creation.</p>
+            <p className="text-2xs text-muted-foreground">{t('reparent.hint')}</p>
           </div>
         )}
       </PopoverContent>
@@ -373,6 +412,8 @@ export default function TasksPage() {
   const { effectiveUser } = useAuth()
   const qc = useQueryClient()
   const canEdit = canEditView('tasks', effectiveUser)
+  const { t } = useLocale('tasks')
+  const { format: formatDate } = useDateFormat()
 
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [search, setSearch] = useState('')
@@ -733,11 +774,11 @@ export default function TasksPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Task created' })
+      toast({ title: t('toasts.taskCreated') })
       setAddOpen(false)
       setNewForm({ title: '', description: '', status: 'To Do', priority: 'Medium', due_date: '', assignee_name: '', property_name: '', category: 'General', list_id: '' })
     },
-    onError: (error: any) => toast({ title: 'Failed to create task', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.createFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: updateTask } = useGuardedMutation('tasks', {
@@ -747,9 +788,9 @@ export default function TasksPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Task updated' })
+      toast({ title: t('toasts.taskUpdated') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: addComment, isPending: commenting } = useGuardedMutation('tasks', {
@@ -787,7 +828,7 @@ export default function TasksPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/task-comments', detailTask?.id] })
       setCommentText('')
     },
-    onError: (error: any) => toast({ title: 'Failed to add comment', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.commentFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: deleteTask } = useGuardedMutation('tasks', {
@@ -797,17 +838,17 @@ export default function TasksPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Task deleted' })
+      toast({ title: t('toasts.taskDeleted') })
       setDetailTask(null)
     },
-    onError: (error: any) => toast({ title: 'Delete failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.deleteFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // ─── Reparenting: move tasks under an existing or new parent ──────────────
   const { mutate: reparentToExisting } = useGuardedMutation('tasks', {
     mutationFn: async ({ taskIds, parentId }: { taskIds: string[]; parentId: string }) => {
-      const parent = tasks?.find((t: any) => t.id === parentId)
-      if (!parent) throw new Error('Parent task not found')
+      const parent = tasks?.find((tk: any) => tk.id === parentId)
+      if (!parent) throw new Error(t('toasts.errorParentNotFound'))
       const { error } = await supabase
         .from('tasks')
         .update({ parent_task_id: parentId, list_id: parent.list_id, updated_at: new Date().toISOString() })
@@ -820,16 +861,16 @@ export default function TasksPage() {
       setReparentOpen(false)
       setDetailReparentOpen(false)
       setExpandedTasks(prev => new Set(prev).add(vars.parentId))
-      toast({ title: vars.taskIds.length > 1 ? `Moved ${vars.taskIds.length} tasks under parent` : 'Moved task under parent' })
+      toast({ title: vars.taskIds.length > 1 ? t('toasts.movedMultiple', { count: vars.taskIds.length }) : t('toasts.movedSingle') })
     },
-    onError: (err: any) => toast({ title: 'Reparent failed', description: err?.message, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: t('toasts.reparentFailed'), description: err?.message, variant: 'destructive' }),
   })
 
   const { mutate: reparentToNew } = useGuardedMutation('tasks', {
     mutationFn: async ({ taskIds, title }: { taskIds: string[]; title: string }) => {
-      if (!tasks) throw new Error('Tasks not loaded')
-      const first = tasks.find((t: any) => taskIds.includes(t.id))
-      if (!first) throw new Error('No selected task found')
+      if (!tasks) throw new Error(t('toasts.errorTasksNotLoaded'))
+      const first = tasks.find((tk: any) => taskIds.includes(tk.id))
+      if (!first) throw new Error(t('toasts.errorNoTaskSelected'))
       const { data: parent, error: insertErr } = await supabase
         .from('tasks')
         .insert({
@@ -842,7 +883,7 @@ export default function TasksPage() {
         })
         .select()
         .single()
-      if (insertErr || !parent) throw insertErr || new Error('Parent creation failed')
+      if (insertErr || !parent) throw insertErr || new Error(t('toasts.errorParentCreationFailed'))
       const { error: updateErr } = await supabase
         .from('tasks')
         .update({ parent_task_id: parent.id, list_id: parent.list_id, updated_at: new Date().toISOString() })
@@ -856,9 +897,9 @@ export default function TasksPage() {
       setReparentOpen(false)
       setDetailReparentOpen(false)
       if (parentId) setExpandedTasks(prev => new Set(prev).add(parentId))
-      toast({ title: `Created parent with ${vars.taskIds.length} ${vars.taskIds.length === 1 ? 'subtask' : 'subtasks'}` })
+      toast({ title: t('toasts.parentCreated', { count: vars.taskIds.length }) })
     },
-    onError: (err: any) => toast({ title: 'Failed to create parent', description: err?.message, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: t('toasts.createParentFailed'), description: err?.message, variant: 'destructive' }),
   })
 
   // A task is eligible to become a subtask if it's not already a subtask and has no children.
@@ -886,7 +927,7 @@ export default function TasksPage() {
     if (list) {
       await supabase.from('task_list_members').insert({ list_id: list.id, user_id: Number(effectiveUser!.id), role: 'owner', color: LIST_COLORS[visibleLists.length % LIST_COLORS.length] })
       qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
-      toast({ title: `List "${newListName.trim()}" created` })
+      toast({ title: t('toasts.listCreated', { name: newListName.trim() }) })
       setNewListName('')
       setListDialogOpen(false)
       setActiveListId(list.id)
@@ -895,7 +936,7 @@ export default function TasksPage() {
 
   async function addListMember(listId: string, userId: number) {
     const { error } = await supabase.from('task_list_members').upsert({ list_id: listId, user_id: userId, role: 'member', added_by: effectiveUser?.id ? Number(effectiveUser.id) : null }, { onConflict: 'list_id,user_id' })
-    if (error) { toast({ title: 'Failed to add member', description: error.message, variant: 'destructive' }); return }
+    if (error) { toast({ title: t('toasts.addMemberFailed'), description: error.message, variant: 'destructive' }); return }
     await qc.invalidateQueries({ queryKey: ['/supabase/list-members', listId] })
     await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
     // Notify added user
@@ -916,14 +957,14 @@ export default function TasksPage() {
         })
       }
     } catch { /* ignore */ }
-    toast({ title: 'Member added' })
+    toast({ title: t('toasts.memberAdded') })
   }
 
   async function removeListMember(listId: string, userId: number) {
     await supabase.from('task_list_members').delete().eq('list_id', listId).eq('user_id', userId)
     await qc.invalidateQueries({ queryKey: ['/supabase/list-members', listId] })
     await qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
-    toast({ title: 'Member removed' })
+    toast({ title: t('toasts.memberRemoved') })
   }
 
   async function updateListColor(listId: string, color: string) {
@@ -932,14 +973,14 @@ export default function TasksPage() {
   }
 
   async function deleteList(listId: string) {
-    if (!confirm('Delete this list? Tasks in it will become unassigned.')) return
+    if (!confirm(t('lists.confirmDeleteList'))) return
     await supabase.from('tasks').update({ list_id: null }).eq('list_id', listId)
     await supabase.from('task_lists').delete().eq('id', listId)
     qc.invalidateQueries({ queryKey: ['/supabase/task-list-members'] })
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
     setActiveListId('global')
     setManageList(null)
-    toast({ title: 'List deleted' })
+    toast({ title: t('toasts.listDeleted') })
   }
 
   // ─── Assignees / watchers ─────────────────────────────────────────────────
@@ -983,7 +1024,7 @@ export default function TasksPage() {
   async function moveTaskToList(taskId: string, listId: string) {
     await supabase.from('tasks').update({ list_id: listId, updated_at: new Date().toISOString() }).eq('id', taskId)
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-    toast({ title: 'Task moved' })
+    toast({ title: t('toasts.taskMoved') })
   }
 
   function handleDragEnd(e: DragEndEvent) {
@@ -1020,7 +1061,7 @@ export default function TasksPage() {
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors whitespace-nowrap flex-shrink-0 ${
             resolvedListId === 'global' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'
           }`}>
-          <Globe className="w-3 h-3" /> All My Tasks
+          <Globe className="w-3 h-3" /> {t('page.allMyTasks')}
         </button>
         {visibleLists.map(l => {
           const color = l.membership?.color || '#6366f1'
@@ -1041,18 +1082,18 @@ export default function TasksPage() {
           )
         })}
         <button onClick={() => setListDialogOpen(true)} className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground rounded-md border border-dashed border-border hover:bg-muted flex-shrink-0">
-          <Plus className="w-3 h-3" /> New List
+          <Plus className="w-3 h-3" /> {t('page.newList')}
         </button>
       </div>
 
       {/* Header */}
       <PageHeader
-        title={resolvedListId === 'global' ? 'All My Tasks' : activeList?.name || 'Tasks'}
+        title={resolvedListId === 'global' ? t('page.allMyTasks') : activeList?.name || t('page.tasksFallback')}
         subtitle={
           <>
-            {stats.overdue > 0 && <span className="text-destructive font-medium">{stats.overdue} overdue</span>}
+            {stats.overdue > 0 && <span className="text-destructive font-medium">{t('page.subtitleOverdue', { count: stats.overdue })}</span>}
             {stats.overdue > 0 && ' · '}
-            {stats.inProgress} in progress · {stats.todo} to do · {stats.done} done
+            {t('page.subtitleSummary', { inProgress: stats.inProgress, todo: stats.todo, done: stats.done })}
           </>
         }
         actions={
@@ -1061,12 +1102,12 @@ export default function TasksPage() {
               {(['list', 'board', 'calendar'] as ViewMode[]).map(v => (
                 <button key={v} onClick={() => setViewMode(v)}
                   className={`px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}>
-                  {v === 'list' ? 'List' : v === 'board' ? 'Board' : 'Calendar'}
+                  {v === 'list' ? t('page.viewList') : v === 'board' ? t('page.viewBoard') : t('page.viewCalendar')}
                 </button>
               ))}
             </div>
             <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={exportCsv} disabled={!filtered.length}>
-              <Download className="w-3.5 h-3.5" /> Export
+              <Download className="w-3.5 h-3.5" /> {t('page.exportButton')}
             </Button>
             {canEdit && (
               <Button size="sm" className="h-8 text-xs gap-1.5" onClick={() => {
@@ -1076,7 +1117,7 @@ export default function TasksPage() {
                 setNewForm(f => ({ ...f, list_id: defaultListId }))
                 setAddOpen(true)
               }}>
-                <Plus className="w-3.5 h-3.5" /> New Task
+                <Plus className="w-3.5 h-3.5" /> {t('page.newTask')}
               </Button>
             )}
           </>
@@ -1086,10 +1127,10 @@ export default function TasksPage() {
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'To Do', count: stats.todo, filter: 'To Do' as StatusFilter, cls: '' },
-          { label: 'In Progress', count: stats.inProgress, filter: 'In Progress' as StatusFilter, cls: TONE_TEXT.info },
-          { label: 'Overdue', count: stats.overdue, filter: 'all' as StatusFilter, cls: TONE_TEXT.destructive },
-          { label: 'Done', count: stats.done, filter: 'Done' as StatusFilter, cls: TONE_TEXT.success },
+          { label: t('status.to_do'), count: stats.todo, filter: 'To Do' as StatusFilter, cls: '' },
+          { label: t('status.in_progress'), count: stats.inProgress, filter: 'In Progress' as StatusFilter, cls: TONE_TEXT.info },
+          { label: t('page.tileOverdue'), count: stats.overdue, filter: 'all' as StatusFilter, cls: TONE_TEXT.destructive },
+          { label: t('status.done'), count: stats.done, filter: 'Done' as StatusFilter, cls: TONE_TEXT.success },
         ].map(c => (
           <Card key={c.label} className="cursor-pointer shadow-xs hover:bg-muted/30 hover:shadow-sm transition-all" onClick={() => { setStatusFilter(c.filter) }}>
             <CardContent className="p-3">
@@ -1105,7 +1146,7 @@ export default function TasksPage() {
         {(['open', 'all', ...STATUSES] as StatusFilter[]).map(s => (
           <button key={s} onClick={() => setStatusFilter(s)}
             className={`px-2.5 py-1 text-xs rounded-md border transition-colors ${statusFilter === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border text-muted-foreground hover:bg-muted'}`}>
-            {s === 'open' ? `Open (${stats.total - stats.done})` : s === 'all' ? `All (${stats.total})` : s}
+            {s === 'open' ? t('page.filterOpen', { count: stats.total - stats.done }) : s === 'all' ? t('page.filterAll', { count: stats.total }) : taskStatusLabel(s, t)}
           </button>
         ))}
         <div className="h-5 w-px bg-border mx-1" />
@@ -1113,22 +1154,22 @@ export default function TasksPage() {
           value={priorityFilter}
           onChange={e => setPriorityFilter(e.target.value as any)}
           className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
-          aria-label="Filter by priority"
+          aria-label={t('page.ariaFilterPriority')}
         >
-          <option value="all">Priority: All</option>
-          <option value="Urgent">Urgent</option>
-          <option value="High">High</option>
-          <option value="Medium">Medium</option>
-          <option value="Low">Low</option>
+          <option value="all">{t('page.priorityFilterAll')}</option>
+          <option value="Urgent">{t('priority.urgent')}</option>
+          <option value="High">{t('priority.high')}</option>
+          <option value="Medium">{t('priority.medium')}</option>
+          <option value="Low">{t('priority.low')}</option>
         </select>
         <select
           value={assigneeFilter}
           onChange={e => setAssigneeFilter(e.target.value)}
           className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground max-w-[160px] truncate"
-          aria-label="Filter by assignee"
+          aria-label={t('page.ariaFilterAssignee')}
         >
-          <option value="all">Assignee: All</option>
-          <option value="unassigned">Unassigned</option>
+          <option value="all">{t('page.assigneeFilterAll')}</option>
+          <option value="unassigned">{t('common.unassigned')}</option>
           {assigneeOptions.map(name => (
             <option key={name} value={name}>{name}</option>
           ))}
@@ -1137,25 +1178,25 @@ export default function TasksPage() {
           value={groupBy}
           onChange={e => setGroupBy(e.target.value as any)}
           className="h-7 px-2 text-xs rounded-md border border-border bg-background text-muted-foreground hover:text-foreground"
-          aria-label="Group by"
+          aria-label={t('page.ariaGroupBy')}
         >
-          <option value="none">Group: None</option>
-          <option value="status">Status</option>
-          <option value="priority">Priority</option>
-          <option value="assignee">Assignee</option>
-          <option value="property">Property</option>
+          <option value="none">{t('page.groupNone')}</option>
+          <option value="status">{t('common.labels.status')}</option>
+          <option value="priority">{t('common.priorityLabel')}</option>
+          <option value="assignee">{t('common.assigneeLabel')}</option>
+          <option value="property">{t('common.labels.property')}</option>
         </select>
         {(priorityFilter !== 'all' || assigneeFilter !== 'all' || groupBy !== 'none') && (
           <button
             onClick={() => { setPriorityFilter('all'); setAssigneeFilter('all'); setGroupBy('none') }}
             className="text-2xs text-muted-foreground hover:text-foreground underline underline-offset-2"
           >
-            Reset
+            {t('page.reset')}
           </button>
         )}
         <div className="relative ml-auto">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input type="search" placeholder="Search…" value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm" />
+          <Input type="search" placeholder={t('page.searchPlaceholder')} value={search} onChange={e => setSearch(e.target.value)} className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm" />
           {search && <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"><X className="w-3.5 h-3.5" /></button>}
         </div>
       </div>
@@ -1183,26 +1224,26 @@ export default function TasksPage() {
                               setSelectedIds(new Set())
                             }
                           }}
-                          aria-label="Select all eligible tasks"
+                          aria-label={t('table.selectAllAria')}
                         />
                       )
                     })()}
                   </th>
                 )}
-                <th className={`${thCls} ${canEdit ? '' : 'sticky left-0 z-20'} bg-muted`} onClick={() => toggleSort('title')}>Task <SortIcon col="title" /></th>
-                <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
-                <th className={thCls} onClick={() => toggleSort('priority')}>Priority <SortIcon col="priority" /></th>
-                <th className={thCls} onClick={() => toggleSort('due_date')}>Due <SortIcon col="due_date" /></th>
-                <th className={thCls} onClick={() => toggleSort('assignee_name')}>Assignee <SortIcon col="assignee_name" /></th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Category</th>
-                {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>}
+                <th className={`${thCls} ${canEdit ? '' : 'sticky left-0 z-20'} bg-muted`} onClick={() => toggleSort('title')}>{t('table.colTask')} <SortIcon col="title" /></th>
+                <th className={thCls} onClick={() => toggleSort('status')}>{t('common.labels.status')} <SortIcon col="status" /></th>
+                <th className={thCls} onClick={() => toggleSort('priority')}>{t('common.priorityLabel')} <SortIcon col="priority" /></th>
+                <th className={thCls} onClick={() => toggleSort('due_date')}>{t('table.colDue')} <SortIcon col="due_date" /></th>
+                <th className={thCls} onClick={() => toggleSort('assignee_name')}>{t('common.assigneeLabel')} <SortIcon col="assignee_name" /></th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('common.categoryLabel')}</th>
+                {canEdit && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.colAction')}</th>}
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 [...Array(6)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canEdit ? 8 : 6)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={canEdit ? 8 : 6}><EmptyState icon={CheckSquare} title="No tasks" description={search || statusFilter !== 'all' ? 'No tasks match your filters.' : 'Create your first task to get started.'} action={canEdit ? { label: 'New Task', onClick: () => {
+                <tr><td colSpan={canEdit ? 8 : 6}><EmptyState icon={CheckSquare} title={t('table.emptyTitle')} description={search || statusFilter !== 'all' ? t('table.emptyFiltered') : t('table.emptyDefault')} action={canEdit ? { label: t('page.newTask'), onClick: () => {
                   const defaultListId = resolvedListId !== 'global' ? resolvedListId : (visibleLists.find(l => l.type === 'private')?.id || visibleLists[0]?.id || '')
                   setNewForm(f => ({ ...f, list_id: defaultListId }))
                   setAddOpen(true)
@@ -1212,17 +1253,21 @@ export default function TasksPage() {
                 // before each bucket. Tracks the previously emitted group key
                 // across the iteration so headers only appear at transitions.
                 let lastGroupKey: string | null = null
-                function groupKeyOf(t: any): string | null {
+                function groupKeyOf(task: any): string | null {
                   if (groupBy === 'none') return null
-                  if (groupBy === 'status') return t.status || 'No Status'
-                  if (groupBy === 'priority') return t.priority || 'No Priority'
-                  if (groupBy === 'assignee') return t.assignee_name || '__unassigned__'
-                  if (groupBy === 'property') return t.property_name || '__no_property__'
+                  if (groupBy === 'status') return task.status || '__no_status__'
+                  if (groupBy === 'priority') return task.priority || '__no_priority__'
+                  if (groupBy === 'assignee') return task.assignee_name || '__unassigned__'
+                  if (groupBy === 'property') return task.property_name || '__no_property__'
                   return null
                 }
                 function groupLabelOf(key: string): string {
-                  if (key === '__unassigned__') return 'Unassigned'
-                  if (key === '__no_property__') return 'No Property'
+                  if (key === '__unassigned__') return t('common.unassigned')
+                  if (key === '__no_property__') return t('common.noProperty')
+                  if (key === '__no_status__') return t('common.noStatus')
+                  if (key === '__no_priority__') return t('common.noPriority')
+                  if (groupBy === 'status') return taskStatusLabel(key, t)
+                  if (groupBy === 'priority') return taskPriorityLabel(key, t)
                   return key
                 }
                 const colCount = canEdit ? 8 : 6
@@ -1261,8 +1306,8 @@ export default function TasksPage() {
                                 return next
                               })
                             }}
-                            aria-label={`Select ${task.title}`}
-                            title={!eligible ? (hasSubs ? 'Has subtasks - cannot become a subtask' : 'Already a subtask') : undefined}
+                            aria-label={t('table.selectRowAria', { title: task.title })}
+                            title={!eligible ? (hasSubs ? t('table.hasSubtasksTitle') : t('table.alreadySubtaskTitle')) : undefined}
                           />
                         </td>
                       )}
@@ -1291,7 +1336,7 @@ export default function TasksPage() {
                         <td className="py-2 px-3" onClick={e => e.stopPropagation()}>
                           <select value={task.status} onChange={e => updateTask({ id: task.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })}
                             className="h-6 text-xs border border-input rounded px-1 bg-background">
-                            {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                            {STATUSES.map(s => <option key={s} value={s}>{taskStatusLabel(s, t)}</option>)}
                           </select>
                         </td>
                       )}
@@ -1317,7 +1362,7 @@ export default function TasksPage() {
                             <td className="py-1.5 px-3" onClick={e => e.stopPropagation()}>
                               <select value={sub.status} onChange={e => updateTask({ id: sub.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })}
                                 className="h-6 text-xs border border-input rounded px-1 bg-background">
-                                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                {STATUSES.map(s => <option key={s} value={s}>{taskStatusLabel(s, t)}</option>)}
                               </select>
                             </td>
                           )}
@@ -1337,7 +1382,7 @@ export default function TasksPage() {
       {viewMode === 'list' && canEdit && selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 rounded-full border border-border bg-background shadow-lg px-3 py-2">
           <span className="text-xs font-medium tabular-nums pl-1">
-            {selectedIds.size} selected
+            {t('table.selectedCount', { count: selectedIds.size })}
           </span>
           <ReparentPopover
             open={reparentOpen}
@@ -1350,12 +1395,12 @@ export default function TasksPage() {
             trigger={
               <Button size="sm" className="h-8 text-xs gap-1.5">
                 <Layers className="w-3.5 h-3.5" />
-                Make subtasks of…
+                {t('reparent.makeSubtasksOf')}
               </Button>
             }
           />
           <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelectedIds(new Set())}>
-            Clear
+            {t('table.clear')}
           </Button>
         </div>
       )}
@@ -1368,7 +1413,7 @@ export default function TasksPage() {
               {STATUSES.map(status => (
                 <div key={status} className="flex-1 min-w-[220px] flex flex-col">
                   <div className="flex items-center justify-between px-2 py-1.5 mb-2">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{status}</span>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{taskStatusLabel(status, t)}</span>
                     <span className="text-xs text-muted-foreground tabular-nums">{(boardData[status] || []).length}</span>
                   </div>
                   <DroppableColumn id={status}>
@@ -1390,7 +1435,7 @@ export default function TasksPage() {
                       )
                     })}
                     {(boardData[status] || []).length === 0 && (
-                      <div className="text-center py-8 text-xs text-muted-foreground">No tasks</div>
+                      <div className="text-center py-8 text-xs text-muted-foreground">{t('table.emptyTitle')}</div>
                     )}
                   </DroppableColumn>
                 </div>
@@ -1423,7 +1468,7 @@ export default function TasksPage() {
                 {/* Description */}
                 {detailTask.description && (
                   <div>
-                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">Description</span>
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-1">{t('detail.descriptionLabel')}</span>
                     <p className="text-sm whitespace-pre-wrap">{detailTask.description}</p>
                   </div>
                 )}
@@ -1435,7 +1480,7 @@ export default function TasksPage() {
                   return isParent ? (
                     <div>
                       <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide block mb-2">
-                        Subtasks {subs.length > 0 && `(${subs.filter((s: any) => s.status === 'Done').length}/${subs.length})`}
+                        {t('detail.subtasksLabel')} {subs.length > 0 && `(${subs.filter((s: any) => s.status === 'Done').length}/${subs.length})`}
                       </span>
                       {subs.length > 0 && (
                         <div className="space-y-1 mb-2">
@@ -1454,7 +1499,7 @@ export default function TasksPage() {
                       {canEdit && (
                         <div className="flex items-center gap-2 flex-wrap">
                           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={async () => {
-                            const title = prompt('Subtask title:')
+                            const title = prompt(t('detail.subtaskTitlePrompt'))
                             if (!title?.trim()) return
                             await supabase.from('tasks').insert({
                               title: title.trim(),
@@ -1468,7 +1513,7 @@ export default function TasksPage() {
                             })
                             qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
                           }}>
-                            <Plus className="w-3 h-3" /> Add subtask
+                            <Plus className="w-3 h-3" /> {t('detail.addSubtask')}
                           </Button>
                           {isEligibleSubtask(detailTask) && (
                             <ReparentPopover
@@ -1481,7 +1526,7 @@ export default function TasksPage() {
                               onCreateParent={(title) => reparentToNew({ taskIds: [detailTask.id], title })}
                               trigger={
                                 <Button size="sm" variant="outline" className="h-7 text-xs gap-1">
-                                  <CornerDownRight className="w-3 h-3" /> Move under…
+                                  <CornerDownRight className="w-3 h-3" /> {t('reparent.moveUnder')}
                                 </Button>
                               }
                             />
@@ -1491,12 +1536,12 @@ export default function TasksPage() {
                     </div>
                   ) : detailTask.parent_task_id ? (
                     <div className="text-xs">
-                      <span className="text-muted-foreground">Parent: </span>
+                      <span className="text-muted-foreground">{t('detail.parentPrefix')}</span>
                       <button className="text-primary hover:underline" onClick={() => {
-                        const parent = tasks?.find((t: any) => t.id === detailTask.parent_task_id)
+                        const parent = tasks?.find((tk: any) => tk.id === detailTask.parent_task_id)
                         if (parent) setDetailTask(parent)
                       }}>
-                        {tasks?.find((t: any) => t.id === detailTask.parent_task_id)?.title || 'Parent task'}
+                        {tasks?.find((tk: any) => tk.id === detailTask.parent_task_id)?.title || t('detail.parentFallback')}
                       </button>
                     </div>
                   ) : null
@@ -1505,65 +1550,65 @@ export default function TasksPage() {
                 {/* Details grid */}
                 <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-muted-foreground block">Assignee</span>
+                    <span className="text-muted-foreground block">{t('common.assigneeLabel')}</span>
                     {canEdit ? (
                       <select value={detailTask.assignee_name || ''} onChange={e => {
                         updateTask({ id: detailTask.id, updates: { assignee_name: e.target.value || null } })
                         setDetailTask({ ...detailTask, assignee_name: e.target.value })
                       }} className="h-7 w-full text-xs border border-input rounded px-1 bg-background mt-0.5">
-                        <option value="">Unassigned</option>
+                        <option value="">{t('common.unassigned')}</option>
                         {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
                       </select>
-                    ) : <span className="font-medium">{detailTask.assignee_name || 'Unassigned'}</span>}
+                    ) : <span className="font-medium">{detailTask.assignee_name || t('common.unassigned')}</span>}
                   </div>
                   <div>
-                    <span className="text-muted-foreground block">Due Date</span>
+                    <span className="text-muted-foreground block">{t('common.dueDateLabel')}</span>
                     {canEdit ? (
                       <Input type="date" value={detailTask.due_date || ''} onChange={e => {
                         updateTask({ id: detailTask.id, updates: { due_date: e.target.value || null } })
                         setDetailTask({ ...detailTask, due_date: e.target.value })
                       }} className="h-7 text-xs mt-0.5" />
-                    ) : <span className="font-medium">{detailTask.due_date ? format(new Date(detailTask.due_date), 'MMM d, yyyy') : '—'}</span>}
+                    ) : <span className="font-medium">{detailTask.due_date ? formatDate(new Date(detailTask.due_date), 'MMM d, yyyy') : '—'}</span>}
                   </div>
                   <div>
-                    <span className="text-muted-foreground block">Status</span>
+                    <span className="text-muted-foreground block">{t('common.labels.status')}</span>
                     {canEdit ? (
                       <select value={detailTask.status} onChange={e => {
                         updateTask({ id: detailTask.id, updates: { status: e.target.value, completed_at: e.target.value === 'Done' ? new Date().toISOString() : null } })
                         setDetailTask({ ...detailTask, status: e.target.value })
                       }} className="h-7 w-full text-xs border border-input rounded px-1 bg-background mt-0.5">
-                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        {STATUSES.map(s => <option key={s} value={s}>{taskStatusLabel(s, t)}</option>)}
                       </select>
                     ) : <TaskStatusBadge status={detailTask.status} />}
                   </div>
                   <div>
-                    <span className="text-muted-foreground block">Priority</span>
+                    <span className="text-muted-foreground block">{t('common.priorityLabel')}</span>
                     {canEdit ? (
                       <select value={detailTask.priority} onChange={e => {
                         updateTask({ id: detailTask.id, updates: { priority: e.target.value } })
                         setDetailTask({ ...detailTask, priority: e.target.value })
                       }} className="h-7 w-full text-xs border border-input rounded px-1 bg-background mt-0.5">
-                        {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                        {PRIORITIES.map(p => <option key={p} value={p}>{taskPriorityLabel(p, t)}</option>)}
                       </select>
                     ) : <PriorityBadge priority={detailTask.priority} />}
                   </div>
                   {detailTask.property_name && (
                     <div>
-                      <span className="text-muted-foreground block">Property</span>
+                      <span className="text-muted-foreground block">{t('common.labels.property')}</span>
                       <span className="font-medium">{detailTask.property_name}</span>
                     </div>
                   )}
                   <div>
-                    <span className="text-muted-foreground block">Category</span>
-                    <span className="font-medium">{detailTask.category || 'General'}</span>
+                    <span className="text-muted-foreground block">{t('common.categoryLabel')}</span>
+                    <span className="font-medium">{taskCategoryLabel(detailTask.category || 'General', t)}</span>
                   </div>
                   <div>
-                    <span className="text-muted-foreground block">Created</span>
-                    <span>{format(new Date(detailTask.created_at), 'MMM d, yyyy')}</span>
+                    <span className="text-muted-foreground block">{t('common.createdLabel')}</span>
+                    <span>{formatDate(new Date(detailTask.created_at), 'MMM d, yyyy')}</span>
                   </div>
                   {detailTask.created_by && (
                     <div>
-                      <span className="text-muted-foreground block">Created By</span>
+                      <span className="text-muted-foreground block">{t('common.createdByLabel')}</span>
                       <span>{detailTask.created_by}</span>
                     </div>
                   )}
@@ -1572,18 +1617,18 @@ export default function TasksPage() {
                 {/* Comments */}
                 <div className="border-t border-border pt-4">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                    <MessageSquare className="w-3.5 h-3.5" /> Comments
+                    <MessageSquare className="w-3.5 h-3.5" /> {t('comments.header')}
                   </h3>
                   {commentsLoading ? (
                     <div className="space-y-2">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
                   ) : (
                     <div className="space-y-3 mb-3">
-                      {(comments || []).length === 0 && <p className="text-xs text-muted-foreground">No comments yet.</p>}
+                      {(comments || []).length === 0 && <p className="text-xs text-muted-foreground">{t('comments.empty')}</p>}
                       {(comments || []).map((c: any) => (
                         <div key={c.id} className="rounded-md bg-muted/40 p-2.5">
                           <div className="flex items-center justify-between mb-1">
                             <span className="text-xs font-medium">{c.author}</span>
-                            <span className="text-xs text-muted-foreground">{format(new Date(c.created_at), 'MMM d, h:mm a')}</span>
+                            <span className="text-xs text-muted-foreground">{formatDate(new Date(c.created_at), 'MMM d, h:mm a')}</span>
                           </div>
                           <p className="text-xs whitespace-pre-wrap">
                             <CommentBody text={c.content} userLabels={(users || []).map((u: any) => u.label)} />
@@ -1600,7 +1645,7 @@ export default function TasksPage() {
                           onChange={setCommentText}
                           users={(users || []).map((u: any) => ({ id: u.id, label: u.label }))}
                           onSubmit={() => commentText.trim() && addComment()}
-                          placeholder="Add a comment… use @ to mention"
+                          placeholder={t('comments.placeholder')}
                         />
                       </div>
                       <Button size="sm" className="h-10 sm:h-8 px-3 flex-shrink-0" disabled={!commentText.trim() || commenting} onClick={() => addComment()}>
@@ -1613,24 +1658,24 @@ export default function TasksPage() {
                 {/* Assignees */}
                 <div className="border-t border-border pt-4">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <UserPlus className="w-3.5 h-3.5" /> Assignees
+                    <UserPlus className="w-3.5 h-3.5" /> {t('detail.assigneesHeader')}
                   </h3>
                   <div className="space-y-1 mb-2">
                     {(taskAssignees || []).map((a: any) => (
                       <div key={a.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           <span className={a.role === 'primary' ? 'font-medium' : ''}>{a.user?.label}</span>
-                          <span className={`text-2xs px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{a.role}</span>
+                          <span className={`text-2xs px-1 py-0.5 rounded ${a.role === 'primary' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}`}>{assigneeRoleLabel(a.role, t)}</span>
                         </div>
                         {canEdit && <button onClick={() => toggleAssignee(detailTask.id, a.user_id, false)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
                       </div>
                     ))}
-                    {(taskAssignees || []).length === 0 && <p className="text-xs text-muted-foreground">No assignees</p>}
+                    {(taskAssignees || []).length === 0 && <p className="text-xs text-muted-foreground">{t('detail.noAssignees')}</p>}
                   </div>
                   {canEdit && (
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> Add assignee</Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> {t('detail.addAssignee')}</Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-56 p-1" align="start">
                         <div className="max-h-48 overflow-y-auto">
@@ -1638,8 +1683,8 @@ export default function TasksPage() {
                             <div key={u.id} className="flex items-center justify-between px-2 py-1.5 text-xs hover:bg-accent rounded">
                               <span>{u.label}</span>
                               <div className="flex gap-1">
-                                <button onClick={() => toggleAssignee(detailTask.id, u.id, true)} className="text-primary text-2xs hover:underline">Primary</button>
-                                <button onClick={() => toggleAssignee(detailTask.id, u.id, false)} className="text-muted-foreground text-2xs hover:underline">Secondary</button>
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, true)} className="text-primary text-2xs hover:underline">{t('detail.addAsPrimary')}</button>
+                                <button onClick={() => toggleAssignee(detailTask.id, u.id, false)} className="text-muted-foreground text-2xs hover:underline">{t('detail.addAsSecondary')}</button>
                               </div>
                             </div>
                           ))}
@@ -1652,7 +1697,7 @@ export default function TasksPage() {
                 {/* Watchers */}
                 <div className="border-t border-border pt-4">
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                    <Eye className="w-3.5 h-3.5" /> Watchers
+                    <Eye className="w-3.5 h-3.5" /> {t('detail.watchersHeader')}
                   </h3>
                   <div className="flex flex-wrap gap-1 mb-2">
                     {(taskWatchers || []).map((w: any) => (
@@ -1661,12 +1706,12 @@ export default function TasksPage() {
                         {canEdit && <button onClick={() => toggleWatcher(detailTask.id, w.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>}
                       </span>
                     ))}
-                    {(taskWatchers || []).length === 0 && <p className="text-xs text-muted-foreground">No watchers</p>}
+                    {(taskWatchers || []).length === 0 && <p className="text-xs text-muted-foreground">{t('detail.noWatchers')}</p>}
                   </div>
                   {canEdit && (
                     <Popover>
                       <PopoverTrigger asChild>
-                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> Add watcher</Button>
+                        <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><Plus className="w-3 h-3" /> {t('detail.addWatcher')}</Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-48 p-1" align="start">
                         <div className="max-h-48 overflow-y-auto">
@@ -1685,14 +1730,14 @@ export default function TasksPage() {
                 {canEdit && visibleLists.length > 1 && (
                   <div className="border-t border-border pt-4">
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5">
-                      <List className="w-3.5 h-3.5" /> List
+                      <List className="w-3.5 h-3.5" /> {t('detail.listHeader')}
                     </h3>
                     <select
                       value={detailTask.list_id || ''}
                       onChange={e => { moveTaskToList(detailTask.id, e.target.value); setDetailTask({ ...detailTask, list_id: e.target.value }) }}
                       className="h-7 w-full text-xs border border-input rounded px-1 bg-background"
                     >
-                      {visibleLists.map(l => <option key={l.id} value={l.id}>{l.name}{l.type === 'private' ? ' (private)' : ''}</option>)}
+                      {visibleLists.map(l => <option key={l.id} value={l.id}>{l.name}{l.type === 'private' ? t('common.privateSuffix') : ''}</option>)}
                     </select>
                   </div>
                 )}
@@ -1701,8 +1746,8 @@ export default function TasksPage() {
                 {canEdit && (
                   <div className="border-t border-border pt-4">
                     <Button variant="outline" size="sm" className="text-xs text-destructive hover:bg-destructive/10"
-                      onClick={() => { if (confirm('Delete this task?')) deleteTask(detailTask.id) }}>
-                      Delete Task
+                      onClick={() => { if (confirm(t('detail.confirmDeleteTask'))) deleteTask(detailTask.id) }}>
+                      {t('detail.deleteTask')}
                     </Button>
                   </div>
                 )}
@@ -1716,74 +1761,74 @@ export default function TasksPage() {
       <Sheet open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
         <SheetContent side="right" className="w-full sm:w-[480px] overflow-y-auto">
           <SheetHeader>
-            <SheetTitle className="text-base">New Task</SheetTitle>
+            <SheetTitle className="text-base">{t('page.newTask')}</SheetTitle>
           </SheetHeader>
           <div className="mt-4 space-y-3">
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Title *</label>
-              <Input value={newForm.title} onChange={e => setNewForm(f => ({ ...f, title: e.target.value }))} className="h-9 text-sm" placeholder="What needs to be done?" />
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('form.titleLabel')}</label>
+              <Input value={newForm.title} onChange={e => setNewForm(f => ({ ...f, title: e.target.value }))} className="h-9 text-sm" placeholder={t('form.titlePlaceholder')} />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">List *</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('form.listLabel')}</label>
               <select
                 value={newForm.list_id}
                 onChange={e => setNewForm(f => ({ ...f, list_id: e.target.value }))}
                 className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background"
               >
-                {visibleLists.length === 0 && <option value="">No lists available</option>}
+                {visibleLists.length === 0 && <option value="">{t('form.noListsAvailable')}</option>}
                 {visibleLists.map(l => (
                   <option key={l.id} value={l.id}>
-                    {l.name}{l.type === 'private' ? ' (private)' : l.type === 'public' ? ' (public)' : ''}
+                    {l.name}{l.type === 'private' ? t('common.privateSuffix') : l.type === 'public' ? t('common.publicSuffix') : ''}
                   </option>
                 ))}
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+              <label className="text-xs font-medium text-muted-foreground block mb-1">{t('detail.descriptionLabel')}</label>
               <textarea value={newForm.description} onChange={e => setNewForm(f => ({ ...f, description: e.target.value }))}
-                className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder="Details…" />
+                className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring" placeholder={t('form.descriptionPlaceholder')} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Status</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.labels.status')}</label>
                 <select value={newForm.status} onChange={e => setNewForm(f => ({ ...f, status: e.target.value }))} className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background">
-                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                  {STATUSES.map(s => <option key={s} value={s}>{taskStatusLabel(s, t)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Priority</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.priorityLabel')}</label>
                 <select value={newForm.priority} onChange={e => setNewForm(f => ({ ...f, priority: e.target.value }))} className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background">
-                  {PRIORITIES.map(p => <option key={p} value={p}>{p}</option>)}
+                  {PRIORITIES.map(p => <option key={p} value={p}>{taskPriorityLabel(p, t)}</option>)}
                 </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Due Date</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.dueDateLabel')}</label>
                 <Input type="date" value={newForm.due_date} onChange={e => setNewForm(f => ({ ...f, due_date: e.target.value }))} className="h-9 text-sm" />
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Assignee</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.assigneeLabel')}</label>
                 <select value={newForm.assignee_name} onChange={e => setNewForm(f => ({ ...f, assignee_name: e.target.value }))} className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background">
-                  <option value="">Unassigned</option>
+                  <option value="">{t('common.unassigned')}</option>
                   {(users || []).map((u: any) => <option key={u.id} value={u.label}>{u.label}</option>)}
                 </select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Category</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.categoryLabel')}</label>
                 <select value={newForm.category} onChange={e => setNewForm(f => ({ ...f, category: e.target.value }))} className="w-full h-9 text-sm border border-input rounded-md px-2 bg-background">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {CATEGORIES.map(c => <option key={c} value={c}>{taskCategoryLabel(c, t)}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1">Property</label>
-                <Input value={newForm.property_name} onChange={e => setNewForm(f => ({ ...f, property_name: e.target.value }))} className="h-9 text-sm" placeholder="Optional" />
+                <label className="text-xs font-medium text-muted-foreground block mb-1">{t('common.labels.property')}</label>
+                <Input value={newForm.property_name} onChange={e => setNewForm(f => ({ ...f, property_name: e.target.value }))} className="h-9 text-sm" placeholder={t('common.optional')} />
               </div>
             </div>
             <Button className="w-full h-10" disabled={!newForm.title.trim() || !newForm.list_id || creating} onClick={() => createTask()}>
-              {creating ? 'Creating…' : 'Create Task'}
+              {creating ? t('form.creating') : t('form.createTask')}
             </Button>
           </div>
         </SheetContent>
@@ -1792,13 +1837,13 @@ export default function TasksPage() {
       {/* ═══ CREATE LIST DIALOG ═══ */}
       <Dialog open={listDialogOpen} onOpenChange={setListDialogOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Create Task List</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('lists.createListTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
-            <Input value={newListName} onChange={e => setNewListName(e.target.value)} placeholder="List name…" className="h-9 text-sm" onKeyDown={e => e.key === 'Enter' && createList()} />
+            <Input value={newListName} onChange={e => setNewListName(e.target.value)} placeholder={t('lists.listNamePlaceholder')} className="h-9 text-sm" onKeyDown={e => e.key === 'Enter' && createList()} />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setListDialogOpen(false)}>Cancel</Button>
-            <Button onClick={createList} disabled={!newListName.trim()}>Create</Button>
+            <Button variant="outline" onClick={() => setListDialogOpen(false)}>{t('common.actions.cancel')}</Button>
+            <Button onClick={createList} disabled={!newListName.trim()}>{t('lists.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1806,12 +1851,12 @@ export default function TasksPage() {
       {/* ═══ MANAGE LIST DIALOG ═══ */}
       <Dialog open={!!manageList} onOpenChange={v => !v && setManageList(null)}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Manage: {manageList?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('lists.manageTitle', { name: manageList?.name || '' })}</DialogTitle></DialogHeader>
           {manageList && (
             <div className="space-y-4 mt-2">
               {/* Color picker */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Your color for this list</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">{t('lists.colorLabel')}</label>
                 <div className="flex gap-2 flex-wrap">
                   {LIST_COLORS.map(c => {
                     const myColor = manageList.membership?.color || '#6366f1'
@@ -1826,7 +1871,7 @@ export default function TasksPage() {
 
               {/* Members */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground block mb-1.5">Members ({membersLoading ? '…' : (manageMembers || []).length})</label>
+                <label className="text-xs font-medium text-muted-foreground block mb-1.5">{t('lists.membersLabel', { count: membersLoading ? '…' : (manageMembers || []).length })}</label>
                 {membersLoading ? (
                   <div className="space-y-1 mb-2">{[1,2].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
                 ) : (
@@ -1835,20 +1880,20 @@ export default function TasksPage() {
                       <div key={m.id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-2 py-1.5">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{m.user?.label}</span>
-                          <span className="text-muted-foreground">{m.role}</span>
+                          <span className="text-muted-foreground">{listMemberRoleLabel(m.role, t)}</span>
                         </div>
                         {m.role !== 'owner' && (
                           <button onClick={() => removeListMember(manageList.id, m.user_id)} className="text-muted-foreground hover:text-destructive"><X className="w-3 h-3" /></button>
                         )}
                       </div>
                     ))}
-                    {(manageMembers || []).length === 0 && <p className="text-xs text-muted-foreground">No members yet</p>}
+                    {(manageMembers || []).length === 0 && <p className="text-xs text-muted-foreground">{t('lists.noMembersYet')}</p>}
                   </div>
                 )}
                 {!membersLoading && (
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><UserPlus className="w-3 h-3" /> Add member</Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs gap-1"><UserPlus className="w-3 h-3" /> {t('lists.addMember')}</Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-48 p-1" align="start">
                       <div className="max-h-48 overflow-y-auto">
@@ -1858,7 +1903,7 @@ export default function TasksPage() {
                           </button>
                         ))}
                         {(users || []).filter((u: any) => !(manageMembers || []).some((m: any) => m.user_id === u.id)).length === 0 && (
-                          <p className="text-xs text-muted-foreground text-center py-2">All users added</p>
+                          <p className="text-xs text-muted-foreground text-center py-2">{t('lists.allUsersAdded')}</p>
                         )}
                       </div>
                     </PopoverContent>
@@ -1870,7 +1915,7 @@ export default function TasksPage() {
               {manageList.type !== 'public' && (
                 <div className="border-t border-border pt-3">
                   <Button variant="outline" size="sm" className="text-xs text-destructive hover:bg-destructive/10 gap-1.5" onClick={() => deleteList(manageList.id)}>
-                    <Trash2 className="w-3 h-3" /> Delete List
+                    <Trash2 className="w-3 h-3" /> {t('lists.deleteListButton')}
                   </Button>
                 </div>
               )}
