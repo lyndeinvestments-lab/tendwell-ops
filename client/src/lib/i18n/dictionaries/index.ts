@@ -22,6 +22,40 @@ import { shipmentsEn } from './shipments.en'
 import { shipmentsEs } from './shipments.es'
 import { cleanersEn } from './cleaners.en'
 import { cleanersEs } from './cleaners.es'
+import { accountEn } from './account.en'
+import { accountEs } from './account.es'
+import { dashboardEn } from './dashboard.en'
+import { dashboardEs } from './dashboard.es'
+import { pipelineEn } from './pipeline.en'
+import { pipelineEs } from './pipeline.es'
+import { costTrackingEn } from './costTracking.en'
+import { costTrackingEs } from './costTracking.es'
+import { contactsEn } from './contacts.en'
+import { contactsEs } from './contacts.es'
+import { settingsPageEn } from './settingsPage.en'
+import { settingsPageEs } from './settingsPage.es'
+import { alertsEn } from './alerts.en'
+import { alertsEs } from './alerts.es'
+import { activityEn } from './activity.en'
+import { activityEs } from './activity.es'
+import { tasksEn } from './tasks.en'
+import { tasksEs } from './tasks.es'
+import { trellisTasksEn } from './trellisTasks.en'
+import { trellisTasksEs } from './trellisTasks.es'
+import { reviewsEn } from './reviews.en'
+import { reviewsEs } from './reviews.es'
+import { ownerPortalEn } from './ownerPortal.en'
+import { ownerPortalEs } from './ownerPortal.es'
+import { financialsEn } from './financials.en'
+import { financialsEs } from './financials.es'
+import { propertyModalEn } from './propertyModal.en'
+import { propertyModalEs } from './propertyModal.es'
+import { paletteEn } from './palette.en'
+import { paletteEs } from './palette.es'
+import { authPagesEn } from './authPages.en'
+import { authPagesEs } from './authPages.es'
+import { onboardingEn } from './onboarding.en'
+import { onboardingEs } from './onboarding.es'
 
 /**
  * App-wide dictionary registry. Each feature area owns one namespace
@@ -43,6 +77,23 @@ export const dictionaryEn = {
   lostItems: lostItemsEn,
   shipments: shipmentsEn,
   cleaners: cleanersEn,
+  account: accountEn,
+  dashboard: dashboardEn,
+  pipeline: pipelineEn,
+  costTracking: costTrackingEn,
+  contacts: contactsEn,
+  settingsPage: settingsPageEn,
+  alerts: alertsEn,
+  activity: activityEn,
+  tasks: tasksEn,
+  trellisTasks: trellisTasksEn,
+  reviews: reviewsEn,
+  ownerPortal: ownerPortalEn,
+  financials: financialsEn,
+  propertyModal: propertyModalEn,
+  palette: paletteEn,
+  authPages: authPagesEn,
+  onboarding: onboardingEn,
 }
 
 export const dictionaryEs: typeof dictionaryEn = {
@@ -58,4 +109,21 @@ export const dictionaryEs: typeof dictionaryEn = {
   lostItems: lostItemsEs,
   shipments: shipmentsEs,
   cleaners: cleanersEs,
+  account: accountEs,
+  dashboard: dashboardEs,
+  pipeline: pipelineEs,
+  costTracking: costTrackingEs,
+  contacts: contactsEs,
+  settingsPage: settingsPageEs,
+  alerts: alertsEs,
+  activity: activityEs,
+  tasks: tasksEs,
+  trellisTasks: trellisTasksEs,
+  reviews: reviewsEs,
+  ownerPortal: ownerPortalEs,
+  financials: financialsEs,
+  propertyModal: propertyModalEs,
+  palette: paletteEs,
+  authPages: authPagesEs,
+  onboarding: onboardingEs,
 }

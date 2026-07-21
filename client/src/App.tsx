@@ -23,6 +23,7 @@ import { ThemeProvider } from 'next-themes';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { KeyboardShortcuts } from '@/components/KeyboardShortcuts';
 import { LocaleProvider } from '@/lib/i18n/LocaleProvider';
+import { LocalePreferenceSync } from '@/lib/i18n/LocalePreferenceSync';
 import { LanguageToggle } from '@/components/LanguageToggle';
 
 // Lazy load with automatic retry on chunk fetch failure (stale deployments)
@@ -60,7 +61,7 @@ const ProFormaWrapperPage = lazyRetry(() => import("@/pages/pro-forma-wrapper"))
 const FinancialDashboardPage = lazyRetry(() => import("@/pages/financial-overview"));
 const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
-const NotificationsPage = lazyRetry(() => import("@/pages/notifications"));
+const AccountPage = lazyRetry(() => import("@/pages/account"));
 // RevenueReportPage retired — /revenue-report now redirects to /pro-forma (Pro Forma wrapper; By Client available as a tab)
 const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
@@ -259,10 +260,12 @@ function AppRoutes() {
         <Route path="/forecaster">{() => <GuardedRoute viewId={["pro-forma", "forecaster"]} component={ProFormaWrapperPage} />}</Route>
         <Route path="/financial-dashboard">{() => <GuardedRoute viewId="financial-dashboard" component={FinancialDashboardPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute viewId="settings" component={SettingsPage} />}</Route>
-        {/* Personal notification prefs — reachable by any staff member (owners
-            never load this shell). Not view-gated: the toggles inside are
-            gated per-user by resolvedViews instead. */}
-        <Route path="/notifications">{() => <NotificationsPage />}</Route>
+        {/* Personal account settings (language, password, notification prefs)
+            — reachable by any staff member (owners never load this shell).
+            Not view-gated: the notification toggles inside are gated per-user
+            by resolvedViews instead. /notifications was absorbed into it. */}
+        <Route path="/account">{() => <AccountPage />}</Route>
+        <Route path="/notifications">{() => <Redirect to="/account" />}</Route>
         <Route path="/revenue-report">{() => <Redirect to="/pro-forma" />}</Route>
         <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
@@ -476,6 +479,9 @@ function App() {
                 phone opening the public weigh-in or share pages starts in
                 Spanish. The toggle persists any explicit choice. */}
             <LocaleProvider autoDetect>
+              {/* Loads the signed-in user's saved language on login and
+                  persists any toggle change back to their profile. */}
+              <LocalePreferenceSync />
               <Router>
                 <ErrorBoundary>
                   <AppLayout />

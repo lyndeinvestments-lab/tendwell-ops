@@ -39,6 +39,7 @@ export const commonEn = {
     'trellis-sync': 'API Sync',
     'settings': 'Settings',
     'notifications': 'Notifications',
+    'account': 'My Account',
   },
   navSection: {
     overview: 'Overview',
