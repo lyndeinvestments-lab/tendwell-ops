@@ -10,7 +10,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Search, AlertTriangle, Calendar, ChevronRight, Sparkles, Clock } from 'lucide-react'
-import { differenceInCalendarDays, format } from 'date-fns'
+import { differenceInCalendarDays, format as dfFormat } from 'date-fns'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 interface PropertyRow {
   id: number
@@ -57,7 +60,7 @@ function avg(nums: (number | null)[]): number | null {
   return filtered.reduce((a, b) => a + b, 0) / filtered.length
 }
 
-function computePriority(property: PropertyRow, inspections: InspectionRow[]): PropertyAggregate {
+function computePriority(property: PropertyRow, inspections: InspectionRow[], t: TFunc): PropertyAggregate {
   const completed = inspections.filter(i => i.status === 'completed').sort((a, b) => (a.inspected_at < b.inspected_at ? 1 : -1))
   const hasScheduled = inspections.some(i => i.status === 'scheduled')
   const lastCompleted = completed[0] ?? null
@@ -74,7 +77,7 @@ function computePriority(property: PropertyRow, inspections: InspectionRow[]): P
 
   if (!lastCompleted) {
     priority = 100
-    priorityReason = 'Never inspected'
+    priorityReason = t('priority.neverInspected')
   } else {
     daysSinceLast = differenceInCalendarDays(new Date(), new Date(lastCompleted.inspected_at))
     const score = lastCompleted.overall_score ?? 3
@@ -86,11 +89,11 @@ function computePriority(property: PropertyRow, inspections: InspectionRow[]): P
     priority = 0.65 * scoreComponent + 0.35 * recencyComponent
 
     const tags: string[] = []
-    if (score <= 2) tags.push(`Last score ${score.toFixed(1)}`)
-    else if (score < 3.5) tags.push(`Last score ${score.toFixed(1)} (mediocre)`)
-    if (daysSinceLast >= 90) tags.push(`${daysSinceLast}d since last`)
-    else if (daysSinceLast >= 60) tags.push(`Overdue (${daysSinceLast}d)`)
-    priorityReason = tags.join(' · ') || `Last score ${score.toFixed(1)}, ${daysSinceLast}d ago`
+    if (score <= 2) tags.push(t('priority.reasonLastScore', { score: score.toFixed(1) }))
+    else if (score < 3.5) tags.push(t('priority.reasonLastScoreMediocre', { score: score.toFixed(1) }))
+    if (daysSinceLast >= 90) tags.push(t('priority.reasonDaysSinceLast', { days: daysSinceLast }))
+    else if (daysSinceLast >= 60) tags.push(t('priority.reasonOverdueDays', { days: daysSinceLast }))
+    priorityReason = tags.join(' · ') || t('priority.reasonFallback', { score: score.toFixed(1), days: daysSinceLast })
   }
 
   // De-prioritize properties already scheduled — visible, but lower in the list.
@@ -121,12 +124,12 @@ function priorityColor(p: number): string {
   return 'bg-sky-500'
 }
 
-function priorityLabel(p: number): string {
-  if (p >= 85) return 'Critical'
-  if (p >= 65) return 'High'
-  if (p >= 40) return 'Medium'
-  if (p >= 20) return 'Low'
-  return 'OK'
+function priorityLabel(p: number, t: TFunc): string {
+  if (p >= 85) return t('priority.critical')
+  if (p >= 65) return t('priority.high')
+  if (p >= 40) return t('priority.medium')
+  if (p >= 20) return t('priority.low')
+  return t('priority.ok')
 }
 
 function scoreTextClass(n: number | null): string {
@@ -137,6 +140,8 @@ function scoreTextClass(n: number | null): string {
 }
 
 export function InspectionPriorityDashboard() {
+  const { t } = useLocale('inspections')
+  const { format } = useDateFormat()
   const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
   const { toast } = useToast()
@@ -184,9 +189,9 @@ export function InspectionPriorityDashboard() {
       arr.push(i)
       byProperty.set(i.property_id, arr)
     }
-    return properties.map(p => computePriority(p, byProperty.get(p.id) ?? []))
+    return properties.map(p => computePriority(p, byProperty.get(p.id) ?? [], t))
       .sort((a, b) => b.priority - a.priority)
-  }, [properties, inspections])
+  }, [properties, inspections, t])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -221,7 +226,7 @@ export function InspectionPriorityDashboard() {
       if (error) throw error
     },
     onSuccess: (_void, vars) => {
-      toast({ title: 'Inspection scheduled', description: `For ${vars.date}` })
+      toast({ title: t('priority.toastScheduled'), description: t('priority.toastScheduledDesc', { date: vars.date }) })
       setScheduleFor(prev => { const next = { ...prev }; delete next[vars.propertyId]; return next })
       qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/inspections'] })
       qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
@@ -229,7 +234,7 @@ export function InspectionPriorityDashboard() {
       setWorking(null)
     },
     onError: (e: any) => {
-      toast({ title: 'Schedule failed', description: e?.message || 'Try again.', variant: 'destructive' })
+      toast({ title: t('priority.toastScheduleFailed'), description: e?.message || t('priority.toastTryAgain'), variant: 'destructive' })
       setWorking(null)
     },
   })
@@ -255,24 +260,24 @@ export function InspectionPriorityDashboard() {
       return propertyIds.length
     },
     onSuccess: (count, vars) => {
-      toast({ title: `Scheduled ${count} inspection${count === 1 ? '' : 's'}`, description: `For ${vars.date}` })
+      toast({ title: t('priority.toastBulkScheduled', { count }), description: t('priority.toastBulkScheduledDesc', { date: vars.date }) })
       qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/inspections'] })
       qc.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-inspections'] })
     },
-    onError: (e: any) => toast({ title: 'Bulk schedule failed', description: e?.message || 'Try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('priority.toastBulkScheduleFailed'), description: e?.message || t('priority.toastTryAgain'), variant: 'destructive' }),
   })
 
   const isLoading = propertiesLoading || inspectionsLoading
-  const tomorrow = format(new Date(Date.now() + 86400000), 'yyyy-MM-dd')
+  const tomorrow = dfFormat(new Date(Date.now() + 86400000), 'yyyy-MM-dd')
 
   return (
     <div className="space-y-4 flex flex-col flex-1 min-h-0">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-        <SummaryCard label="Critical" value={summary.critical} hint="Priority ≥ 85" tone="critical" icon={<AlertTriangle className="w-4 h-4" />} />
-        <SummaryCard label="High" value={summary.high} hint="Priority 65-84" tone="high" icon={<Sparkles className="w-4 h-4" />} />
-        <SummaryCard label="Overdue" value={summary.overdue} hint="60+ days since last" tone="medium" icon={<Clock className="w-4 h-4" />} />
-        <SummaryCard label="Never inspected" value={summary.neverInspected} hint="No completed inspections" tone="info" icon={<Calendar className="w-4 h-4" />} />
+        <SummaryCard label={t('priority.critical')} value={summary.critical} hint={t('priority.criticalHint')} tone="critical" icon={<AlertTriangle className="w-4 h-4" />} />
+        <SummaryCard label={t('priority.high')} value={summary.high} hint={t('priority.highHint')} tone="high" icon={<Sparkles className="w-4 h-4" />} />
+        <SummaryCard label={t('priority.overdueTile')} value={summary.overdue} hint={t('priority.overdueHint')} tone="medium" icon={<Clock className="w-4 h-4" />} />
+        <SummaryCard label={t('priority.neverInspected')} value={summary.neverInspected} hint={t('priority.neverInspectedHint')} tone="info" icon={<Calendar className="w-4 h-4" />} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -280,27 +285,27 @@ export function InspectionPriorityDashboard() {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search property or address…"
+            placeholder={t('priority.searchPlaceholder')}
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="pl-8 h-8 text-sm"
           />
         </div>
-        <label className="text-muted-foreground ml-2">Show</label>
+        <label className="text-muted-foreground ml-2">{t('priority.show')}</label>
         <Select value={stageFilter} onValueChange={(v) => setStageFilter(v as typeof stageFilter)}>
           <SelectTrigger className="h-8 w-44 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="active" className="text-xs">Active only</SelectItem>
-            <SelectItem value="active_onboarding" className="text-xs">Active + Onboarding</SelectItem>
-            <SelectItem value="all" className="text-xs">All pre-offboard</SelectItem>
+            <SelectItem value="active" className="text-xs">{t('priority.stageActive')}</SelectItem>
+            <SelectItem value="active_onboarding" className="text-xs">{t('priority.stageActiveOnboarding')}</SelectItem>
+            <SelectItem value="all" className="text-xs">{t('priority.stageAll')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={priorityFilter} onValueChange={(v) => setPriorityFilter(v as typeof priorityFilter)}>
           <SelectTrigger className="h-8 w-40 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-xs">All priorities</SelectItem>
-            <SelectItem value="critical" className="text-xs">Critical only</SelectItem>
-            <SelectItem value="never" className="text-xs">Never inspected</SelectItem>
+            <SelectItem value="all" className="text-xs">{t('priority.allPriorities')}</SelectItem>
+            <SelectItem value="critical" className="text-xs">{t('priority.criticalOnly')}</SelectItem>
+            <SelectItem value="never" className="text-xs">{t('priority.neverInspected')}</SelectItem>
           </SelectContent>
         </Select>
         {canEdit && criticalUnscheduled.length > 0 && (
@@ -310,19 +315,19 @@ export function InspectionPriorityDashboard() {
             onClick={() => bulkScheduleMut.mutate({ propertyIds: criticalUnscheduled.map(a => a.property.id), date: tomorrow })}
             disabled={bulkScheduleMut.isPending}
             data-testid="button-schedule-all-critical"
-            title={`Schedule a ${tomorrow} inspection for every Critical property without one already scheduled`}
+            title={t('priority.scheduleAllCriticalTitle', { date: tomorrow })}
           >
             <Calendar className="w-3.5 h-3.5 mr-1" />
-            Schedule all critical ({criticalUnscheduled.length})
+            {t('priority.scheduleAllCritical', { count: criticalUnscheduled.length })}
           </Button>
         )}
-        <span className="text-muted-foreground ml-auto">{filtered.length} propert{filtered.length === 1 ? 'y' : 'ies'}</span>
+        <span className="text-muted-foreground ml-auto">{t('priority.propertyCount', { count: filtered.length })}</span>
       </div>
 
       {isLoading ? (
         <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /><Skeleton className="h-16 w-full" /></div>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">No properties match.</CardContent></Card>
+        <Card><CardContent className="p-8 text-center text-sm text-muted-foreground">{t('priority.noPropertiesMatch')}</CardContent></Card>
       ) : (
         <div className="rounded-2xl border border-border shadow-sm overflow-y-auto flex-1 min-h-0">
           {filtered.map((a, idx) => {
@@ -335,7 +340,7 @@ export function InspectionPriorityDashboard() {
                     <div className={`w-9 h-9 rounded-md flex items-center justify-center text-primary-foreground text-xs font-semibold ${priorityColor(a.priority)}`}>
                       {Math.round(a.priority)}
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-0.5">{priorityLabel(a.priority)}</span>
+                    <span className="text-[10px] text-muted-foreground mt-0.5">{priorityLabel(a.priority, t)}</span>
                   </div>
 
                   <button
@@ -355,21 +360,21 @@ export function InspectionPriorityDashboard() {
                   </button>
 
                   <div className="flex flex-col items-end shrink-0 min-w-[120px]">
-                    <div className="text-[11px] text-muted-foreground">Last inspected</div>
+                    <div className="text-[11px] text-muted-foreground">{t('priority.lastInspected')}</div>
                     <div className="text-sm font-medium">
-                      {a.lastCompleted ? format(new Date(a.lastCompleted.inspected_at), 'MMM d, yyyy') : <span className="text-muted-foreground italic">Never</span>}
+                      {a.lastCompleted ? format(new Date(a.lastCompleted.inspected_at), 'MMM d, yyyy') : <span className="text-muted-foreground italic">{t('priority.never')}</span>}
                     </div>
                     <div className="text-[11px] text-muted-foreground">
-                      {a.completedInspections} completed{a.hasScheduled ? ' · 1 scheduled' : ''}
+                      {t('priority.completedCount', { count: a.completedInspections })}{a.hasScheduled ? t('priority.andOneScheduled') : ''}
                     </div>
                   </div>
 
                   <div className="hidden md:flex items-center gap-2 text-[11px] shrink-0">
-                    <ScoreCell label="Avg" v={a.avgOverall} bold />
-                    <ScoreCell label="Clean" v={a.avgCleanliness} />
-                    <ScoreCell label="Linens" v={a.avgLinens} />
-                    <ScoreCell label="Suppl" v={a.avgSupplies} />
-                    <ScoreCell label="Ext" v={a.avgExterior} />
+                    <ScoreCell label={t('priority.scoreAvg')} v={a.avgOverall} bold />
+                    <ScoreCell label={t('priority.scoreClean')} v={a.avgCleanliness} />
+                    <ScoreCell label={t('priority.scoreLinens')} v={a.avgLinens} />
+                    <ScoreCell label={t('priority.scoreSuppl')} v={a.avgSupplies} />
+                    <ScoreCell label={t('priority.scoreExt')} v={a.avgExterior} />
                   </div>
 
                   {canEdit && (
@@ -390,18 +395,18 @@ export function InspectionPriorityDashboard() {
                         data-testid={`button-schedule-${a.property.id}`}
                       >
                         <Calendar className="w-3.5 h-3.5 mr-1" />
-                        {a.hasScheduled ? 'Re-schedule' : 'Schedule'}
+                        {a.hasScheduled ? t('priority.reschedule') : t('priority.schedule')}
                       </Button>
                     </div>
                   )}
                 </div>
 
                 <div className="md:hidden flex items-center gap-2 mt-2 text-[11px] pl-[60px]">
-                  <ScoreCell label="Avg" v={a.avgOverall} bold />
-                  <ScoreCell label="Clean" v={a.avgCleanliness} />
-                  <ScoreCell label="Linens" v={a.avgLinens} />
-                  <ScoreCell label="Suppl" v={a.avgSupplies} />
-                  <ScoreCell label="Ext" v={a.avgExterior} />
+                  <ScoreCell label={t('priority.scoreAvg')} v={a.avgOverall} bold />
+                  <ScoreCell label={t('priority.scoreClean')} v={a.avgCleanliness} />
+                  <ScoreCell label={t('priority.scoreLinens')} v={a.avgLinens} />
+                  <ScoreCell label={t('priority.scoreSuppl')} v={a.avgSupplies} />
+                  <ScoreCell label={t('priority.scoreExt')} v={a.avgExterior} />
                 </div>
               </div>
             )

@@ -21,8 +21,20 @@ import {
 import { format, differenceInDays, addMonths } from 'date-fns'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 
 const SIX_MONTHS_MS = 180 * 24 * 60 * 60 * 1000
+
+// Maps a VERIFY_SECTIONS title to its `form.sections.*` dictionary key —
+// the section titles below stay as plain identifiers (used for the React
+// `key` prop too); translation is a display-only lookup at render time.
+const SECTION_TITLE_KEYS: Record<string, string> = {
+  'Property Details': 'propertyDetails',
+  'Bed Counts': 'bedCounts',
+  'Access & Wi-Fi': 'accessWifi',
+  'Operations': 'operations',
+}
 
 // Fields to verify during a walkthrough (non-financial property info)
 const VERIFY_SECTIONS = [
@@ -74,6 +86,8 @@ type SortKey = 'name' | 'status' | 'last_verified' | 'assignee' | 'due_date'
 
 export default function InspectionsPage() {
   usePageTitle('Property Verification')
+  const { t } = useLocale('verifications')
+  const { format: formatLocale } = useDateFormat()
   const { toast } = useToast()
   const { user, effectiveUser } = useAuth()
   const qc = useQueryClient()
@@ -222,7 +236,7 @@ export default function InspectionsPage() {
   async function saveVerification() {
     if (!activeProperty) return
     if (!canEditView('property-verifications', effectiveUser)) {
-      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      toast({ title: t('toasts.editAccessRequired'), description: t('toasts.editAccessDescription'), variant: 'destructive' })
       return
     }
     setSaving(true)
@@ -246,7 +260,7 @@ export default function InspectionsPage() {
       if (Object.keys(updates).length > 0) {
         const { error } = await supabase.from('properties').update(updates).eq('id', activeProperty.id)
         if (error) {
-          toast({ title: 'Failed to update property', description: error.message, variant: 'destructive' })
+          toast({ title: t('toasts.updatePropertyFailed'), description: error.message, variant: 'destructive' })
           setSaving(false)
           return
         }
@@ -264,7 +278,7 @@ export default function InspectionsPage() {
       }, { onConflict: 'property_id' })
 
       if (vError) {
-        toast({ title: 'Failed to save verification', description: vError.message, variant: 'destructive' })
+        toast({ title: t('toasts.saveVerificationFailed'), description: vError.message, variant: 'destructive' })
         setSaving(false)
         return
       }
@@ -291,11 +305,11 @@ export default function InspectionsPage() {
       // of mounted active queries regardless of staleTime, so calling it
       // on a confirm-with-no-changes would be wasteful.
       if (Object.keys(changes).length > 0) invalidateAllPropertyQueries(qc)
-      toast({ title: 'Verification complete', description: Object.keys(changes).length > 0 ? `${Object.keys(changes).length} field(s) updated` : 'All info confirmed' })
+      toast({ title: t('toasts.verificationComplete'), description: Object.keys(changes).length > 0 ? t('toasts.fieldsUpdated', { count: Object.keys(changes).length }) : t('toasts.allInfoConfirmed') })
       setIsDirty(false)
       setActiveProperty(null)
     } catch (err: any) {
-      toast({ title: 'Unexpected error saving verification', description: err?.message ?? 'Please try again.', variant: 'destructive' })
+      toast({ title: t('toasts.unexpectedError'), description: err?.message ?? t('toasts.tryAgain'), variant: 'destructive' })
     } finally {
       setSaving(false)
     }
@@ -365,13 +379,13 @@ export default function InspectionsPage() {
     })
     const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
     if (error) {
-      toast({ title: 'Bulk assign failed', description: error.message, variant: 'destructive' })
+      toast({ title: t('toasts.bulkAssignFailed'), description: error.message, variant: 'destructive' })
       return
     }
     await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, assigneeName, verificationMap[String(p.id)]?.due_date || null)))
     qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-    toast({ title: assigneeName ? `Assigned ${selected.size} to ${assigneeName}` : `Cleared assignment on ${selected.size}` })
+    toast({ title: assigneeName ? t('toasts.assignedTo', { count: selected.size, name: assigneeName }) : t('toasts.clearedAssignment', { count: selected.size }) })
     setSelected(new Set())
     setBulkAssignOpen(false)
   }
@@ -391,13 +405,13 @@ export default function InspectionsPage() {
     })
     const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
     if (error) {
-      toast({ title: 'Bulk schedule failed', description: error.message, variant: 'destructive' })
+      toast({ title: t('toasts.bulkScheduleFailed'), description: error.message, variant: 'destructive' })
       return
     }
     await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, verificationMap[String(p.id)]?.assignee_name || null, date)))
     qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-    toast({ title: `Set due date on ${selected.size}` })
+    toast({ title: t('toasts.setDueDateOn', { count: selected.size }) })
     setSelected(new Set())
     setBulkDueOpen(false)
     setBulkDueDate('')
@@ -405,7 +419,7 @@ export default function InspectionsPage() {
 
   async function bulkMarkVerified() {
     if (selected.size === 0) return
-    if (!confirm(`Mark ${selected.size} as verified now? This won't update property fields, only the verification record.`)) return
+    if (!confirm(t('confirm.bulkMarkVerified', { count: selected.size }))) return
     const targets = (paged as any[]).filter(p => selected.has(p.id))
     const now = new Date().toISOString()
     const rows = targets.map(p => ({
@@ -417,13 +431,13 @@ export default function InspectionsPage() {
     }))
     const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
     if (error) {
-      toast({ title: 'Bulk verify failed', description: error.message, variant: 'destructive' })
+      toast({ title: t('toasts.bulkVerifyFailed'), description: error.message, variant: 'destructive' })
       return
     }
     await Promise.all(targets.map(p => closeVerificationTask(p.id)))
     qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-    toast({ title: `Marked ${selected.size} verified` })
+    toast({ title: t('toasts.markedVerified', { count: selected.size }) })
     setSelected(new Set())
   }
 
@@ -442,13 +456,13 @@ export default function InspectionsPage() {
     })
     const { error } = await supabase.from('property_verifications').upsert(rows, { onConflict: 'property_id' })
     if (error) {
-      toast({ title: 'Clear failed', description: error.message, variant: 'destructive' })
+      toast({ title: t('toasts.clearFailed'), description: error.message, variant: 'destructive' })
       return
     }
     await Promise.all(targets.map(p => syncVerificationTask(p.id, p.name, null, null)))
     qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
     qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-    toast({ title: `Cleared assignment on ${selected.size}` })
+    toast({ title: t('toasts.clearedAssignment', { count: selected.size }) })
     setSelected(new Set())
   }
 
@@ -468,13 +482,13 @@ export default function InspectionsPage() {
 
   function exportCsv() {
     if (!filtered?.length) return
-    const headers = ['Property', 'Status', 'Last Verified', 'Verified By', 'Days Since']
+    const headers = [t('table.property'), t('table.status'), t('table.lastVerified'), t('table.verifiedBy'), t('csv.headerDaysSince')]
     const rows = filtered.map((p: any) => {
       const v = verificationMap[String(p.id)]
       const status = getStatus(p)
       return [
         p.name || '',
-        status === 'verified' ? 'Verified' : status === 'due' ? 'Due' : 'Never',
+        t(`status.${status}`),
         v?.verified_at ? format(new Date(v.verified_at), 'yyyy-MM-dd') : '',
         v?.verified_by || '',
         getDaysSince(p) ?? '',
@@ -496,9 +510,9 @@ export default function InspectionsPage() {
   }
 
   function StatusBadge({ status }: { status: 'due' | 'verified' | 'never' }) {
-    if (status === 'verified') return <span className="text-xs px-1.5 py-0.5 rounded border text-success bg-success/10 border-success/25">Verified</span>
-    if (status === 'due') return <span className="text-xs px-1.5 py-0.5 rounded border text-warning bg-warning/10 border-warning/25">Due</span>
-    return <span className="text-xs px-1.5 py-0.5 rounded border text-destructive bg-destructive/10 border-destructive/25">Never</span>
+    if (status === 'verified') return <span className="text-xs px-1.5 py-0.5 rounded border text-success bg-success/10 border-success/25">{t('status.verified')}</span>
+    if (status === 'due') return <span className="text-xs px-1.5 py-0.5 rounded border text-warning bg-warning/10 border-warning/25">{t('status.due')}</span>
+    return <span className="text-xs px-1.5 py-0.5 rounded border text-destructive bg-destructive/10 border-destructive/25">{t('status.never')}</span>
   }
 
   const thCls = 'text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground whitespace-nowrap'
@@ -506,8 +520,8 @@ export default function InspectionsPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Property Verification"
-        subtitle="Verify property details every 6 months - click a property to start walkthrough"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {dueCount > 0 && (
@@ -520,17 +534,17 @@ export default function InspectionsPage() {
                 }`}
               >
                 <AlertTriangle className="w-3 h-3" />
-                {dueCount} need{dueCount === 1 ? 's' : ''} verification
+                {t('page.needsVerification', { count: dueCount })}
               </button>
             )}
             <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={exportCsv} disabled={!filtered?.length}>
-              <Download className="w-3.5 h-3.5" /> Export CSV
+              <Download className="w-3.5 h-3.5" /> {t('common.actions.exportCsv')}
             </Button>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 className="pl-8 pr-8 h-8 w-full sm:w-56 text-sm"
@@ -547,10 +561,10 @@ export default function InspectionsPage() {
 
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/60 px-3 py-2 text-xs">
-          <span className="font-medium">{selected.size} selected</span>
+          <span className="font-medium">{t('bulk.selected', { count: selected.size })}</span>
           <Popover open={bulkAssignOpen} onOpenChange={setBulkAssignOpen}>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><UserPlus className="w-3 h-3" /> Assign</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><UserPlus className="w-3 h-3" /> {t('bulk.assign')}</Button>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-1" align="start">
               <div className="max-h-64 overflow-y-auto">
@@ -561,45 +575,45 @@ export default function InspectionsPage() {
                 ))}
                 <div className="border-t border-border my-1" />
                 <button type="button" onClick={() => bulkAssign(null)} className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent rounded text-muted-foreground">
-                  Clear assignment
+                  {t('bulk.clearAssignment')}
                 </button>
               </div>
             </PopoverContent>
           </Popover>
           <Popover open={bulkDueOpen} onOpenChange={setBulkDueOpen}>
             <PopoverTrigger asChild>
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><Calendar className="w-3 h-3" /> Set due date</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5"><Calendar className="w-3 h-3" /> {t('bulk.setDueDate')}</Button>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-2" align="start">
               <Input type="date" value={bulkDueDate} onChange={e => setBulkDueDate(e.target.value)} className="h-8 text-xs mb-2" />
               <div className="flex gap-1">
-                <Button size="sm" className="h-7 text-xs flex-1" onClick={() => bulkSetDue(bulkDueDate)} disabled={!bulkDueDate}>Apply</Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setBulkDueDate(addMonths(new Date(), 1).toISOString().slice(0,10)); }}>+1mo</Button>
+                <Button size="sm" className="h-7 text-xs flex-1" onClick={() => bulkSetDue(bulkDueDate)} disabled={!bulkDueDate}>{t('bulk.apply')}</Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setBulkDueDate(addMonths(new Date(), 1).toISOString().slice(0,10)); }}>{t('bulk.plusOneMonth')}</Button>
               </div>
             </PopoverContent>
           </Popover>
-          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={bulkMarkVerified}><Check className="w-3 h-3" /> Mark verified</Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" onClick={bulkClear}><Trash2 className="w-3 h-3" /> Clear</Button>
-          <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>Cancel</Button>
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={bulkMarkVerified}><Check className="w-3 h-3" /> {t('bulk.markVerified')}</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs gap-1.5 text-muted-foreground" onClick={bulkClear}><Trash2 className="w-3 h-3" /> {t('bulk.clear')}</Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs ml-auto" onClick={() => setSelected(new Set())}>{t('common.actions.cancel')}</Button>
         </div>
       )}
 
       {!isLoading && !isError && properties && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ShieldCheck className="w-3.5 h-3.5" /> Total Properties</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ShieldCheck className="w-3.5 h-3.5" /> {t('tiles.totalProperties')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Verified</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> {t('tiles.verified')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{summary.verified}</p>
           </div>
           <div className={`rounded-2xl border shadow-sm p-4 ${summary.needs > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Verification</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> {t('tiles.needsVerification')}</div>
             <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.needs > 0 ? 'text-warning' : ''}`}>{summary.needs}</p>
           </div>
           <div className={`rounded-2xl border shadow-sm p-4 ${summary.overdue > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-card-border bg-card'}`}>
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Overdue</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> {t('tiles.overdue')}</div>
             <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.overdue > 0 ? 'text-destructive' : ''}`}>{summary.overdue}</p>
           </div>
         </div>
@@ -616,16 +630,16 @@ export default function InspectionsPage() {
                 <Checkbox
                   checked={paged.length > 0 && selected.size === paged.length}
                   onCheckedChange={toggleSelectAll}
-                  aria-label="Select all"
+                  aria-label={t('table.selectAllAria')}
                 />
               </th>
-              <th className={`${thCls} sticky left-8 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}>Property <SortIcon col="name" /></th>
-              <th className={thCls} onClick={() => toggleSort('status')}>Status <SortIcon col="status" /></th>
-              <th className={thCls} onClick={() => toggleSort('assignee')}>Assignee <SortIcon col="assignee" /></th>
-              <th className={thCls} onClick={() => toggleSort('due_date')}>Due <SortIcon col="due_date" /></th>
-              <th className={thCls} onClick={() => toggleSort('last_verified')}>Last Verified <SortIcon col="last_verified" /></th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Verified By</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Action</th>
+              <th className={`${thCls} sticky left-8 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}>{t('table.property')} <SortIcon col="name" /></th>
+              <th className={thCls} onClick={() => toggleSort('status')}>{t('table.status')} <SortIcon col="status" /></th>
+              <th className={thCls} onClick={() => toggleSort('assignee')}>{t('table.assignee')} <SortIcon col="assignee" /></th>
+              <th className={thCls} onClick={() => toggleSort('due_date')}>{t('table.due')} <SortIcon col="due_date" /></th>
+              <th className={thCls} onClick={() => toggleSort('last_verified')}>{t('table.lastVerified')} <SortIcon col="last_verified" /></th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.verifiedBy')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.action')}</th>
             </tr>
           </thead>
           <tbody>
@@ -640,8 +654,8 @@ export default function InspectionsPage() {
                 <td colSpan={8}>
                   <EmptyState
                     icon={ClipboardCheck}
-                    title={showDueOnly ? 'All verified' : 'No properties'}
-                    description={showDueOnly ? 'All properties have been verified within the last 6 months.' : 'No properties found matching your search.'}
+                    title={showDueOnly ? t('table.emptyAllVerifiedTitle') : t('table.emptyNoPropertiesTitle')}
+                    description={showDueOnly ? t('table.emptyAllVerifiedDescription') : t('table.emptyNoPropertiesDescription')}
                   />
                 </td>
               </tr>
@@ -658,17 +672,17 @@ export default function InspectionsPage() {
                     className={`border-b border-border/50 hover:bg-muted/30 transition-colors ${isSelected ? 'bg-primary/5' : status === 'never' ? 'bg-destructive/5' : status === 'due' ? 'bg-warning/5' : ''}`}
                   >
                     <td className="px-2 py-2 sticky left-0 z-10 bg-background" onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(p.id)} aria-label={`Select ${p.name}`} />
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggleSelect(p.id)} aria-label={t('table.selectRowAria', { name: p.name })} />
                     </td>
                     <td className="py-2 px-3 font-medium text-xs sticky left-8 z-10 bg-background cursor-pointer" onClick={() => openWalkthrough(p)}>{p.name}</td>
                     <td className="py-2 px-3 cursor-pointer" onClick={() => openWalkthrough(p)}><StatusBadge status={status} /></td>
                     <td className="py-2 px-3 text-xs">{v?.assignee_name || <span className="text-muted-foreground">-</span>}</td>
-                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-destructive font-medium' : ''}`}>{v?.due_date ? format(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">-</span>}</td>
+                    <td className={`py-2 px-3 text-xs ${dueOverdue ? 'text-destructive font-medium' : ''}`}>{v?.due_date ? formatLocale(new Date(v.due_date + 'T00:00'), 'MMM d') : <span className="text-muted-foreground">-</span>}</td>
                     <td className="py-2 px-3 text-xs text-muted-foreground cursor-pointer" onClick={() => openWalkthrough(p)}>
                       {v?.verified_at ? (
                         <span>
-                          {format(new Date(v.verified_at), 'MMM d, yyyy')}
-                          <span className="ml-1 text-muted-foreground/60">({daysSince}d ago)</span>
+                          {formatLocale(new Date(v.verified_at), 'MMM d, yyyy')}
+                          <span className="ml-1 text-muted-foreground/60">{t('table.daysAgo', { count: daysSince ?? 0 })}</span>
                         </span>
                       ) : '—'}
                     </td>
@@ -676,7 +690,7 @@ export default function InspectionsPage() {
                     <td className="py-2 px-3">
                       <Button size="sm" variant={status === 'verified' ? 'outline' : 'default'} className="h-8 text-xs gap-1 px-2" onClick={() => openWalkthrough(p)}>
                         <ClipboardCheck className="w-3 h-3" />
-                        {status === 'verified' ? 'Re-verify' : 'Verify'}
+                        {status === 'verified' ? t('table.reVerify') : t('table.verify')}
                       </Button>
                     </td>
                   </tr>
@@ -695,7 +709,7 @@ export default function InspectionsPage() {
       {/* Verification Walkthrough Sheet */}
       <Sheet open={!!activeProperty} onOpenChange={v => {
         if (!v && !saving) {
-          if (isDirty && !confirm('You have unsaved changes. Close without saving?')) return
+          if (isDirty && !confirm(t('confirm.unsavedChanges'))) return
           setActiveProperty(null)
           setIsDirty(false)
         }
@@ -705,13 +719,13 @@ export default function InspectionsPage() {
             <>
               <SheetHeader>
                 <SheetTitle className="text-base">{activeProperty.name}</SheetTitle>
-                <p className="text-xs text-muted-foreground">{activeProperty.address || 'No address'}</p>
+                <p className="text-xs text-muted-foreground">{activeProperty.address || t('form.noAddress')}</p>
               </SheetHeader>
 
               <div className="mt-4 space-y-6">
                 {VERIFY_SECTIONS.map(section => (
                   <div key={section.title}>
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{section.title}</h3>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">{t(`form.sections.${SECTION_TITLE_KEYS[section.title]}`, undefined, section.title)}</h3>
                     <div className="space-y-3">
                       {section.fields.map(f => {
                         const currentVal = editValues[f.key]
@@ -719,7 +733,7 @@ export default function InspectionsPage() {
                         const changed = String(currentVal ?? '') !== String(originalVal ?? '')
                         return (
                           <div key={f.key} className="grid grid-cols-[120px_1fr] items-center gap-2">
-                            <label className="text-xs text-muted-foreground">{f.label}</label>
+                            <label className="text-xs text-muted-foreground">{t(`form.fields.${f.key}`, undefined, f.label)}</label>
                             {f.type === 'boolean' ? (
                               <div className="flex gap-2">
                                 <button
@@ -731,7 +745,7 @@ export default function InspectionsPage() {
                                       : 'bg-background border-border text-muted-foreground hover:text-foreground'
                                   }`}
                                 >
-                                  No
+                                  {t('common.actions.no')}
                                 </button>
                                 <button
                                   type="button"
@@ -742,7 +756,7 @@ export default function InspectionsPage() {
                                       : 'bg-background border-border text-muted-foreground hover:text-foreground'
                                   }`}
                                 >
-                                  Yes
+                                  {t('common.actions.yes')}
                                 </button>
                               </div>
                             ) : f.type === 'textarea' ? (
@@ -773,18 +787,18 @@ export default function InspectionsPage() {
                     disabled={saving || !canEditView('property-verifications', effectiveUser)}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    {saving ? 'Saving…' : canEditView('property-verifications', effectiveUser) ? 'Confirm Verification' : 'View Only'}
+                    {saving ? t('common.actions.saving') : canEditView('property-verifications', effectiveUser) ? t('form.confirmVerification') : t('form.viewOnly')}
                   </Button>
                   <Button
                     variant="outline"
                     onClick={() => {
-                      if (isDirty && !confirm('You have unsaved changes. Close without saving?')) return
+                      if (isDirty && !confirm(t('confirm.unsavedChanges'))) return
                       setActiveProperty(null)
                       setIsDirty(false)
                     }}
                     disabled={saving}
                   >
-                    Cancel
+                    {t('common.actions.cancel')}
                   </Button>
                 </div>
               </div>
