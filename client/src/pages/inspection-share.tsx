@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { Skeleton } from '@/components/ui/skeleton'
-import { format, parseISO } from 'date-fns'
+import { parseISO } from 'date-fns'
 import { CalendarClock, ClipboardCheck, ImageOff, MapPin, User, Camera } from 'lucide-react'
 import { scoreColorClass } from '@/lib/inspections'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { LanguageToggle } from '@/components/LanguageToggle'
 
 // Public, no-login page reached via the shareable inspection link
 // (/inspection/:token). The unguessable token in the URL is the only
@@ -36,13 +39,15 @@ function getToken() {
   return m ? decodeURIComponent(m[1]) : ''
 }
 
-function fmt(d: string | null): string {
-  if (!d) return '—'
-  try { return format(parseISO(d), 'PPP') } catch { return d }
-}
-
 export default function InspectionSharePage() {
   const token = getToken()
+  const { t } = useLocale('inspections')
+  const { format } = useDateFormat()
+
+  function fmt(d: string | null): string {
+    if (!d) return '—'
+    try { return format(parseISO(d), 'PPP') } catch { return d }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['/inspection-share', token],
@@ -54,7 +59,7 @@ export default function InspectionSharePage() {
     },
   })
 
-  if (!token) return <Centered><p className="text-sm text-muted-foreground">Invalid link.</p></Centered>
+  if (!token) return <Centered><p className="text-sm text-muted-foreground">{t('share.invalidLink')}</p></Centered>
   if (isLoading) {
     return (
       <Centered>
@@ -71,7 +76,7 @@ export default function InspectionSharePage() {
       <Centered>
         <div className="text-center">
           <ImageOff className="w-8 h-8 text-muted-foreground/50 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">This inspection link is invalid or has been removed.</p>
+          <p className="text-sm text-muted-foreground">{t('share.notFound')}</p>
         </div>
       </Centered>
     )
@@ -80,11 +85,11 @@ export default function InspectionSharePage() {
   const r = data.report
   const isScheduled = r.status === 'scheduled'
   const scores: [string, number | null][] = [
-    ['Overall', r.overall_score],
-    ['Cleanliness', r.cleanliness_score],
-    ['Linens', r.linens_score],
-    ['Supplies', r.supplies_score],
-    ['Exterior', r.exterior_score],
+    [t('scores.overall'), r.overall_score],
+    [t('scores.cleanliness'), r.cleanliness_score],
+    [t('scores.linens'), r.linens_score],
+    [t('scores.supplies'), r.supplies_score],
+    [t('scores.exterior'), r.exterior_score],
   ]
   const mapHref = r.property_address
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(r.property_address)}`
@@ -93,8 +98,9 @@ export default function InspectionSharePage() {
   return (
     <div className="min-h-dvh bg-muted/30 py-6 px-4">
       <div className="max-w-lg mx-auto space-y-4">
-        <div className="text-center">
-          <h1 className="text-sm font-semibold text-muted-foreground">Tendwell Cleaning - Inspection</h1>
+        <div className="text-center space-y-2">
+          <h1 className="text-sm font-semibold text-muted-foreground">{t('share.header')}</h1>
+          <LanguageToggle size="lg" className="mx-auto" />
         </div>
 
         {/* Header card */}
@@ -102,13 +108,13 @@ export default function InspectionSharePage() {
           <div className="flex items-center gap-2 flex-wrap mb-2">
             <span className={`inline-flex items-center gap-1 text-2xs font-semibold px-2 py-0.5 rounded border ${isScheduled ? 'text-info bg-info/10 border-info/25' : 'text-success bg-success/10 border-success/25'}`}>
               {isScheduled ? <CalendarClock className="w-3 h-3" /> : <ClipboardCheck className="w-3 h-3" />}
-              {isScheduled ? 'Scheduled' : 'Completed'}
+              {isScheduled ? t('status.scheduled') : t('status.completed')}
             </span>
             <span className="text-xs text-muted-foreground ml-auto">
               {isScheduled ? (r.scheduled_for ? fmt(r.scheduled_for) : '') : fmt(r.inspected_at)}
             </span>
           </div>
-          <h2 className="text-lg font-semibold">{r.property_name || 'Property'}</h2>
+          <h2 className="text-lg font-semibold">{r.property_name || t('share.property')}</h2>
           {r.property_address && (
             mapHref ? (
               <a href={mapHref} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline mt-1 w-fit">
@@ -122,24 +128,24 @@ export default function InspectionSharePage() {
 
         {/* Who / when */}
         <div className="rounded-lg border border-border bg-background p-4 text-xs text-muted-foreground space-y-1.5">
-          <div className="flex items-center gap-1.5"><User className="w-3 h-3 shrink-0" /> Cleaner: <span className="text-foreground">{r.cleaner_name || '—'}</span></div>
-          <div className="flex items-center gap-1.5"><User className="w-3 h-3 shrink-0" /> Inspector: <span className="text-foreground">{r.inspector_name || '—'}</span></div>
+          <div className="flex items-center gap-1.5"><User className="w-3 h-3 shrink-0" /> {t('share.cleanerPrefix')} <span className="text-foreground">{r.cleaner_name || '—'}</span></div>
+          <div className="flex items-center gap-1.5"><User className="w-3 h-3 shrink-0" /> {t('share.inspectorPrefix')} <span className="text-foreground">{r.inspector_name || '—'}</span></div>
           {r.reinspect_urgency !== 'none' && (
-            <div>Re-inspect: <span className="text-foreground capitalize">{r.reinspect_urgency}</span>{r.reinspect_by ? ` by ${fmt(r.reinspect_by)}` : ''}</div>
+            <div>{t('share.reinspectPrefix')} <span className="text-foreground">{t(`reinspect.${r.reinspect_urgency}`, undefined, r.reinspect_urgency)}</span>{r.reinspect_by ? t('share.reinspectByDate', { date: fmt(r.reinspect_by) }) : ''}</div>
           )}
         </div>
 
         {isScheduled ? (
           <div className="rounded-lg border border-info/25 bg-info/5 p-4 text-center">
             <CalendarClock className="w-6 h-6 text-info mx-auto mb-1" />
-            <p className="text-sm font-medium">Inspection scheduled{r.scheduled_for ? ` for ${fmt(r.scheduled_for)}` : ''}.</p>
-            <p className="text-xs text-muted-foreground mt-0.5">The full report will appear here once the inspection is complete.</p>
+            <p className="text-sm font-medium">{r.scheduled_for ? t('share.scheduledMessageFor', { date: fmt(r.scheduled_for) }) : t('share.scheduledMessage')}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t('share.scheduledHint')}</p>
           </div>
         ) : (
           <>
             {/* Scores */}
             <div className="rounded-lg border border-border bg-background p-4">
-              <span className="text-sm font-medium block mb-2">Scores</span>
+              <span className="text-sm font-medium block mb-2">{t('share.scoresTitle')}</span>
               <div className="grid grid-cols-2 gap-2">
                 {scores.map(([label, score]) => (
                   <div key={label} className="rounded border border-border px-3 py-2 flex items-center justify-between">
@@ -153,14 +159,14 @@ export default function InspectionSharePage() {
             {/* Notes */}
             {r.notes && (
               <div className="rounded-lg border border-border bg-background p-4">
-                <span className="text-sm font-medium block mb-1">Notes</span>
+                <span className="text-sm font-medium block mb-1">{t('share.notesTitle')}</span>
                 <p className="text-sm whitespace-pre-wrap">{r.notes}</p>
               </div>
             )}
 
             {/* Photos */}
             <div className="rounded-lg border border-border bg-background p-4">
-              <span className="text-sm font-medium mb-2 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> Photos ({r.photos_url.length})</span>
+              <span className="text-sm font-medium mb-2 flex items-center gap-1.5"><Camera className="w-3.5 h-3.5" /> {t('share.photosTitle', { count: r.photos_url.length })}</span>
               {r.photos_url.length > 0 ? (
                 <div className="grid grid-cols-3 gap-2">
                   {r.photos_url.map((url, i) => (
@@ -169,12 +175,12 @@ export default function InspectionSharePage() {
                     </a>
                   ))}
                 </div>
-              ) : <p className="text-xs text-muted-foreground">No photos on this inspection.</p>}
+              ) : <p className="text-xs text-muted-foreground">{t('share.noPhotos')}</p>}
             </div>
           </>
         )}
 
-        <p className="text-center text-2xs text-muted-foreground pt-2">Powered by Tendwell Cleaning</p>
+        <p className="text-center text-2xs text-muted-foreground pt-2">{t('share.poweredBy')}</p>
       </div>
     </div>
   )

@@ -12,25 +12,29 @@ import { Label } from '@/components/ui/label'
 import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin, Link2, Check } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import type { TFunc } from '@/lib/i18n/t'
 
 type Mode = 'log' | 'schedule'
 type Status = 'scheduled' | 'completed' | 'skipped'
 type Urgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
-const URGENCY_OPTIONS: { value: Urgency; label: string; ring: string; bg: string }[] = [
-  { value: 'none',     label: 'None',     ring: 'border-border',                bg: 'bg-muted text-muted-foreground' },
-  { value: 'low',      label: 'Low',      ring: 'border-emerald-500',           bg: 'bg-emerald-500 text-primary-foreground' },
-  { value: 'medium',   label: 'Medium',   ring: 'border-amber-500',             bg: 'bg-amber-500 text-primary-foreground' },
-  { value: 'high',     label: 'High',     ring: 'border-orange-500',            bg: 'bg-orange-500 text-primary-foreground' },
-  { value: 'critical', label: 'Critical', ring: 'border-red-600',               bg: 'bg-red-600 text-destructive-foreground' },
+// Classes only — labels are resolved via `t('reinspect.'+value)` at render time.
+const URGENCY_OPTIONS: { value: Urgency; ring: string; bg: string }[] = [
+  { value: 'none',     ring: 'border-border',                bg: 'bg-muted text-muted-foreground' },
+  { value: 'low',      ring: 'border-emerald-500',           bg: 'bg-emerald-500 text-primary-foreground' },
+  { value: 'medium',   ring: 'border-amber-500',             bg: 'bg-amber-500 text-primary-foreground' },
+  { value: 'high',     ring: 'border-orange-500',            bg: 'bg-orange-500 text-primary-foreground' },
+  { value: 'critical', ring: 'border-red-600',               bg: 'bg-red-600 text-destructive-foreground' },
 ]
 
+// Keys only — labels are resolved via `t('scores.'+labelKey)` at render time.
 const SCORE_AREAS = [
-  { key: 'overall_score',     label: 'Overall' },
-  { key: 'cleanliness_score', label: 'Cleanliness' },
-  { key: 'linens_score',      label: 'Linens' },
-  { key: 'supplies_score',    label: 'Supplies' },
-  { key: 'exterior_score',    label: 'Exterior' },
+  { key: 'overall_score',     labelKey: 'overall' },
+  { key: 'cleanliness_score', labelKey: 'cleanliness' },
+  { key: 'linens_score',      labelKey: 'linens' },
+  { key: 'supplies_score',    labelKey: 'supplies' },
+  { key: 'exterior_score',    labelKey: 'exterior' },
 ] as const
 
 type ScoreKey = typeof SCORE_AREAS[number]['key']
@@ -66,6 +70,7 @@ interface Props {
 }
 
 export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, defaultInspectorId }: Props) {
+  const { t } = useLocale('inspections')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const today = format(new Date(), 'yyyy-MM-dd')
@@ -209,8 +214,8 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
   // submitMode: 'save' keeps the row's current status; 'complete' promotes to completed
   const submitMut = useMutation({
     mutationFn: async (submitMode: 'save' | 'complete') => {
-      if (!propertyId) throw new Error('Pick a property.')
-      if (!date) throw new Error('Pick a date.')
+      if (!propertyId) throw new Error(t('form.errorPickProperty'))
+      if (!date) throw new Error(t('form.errorPickDate'))
 
       const targetStatus: Status =
         submitMode === 'complete' ? 'completed'
@@ -292,10 +297,10 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
       const wasScheduled = !!(existing && existing.status === 'scheduled')
       toast({
         title:
-          targetStatus === 'completed' && wasScheduled ? 'Inspection completed'
-          : isEditing ? 'Inspection updated'
-          : targetStatus === 'scheduled' ? 'Inspection scheduled'
-          : 'Inspection logged',
+          targetStatus === 'completed' && wasScheduled ? t('form.toastCompleted')
+          : isEditing ? t('form.toastUpdated')
+          : targetStatus === 'scheduled' ? t('form.toastScheduled')
+          : t('form.toastLogged'),
       })
       queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
       // Dashboard Quality widgets read from a separate 90-day aggregate;
@@ -305,18 +310,18 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
       onOpenChange(false)
     },
     onError: (e: Error) => {
-      toast({ title: 'Could not save', description: e.message, variant: 'destructive' })
+      toast({ title: t('form.toastSaveFailed'), description: e.message, variant: 'destructive' })
       setSubmitting(false)
     },
   })
 
   function fireSubmit(submitMode: 'save' | 'complete') {
     if (!propertyId) {
-      toast({ title: 'Pick a property', variant: 'destructive' })
+      toast({ title: t('form.toastPickProperty'), variant: 'destructive' })
       return
     }
     if (!date) {
-      toast({ title: 'Pick a date', variant: 'destructive' })
+      toast({ title: t('form.toastPickDate'), variant: 'destructive' })
       return
     }
     setSubmitting(true)
@@ -342,8 +347,8 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           <SheetTitle className="text-base flex items-center gap-2">
             <ClipboardCheck className="w-5 h-5 text-primary" />
             {isEditing
-              ? (existing!.status === 'scheduled' ? 'Edit / Complete Inspection' : 'Edit Inspection')
-              : 'New Inspection'}
+              ? (existing!.status === 'scheduled' ? t('form.titleEditScheduled') : t('form.titleEdit'))
+              : t('form.titleNew')}
           </SheetTitle>
         </SheetHeader>
 
@@ -361,9 +366,9 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
             >
               {copiedShare ? (
-                <><Check className="w-4 h-4" /> Link copied - anyone can open it, no login needed</>
+                <><Check className="w-4 h-4" /> {t('shareLink.copied')}</>
               ) : (
-                <><Link2 className="w-4 h-4" /> {existing.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
+                <><Link2 className="w-4 h-4" /> {existing.status === 'scheduled' ? t('shareLink.copyInspection') : t('shareLink.copyReport')}</>
               )}
             </button>
           )}
@@ -371,14 +376,14 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           {/* Mode toggle — only for fresh creates */}
           {!isEditing && (
             <div className="grid grid-cols-2 gap-2">
-              <ModeButton active={mode === 'log'} onClick={() => setMode('log')} icon={<ClipboardCheck className="w-4 h-4" />} label="Log Now" />
-              <ModeButton active={mode === 'schedule'} onClick={() => setMode('schedule')} icon={<Calendar className="w-4 h-4" />} label="Schedule" />
+              <ModeButton active={mode === 'log'} onClick={() => setMode('log')} icon={<ClipboardCheck className="w-4 h-4" />} label={t('form.modeLog')} />
+              <ModeButton active={mode === 'schedule'} onClick={() => setMode('schedule')} icon={<Calendar className="w-4 h-4" />} label={t('form.modeSchedule')} />
             </div>
           )}
 
           {/* Property */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Property</Label>
+            <Label className="text-sm font-medium">{t('form.property')}</Label>
             {selectedProperty ? (
               <div className="flex items-center justify-between gap-2 p-3 rounded-md border bg-muted/40">
                 <div className="min-w-0">
@@ -389,7 +394,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 </div>
                 {!isEditing && (
                   <Button variant="ghost" size="sm" className="shrink-0" onClick={() => { setPropertyId(null); setShowPropertyList(true) }}>
-                    Change
+                    {t('form.change')}
                   </Button>
                 )}
               </div>
@@ -401,14 +406,14 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                     value={propertySearch}
                     onChange={e => { setPropertySearch(e.target.value); setShowPropertyList(true) }}
                     onFocus={() => setShowPropertyList(true)}
-                    placeholder="Search properties…"
+                    placeholder={t('form.searchProperties')}
                     className="pl-9 h-11"
                   />
                 </div>
                 {showPropertyList && (
                   <div className="border rounded-md max-h-60 overflow-y-auto divide-y">
                     {filteredProperties.length === 0 ? (
-                      <div className="p-3 text-sm text-muted-foreground">No matches.</div>
+                      <div className="p-3 text-sm text-muted-foreground">{t('form.noMatches')}</div>
                     ) : (
                       filteredProperties.map(p => (
                         <button
@@ -441,8 +446,8 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">
                 {(!isEditing && mode === 'schedule') || (isEditing && existing!.status === 'scheduled')
-                  ? 'Scheduled date'
-                  : 'Inspection date'}
+                  ? t('form.scheduledDateLabel')
+                  : t('form.inspectionDateLabel')}
               </Label>
               <Input
                 type="date"
@@ -452,16 +457,16 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Last cleaned on</Label>
+              <Label className="text-sm font-medium">{t('form.lastCleanedLabel')}</Label>
               <Input
                 type="date"
                 value={lastCleanedOn}
                 onChange={e => setLastCleanedOn(e.target.value)}
                 className="h-11"
-                placeholder="When was it last cleaned?"
+                placeholder={t('form.lastCleanedPlaceholder')}
               />
               <p className="text-xs text-muted-foreground">
-                Helps the inspector know if it was cleaned that day.
+                {t('form.lastCleanedHint')}
               </p>
             </div>
           </div>
@@ -469,26 +474,26 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           {/* People */}
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Cleaner who previously cleaned</Label>
+              <Label className="text-sm font-medium">{t('form.cleanerFieldLabel')}</Label>
               <select
                 value={cleanerId ?? ''}
                 onChange={e => setCleanerId(e.target.value || null)}
                 className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">- Not specified -</option>
+                <option value="">{t('form.notSpecified')}</option>
                 {cleaners.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-sm font-medium">Inspector</Label>
+              <Label className="text-sm font-medium">{t('form.inspectorFieldLabel')}</Label>
               <select
                 value={inspectorId ?? ''}
                 onChange={e => setInspectorId(e.target.value || null)}
                 className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
               >
-                <option value="">- Not specified -</option>
+                <option value="">{t('form.notSpecified')}</option>
                 {cleaners.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}
@@ -499,14 +504,15 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           {/* Scorecard — only when row will be a completed inspection */}
           {showCompletionFields && (
             <div className="space-y-3">
-              <Label className="text-sm font-medium">Scorecard (1-5 stars)</Label>
+              <Label className="text-sm font-medium">{t('form.scorecardLabel')}</Label>
               <div className="space-y-2">
                 {SCORE_AREAS.map(a => (
                   <StarRow
                     key={a.key}
-                    label={a.label}
+                    label={t(`scores.${a.labelKey}`)}
                     value={scores[a.key]}
                     onChange={v => setScores(s => ({ ...s, [a.key]: v }))}
+                    t={t}
                   />
                 ))}
               </div>
@@ -515,7 +521,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
 
           {/* Photos — always available */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Photos</Label>
+            <Label className="text-sm font-medium">{t('form.photosLabel')}</Label>
             <input
               ref={fileInputRef}
               type="file"
@@ -532,7 +538,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                     type="button"
                     onClick={() => removeExistingPhoto(i)}
                     className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    aria-label="Remove photo"
+                    aria-label={t('form.removePhoto')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -545,7 +551,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                     type="button"
                     onClick={() => removeNewPhoto(i)}
                     className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 text-white flex items-center justify-center"
-                    aria-label="Remove photo"
+                    aria-label={t('form.removePhoto')}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -557,20 +563,20 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 className="w-20 h-20 rounded-md border-2 border-dashed border-border hover:border-primary/60 flex flex-col items-center justify-center gap-1 text-xs text-muted-foreground"
               >
                 <Camera className="w-5 h-5" />
-                <span>Add</span>
+                <span>{t('form.addPhoto')}</span>
               </button>
             </div>
           </div>
 
           {/* Notes */}
           <div className="space-y-1.5">
-            <Label className="text-sm font-medium">Notes</Label>
+            <Label className="text-sm font-medium">{t('form.notesLabel')}</Label>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="Anything noteworthy about this inspection?"
+              placeholder={t('form.notesPlaceholder')}
             />
           </div>
 
@@ -578,7 +584,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           {showCompletionFields && (
             <>
               <div className="space-y-1.5">
-                <Label className="text-sm font-medium">Re-inspect urgency</Label>
+                <Label className="text-sm font-medium">{t('form.reinspectUrgencyLabel')}</Label>
                 <div className="grid grid-cols-5 gap-1.5">
                   {URGENCY_OPTIONS.map(opt => (
                     <button
@@ -590,7 +596,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                         urgency === opt.value ? `${opt.bg} ${opt.ring}` : 'bg-background border-border hover:border-primary/30',
                       )}
                     >
-                      {opt.label}
+                      {t(`reinspect.${opt.value}`)}
                     </button>
                   ))}
                 </div>
@@ -598,7 +604,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
 
               {urgency !== 'none' && (
                 <div className="space-y-1.5">
-                  <Label className="text-sm font-medium">Re-inspect by (optional)</Label>
+                  <Label className="text-sm font-medium">{t('form.reinspectByLabel')}</Label>
                   <Input
                     type="date"
                     value={reinspectBy}
@@ -621,7 +627,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 disabled={submitting || !propertyId}
               >
                 <CheckCircle2 className="w-5 h-5 mr-2" />
-                {submitting ? 'Saving…' : 'Mark Complete'}
+                {submitting ? t('common.actions.saving') : t('form.markComplete')}
               </Button>
               <Button
                 variant="outline"
@@ -629,7 +635,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 onClick={() => fireSubmit('save')}
                 disabled={submitting || !propertyId}
               >
-                Save Changes (keep scheduled)
+                {t('form.saveChangesKeepScheduled')}
               </Button>
             </>
           ) : (
@@ -639,9 +645,9 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               disabled={submitting || !propertyId}
             >
               {submitting
-                ? 'Saving…'
-                : isEditing ? 'Save Changes'
-                : mode === 'schedule' ? 'Schedule Inspection' : 'Log Inspection'}
+                ? t('common.actions.saving')
+                : isEditing ? t('form.saveChanges')
+                : mode === 'schedule' ? t('form.scheduleInspection') : t('form.logInspection')}
             </Button>
           )}
           {isEditing && existing && onDelete && (
@@ -653,7 +659,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               disabled={submitting}
             >
               <Trash2 className="w-4 h-4 mr-2" />
-              Delete Inspection
+              {t('form.deleteInspection')}
             </Button>
           )}
         </div>
@@ -676,6 +682,7 @@ type PropertyRow = {
 }
 
 function PropertyInfoCard({ property }: { property: PropertyRow }) {
+  const { t } = useLocale('inspections')
   const [mapOpen, setMapOpen] = useState(false)
   const hasFilter = !!(property.filter_size || property.next_filter_due || property.last_filter_changed)
   const hasCodes = !!(property.auto_code || property.door_code || property.other_codes)
@@ -683,7 +690,7 @@ function PropertyInfoCard({ property }: { property: PropertyRow }) {
   if (!hasFilter && !hasCodes && !hasWifi && !property.address) {
     return (
       <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        No filter, access, or Wi-Fi info on file for this property.
+        {t('form.noInfoOnFile')}
       </div>
     )
   }
@@ -691,7 +698,7 @@ function PropertyInfoCard({ property }: { property: PropertyRow }) {
     <>
     <div className="rounded-md border bg-muted/30 divide-y">
       {property.address && (
-        <InfoRow icon={<MapPin className="w-3.5 h-3.5" />} label="Address">
+        <InfoRow icon={<MapPin className="w-3.5 h-3.5" />} label={t('form.infoAddress')}>
           <button
             type="button"
             onClick={() => setMapOpen(true)}
@@ -702,27 +709,27 @@ function PropertyInfoCard({ property }: { property: PropertyRow }) {
         </InfoRow>
       )}
       {hasFilter && (
-        <InfoRow icon={<Wind className="w-3.5 h-3.5" />} label="AC filter">
+        <InfoRow icon={<Wind className="w-3.5 h-3.5" />} label={t('form.infoAcFilter')}>
           <div className="space-y-0.5">
             {property.filter_size && <div className="font-medium">{property.filter_size}</div>}
             <div className="text-xs text-muted-foreground space-x-2">
-              {property.last_filter_changed && <span>Changed {property.last_filter_changed}</span>}
-              {property.next_filter_due && <span>Due {property.next_filter_due}</span>}
+              {property.last_filter_changed && <span>{t('form.infoChanged', { date: property.last_filter_changed })}</span>}
+              {property.next_filter_due && <span>{t('form.infoDue', { date: property.next_filter_due })}</span>}
             </div>
           </div>
         </InfoRow>
       )}
       {hasCodes && (
-        <InfoRow icon={<KeyRound className="w-3.5 h-3.5" />} label="Access codes">
+        <InfoRow icon={<KeyRound className="w-3.5 h-3.5" />} label={t('form.infoAccessCodes')}>
           <div className="space-y-0.5 text-sm">
-            {property.auto_code && <div><span className="text-muted-foreground text-xs">Auto:</span> <span className="font-mono">{property.auto_code}</span></div>}
-            {property.door_code && <div><span className="text-muted-foreground text-xs">Door:</span> <span className="font-mono">{property.door_code}</span></div>}
+            {property.auto_code && <div><span className="text-muted-foreground text-xs">{t('form.infoAuto')}</span> <span className="font-mono">{property.auto_code}</span></div>}
+            {property.door_code && <div><span className="text-muted-foreground text-xs">{t('form.infoDoor')}</span> <span className="font-mono">{property.door_code}</span></div>}
             {property.other_codes && <div className="text-xs whitespace-pre-line">{property.other_codes}</div>}
           </div>
         </InfoRow>
       )}
       {hasWifi && (
-        <InfoRow icon={<Wifi className="w-3.5 h-3.5" />} label="Wi-Fi">
+        <InfoRow icon={<Wifi className="w-3.5 h-3.5" />} label={t('form.infoWifi')}>
           <div className="text-sm whitespace-pre-line break-words">{property.wifi_info}</div>
         </InfoRow>
       )}
@@ -768,7 +775,7 @@ function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick
   )
 }
 
-function StarRow({ label, value, onChange }: { label: string; value: number | null; onChange: (v: number | null) => void }) {
+function StarRow({ label, value, onChange, t }: { label: string; value: number | null; onChange: (v: number | null) => void; t: TFunc }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 py-1">
       <span className="text-sm">{label}</span>
@@ -781,7 +788,7 @@ function StarRow({ label, value, onChange }: { label: string; value: number | nu
               type="button"
               onClick={() => onChange(value === n ? null : n)}
               className="flex-1 sm:flex-none w-auto sm:w-11 h-11 flex items-center justify-center rounded-md hover:bg-muted active:bg-muted/70"
-              aria-label={`${label} ${n} stars`}
+              aria-label={t('form.starAria', { label, count: n })}
             >
               <Star
                 className={cn(

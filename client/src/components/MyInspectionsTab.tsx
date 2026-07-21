@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { format, parseISO, differenceInCalendarDays } from 'date-fns'
+import { format as dfFormat, parseISO, differenceInCalendarDays } from 'date-fns'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
@@ -9,6 +9,9 @@ import { StatCard } from '@/components/StatCard'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { INSPECTION_SELECT, scoreColorClass, type Inspection } from '@/lib/inspections'
 import { ClipboardCheck, MapPin, Camera, Star, ChevronRight, CalendarDays, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 interface Props {
   inspectorId: string
@@ -23,8 +26,10 @@ interface Props {
  * picker for directions.
  */
 export function MyInspectionsTab({ inspectorId, onOpen }: Props) {
+  const { t } = useLocale('inspections')
+  const { format } = useDateFormat()
   const [mapAddress, setMapAddress] = useState<string | null>(null)
-  const today = format(new Date(), 'yyyy-MM-dd')
+  const today = dfFormat(new Date(), 'yyyy-MM-dd')
 
   const { data: rows, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/inspections-all', 'mine', inspectorId],
@@ -72,43 +77,43 @@ export function MyInspectionsTab({ inspectorId, onOpen }: Props) {
     <div className="flex-1 overflow-y-auto space-y-5 pb-6">
       {/* KPI strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard title="Due Today" value={groups.dueToday.length} icon={CalendarDays} tone="info" />
+        <StatCard title={t('mine.dueToday')} value={groups.dueToday.length} icon={CalendarDays} tone="info" />
         <StatCard
-          title="Overdue"
+          title={t('mine.overdue')}
           value={groups.overdue.length}
           icon={AlertTriangle}
           tone={groups.overdue.length > 0 ? 'destructive' : 'success'}
         />
-        <StatCard title="Upcoming" value={groups.upcoming.length} icon={ClipboardCheck} tone="primary" />
-        <StatCard title="Completed (30d)" value={groups.completed30d.length} icon={CheckCircle2} tone="success" />
+        <StatCard title={t('mine.upcoming')} value={groups.upcoming.length} icon={ClipboardCheck} tone="primary" />
+        <StatCard title={t('mine.completed30d')} value={groups.completed30d.length} icon={CheckCircle2} tone="success" />
       </div>
 
       {queueEmpty ? (
         <EmptyState
           icon={ClipboardCheck}
-          title="You're all caught up"
-          description="No inspections are assigned to you right now. New assignments will show up here."
+          title={t('mine.allCaughtUpTitle')}
+          description={t('mine.allCaughtUpDesc')}
         />
       ) : (
         <>
           {groups.overdue.length > 0 && (
-            <QueueSection title="Overdue" tone="destructive">
+            <QueueSection title={t('mine.sectionOverdue')} tone="destructive">
               {groups.overdue.map(i => (
-                <QueueCard key={i.id} inspection={i} today={today} overdue onOpen={onOpen} onMap={setMapAddress} />
+                <QueueCard key={i.id} inspection={i} today={today} overdue onOpen={onOpen} onMap={setMapAddress} t={t} format={format} />
               ))}
             </QueueSection>
           )}
           {groups.dueToday.length > 0 && (
-            <QueueSection title="Today" tone="info">
+            <QueueSection title={t('mine.sectionToday')} tone="info">
               {groups.dueToday.map(i => (
-                <QueueCard key={i.id} inspection={i} today={today} onOpen={onOpen} onMap={setMapAddress} />
+                <QueueCard key={i.id} inspection={i} today={today} onOpen={onOpen} onMap={setMapAddress} t={t} format={format} />
               ))}
             </QueueSection>
           )}
           {groups.upcoming.length > 0 && (
-            <QueueSection title="Upcoming" tone="muted">
+            <QueueSection title={t('mine.sectionUpcoming')} tone="muted">
               {groups.upcoming.map(i => (
-                <QueueCard key={i.id} inspection={i} today={today} onOpen={onOpen} onMap={setMapAddress} />
+                <QueueCard key={i.id} inspection={i} today={today} onOpen={onOpen} onMap={setMapAddress} t={t} format={format} />
               ))}
             </QueueSection>
           )}
@@ -118,7 +123,7 @@ export function MyInspectionsTab({ inspectorId, onOpen }: Props) {
       {/* Recently completed */}
       {groups.completed.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recently completed</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('mine.recentlyCompleted')}</h3>
           <div className="space-y-2">
             {groups.completed.slice(0, 10).map(i => (
               <button
@@ -129,7 +134,7 @@ export function MyInspectionsTab({ inspectorId, onOpen }: Props) {
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="font-medium text-sm truncate">
-                      {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+                      {i.properties?.name ?? <span className="text-muted-foreground">{t('page.deletedProperty')}</span>}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {i.inspected_at ? format(parseISO(i.inspected_at), 'MMM d, yyyy') : '—'}
@@ -177,12 +182,16 @@ function QueueCard({
   overdue,
   onOpen,
   onMap,
+  t,
+  format,
 }: {
   inspection: Inspection
   today: string
   overdue?: boolean
   onOpen: (inspection: Inspection) => void
   onMap: (address: string) => void
+  t: TFunc
+  format: (date: Date | number, pattern: string) => string
 }) {
   const dateStr = i.scheduled_for ?? i.inspected_at
   const daysOverdue = overdue && dateStr ? differenceInCalendarDays(parseISO(today), parseISO(dateStr)) : 0
@@ -200,7 +209,7 @@ function QueueCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="font-semibold text-base truncate">
-            {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+            {i.properties?.name ?? <span className="text-muted-foreground">{t('page.deletedProperty')}</span>}
           </div>
           {address && (
             <button
@@ -213,16 +222,16 @@ function QueueCard({
             </button>
           )}
           <div className="text-xs text-muted-foreground">
-            {dateStr ? format(parseISO(dateStr), 'EEE, MMM d') : 'No date'}
+            {dateStr ? format(parseISO(dateStr), 'EEE, MMM d') : t('mine.noDate')}
             {daysOverdue > 0 && (
               <span className="ml-2 text-destructive font-medium">
-                {daysOverdue} day{daysOverdue === 1 ? '' : 's'} overdue
+                {t('mine.daysOverdue', { count: daysOverdue })}
               </span>
             )}
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-1.5 text-primary text-sm font-medium mt-1">
-          <span className="hidden sm:inline">Start</span>
+          <span className="hidden sm:inline">{t('mine.start')}</span>
           <ChevronRight className="w-4 h-4" />
         </div>
       </div>

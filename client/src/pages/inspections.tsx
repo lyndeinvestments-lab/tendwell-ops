@@ -18,7 +18,7 @@ import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
 import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin, Link2, Check } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { parseISO } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
 import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
@@ -27,6 +27,9 @@ import { MyInspectionsTab } from '@/components/MyInspectionsTab'
 import { useMyInspector } from '@/hooks/use-my-inspector'
 import { INSPECTION_SELECT, scoreColorClass, type Inspection, type InspectionStatus, type ReinspectUrgency } from '@/lib/inspections'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import type { TFunc } from '@/lib/i18n/t'
 
 type InspectionFilters = {
   search: string
@@ -79,21 +82,26 @@ function scoreTextClass(score: number | null): string {
   return 'text-destructive'
 }
 
-const URGENCY_BADGE: Record<ReinspectUrgency, { label: string; cls: string }> = {
-  none:     { label: '',         cls: '' },
-  low:      { label: 'Low',      cls: 'bg-success/15 text-success' },
-  medium:   { label: 'Medium',   cls: 'bg-warning/15 text-warning' },
-  high:     { label: 'High',     cls: 'bg-warning/20 text-warning' },
-  critical: { label: 'Critical', cls: 'bg-destructive/15 text-destructive' },
+// Classes only — labels are translated at the call site via `t('reinspect.'+urgency)`.
+const URGENCY_CLASS: Record<ReinspectUrgency, string> = {
+  none: '',
+  low: 'bg-success/15 text-success',
+  medium: 'bg-warning/15 text-warning',
+  high: 'bg-warning/20 text-warning',
+  critical: 'bg-destructive/15 text-destructive',
 }
 
-function StatusPill({ status }: { status: InspectionStatus }) {
+function urgencyLabel(urgency: ReinspectUrgency, t: TFunc): string {
+  return t(`reinspect.${urgency}`, undefined, urgency)
+}
+
+function StatusPill({ status, t }: { status: InspectionStatus; t: TFunc }) {
   const map: Record<InspectionStatus, string> = {
     scheduled: 'bg-info/15 text-info',
     completed: 'bg-success/15 text-success',
     skipped:   'bg-muted text-muted-foreground',
   }
-  return <span className={`inline-block text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{status}</span>
+  return <span className={`inline-block text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${map[status]}`}>{t(`status.${status}`, undefined, status)}</span>
 }
 
 function ScorePill({ label, score }: { label: string; score: number | null }) {
@@ -113,6 +121,8 @@ function ScorePill({ label, score }: { label: string; score: number | null }) {
 
 export default function InspectionsPage() {
   usePageTitle('Inspections')
+  const { t } = useLocale('inspections')
+  const { format } = useDateFormat()
   const { toast } = useToast()
   const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
@@ -152,7 +162,7 @@ export default function InspectionsPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Inspection deleted' })
+      toast({ title: t('page.toastDeleted') })
       queryClient.invalidateQueries({ queryKey: ['/supabase/inspections-all'] })
       // Matches InspectionFormSheet — the dashboard's 90-day aggregate is
       // a separate cache entry, so it needs its own invalidation when a
@@ -163,13 +173,13 @@ export default function InspectionsPage() {
       setFormOpen(false)
     },
     onError: (e: Error) => {
-      toast({ title: 'Could not delete', description: e.message, variant: 'destructive' })
+      toast({ title: t('page.toastDeleteFailed'), description: e.message, variant: 'destructive' })
     },
   })
 
   function confirmDelete(id: string, label: string) {
     if (!canEdit) return
-    if (confirm(`Delete inspection for ${label}? This also removes any photos. This cannot be undone.`)) {
+    if (confirm(t('page.confirmDelete', { label }))) {
       deleteMut.mutate(id)
     }
   }
@@ -316,17 +326,17 @@ export default function InspectionsPage() {
         if (chunkRows.length < CHUNK) break
       }
       const rows = all.map(i => ({
-        'Property': i.properties?.name ?? '',
-        'Cleaner': i.cleaners?.full_name ?? i.cleaner_name ?? '',
-        'Inspector': i.inspectors?.full_name ?? '',
-        'Inspected At': i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
-        'Overall': i.overall_score ?? '',
-        'Cleanliness': i.cleanliness_score ?? '',
-        'Linens': i.linens_score ?? '',
-        'Supplies': i.supplies_score ?? '',
-        'Exterior': i.exterior_score ?? '',
-        'Notes': i.notes ?? '',
-        'Photos': (i.photos_url ?? []).length,
+        [t('table.property')]: i.properties?.name ?? '',
+        [t('table.cleaner')]: i.cleaners?.full_name ?? i.cleaner_name ?? '',
+        [t('table.inspector')]: i.inspectors?.full_name ?? '',
+        [t('page.csvInspectedAt')]: i.inspected_at ? format(parseISO(i.inspected_at), 'yyyy-MM-dd HH:mm') : '',
+        [t('scores.overall')]: i.overall_score ?? '',
+        [t('scores.cleanliness')]: i.cleanliness_score ?? '',
+        [t('scores.linens')]: i.linens_score ?? '',
+        [t('scores.supplies')]: i.supplies_score ?? '',
+        [t('scores.exterior')]: i.exterior_score ?? '',
+        [t('table.notes')]: i.notes ?? '',
+        [t('page.csvPhotos')]: (i.photos_url ?? []).length,
       }))
       const csv = Papa.unparse(rows)
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -336,9 +346,9 @@ export default function InspectionsPage() {
       a.download = `inspections-${new Date().toISOString().slice(0, 10)}.csv`
       a.click()
       URL.revokeObjectURL(url)
-      toast({ title: 'CSV exported', description: `${rows.length} rows` })
+      toast({ title: t('page.toastCsvExported'), description: t('page.toastCsvExportedDesc', { count: rows.length }) })
     } catch (e: any) {
-      toast({ title: 'Export failed', description: e?.message, variant: 'destructive' })
+      toast({ title: t('page.toastExportFailed'), description: e?.message, variant: 'destructive' })
     } finally {
       setExporting(false)
     }
@@ -347,25 +357,25 @@ export default function InspectionsPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col overflow-x-hidden">
       <PageHeader
-        title="Inspections"
-        subtitle="Cleaning-quality scores logged after each clean · scores 1-5"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             {canEdit && (
               <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
                 <Plus className="w-3.5 h-3.5" />
-                New Inspection
+                {t('page.newInspection')}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
               <Download className="w-3.5 h-3.5" />
-              {exporting ? 'Exporting…' : 'Export CSV'}
+              {exporting ? t('page.exporting') : t('common.actions.exportCsv')}
             </Button>
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search property / cleaner / notes…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 className="pl-8 pr-7 h-8 w-64 text-sm"
@@ -383,10 +393,10 @@ export default function InspectionsPage() {
       <Tabs value={activeTab} onValueChange={setTabChoice} className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start">
           {(myInspector || myInspectorLoading) && (
-            <TabsTrigger value="mine" data-testid="tab-mine" disabled={!myInspector}>My Inspections</TabsTrigger>
+            <TabsTrigger value="mine" data-testid="tab-mine" disabled={!myInspector}>{t('tabs.mine')}</TabsTrigger>
           )}
-          <TabsTrigger value="priority" data-testid="tab-priority">Priority Dashboard</TabsTrigger>
-          <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
+          <TabsTrigger value="priority" data-testid="tab-priority">{t('tabs.priority')}</TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">{t('tabs.history')}</TabsTrigger>
         </TabsList>
         {myInspector && (
           <TabsContent value="mine" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
@@ -400,58 +410,58 @@ export default function InspectionsPage() {
       {/* Summary strip — at-a-glance quality stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ClipboardCheck className="w-3.5 h-3.5" /> Total Inspections</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ClipboardCheck className="w-3.5 h-3.5" /> {t('tiles.total')}</div>
           <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{totalCount}</p>
         </div>
         <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Star className="w-3.5 h-3.5" /> Avg Overall Score</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Star className="w-3.5 h-3.5" /> {t('tiles.avgScore')}</div>
           <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${scoreTextClass(avgScore ?? null)}`}>{avgScore == null ? '—' : avgScore.toFixed(2)}</p>
         </div>
         <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CalendarDays className="w-3.5 h-3.5" /> Inspected (7d)</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CalendarDays className="w-3.5 h-3.5" /> {t('tiles.inspected7d')}</div>
           <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-info">{last7dCount ?? '—'}</p>
         </div>
         <div className={`rounded-2xl border shadow-sm p-4 ${(needsReinspect ?? 0) > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Re-inspection</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> {t('tiles.needsReinspection')}</div>
           <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${(needsReinspect ?? 0) > 0 ? 'text-warning' : ''}`}>{needsReinspect ?? '—'}</p>
         </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap text-xs">
-        <label className="text-muted-foreground">Status</label>
+        <label className="text-muted-foreground">{t('filters.status')}</label>
         <Select value={statusFilter} onValueChange={v => { setStatusFilter(v as 'all' | InspectionStatus); setPage(1) }}>
           <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-xs">All</SelectItem>
-            <SelectItem value="scheduled" className="text-xs">Scheduled</SelectItem>
-            <SelectItem value="completed" className="text-xs">Completed</SelectItem>
-            <SelectItem value="skipped" className="text-xs">Skipped</SelectItem>
+            <SelectItem value="all" className="text-xs">{t('filters.allStatuses')}</SelectItem>
+            <SelectItem value="scheduled" className="text-xs">{t('status.scheduled')}</SelectItem>
+            <SelectItem value="completed" className="text-xs">{t('status.completed')}</SelectItem>
+            <SelectItem value="skipped" className="text-xs">{t('status.skipped')}</SelectItem>
           </SelectContent>
         </Select>
-        <label className="text-muted-foreground ml-2">Inspector</label>
+        <label className="text-muted-foreground ml-2">{t('filters.inspector')}</label>
         <Select value={inspectorFilter} onValueChange={v => { setInspectorFilter(v); setPage(1) }}>
           <SelectTrigger className="h-8 w-48 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all" className="text-xs">All inspectors</SelectItem>
-            <SelectItem value="unassigned" className="text-xs">Unassigned</SelectItem>
+            <SelectItem value="all" className="text-xs">{t('filters.allInspectors')}</SelectItem>
+            <SelectItem value="unassigned" className="text-xs">{t('filters.unassigned')}</SelectItem>
             {(cleaners || []).map(c => (
               <SelectItem key={c.id} value={c.id} className="text-xs">{c.full_name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <label className="text-muted-foreground ml-2">Min overall</label>
+        <label className="text-muted-foreground ml-2">{t('filters.minOverall')}</label>
         <Select value={minScore} onValueChange={v => { setMinScore(v); setPage(1) }}>
           <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="any" className="text-xs">Any</SelectItem>
+            <SelectItem value="any" className="text-xs">{t('filters.any')}</SelectItem>
             {[1, 2, 3, 4, 5].map(n => <SelectItem key={n} value={String(n)} className="text-xs">{n}+</SelectItem>)}
           </SelectContent>
         </Select>
-        <label className="text-muted-foreground ml-2">From</label>
+        <label className="text-muted-foreground ml-2">{t('filters.from')}</label>
         <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded px-2 bg-background" />
-        <label className="text-muted-foreground">To</label>
+        <label className="text-muted-foreground">{t('filters.to')}</label>
         <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1) }} className="h-8 text-xs border border-input rounded px-2 bg-background" />
-        <span className="text-muted-foreground ml-auto">{totalCount} record{totalCount === 1 ? '' : 's'}</span>
+        <span className="text-muted-foreground ml-auto">{t('filters.recordCount', { count: totalCount })}</span>
       </div>
 
       {isError ? (
@@ -465,11 +475,11 @@ export default function InspectionsPage() {
             ) : paged.length === 0 ? (
               <EmptyState
                 icon={ClipboardCheck}
-                title="No inspections"
+                title={t('table.emptyTitle')}
                 description={
                   hasActiveFilters
-                    ? 'No records match the current filters.'
-                    : 'Tap + New Inspection to log or schedule one.'
+                    ? t('table.emptyFilteredMobile')
+                    : t('table.emptyDefaultMobile')
                 }
               />
             ) : (
@@ -483,18 +493,18 @@ export default function InspectionsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <StatusPill status={i.status} />
+                        <StatusPill status={i.status} t={t} />
                         {i.reinspect_urgency !== 'none' && (
-                          <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
-                            {URGENCY_BADGE[i.reinspect_urgency].label}
+                          <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_CLASS[i.reinspect_urgency]}`}>
+                            {urgencyLabel(i.reinspect_urgency, t)}
                           </span>
                         )}
                       </div>
                       <div className="font-medium text-sm truncate">
-                        {i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}
+                        {i.properties?.name ?? <span className="text-muted-foreground">{t('page.deletedProperty')}</span>}
                       </div>
                       <div className="text-xs text-muted-foreground truncate">
-                        {(i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic text-muted-foreground/70">Cleaner not recorded</span>)}
+                        {(i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic text-muted-foreground/70">{t('page.cleanerNotRecorded')}</span>)}
                         {' · '}
                         {i.status === 'scheduled' && i.scheduled_for
                           ? `→ ${format(parseISO(i.scheduled_for), 'MMM d')}`
@@ -511,10 +521,10 @@ export default function InspectionsPage() {
                   </div>
                   {(i.cleanliness_score != null || i.linens_score != null || i.supplies_score != null || i.exterior_score != null) && (
                     <div className="flex flex-wrap gap-1 mt-2">
-                      <ScorePill label="Clean" score={i.cleanliness_score} />
-                      <ScorePill label="Linen" score={i.linens_score} />
-                      <ScorePill label="Supp" score={i.supplies_score} />
-                      <ScorePill label="Ext" score={i.exterior_score} />
+                      <ScorePill label={t('table.scoreClean')} score={i.cleanliness_score} />
+                      <ScorePill label={t('table.scoreLinen')} score={i.linens_score} />
+                      <ScorePill label={t('table.scoreSupp')} score={i.supplies_score} />
+                      <ScorePill label={t('table.scoreExt')} score={i.exterior_score} />
                     </div>
                   )}
                   {((i.photos_url?.length ?? 0) > 0 || i.notes) && (
@@ -538,14 +548,14 @@ export default function InspectionsPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
                 <tr>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[180px]">Property</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Cleaner</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Inspector</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Inspected</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Overall</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Sub-scores</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 min-w-[180px]">{t('table.property')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.cleaner')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.inspector')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.inspected')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.overall')}</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.subScores')}</th>
                   <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8"></th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 max-w-[220px]">Notes</th>
+                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 max-w-[220px]">{t('table.notes')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -560,11 +570,11 @@ export default function InspectionsPage() {
                     <td colSpan={8}>
                       <EmptyState
                         icon={ClipboardCheck}
-                        title="No inspections"
+                        title={t('table.emptyTitle')}
                         description={
                           hasActiveFilters
-                            ? 'No records match the current filters. Clear filters or widen the date range.'
-                            : 'Log an inspection from a property modal → Inspections tab. Records appear here.'
+                            ? t('table.emptyFilteredDesktop')
+                            : t('table.emptyDefaultDesktop')
                         }
                       />
                     </td>
@@ -578,17 +588,17 @@ export default function InspectionsPage() {
                     >
                       <td className="py-2 px-3 font-medium text-xs">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span>{i.properties?.name ?? <span className="text-muted-foreground">Deleted property</span>}</span>
-                          <StatusPill status={i.status} />
+                          <span>{i.properties?.name ?? <span className="text-muted-foreground">{t('page.deletedProperty')}</span>}</span>
+                          <StatusPill status={i.status} t={t} />
                           {i.reinspect_urgency !== 'none' && (
-                            <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[i.reinspect_urgency].cls}`}>
-                              {URGENCY_BADGE[i.reinspect_urgency].label}
+                            <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_CLASS[i.reinspect_urgency]}`}>
+                              {urgencyLabel(i.reinspect_urgency, t)}
                             </span>
                           )}
                         </div>
                       </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">
-                        {i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}
+                        {i.cleaners?.full_name ?? i.cleaner_name ?? <span className="italic">{t('page.cleanerNotRecorded')}</span>}
                       </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">
                         {i.inspectors?.full_name ?? '—'}
@@ -609,10 +619,10 @@ export default function InspectionsPage() {
                       </td>
                       <td className="py-2 px-3">
                         <div className="flex flex-wrap gap-1">
-                          <ScorePill label="Clean" score={i.cleanliness_score} />
-                          <ScorePill label="Linen" score={i.linens_score} />
-                          <ScorePill label="Supp" score={i.supplies_score} />
-                          <ScorePill label="Ext" score={i.exterior_score} />
+                          <ScorePill label={t('table.scoreClean')} score={i.cleanliness_score} />
+                          <ScorePill label={t('table.scoreLinen')} score={i.linens_score} />
+                          <ScorePill label={t('table.scoreSupp')} score={i.supplies_score} />
+                          <ScorePill label={t('table.scoreExt')} score={i.exterior_score} />
                         </div>
                       </td>
                       <td className="py-2 px-3 text-xs text-muted-foreground">
@@ -643,7 +653,7 @@ export default function InspectionsPage() {
         <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
           <SheetHeader>
             <SheetTitle className="text-base">
-              {activeDetail?.properties?.name ?? 'Inspection'}
+              {activeDetail?.properties?.name ?? t('detail.titleFallback')}
             </SheetTitle>
             {activeDetail?.properties?.address && (
               <button
@@ -668,47 +678,47 @@ export default function InspectionsPage() {
                   className="w-full flex items-center justify-center gap-2 h-9 rounded-md border border-primary/40 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors"
                 >
                   {copiedShare ? (
-                    <><Check className="w-4 h-4" /> Link copied - anyone can open it, no login needed</>
+                    <><Check className="w-4 h-4" /> {t('shareLink.copied')}</>
                   ) : (
-                    <><Link2 className="w-4 h-4" /> {activeDetail.status === 'scheduled' ? 'Copy inspection link' : 'Copy report link'}</>
+                    <><Link2 className="w-4 h-4" /> {activeDetail.status === 'scheduled' ? t('shareLink.copyInspection') : t('shareLink.copyReport')}</>
                   )}
                 </button>
               )}
               <div className="flex items-center gap-2 flex-wrap">
-                <StatusPill status={activeDetail.status} />
+                <StatusPill status={activeDetail.status} t={t} />
                 {activeDetail.reinspect_urgency !== 'none' && (
-                  <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_BADGE[activeDetail.reinspect_urgency].cls}`}>
-                    Re-inspect: {URGENCY_BADGE[activeDetail.reinspect_urgency].label}
+                  <span className={`text-2xs uppercase tracking-wide px-1.5 py-0.5 rounded font-medium ${URGENCY_CLASS[activeDetail.reinspect_urgency]}`}>
+                    {t('detail.reinspectPrefix', { label: urgencyLabel(activeDetail.reinspect_urgency, t) })}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><User className="w-3 h-3" />Cleaner: {activeDetail.cleaners?.full_name ?? activeDetail.cleaner_name ?? <span className="italic">Cleaner not recorded</span>}</span>
+                <span className="flex items-center gap-1"><User className="w-3 h-3" />{t('detail.cleanerPrefix')} {activeDetail.cleaners?.full_name ?? activeDetail.cleaner_name ?? <span className="italic">{t('page.cleanerNotRecorded')}</span>}</span>
                 <span>·</span>
-                <span className="flex items-center gap-1"><User className="w-3 h-3" />Inspector: {activeDetail.inspectors?.full_name ?? '—'}</span>
+                <span className="flex items-center gap-1"><User className="w-3 h-3" />{t('detail.inspectorPrefix')} {activeDetail.inspectors?.full_name ?? '—'}</span>
                 <span>·</span>
                 {activeDetail.status === 'scheduled' && activeDetail.scheduled_for ? (
-                  <span>Scheduled for {format(parseISO(activeDetail.scheduled_for), 'PPP')}</span>
+                  <span>{t('detail.scheduledFor', { date: format(parseISO(activeDetail.scheduled_for), 'PPP') })}</span>
                 ) : (
                   <span>{activeDetail.inspected_at ? format(parseISO(activeDetail.inspected_at), 'PPP') : '—'}</span>
                 )}
                 {activeDetail.reinspect_by && (
                   <>
                     <span>·</span>
-                    <span>Re-inspect by {format(parseISO(activeDetail.reinspect_by), 'PPP')}</span>
+                    <span>{t('detail.reinspectBy', { date: format(parseISO(activeDetail.reinspect_by), 'PPP') })}</span>
                   </>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 {([
-                  ['Overall', activeDetail.overall_score],
-                  ['Cleanliness', activeDetail.cleanliness_score],
-                  ['Linens', activeDetail.linens_score],
-                  ['Supplies', activeDetail.supplies_score],
-                  ['Exterior', activeDetail.exterior_score],
-                ] as const).map(([label, score]) => (
-                  <div key={label} className="rounded border border-border px-3 py-2 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">{label}</span>
+                  ['overall', activeDetail.overall_score],
+                  ['cleanliness', activeDetail.cleanliness_score],
+                  ['linens', activeDetail.linens_score],
+                  ['supplies', activeDetail.supplies_score],
+                  ['exterior', activeDetail.exterior_score],
+                ] as const).map(([scoreKey, score]) => (
+                  <div key={scoreKey} className="rounded border border-border px-3 py-2 flex items-center justify-between">
+                    <span className="text-xs text-muted-foreground">{t(`scores.${scoreKey}`)}</span>
                     <span className={`text-sm font-semibold px-2 py-0.5 rounded tabular-nums ${scoreColorClass(score)}`}>
                       {score ?? '—'}
                     </span>
@@ -717,14 +727,14 @@ export default function InspectionsPage() {
               </div>
               {activeDetail.notes && (
                 <div>
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">Notes</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">{t('detail.notes')}</h4>
                   <p className="text-sm whitespace-pre-wrap">{activeDetail.notes}</p>
                 </div>
               )}
               {activeDetail.photos_url && activeDetail.photos_url.length > 0 && (
                 <div>
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1">
-                    <Camera className="w-3 h-3" /> Photos
+                    <Camera className="w-3 h-3" /> {t('detail.photos')}
                   </h4>
                   <div className="grid grid-cols-3 gap-2">
                     {activeDetail.photos_url.map((url, i) => (
@@ -746,18 +756,18 @@ export default function InspectionsPage() {
                   }}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  Open property
+                  {t('detail.openProperty')}
                 </Button>
                 {canEdit && (
                   <Button
                     variant="ghost"
                     size="sm"
                     className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive ml-auto"
-                    onClick={() => confirmDelete(activeDetail.id, activeDetail.properties?.name ?? 'this inspection')}
+                    onClick={() => confirmDelete(activeDetail.id, activeDetail.properties?.name ?? t('page.thisInspection'))}
                     disabled={deleteMut.isPending}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Delete
+                    {t('common.actions.delete')}
                   </Button>
                 )}
               </div>
@@ -775,7 +785,7 @@ export default function InspectionsPage() {
         existing={editing}
         defaultInspectorId={myInspector?.id ?? null}
         onDelete={canEdit ? (insp) => {
-          const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? 'this inspection'
+          const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? t('page.thisInspection')
           confirmDelete(insp.id, label)
         } : undefined}
       />
