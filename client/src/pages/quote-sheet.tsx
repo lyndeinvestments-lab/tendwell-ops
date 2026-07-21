@@ -26,6 +26,8 @@ import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
 import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 
 // ── Cost estimate formulas ────────────────────────────────────────────────────
 
@@ -85,7 +87,8 @@ export default function QuoteSheetPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { effectiveUser } = useAuth()
-  usePageTitle('Quote Sheet')
+  const { t } = useLocale('financials')
+  usePageTitle(t('quoteSheet.page.title', undefined, 'Quote Sheet'))
   const { openPropertyModal } = usePropertyModal()
   const { getNumber } = useAppSettings()
   const INSPECTION_COST = getNumber('cost_inspection', 15)
@@ -127,6 +130,17 @@ export default function QuoteSheetPage() {
   function merged(p: any): any {
     const e = edits[p.id]
     return e ? { ...p, ...e } : p
+  }
+
+  // Display label for the `properties.quote_owner_response` DB value
+  // (pending/approved/declined, canonical English) — `sent` is not a stored
+  // enum value, it's the send button/tooltip's fallback when a quote has
+  // been sent but the owner hasn't responded yet.
+  function sendResponseLabel(response: string | null | undefined, sent: boolean): string {
+    if (response === 'approved') return t('quoteSheet.send.approved')
+    if (response === 'declined') return t('quoteSheet.send.declined')
+    if (sent) return t('quoteSheet.send.sent')
+    return t('quoteSheet.send.send')
   }
 
   function toggleSort(key: string) {
@@ -298,11 +312,11 @@ export default function QuoteSheetPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      toast({ title: 'Property added to Quote stage' })
+      toast({ title: t('quoteSheet.toasts.propertyAdded') })
       setAddOpen(false)
       setNewProp(EMPTY_PROP)
     },
-    onError: (e: any) => toast({ title: 'Error: ' + (e.message || 'Failed'), variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quoteSheet.toasts.addError', { message: e.message || t('quoteSheet.toasts.convertFailed') }), variant: 'destructive' }),
   })
 
   // Inline client-create from the Add Quote dialog: insert into contacts,
@@ -327,11 +341,11 @@ export default function QuoteSheetPage() {
       if (!created?.id) return
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
       setNewProp(prev => ({ ...prev, contact_id: String(created.id) }))
-      toast({ title: 'Client created', description: created.full_name })
+      toast({ title: t('quoteSheet.toasts.clientCreated'), description: created.full_name })
       setNewClient({ full_name: '', email: '', phone: '' })
       setNewClientOpen(false)
     },
-    onError: (e: any) => toast({ title: 'Could not create client', description: e?.message ?? 'Unknown error', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quoteSheet.toasts.clientCreateFailed'), description: e?.message ?? t('quoteSheet.toasts.unknownError'), variant: 'destructive' }),
   })
 
   const { mutate: convertToOnboarding, isPending: convertPending } = useGuardedMutation('quote-sheet', {
@@ -355,10 +369,10 @@ export default function QuoteSheetPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: 'Moved to Onboarding' })
+      toast({ title: t('quoteSheet.toasts.movedToOnboarding') })
       setConverting(null)
     },
-    onError: (error: any) => toast({ title: 'Failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('quoteSheet.toasts.convertFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function handleDuplicate(prop: any) {
@@ -417,11 +431,11 @@ export default function QuoteSheetPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
       // Email the owner that a quote is waiting (best-effort).
       notifyOwner(sendOwnerId, 'quote_sent', { propertyName: sendingQuote?.name })
-      toast({ title: 'Quote sent to owner' })
+      toast({ title: t('quoteSheet.toasts.quoteSent') })
       setSendingQuote(null)
       setSendOwnerId('')
     },
-    onError: (e: any) => toast({ title: 'Failed to send', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quoteSheet.toasts.sendFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   function handleConvert(prop: any) {
@@ -483,7 +497,7 @@ export default function QuoteSheetPage() {
         return next
       })
     },
-    onError: (error: any) => toast({ title: 'Save failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('quoteSheet.toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Archive a quote with a required reason. Stores who/when/why on the
@@ -502,12 +516,12 @@ export default function QuoteSheetPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Quote archived' })
+      toast({ title: t('quoteSheet.toasts.quoteArchived') })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
       setArchivingTarget(null)
       setArchiveReason('')
     },
-    onError: (e: any) => toast({ title: 'Failed to archive', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quoteSheet.toasts.archiveFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   const { mutate: restoreQuote } = useGuardedMutation('quote-sheet', {
@@ -519,10 +533,10 @@ export default function QuoteSheetPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Quote restored' })
+      toast({ title: t('quoteSheet.toasts.quoteRestored') })
       qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
     },
-    onError: (e: any) => toast({ title: 'Failed to restore', description: e?.message, variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quoteSheet.toasts.restoreFailed'), description: e?.message, variant: 'destructive' }),
   })
 
   function EditableNumberCell({
@@ -626,7 +640,12 @@ export default function QuoteSheetPage() {
 
   function exportCsv() {
     if (!filtered || filtered.length === 0) return
-    const headers = ['Name', 'Client', 'Client Charged', 'Cleaner Pay', 'Bedrooms', 'Beds', 'Full Baths', 'Half Baths', 'Sq Ft', 'Est Laundry', 'Est Consumables', 'Inspection', 'Trash', 'Profit %']
+    const headers = [
+      t('quoteSheet.table.name'), t('quoteSheet.table.client'), t('quoteSheet.table.clientCharged'), t('quoteSheet.table.cleanerPay'),
+      t('quoteSheet.table.bedrooms'), t('quoteSheet.table.beds'), t('quoteSheet.table.fullBaths'), t('quoteSheet.table.halfBaths'),
+      t('quoteSheet.table.sqFt'), t('quoteSheet.table.estLaundry'), t('quoteSheet.table.estConsumables'), t('quoteSheet.table.inspection'),
+      t('quoteSheet.table.trash'), t('quoteSheet.table.profitPercent'),
+    ]
     const rows = filtered.map((p: any) => {
       const { laundry, consumables } = getEstimates(p)
       return [
@@ -659,27 +678,27 @@ export default function QuoteSheetPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Quote Sheet"
-        subtitle="Properties currently in Quote stage"
+        title={t('quoteSheet.page.title')}
+        subtitle={t('quoteSheet.page.subtitle')}
         actions={<div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportCsv} className="gap-1.5 no-print" disabled={!filtered?.length}>
-            <Download className="w-3.5 h-3.5" /> Export CSV
+            <Download className="w-3.5 h-3.5" /> {t('common.actions.exportCsv')}
           </Button>
           <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-1.5 no-print" data-testid="button-print-quote">
             <Printer className="w-3.5 h-3.5" />
-            Print
+            {t('quoteSheet.page.print')}
           </Button>
           <div className="relative no-print">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search…"
+              placeholder={t('quoteSheet.page.searchPlaceholder')}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               className="pl-8 pr-7 h-8 w-full sm:w-56 text-sm"
             />
             {search && (
-              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label="Clear search">
+              <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={t('quoteSheet.page.clearSearch')}>
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
@@ -695,14 +714,14 @@ export default function QuoteSheetPage() {
                 className={`px-2.5 h-full text-xs capitalize ${viewMode === m ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'} ${m !== 'active' ? 'border-l border-border' : ''}`}
                 data-testid={`view-mode-${m}`}
               >
-                {m}
+                {t(`quoteSheet.viewMode.${m}`)}
                 {m === 'archived' ? <span className="ml-1 text-2xs opacity-70">({(properties || []).filter((p: any) => p.archived_at).length})</span> : null}
               </button>
             ))}
           </div>
           <Button size="sm" onClick={() => setAddOpen(true)} data-testid="button-add-quote" className="gap-1.5 no-print">
             <Plus className="w-3.5 h-3.5" />
-            New Quote
+            {t('quoteSheet.page.newQuote')}
           </Button>
         </div>}
       />
@@ -716,19 +735,19 @@ export default function QuoteSheetPage() {
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4 no-print">
             <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="w-3.5 h-3.5" /> Open Quotes</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="w-3.5 h-3.5" /> {t('quoteSheet.summary.openQuotes')}</div>
               <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{filtered.length}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5" /> Avg Profit</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><TrendingUp className="w-3.5 h-3.5" /> {t('quoteSheet.summary.avgProfit')}</div>
               <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${avgProfit != null ? profitColorClass(avgProfit) : ''}`}>{avgProfit != null ? `${avgProfit.toFixed(1)}%` : '—'}</p>
             </div>
             <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /> Converted (30d)</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><ArrowRight className="w-3.5 h-3.5" /> {t('quoteSheet.summary.converted30d')}</div>
               <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{convertedCount30 ?? 0}</p>
             </div>
             <div className={`rounded-2xl border shadow-sm p-4 ${staleCount > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Stale (&gt;90d)</div>
+              <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> {t('quoteSheet.summary.stale90d')}</div>
               <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${staleCount > 0 ? 'text-warning' : ''}`}>{staleCount}</p>
             </div>
           </div>
@@ -740,21 +759,21 @@ export default function QuoteSheetPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               {([
-                { col: 'name', label: 'Name' },
-                { col: 'client', label: 'Client' },
-                { col: 'created_at', label: 'Quote Date' },
-                { col: 'ce_charged', label: 'Client Charged', title: 'Client Charged' },
-                { col: 'cleaner_pay', label: 'Cleaner Pay' },
-                { col: 'bedrooms', label: 'Bedrooms' },
-                { col: 'number_of_beds', label: 'Beds' },
-                { col: 'full_baths', label: 'Full Baths' },
-                { col: 'half_baths', label: 'Half Baths' },
-                { col: 'square_footage', label: 'Sq Ft' },
-                { col: 'est_laundry', label: 'Est Laundry', title: 'Estimated Laundry Cost' },
-                { col: 'est_consumables', label: 'Est Consumables', title: 'Estimated Consumables Cost' },
-                { col: 'inspection_cost', label: 'Inspection' },
-                { col: 'trash_cost', label: 'Trash' },
-                { col: 'profit_percentage', label: 'Profit %' },
+                { col: 'name', label: t('quoteSheet.table.name') },
+                { col: 'client', label: t('quoteSheet.table.client') },
+                { col: 'created_at', label: t('quoteSheet.table.quoteDate') },
+                { col: 'ce_charged', label: t('quoteSheet.table.clientCharged'), title: t('quoteSheet.table.clientCharged') },
+                { col: 'cleaner_pay', label: t('quoteSheet.table.cleanerPay') },
+                { col: 'bedrooms', label: t('quoteSheet.table.bedrooms') },
+                { col: 'number_of_beds', label: t('quoteSheet.table.beds') },
+                { col: 'full_baths', label: t('quoteSheet.table.fullBaths') },
+                { col: 'half_baths', label: t('quoteSheet.table.halfBaths') },
+                { col: 'square_footage', label: t('quoteSheet.table.sqFt') },
+                { col: 'est_laundry', label: t('quoteSheet.table.estLaundry'), title: t('quoteSheet.table.estLaundryTitle') },
+                { col: 'est_consumables', label: t('quoteSheet.table.estConsumables'), title: t('quoteSheet.table.estConsumablesTitle') },
+                { col: 'inspection_cost', label: t('quoteSheet.table.inspection') },
+                { col: 'trash_cost', label: t('quoteSheet.table.trash') },
+                { col: 'profit_percentage', label: t('quoteSheet.table.profitPercent') },
               ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
                 <th
                   key={col}
@@ -782,13 +801,13 @@ export default function QuoteSheetPage() {
             ) : !properties || properties.length === 0 ? (
               <tr>
                 <td colSpan={16}>
-                  <EmptyState icon={FileSpreadsheet} title="No quotes yet" description="Add a property to the Quote stage to get started." action={{ label: 'New Quote', onClick: () => setAddOpen(true) }} />
+                  <EmptyState icon={FileSpreadsheet} title={t('quoteSheet.emptyNoQuotes.title')} description={t('quoteSheet.emptyNoQuotes.description')} action={{ label: t('quoteSheet.emptyNoQuotes.action'), onClick: () => setAddOpen(true) }} />
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={16}>
-                  <EmptyState icon={Search} title="No results" description={`No properties match "${search}".`} />
+                  <EmptyState icon={Search} title={t('quoteSheet.emptyNoResults.title')} description={t('quoteSheet.emptyNoResults.description', { search })} />
                 </td>
               </tr>
             ) : (
@@ -810,10 +829,10 @@ export default function QuoteSheetPage() {
                         return (
                           <span
                             className="inline-flex items-center gap-1.5 text-muted-foreground whitespace-nowrap"
-                            title={stale ? `Quote is ${days} days old - eligible for auto-archive (>90d)` : `${days} days old`}
+                            title={stale ? t('quoteSheet.table.quoteAgeTooltipStale', { days }) : t('quoteSheet.table.quoteAgeTooltip', { days })}
                           >
                             {new Date(p.created_at).toLocaleDateString()}
-                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{days}d</span>
+                            <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold tabular-nums ${stale ? 'bg-warning/15 text-warning ring-1 ring-warning/30' : 'bg-muted text-muted-foreground'}`}>{t('quoteSheet.table.quoteAgeBadge', { days })}</span>
                           </span>
                         )
                       })() : '—'}
@@ -860,7 +879,7 @@ export default function QuoteSheetPage() {
                           className="h-6 text-xs gap-1 hover:text-primary px-2"
                           onClick={() => handleDuplicate(p)}
                           data-testid={`button-duplicate-${p.id}`}
-                          title="Duplicate quote"
+                          title={t('quoteSheet.rowActions.duplicateTooltip')}
                         >
                           <Copy className="w-3 h-3" />
                         </Button>
@@ -871,9 +890,9 @@ export default function QuoteSheetPage() {
                             className="h-6 text-xs gap-1 hover:text-primary px-2"
                             onClick={(e) => { e.stopPropagation(); restoreQuote(p.id) }}
                             data-testid={`button-restore-${p.id}`}
-                            title={`Archived ${p.archived_by ? 'by ' + p.archived_by : ''}: ${p.archived_reason ?? ''}`}
+                            title={t('quoteSheet.rowActions.restoreTitle', { by: p.archived_by ? t('quoteSheet.rowActions.archivedBy', { name: p.archived_by }) : '', reason: p.archived_reason ?? '' })}
                           >
-                            Restore
+                            {t('quoteSheet.rowActions.restore')}
                           </Button>
                         ) : (
                           <>
@@ -884,7 +903,7 @@ export default function QuoteSheetPage() {
                               onClick={(e) => { e.stopPropagation(); handleConvert(p) }}
                               data-testid={`button-convert-${p.id}`}
                             >
-                              <ArrowRight className="w-3 h-3" /> Onboard
+                              <ArrowRight className="w-3 h-3" /> {t('quoteSheet.rowActions.onboard')}
                             </Button>
                             <Button
                               size="sm"
@@ -892,9 +911,9 @@ export default function QuoteSheetPage() {
                               className="h-6 text-xs gap-1 hover:text-primary px-2"
                               onClick={(e) => { e.stopPropagation(); setSendingQuote(p); setSendOwnerId('') }}
                               data-testid={`button-send-owner-${p.id}`}
-                              title={p.quote_sent_at ? `Quote ${p.quote_owner_response ?? 'sent'} to owner` : 'Send quote to owner'}
+                              title={p.quote_sent_at ? t('quoteSheet.send.titleSent', { response: sendResponseLabel(p.quote_owner_response, true) }) : t('quoteSheet.send.titleDefault')}
                             >
-                              <Send className="w-3 h-3" /> {p.quote_owner_response === 'approved' ? 'Approved' : p.quote_owner_response === 'declined' ? 'Declined' : p.quote_sent_at ? 'Sent' : 'Send'}
+                              <Send className="w-3 h-3" /> {sendResponseLabel(p.quote_owner_response, !!p.quote_sent_at)}
                             </Button>
                             <Button
                               size="sm"
@@ -902,17 +921,20 @@ export default function QuoteSheetPage() {
                               className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
                               onClick={(e) => { e.stopPropagation(); setArchivingTarget(p); setArchiveReason('') }}
                               data-testid={`button-archive-${p.id}`}
-                              title="Archive - quote didn't pan out"
+                              title={t('quoteSheet.rowActions.archiveTooltip')}
                             >
-                              Archive
+                              {t('quoteSheet.rowActions.archive')}
                             </Button>
                           </>
                         )}
                       </div>
                       {p.archived_at && viewMode !== 'active' ? (
                         <div className="mt-1 text-2xs text-muted-foreground italic">
-                          Archived {new Date(p.archived_at).toLocaleDateString()}{p.archived_by ? ` by ${p.archived_by}` : ''}
-                          {p.archived_reason ? <> - {p.archived_reason}</> : null}
+                          {t('quoteSheet.rowActions.archivedNote', {
+                            date: new Date(p.archived_at).toLocaleDateString(),
+                            by: p.archived_by ? t('quoteSheet.rowActions.archivedNoteBy', { name: p.archived_by }) : '',
+                            reason: p.archived_reason ? t('quoteSheet.rowActions.archivedNoteReason', { reason: p.archived_reason }) : '',
+                          })}
                         </div>
                       ) : null}
                     </td>
@@ -932,7 +954,7 @@ export default function QuoteSheetPage() {
                 : null
               return (
                 <tr className="bg-muted/60 border-t-2 border-border font-semibold">
-                  <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">Totals ({filtered.length})</td>
+                  <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 z-10 bg-muted/60">{t('quoteSheet.totals.label', { count: filtered.length })}</td>
                   <td className="py-2 px-3 text-xs"></td>
                   <td className="py-2 px-3 text-xs"></td>
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(sum((p: any) => p.ce_charged))}</td>
@@ -944,8 +966,8 @@ export default function QuoteSheetPage() {
                   <td className="py-2 px-3 text-xs tabular-nums">{fmt(filtered.length * TRASH_COST)}</td>
                   <td className="py-2 px-3 text-xs tabular-nums">
                     {avgProfit == null ? '—' : (
-                      <span className={`font-medium ${profitColorClass(avgProfit)}`} title="Average profit %">
-                        {avgProfit.toFixed(1)}% <span className="text-muted-foreground font-normal">(avg)</span>
+                      <span className={`font-medium ${profitColorClass(avgProfit)}`} title={t('quoteSheet.totals.avgTitle')}>
+                        {avgProfit.toFixed(1)}% <span className="text-muted-foreground font-normal">{t('quoteSheet.totals.avgSuffix')}</span>
                       </span>
                     )}
                   </td>
@@ -962,11 +984,11 @@ export default function QuoteSheetPage() {
       <Dialog open={!!sendingQuote} onOpenChange={v => { if (!v) { setSendingQuote(null); setSendOwnerId('') } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">Send quote to owner</DialogTitle>
+            <DialogTitle className="text-base">{t('quoteSheet.sendDialog.title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
-              Link an owner to <strong>{sendingQuote?.name}</strong> and send them this quote to review and approve in their portal.
+              {t('quoteSheet.sendDialog.bodyPrefix')} <strong>{sendingQuote?.name}</strong> {t('quoteSheet.sendDialog.bodySuffix')}
             </p>
             <select
               className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
@@ -974,15 +996,15 @@ export default function QuoteSheetPage() {
               onChange={e => setSendOwnerId(e.target.value)}
               data-testid="select-send-owner"
             >
-              <option value="">Select an owner…</option>
+              <option value="">{t('quoteSheet.sendDialog.selectPlaceholder')}</option>
               {(portalOwners ?? []).map(o => <option key={o.id} value={o.id}>{o.name || o.email}</option>)}
             </select>
-            <p className="text-2xs text-muted-foreground">Owner not listed? Add them in Settings → Owners first.</p>
+            <p className="text-2xs text-muted-foreground">{t('quoteSheet.sendDialog.hint')}</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setSendingQuote(null); setSendOwnerId('') }}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setSendingQuote(null); setSendOwnerId('') }}>{t('common.actions.cancel')}</Button>
             <Button disabled={!sendOwnerId || sendPending} onClick={() => sendQuoteToOwner()} data-testid="button-confirm-send-quote">
-              {sendPending ? 'Sending…' : 'Send quote'}
+              {sendPending ? t('quoteSheet.sendDialog.sending') : t('quoteSheet.sendDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -992,37 +1014,37 @@ export default function QuoteSheetPage() {
       <Dialog open={addOpen} onOpenChange={v => !v && setAddOpen(false)}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base">Add New Quote</DialogTitle>
+            <DialogTitle className="text-base">{t('quoteSheet.addDialog.title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             {/* Property info */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Property Name *</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.propertyName')}</Label>
               <Input value={newProp.name} onChange={e => setNewProp(prev => ({ ...prev, name: e.target.value }))} className="h-8 text-sm" data-testid="input-new-name" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Address</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.address')}</Label>
               {/* Google Places-backed autocomplete; falls back to a plain
                   text input when VITE_GOOGLE_MAPS_API_KEY isn't configured,
                   so manual entry never breaks. */}
               <AddressAutocomplete
                 value={newProp.address}
                 onChange={next => setNewProp(prev => ({ ...prev, address: next }))}
-                placeholder="Start typing an address…"
+                placeholder={t('quoteSheet.addDialog.addressPlaceholder')}
                 className="h-8 text-sm"
                 testId="input-new-address"
               />
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between">
-                <Label className="text-xs text-muted-foreground">Client</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.client')}</Label>
                 <button
                   type="button"
                   onClick={() => setNewClientOpen(true)}
                   className="text-2xs uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60 inline-flex items-center gap-1"
                   data-testid="button-new-client-from-quote"
                 >
-                  <Plus className="w-2.5 h-2.5" /> New
+                  <Plus className="w-2.5 h-2.5" /> {t('quoteSheet.addDialog.newClient')}
                 </button>
               </div>
               <select
@@ -1030,7 +1052,7 @@ export default function QuoteSheetPage() {
                 onChange={e => setNewProp(prev => ({ ...prev, contact_id: e.target.value }))}
                 className="w-full h-8 text-sm border border-input rounded px-2 bg-background"
               >
-                <option value="">No client linked</option>
+                <option value="">{t('quoteSheet.addDialog.noClientLinked')}</option>
                 {(contacts || []).map((c: any) => (
                   <option key={c.id} value={c.id}>{c.full_name}{c.email ? ` (${c.email})` : ''}</option>
                 ))}
@@ -1040,12 +1062,12 @@ export default function QuoteSheetPage() {
             {/* Property details grid */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Bedrooms</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.bedrooms')}</Label>
                 <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground">Number of Beds</Label>
+                  <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.numberOfBeds')}</Label>
                   <button
                     type="button"
                     onClick={() => {
@@ -1056,28 +1078,28 @@ export default function QuoteSheetPage() {
                         (parseInt(newProp.twin_beds) || 0)
                       setNewProp(prev => ({ ...prev, number_of_beds: total > 0 ? String(total) : '' }))
                     }}
-                    title="Sum king + queen + full + twin"
+                    title={t('quoteSheet.addDialog.autoSumTooltip')}
                     className="text-[9px] uppercase tracking-wide text-primary hover:text-primary/80 px-1.5 py-0 rounded border border-primary/30 hover:border-primary/60"
                   >
-                    Auto
+                    {t('quoteSheet.addDialog.autoSum')}
                   </button>
                 </div>
                 <Input type="number" value={newProp.number_of_beds} onChange={e => setNewProp(prev => ({ ...prev, number_of_beds: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_beds" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Full Baths</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.fullBaths')}</Label>
                 <Input type="number" value={newProp.full_baths} onChange={e => setNewProp(prev => ({ ...prev, full_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-full_baths" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Half Baths</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.halfBaths')}</Label>
                 <Input type="number" value={newProp.half_baths} onChange={e => setNewProp(prev => ({ ...prev, half_baths: e.target.value }))} className="h-8 text-sm" data-testid="input-new-half_baths" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Kitchens</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.kitchens')}</Label>
                 <Input type="number" value={newProp.number_of_kitchens} onChange={e => setNewProp(prev => ({ ...prev, number_of_kitchens: e.target.value }))} className="h-8 text-sm" data-testid="input-new-number_of_kitchens" />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Square Footage</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.squareFootage')}</Label>
                 <Input
                   type="number"
                   value={newProp.sq_ft}
@@ -1105,18 +1127,18 @@ export default function QuoteSheetPage() {
             {/* Bed sizes — optional. When filled in, the "Auto" button on
                 Number of Beds derives the total from these. */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Bed Sizes (optional)</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.bedSizes')}</Label>
               <div className="grid grid-cols-4 gap-2">
-                <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder="King" data-testid="input-new-king_beds" />
-                <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder="Queen" data-testid="input-new-queen_beds" />
-                <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder="Full" data-testid="input-new-full_beds" />
-                <Input type="number" value={newProp.twin_beds} onChange={e => setNewProp(prev => ({ ...prev, twin_beds: e.target.value }))} className="h-8 text-sm" placeholder="Twin" data-testid="input-new-twin_beds" />
+                <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeKing')} data-testid="input-new-king_beds" />
+                <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeQueen')} data-testid="input-new-queen_beds" />
+                <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeFull')} data-testid="input-new-full_beds" />
+                <Input type="number" value={newProp.twin_beds} onChange={e => setNewProp(prev => ({ ...prev, twin_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeTwin')} data-testid="input-new-twin_beds" />
               </div>
             </div>
 
             {/* Hot Tub toggle */}
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Hot Tub</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.hotTub')}</Label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -1128,7 +1150,7 @@ export default function QuoteSheetPage() {
                       : 'bg-background border-border text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  No
+                  {t('common.actions.no')}
                 </button>
                 <button
                   type="button"
@@ -1140,7 +1162,7 @@ export default function QuoteSheetPage() {
                       : 'bg-background border-border text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  Yes
+                  {t('common.actions.yes')}
                 </button>
               </div>
             </div>
@@ -1155,10 +1177,10 @@ export default function QuoteSheetPage() {
                 data-testid="input-new-linen_program"
               />
               <div className="text-xs">
-                <div className="font-medium">Linen Program</div>
+                <div className="font-medium">{t('quoteSheet.addDialog.linenProgram')}</div>
                 <div className="text-muted-foreground">
-                  Adds {newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0'}/clean
-                  {newProp.number_of_beds ? ` (${newProp.number_of_beds} beds × $300 / 12 / 4)` : ''}
+                  {t('quoteSheet.addDialog.linenProgramAdds', { amount: newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0' })}
+                  {newProp.number_of_beds ? t('quoteSheet.addDialog.linenProgramBeds', { beds: newProp.number_of_beds }) : ''}
                 </div>
               </div>
             </label>
@@ -1166,7 +1188,7 @@ export default function QuoteSheetPage() {
             {/* CE Charged and Cleaner Pay — with auto-suggestions */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Client Charged ($)</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.clientCharged')}</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1182,14 +1204,14 @@ export default function QuoteSheetPage() {
                   }}
                   className="h-8 text-sm"
                   data-testid="input-new-ce_charged"
-                  placeholder={newProp.sq_ft ? `Suggested: $${(parseFloat(newProp.sq_ft) * 0.14).toFixed(2)}` : ''}
+                  placeholder={newProp.sq_ft ? t('quoteSheet.addDialog.clientChargedSuggested', { amount: `$${(parseFloat(newProp.sq_ft) * 0.14).toFixed(2)}` }) : ''}
                 />
                 {newProp.sq_ft && !newProp.ce_charged && (
-                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2)} ($0.14/sqft)</p>
+                  <p className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.clientChargedSuggestedHint', { amount: `$${(parseFloat(newProp.sq_ft || '0') * 0.14).toFixed(2)}` })}</p>
                 )}
               </div>
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Cleaner Pay ($)</Label>
+                <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.cleanerPay')}</Label>
                 <Input
                   type="number"
                   step="0.01"
@@ -1197,10 +1219,10 @@ export default function QuoteSheetPage() {
                   onChange={e => setNewProp(prev => ({ ...prev, cleaner_pay: e.target.value }))}
                   className="h-8 text-sm"
                   data-testid="input-new-cleaner_pay"
-                  placeholder={newProp.ce_charged ? `Suggested: $${(parseFloat(newProp.ce_charged) * 0.5).toFixed(2)}` : ''}
+                  placeholder={newProp.ce_charged ? t('quoteSheet.addDialog.cleanerPaySuggested', { amount: `$${(parseFloat(newProp.ce_charged) * 0.5).toFixed(2)}` }) : ''}
                 />
                 {newProp.ce_charged && !newProp.cleaner_pay && (
-                  <p className="text-xs text-muted-foreground">Suggested: ${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)} (50% of CE)</p>
+                  <p className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.cleanerPaySuggestedHint', { amount: `$${(parseFloat(newProp.ce_charged || '0') * 0.5).toFixed(2)}` })}</p>
                 )}
                 {(() => {
                   // Cleaner minimum reference keyed off bedroom count. Display-only;
@@ -1215,7 +1237,7 @@ export default function QuoteSheetPage() {
                       className={`text-xs ${belowMin ? 'text-destructive font-medium' : 'text-muted-foreground'}`}
                       data-testid="quote-cleaner-min"
                     >
-                      Min pay ({bdr} bdr): ${min.toFixed(2)}{belowMin ? ' · below min' : ''}
+                      {t('quoteSheet.addDialog.cleanerMinPay', { bdr: bdr ?? '', amount: `$${min.toFixed(2)}`, belowMin: belowMin ? t('quoteSheet.addDialog.cleanerMinPayBelow') : '' })}
                     </p>
                   )
                 })()}
@@ -1236,8 +1258,11 @@ export default function QuoteSheetPage() {
                   const suggested = pay / 0.55 + linen
                   return (
                     <p className="text-xs text-warning font-medium" data-testid="quote-client-charge-suggest">
-                      Pay is {pct.toFixed(0)}% of client charge. Suggested client charge: ${suggested.toFixed(2)}
-                      {linen > 0 ? ` (incl. $${linen.toFixed(2)} linen)` : ''}
+                      {t('quoteSheet.addDialog.marginGuard', {
+                        pct: pct.toFixed(0),
+                        amount: `$${suggested.toFixed(2)}`,
+                        linen: linen > 0 ? t('quoteSheet.addDialog.marginGuardLinen', { amount: `$${linen.toFixed(2)}` }) : '',
+                      })}
                     </p>
                   )
                 })()}
@@ -1247,7 +1272,7 @@ export default function QuoteSheetPage() {
             {/* Live estimate + profit % preview */}
             {(newProp.number_of_beds || newProp.full_baths || newProp.ce_charged) && (
               <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-card px-4 py-3 space-y-1 text-xs shadow-sm">
-                <p className="font-semibold text-foreground mb-1.5 uppercase tracking-wide text-2xs text-muted-foreground">Estimated Costs</p>
+                <p className="font-semibold text-foreground mb-1.5 uppercase tracking-wide text-2xs text-muted-foreground">{t('quoteSheet.addDialog.estimatedCosts')}</p>
                 {(() => {
                   const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
                   const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
@@ -1268,21 +1293,21 @@ export default function QuoteSheetPage() {
                   const profitPct = ce && ce > 0 ? ((ce - totalWithPay) / ce) * 100 : null
                   return (
                     <>
-                      {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">Cleaner Pay</span><span className="tabular-nums">{fmt(pay)}</span></div>}
-                      <div className="flex justify-between"><span className="text-muted-foreground">Est Laundry</span><span className="tabular-nums">{fmt(laundry)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Est Consumables</span><span className="tabular-nums">{fmt(consumables)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Inspection</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
-                      <div className="flex justify-between"><span className="text-muted-foreground">Trash</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
+                      {pay != null && <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estCleanerPay')}</span><span className="tabular-nums">{fmt(pay)}</span></div>}
+                      <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estLaundry')}</span><span className="tabular-nums">{fmt(laundry)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estConsumables')}</span><span className="tabular-nums">{fmt(consumables)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estInspection')}</span><span className="tabular-nums">{fmt(INSPECTION_COST)}</span></div>
+                      <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estTrash')}</span><span className="tabular-nums">{fmt(TRASH_COST)}</span></div>
                       {newProp.linen_program && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Linen Program</span><span className="tabular-nums">{fmt(linenProgramCost)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estLinenProgram')}</span><span className="tabular-nums">{fmt(linenProgramCost)}</span></div>
                       )}
-                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>Total Costs</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
+                      <div className="flex justify-between border-t border-border pt-1 font-medium"><span>{t('quoteSheet.addDialog.estTotalCosts')}</span><span className="tabular-nums">{fmt(totalWithPay)}</span></div>
                       {ce != null && (
-                        <div className="flex justify-between"><span className="text-muted-foreground">Client Charged</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
+                        <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.estClientCharged')}</span><span className="tabular-nums font-medium">{fmt(ce)}</span></div>
                       )}
                       {profitPct !== null && (
                         <div className="flex items-center justify-between border-t border-border mt-1.5 pt-2.5">
-                          <span className="text-sm font-semibold">Profit Margin</span>
+                          <span className="text-sm font-semibold">{t('quoteSheet.addDialog.estProfitMargin')}</span>
                           <span className={`text-2xl font-bold tabular-nums leading-none ${profitColorClass(profitPct)}`}>
                             {profitPct.toFixed(1)}%
                           </span>
@@ -1295,9 +1320,9 @@ export default function QuoteSheetPage() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>Cancel</Button>
+            <Button variant="outline" size="sm" onClick={() => setAddOpen(false)}>{t('common.actions.cancel')}</Button>
             <Button size="sm" onClick={() => addProperty()} disabled={!newProp.name || addPending} data-testid="button-save-quote">
-              {addPending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />Saving…</> : 'Add Quote'}
+              {addPending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" />{t('common.actions.saving')}</> : t('quoteSheet.addDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1318,36 +1343,34 @@ export default function QuoteSheetPage() {
       <Dialog open={!!archivingTarget} onOpenChange={v => !v && !archivePending && setArchivingTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base">Archive quote</DialogTitle>
+            <DialogTitle className="text-base">{t('quoteSheet.archiveDialog.title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <p>
-              Archive <span className="font-medium">{archivingTarget?.name ?? '—'}</span>?
-              The property stays in the database; the quote sheet hides it by default
-              and you can restore it any time.
+              {t('quoteSheet.archiveDialog.bodyPrefix')} <span className="font-medium">{archivingTarget?.name ?? t('quoteSheet.archiveDialog.nameFallback')}</span>{t('quoteSheet.archiveDialog.bodySuffix')}
             </p>
             <div>
               <Label htmlFor="archive-reason" className="text-xs">
-                Reason <span className="text-destructive">*</span>
+                {t('quoteSheet.archiveDialog.reason')} <span className="text-destructive">*</span>
               </Label>
               <textarea
                 id="archive-reason"
                 value={archiveReason}
                 onChange={e => setArchiveReason(e.target.value)}
-                placeholder="e.g. Owner decided to self-manage; price gap; ghosted after follow-up…"
+                placeholder={t('quoteSheet.archiveDialog.reasonPlaceholder')}
                 rows={3}
                 className="w-full mt-1 rounded-md border border-border bg-background px-2 py-1.5 text-sm"
                 data-testid="input-archive-reason"
                 autoFocus
               />
               <p className="text-2xs text-muted-foreground mt-1">
-                Required. Visible in the archived view so you can audit why a quote didn't onboard.
+                {t('quoteSheet.archiveDialog.reasonHint')}
               </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setArchivingTarget(null)} disabled={archivePending}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button
               size="sm"
@@ -1355,7 +1378,7 @@ export default function QuoteSheetPage() {
               disabled={archivePending || !archiveReason.trim()}
               data-testid="button-confirm-archive"
             >
-              {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Archiving…</> : 'Archive quote'}
+              {archivePending ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {t('quoteSheet.archiveDialog.archiving')}</> : t('quoteSheet.archiveDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1368,49 +1391,49 @@ export default function QuoteSheetPage() {
       <Dialog open={newClientOpen} onOpenChange={v => { if (!v) { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-base">New Client</DialogTitle>
+            <DialogTitle className="text-base">{t('quoteSheet.newClientDialog.title')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Full name *</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.newClientDialog.fullName')}</Label>
               <Input
                 autoFocus
                 value={newClient.full_name}
                 onChange={e => setNewClient(prev => ({ ...prev, full_name: e.target.value }))}
-                placeholder="Jane Doe"
+                placeholder={t('quoteSheet.newClientDialog.fullNamePlaceholder')}
                 className="h-8 text-sm"
                 data-testid="input-new-client-name"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Email</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.newClientDialog.email')}</Label>
               <Input
                 type="email"
                 value={newClient.email}
                 onChange={e => setNewClient(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="jane@example.com"
+                placeholder={t('quoteSheet.newClientDialog.emailPlaceholder')}
                 className="h-8 text-sm"
                 data-testid="input-new-client-email"
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Phone</Label>
+              <Label className="text-xs text-muted-foreground">{t('quoteSheet.newClientDialog.phone')}</Label>
               <Input
                 type="tel"
                 value={newClient.phone}
                 onChange={e => setNewClient(prev => ({ ...prev, phone: e.target.value }))}
-                placeholder="(555) 555-1212"
+                placeholder={t('quoteSheet.newClientDialog.phonePlaceholder')}
                 className="h-8 text-sm"
                 data-testid="input-new-client-phone"
               />
             </div>
             <p className="text-2xs text-muted-foreground">
-              You can fill in company, address, payment method, and more later from the Clients page.
+              {t('quoteSheet.newClientDialog.hint')}
             </p>
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => { setNewClientOpen(false); setNewClient({ full_name: '', email: '', phone: '' }) }} disabled={createClientPending}>
-              Cancel
+              {t('common.actions.cancel')}
             </Button>
             <Button
               size="sm"
@@ -1419,8 +1442,8 @@ export default function QuoteSheetPage() {
               data-testid="button-save-new-client"
             >
               {createClientPending
-                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> Saving…</>
-                : 'Create client'}
+                ? <><Loader2 className="w-3 h-3 mr-1 animate-spin" /> {t('quoteSheet.newClientDialog.saving')}</>
+                : t('quoteSheet.newClientDialog.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

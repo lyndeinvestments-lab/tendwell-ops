@@ -17,13 +17,16 @@ import { Search, AlertTriangle, Upload, Download, X, ArrowUpDown, ArrowUp, Arrow
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
-import { format } from 'date-fns'
 import { CsvImportModal } from '@/components/CsvImportModal'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { TablePagination } from '@/components/TablePagination'
 import { ErrorState } from '@/components/ErrorState'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 
+// Frequency values stay canonical English (DB enum on properties.cleaning_frequency);
+// labels are resolved through t('proForma.freq.<value-camelCase>') at each call site.
 const FREQ_OPTIONS = [
   { value: 'weekly', label: 'Weekly', cleans: 4.33 },
   { value: 'biweekly', label: 'Biweekly', cleans: 2.17 },
@@ -31,6 +34,14 @@ const FREQ_OPTIONS = [
   { value: 'as_needed', label: 'As Needed', cleans: 2 },
   { value: 'custom', label: 'Custom', cleans: null },
 ]
+
+const FREQ_LABEL_KEYS: Record<string, string> = {
+  weekly: 'proForma.freq.weekly',
+  biweekly: 'proForma.freq.biweekly',
+  monthly: 'proForma.freq.monthly',
+  as_needed: 'proForma.freq.asNeeded',
+  custom: 'proForma.freq.custom',
+}
 
 // Break-even target margin default; the live value is read per-component from
 // the break_even_target_margin app setting (see useAppSettings).
@@ -42,6 +53,7 @@ function fmt(n: number | null | undefined, prefix = '$') {
 }
 
 function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; avgCleans: number | null }) {
+  const { t } = useLocale('financials')
   const qc = useQueryClient()
   const { toast } = useToast()
   const [customCleans, setCustomCleans] = useState<string>(avgCleans != null ? String(avgCleans) : '')
@@ -56,9 +68,9 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
       qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
-      toast({ title: 'Frequency saved' })
+      toast({ title: t('proForma.toasts.frequencySaved') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('proForma.toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const labelColor = value === 'as_needed' ? 'text-warning' : ''
@@ -81,7 +93,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
         <SelectContent>
           {FREQ_OPTIONS.map(f => (
             <SelectItem key={f.value} value={f.value} className="text-xs">
-              {f.label}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
+              {t(FREQ_LABEL_KEYS[f.value])}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
             </SelectItem>
           ))}
         </SelectContent>
@@ -98,7 +110,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
             if (!isNaN(n)) mutate({ freq: 'custom', cleans: n })
           }}
           className="h-6 w-16 text-xs px-1"
-          placeholder="cleans/mo"
+          placeholder={t('proForma.table.cleansPerMo')}
         />
       )}
     </div>
@@ -120,6 +132,7 @@ function WhatIfPopover({
   totalCost: number | null
   cpm: number | null
 }) {
+  const { t } = useLocale('financials')
   const qc = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -146,10 +159,10 @@ function WhatIfPopover({
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('proForma.toasts.saved') })
       setOpen(false)
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('proForma.toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   return (
@@ -161,7 +174,7 @@ function WhatIfPopover({
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-3" side="right">
         <p className="text-xs font-semibold text-foreground">
-          What-If: {field === 'ce_charged' ? 'Client Charged/Clean' : 'Cost/Clean'}
+          {field === 'ce_charged' ? t('proForma.whatIf.titleCe') : t('proForma.whatIf.titleCost')}
         </p>
         <Input
           type="number"
@@ -170,24 +183,24 @@ function WhatIfPopover({
           value={val}
           onChange={e => setVal(e.target.value)}
           className="h-7 text-xs"
-          placeholder="Enter value…"
+          placeholder={t('proForma.whatIf.placeholder')}
           autoFocus
         />
         <div className="space-y-1 text-xs text-muted-foreground">
           <div className="flex justify-between">
-            <span>Profit/Clean</span>
+            <span>{t('proForma.whatIf.profitPerClean')}</span>
             <span className={profitPerClean != null && profitPerClean < 0 ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
               {fmt(profitPerClean)}
             </span>
           </div>
           <div className="flex justify-between">
-            <span>Mo Profit</span>
+            <span>{t('proForma.whatIf.moProfit')}</span>
             <span className={moProfitPreview != null && moProfitPreview < 0 ? 'text-destructive font-medium' : 'text-foreground font-medium'}>
               {fmt(moProfitPreview)}
             </span>
           </div>
           <div className="flex justify-between">
-            <span>Break-Even CE</span>
+            <span>{t('proForma.whatIf.breakEvenCe')}</span>
             <span className="text-foreground font-medium">{fmt(breakEvenCe)}</span>
           </div>
         </div>
@@ -198,7 +211,7 @@ function WhatIfPopover({
             disabled={!isValid || isPending}
             onClick={() => mutate()}
           >
-            {isPending ? 'Saving…' : 'Save'}
+            {isPending ? t('proForma.whatIf.saving') : t('proForma.whatIf.save')}
           </Button>
           <Button
             size="sm"
@@ -206,7 +219,7 @@ function WhatIfPopover({
             className="h-6 text-xs"
             onClick={() => { setOpen(false); setVal(currentValue != null ? String(currentValue) : '') }}
           >
-            Cancel
+            {t('proForma.whatIf.cancel')}
           </Button>
         </div>
       </PopoverContent>
@@ -215,10 +228,12 @@ function WhatIfPopover({
 }
 
 export default function ProFormaPage() {
+  const { t } = useLocale('financials')
+  const { format } = useDateFormat()
   const inWrapper = useInProFormaWrapper()
   const { toast } = useToast()
   const qc = useQueryClient()
-  usePageTitle(inWrapper ? 'Pro Forma - Per-Property' : 'Pro Forma')
+  usePageTitle(inWrapper ? t('proForma.page.titleWrapped') : t('proForma.page.title'))
   const { getNumber } = useAppSettings()
   const breakEvenMargin = getNumber('break_even_target_margin', BREAK_EVEN_MARGIN_DEFAULT)
   const [search, setSearch] = useState('')
@@ -368,7 +383,7 @@ export default function ProFormaPage() {
       if (error) throw error
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] }),
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('proForma.toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   const { mutate: bulkSetFreq, isPending: bulkPending } = useGuardedMutation('pro-forma', {
@@ -385,9 +400,9 @@ export default function ProFormaPage() {
       const count = selected.size
       setSelected(new Set())
       setBulkFreq('')
-      toast({ title: `Updated ${count} properties` })
+      toast({ title: t('proForma.toasts.bulkUpdated', { count }) })
     },
-    onError: (error: any) => toast({ title: 'Bulk update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('proForma.toasts.bulkUpdateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function toggleSort(key: SortKey) {
@@ -535,17 +550,17 @@ export default function ProFormaPage() {
   // Feature 6: CSV export with Frequency Type column
   function exportCsv() {
     const rows = filtered.map((p: any) => ({
-      'Property': p.name || '',
-      'Client Charged/Clean': p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
-      'Cost/Clean': p.total_estimated_cost != null ? `$${p.total_estimated_cost.toFixed(2)}` : '',
-      'Profit/Clean': p.estimated_profit != null ? `$${p.estimated_profit.toFixed(2)}` : '',
-      'Frequency': FREQ_OPTIONS.find(f => f.value === p.cleaning_frequency)?.label || p.cleaning_frequency || '',
-      'Frequency Type': p.cleaning_frequency === 'custom' ? 'Custom' : 'Standard',
-      'Cleans/Mo': p.avg_cleans_per_month ?? '',
-      'First Clean': p.first_clean_date ? p.first_clean_date.slice(0, 10) : '',
-      'Mo Revenue': p.monthly_revenue_estimate != null ? `$${p.monthly_revenue_estimate.toFixed(2)}` : '',
-      'Mo Cost': p.monthly_cost_estimate != null ? `$${p.monthly_cost_estimate.toFixed(2)}` : '',
-      'Mo Profit': p.monthly_profit_estimate != null ? `$${p.monthly_profit_estimate.toFixed(2)}` : '',
+      [t('proForma.csv.property')]: p.name || '',
+      [t('proForma.csv.clientChargedPerClean')]: p.ce_charged != null ? `$${p.ce_charged.toFixed(2)}` : '',
+      [t('proForma.csv.costPerClean')]: p.total_estimated_cost != null ? `$${p.total_estimated_cost.toFixed(2)}` : '',
+      [t('proForma.csv.profitPerClean')]: p.estimated_profit != null ? `$${p.estimated_profit.toFixed(2)}` : '',
+      [t('proForma.csv.frequency')]: FREQ_LABEL_KEYS[p.cleaning_frequency] ? t(FREQ_LABEL_KEYS[p.cleaning_frequency]) : (p.cleaning_frequency || ''),
+      [t('proForma.csv.frequencyType')]: p.cleaning_frequency === 'custom' ? t('proForma.csv.frequencyTypeCustom') : t('proForma.csv.frequencyTypeStandard'),
+      [t('proForma.csv.cleansPerMo')]: p.avg_cleans_per_month ?? '',
+      [t('proForma.csv.firstClean')]: p.first_clean_date ? p.first_clean_date.slice(0, 10) : '',
+      [t('proForma.csv.moRevenue')]: p.monthly_revenue_estimate != null ? `$${p.monthly_revenue_estimate.toFixed(2)}` : '',
+      [t('proForma.csv.moCost')]: p.monthly_cost_estimate != null ? `$${p.monthly_cost_estimate.toFixed(2)}` : '',
+      [t('proForma.csv.moProfit')]: p.monthly_profit_estimate != null ? `$${p.monthly_profit_estimate.toFixed(2)}` : '',
     }))
     const csv = Papa.unparse(rows)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
@@ -555,7 +570,7 @@ export default function ProFormaPage() {
     a.download = 'pro-forma.csv'
     a.click()
     URL.revokeObjectURL(url)
-    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
+    toast({ title: t('proForma.toasts.csvExported'), description: t('proForma.toasts.csvExportedDescription', { count: rows.length }) })
   }
 
   const allSelected = filtered.length > 0 && selected.size === filtered.length
@@ -568,21 +583,21 @@ export default function ProFormaPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       {!inWrapper && (
         <PageHeader
-          title="Pro Forma"
-          subtitle="Financial projections for active properties"
+          title={t('proForma.page.title')}
+          subtitle={t('proForma.page.subtitle')}
         />
       )}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         {inWrapper && (
           <div className="text-xs text-muted-foreground">
-            {filtered?.length ?? 0} {filtered?.length === 1 ? 'property' : 'properties'}
+            {t('proForma.page.propertyCount', { count: filtered?.length ?? 0 })}
           </div>
         )}
         <div className={`flex items-center gap-3 ${inWrapper ? '' : 'ml-auto'}`}>
           {asNeededCount > 0 && (
             <div className="flex items-center gap-1.5 text-xs text-warning">
               <AlertTriangle className="w-3 h-3" />
-              <span>{asNeededCount} using default frequency (2/mo)</span>
+              <span>{t('proForma.asNeededWarning', { count: asNeededCount })}</span>
             </div>
           )}
           <Button
@@ -593,7 +608,7 @@ export default function ProFormaPage() {
             data-testid="button-import-history"
           >
             <History className="w-3.5 h-3.5" />
-            History
+            {t('proForma.actions.history')}
           </Button>
           <Button
             variant="outline"
@@ -603,7 +618,7 @@ export default function ProFormaPage() {
             data-testid="button-import-csv"
           >
             <Upload className="w-3.5 h-3.5" />
-            Import CSV
+            {t('proForma.actions.importCsv')}
           </Button>
           <Button
             variant="outline"
@@ -614,13 +629,13 @@ export default function ProFormaPage() {
             data-testid="button-export-csv"
           >
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            {t('proForma.actions.exportCsv')}
           </Button>
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search…"
+              placeholder={t('proForma.actions.searchPlaceholder')}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               data-testid="input-search-proforma"
@@ -634,30 +649,30 @@ export default function ProFormaPage() {
       {/* Feature 3: Filter bar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground font-medium">Frequency:</span>
+          <span className="text-xs text-muted-foreground font-medium">{t('proForma.filters.frequencyLabel')}</span>
           <Select value={freqFilter} onValueChange={v => { setFreqFilter(v); setPage(1) }}>
             <SelectTrigger className="h-7 w-36 text-xs" data-testid="select-filter-freq">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-xs">All</SelectItem>
+              <SelectItem value="all" className="text-xs">{t('proForma.filters.all')}</SelectItem>
               {FREQ_OPTIONS.map(f => (
-                <SelectItem key={f.value} value={f.value} className="text-xs">{f.label}</SelectItem>
+                <SelectItem key={f.value} value={f.value} className="text-xs">{t(FREQ_LABEL_KEYS[f.value])}</SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground font-medium">Profitability:</span>
+          <span className="text-xs text-muted-foreground font-medium">{t('proForma.filters.profitabilityLabel')}</span>
           <Select value={profitFilter} onValueChange={v => { setProfitFilter(v); setPage(1) }}>
             <SelectTrigger className="h-7 w-44 text-xs" data-testid="select-filter-profit">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all" className="text-xs">All</SelectItem>
-              <SelectItem value="profitable" className="text-xs">Profitable (&gt;{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
-              <SelectItem value="near_break_even" className="text-xs">Near Break-Even (0-{(breakEvenMargin * 100).toFixed(0)}%)</SelectItem>
-              <SelectItem value="unprofitable" className="text-xs">Unprofitable</SelectItem>
+              <SelectItem value="all" className="text-xs">{t('proForma.filters.all')}</SelectItem>
+              <SelectItem value="profitable" className="text-xs">{t('proForma.filters.profitable', { pct: (breakEvenMargin * 100).toFixed(0) })}</SelectItem>
+              <SelectItem value="near_break_even" className="text-xs">{t('proForma.filters.nearBreakEven', { pct: (breakEvenMargin * 100).toFixed(0) })}</SelectItem>
+              <SelectItem value="unprofitable" className="text-xs">{t('proForma.filters.unprofitable')}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -669,7 +684,7 @@ export default function ProFormaPage() {
             data-testid="checkbox-missing-data"
           />
           <label htmlFor="missing-data-filter" className="text-xs text-muted-foreground cursor-pointer select-none">
-            Missing first clean date only
+            {t('proForma.filters.missingDataOnly')}
           </label>
         </div>
         {(freqFilter !== 'all' || profitFilter !== 'all' || missingDataFilter) && (
@@ -680,7 +695,7 @@ export default function ProFormaPage() {
             onClick={() => { setFreqFilter('all'); setProfitFilter('all'); setMissingDataFilter(false); setPage(1) }}
           >
             <X className="w-3 h-3" />
-            Clear filters
+            {t('proForma.filters.clearFilters')}
           </Button>
         )}
       </div>
@@ -691,14 +706,14 @@ export default function ProFormaPage() {
           <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Building2 className="w-3.5 h-3.5" />
-              Total Properties
+              {t('proForma.summary.totalProperties')}
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</div>
           </div>
           <div className="rounded-xl border border-card-border bg-card shadow-sm p-4">
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               <TrendingUp className="w-3.5 h-3.5" />
-              Avg Est. Margin
+              {t('proForma.summary.avgMargin')}
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums leading-none">
               {summary.avgMargin != null ? `${summary.avgMargin.toFixed(1)}%` : '—'}
@@ -707,7 +722,7 @@ export default function ProFormaPage() {
           <div className={`rounded-xl border shadow-sm p-4 ${summary.belowBreakEven > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               <AlertTriangle className="w-3.5 h-3.5" />
-              Below Break-Even
+              {t('proForma.summary.belowBreakEven')}
             </div>
             <div className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.belowBreakEven > 0 ? 'text-warning' : ''}`}>
               {summary.belowBreakEven}
@@ -716,7 +731,7 @@ export default function ProFormaPage() {
           <div className={`rounded-xl border shadow-sm p-4 ${summary.negativeProfit > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               <AlertTriangle className="w-3.5 h-3.5" />
-              Negative Mo Profit
+              {t('proForma.summary.negativeProfit')}
             </div>
             <div className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.negativeProfit > 0 ? 'text-warning' : ''}`}>
               {summary.negativeProfit}
@@ -731,7 +746,7 @@ export default function ProFormaPage() {
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
             <span className="text-xs font-semibold text-warning">
-              {visibleDuplicatePairs.length} potential duplicate{visibleDuplicatePairs.length > 1 ? 's' : ''} detected
+              {t('proForma.duplicates.detected', { count: visibleDuplicatePairs.length })}
             </span>
           </div>
           <ul className="space-y-1">
@@ -741,7 +756,7 @@ export default function ProFormaPage() {
                   <span className="font-medium">{pair.a.name}</span>
                   {' '}&amp;{' '}
                   <span className="font-medium">{pair.b.name}</span>
-                  {' — '}CE: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, Cost: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
+                  {' — '}{t('proForma.duplicates.ceLabel')}: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, {t('proForma.duplicates.costLabel')}: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
                 </span>
                 <button
                   className="shrink-0 text-2xs px-2 py-0.5 rounded border border-warning/50 text-warning hover:bg-warning/20"
@@ -755,15 +770,15 @@ export default function ProFormaPage() {
                       .from('alert_dismissals')
                       .upsert({ alert_key: `duplicate-pair::${pair.key}` }, { onConflict: 'alert_key' })
                     if (error) {
-                      toast({ title: 'Saved locally - sync failed', description: error.message, variant: 'destructive' })
+                      toast({ title: t('proForma.toasts.dupSavedLocallySyncFailed'), description: error.message, variant: 'destructive' })
                     } else {
                       qc.invalidateQueries({ queryKey: ['/supabase/alert-dismissals/duplicate-pair'] })
-                      toast({ title: 'Marked as intentionally separate' })
+                      toast({ title: t('proForma.toasts.dupMarkedSeparate') })
                     }
                   }}
-                  title="These are distinct units - suppress this alert for everyone on the team"
+                  title={t('proForma.duplicates.dismissTooltip')}
                 >
-                  Intentionally separate
+                  {t('proForma.duplicates.dismiss')}
                 </button>
               </li>
             ))}
@@ -797,7 +812,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('name') } }}
               >
-                <span className="flex items-center gap-1">Property <SortIcon col="name" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.property')} <SortIcon col="name" /></span>
               </th>
               <th
                 role="columnheader"
@@ -807,7 +822,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('ce_charged') } }}
               >
-                <span className="flex items-center gap-1">Client Charged/Clean <SortIcon col="ce_charged" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.clientChargedPerClean')} <SortIcon col="ce_charged" /></span>
               </th>
               <th
                 role="columnheader"
@@ -817,7 +832,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
               >
-                <span className="flex items-center gap-1">Cost/Clean <SortIcon col="total_estimated_cost" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.costPerClean')} <SortIcon col="total_estimated_cost" /></span>
               </th>
               <th
                 role="columnheader"
@@ -827,7 +842,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('estimated_profit') } }}
               >
-                <span className="flex items-center gap-1">Profit/Clean <SortIcon col="estimated_profit" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.profitPerClean')} <SortIcon col="estimated_profit" /></span>
               </th>
               <th
                 role="columnheader"
@@ -837,7 +852,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('cleaning_frequency') } }}
               >
-                <span className="flex items-center gap-1">Frequency <SortIcon col="cleaning_frequency" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.frequency')} <SortIcon col="cleaning_frequency" /></span>
               </th>
               <th
                 role="columnheader"
@@ -847,7 +862,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('avg_cleans_per_month') } }}
               >
-                <span className="flex items-center gap-1">Cleans/Mo <SortIcon col="avg_cleans_per_month" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.cleansPerMo')} <SortIcon col="avg_cleans_per_month" /></span>
               </th>
               <th
                 role="columnheader"
@@ -857,7 +872,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('first_clean_date') } }}
               >
-                <span className="flex items-center gap-1">First Clean <SortIcon col="first_clean_date" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.firstClean')} <SortIcon col="first_clean_date" /></span>
               </th>
               <th
                 role="columnheader"
@@ -867,7 +882,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_revenue_estimate') } }}
               >
-                <span className="flex items-center gap-1">Mo Revenue <SortIcon col="monthly_revenue_estimate" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.moRevenue')} <SortIcon col="monthly_revenue_estimate" /></span>
               </th>
               <th
                 role="columnheader"
@@ -877,7 +892,7 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_cost_estimate') } }}
               >
-                <span className="flex items-center gap-1">Mo Cost <SortIcon col="monthly_cost_estimate" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.moCost')} <SortIcon col="monthly_cost_estimate" /></span>
               </th>
               <th
                 role="columnheader"
@@ -887,18 +902,18 @@ export default function ProFormaPage() {
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_profit_estimate') } }}
               >
-                <span className="flex items-center gap-1">Mo Profit <SortIcon col="monthly_profit_estimate" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.moProfit')} <SortIcon col="monthly_profit_estimate" /></span>
               </th>
               <th
                 role="columnheader"
                 aria-sort={sortKey === 'total_estimated_cost' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors group"
-                title={`CE needed to break even at ${breakEvenMargin * 100}% margin`}
+                title={t('proForma.table.beCeTooltip', { pct: breakEvenMargin * 100 })}
                 onClick={() => toggleSort('total_estimated_cost')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('total_estimated_cost') } }}
               >
-                <span className="flex items-center gap-1">B/E CE <SortIcon col="total_estimated_cost" /></span>
+                <span className="flex items-center gap-1">{t('proForma.table.beCe')} <SortIcon col="total_estimated_cost" /></span>
               </th>
             </tr>
           </thead>
@@ -911,7 +926,7 @@ export default function ProFormaPage() {
               ))
             ) : !filtered || filtered.length === 0 ? (
               <tr>
-                <td colSpan={totalColCount} className="text-center py-12 text-muted-foreground text-sm">No active properties found</td>
+                <td colSpan={totalColCount} className="text-center py-12 text-muted-foreground text-sm">{t('proForma.table.empty')}</td>
               </tr>
             ) : (
               paged.map((p: any) => {
@@ -928,7 +943,7 @@ export default function ProFormaPage() {
                     <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate sticky left-[44px] z-10 bg-card">
                       <button
                         className="text-left hover:underline truncate max-w-full"
-                        title={`${p.name} - click to view cleaning history`}
+                        title={t('proForma.table.historyTitle', { name: p.name })}
                         onClick={() => setHistoryProperty({ id: p.id, name: p.name })}
                         data-testid={`btn-cleaning-history-${p.id}`}
                       >
@@ -966,9 +981,9 @@ export default function ProFormaPage() {
                       className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`}
                       title={
                         (p.avg_cleans_per_month ?? 0) > 10
-                          ? 'Unusually high - verify cleaning history'
+                          ? t('proForma.table.highCleansTooltip')
                           : p._manual_avg_cleans != null && p._manual_avg_cleans !== p.avg_cleans_per_month
-                            ? `Manual: ${p._manual_avg_cleans} · Breezeway: ${p.avg_cleans_per_month}`
+                            ? t('proForma.table.manualVsAutoTooltip', { manual: p._manual_avg_cleans, auto: p.avg_cleans_per_month })
                             : undefined
                       }
                     >
@@ -998,10 +1013,10 @@ export default function ProFormaPage() {
               <tr className="bg-muted/70 border-t-2 border-border font-semibold sticky bottom-0 z-20" data-testid="row-proforma-totals">
                 <td className="py-2 px-3 sticky left-0 bottom-0 z-30 bg-muted/90 backdrop-blur" />
                 <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-[44px] bottom-0 z-30 bg-muted/90 backdrop-blur" colSpan={7}>
-                  Monthly Totals ({filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length})
+                  {t('proForma.table.totalsLabel', { count: filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length })}
                   {duplicateExcludedIds.size > 0 && (
                     <span className="ml-1 font-normal text-warning">
-                      (excl. {duplicateExcludedIds.size} suspected dupes)
+                      {t('proForma.table.excludedDupes', { count: duplicateExcludedIds.size })}
                     </span>
                   )}
                 </td>
@@ -1023,17 +1038,17 @@ export default function ProFormaPage() {
       {selected.size > 0 && (
         <div className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-5 py-3 bg-background border-t border-border shadow-lg">
           <span className="text-sm font-medium text-foreground">
-            {selected.size} {selected.size === 1 ? 'property' : 'properties'} selected
+            {t('proForma.bulkBar.selected', { count: selected.size })}
           </span>
           <div className="flex items-center gap-2">
             <Select value={bulkFreq} onValueChange={setBulkFreq}>
               <SelectTrigger className="h-8 w-40 text-xs" data-testid="select-bulk-freq">
-                <SelectValue placeholder="Set Frequency…" />
+                <SelectValue placeholder={t('proForma.bulkBar.setFrequencyPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {FREQ_OPTIONS.map(f => (
                   <SelectItem key={f.value} value={f.value} className="text-xs">
-                    {f.label}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
+                    {t(FREQ_LABEL_KEYS[f.value])}{f.cleans != null ? ` (${f.cleans}/mo)` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1044,7 +1059,7 @@ export default function ProFormaPage() {
               onClick={() => bulkSetFreq({ ids: Array.from(selected), freq: bulkFreq })}
               data-testid="button-bulk-apply"
             >
-              {bulkPending ? 'Applying…' : 'Apply'}
+              {bulkPending ? t('proForma.bulkBar.applying') : t('proForma.bulkBar.apply')}
             </Button>
             <Button
               size="sm"
@@ -1052,7 +1067,7 @@ export default function ProFormaPage() {
               onClick={() => { setSelected(new Set()); setBulkFreq('') }}
               data-testid="button-clear-selection"
             >
-              Clear Selection
+              {t('proForma.bulkBar.clearSelection')}
             </Button>
           </div>
         </div>
@@ -1081,7 +1096,7 @@ export default function ProFormaPage() {
           <SheetHeader>
             <SheetTitle className="flex items-center gap-2 text-base">
               <History className="w-4 h-4" />
-              CSV Import History
+              {t('proForma.importHistory.sheetTitle')}
             </SheetTitle>
           </SheetHeader>
           <div className="flex-1 overflow-y-auto mt-4">
@@ -1090,7 +1105,7 @@ export default function ProFormaPage() {
                 {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded" />)}
               </div>
             ) : importLog.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">No imports yet</p>
+              <p className="text-sm text-muted-foreground py-8 text-center">{t('proForma.importHistory.empty')}</p>
             ) : (
               <div className="space-y-2">
                 {importLog.map((log: any) => (
@@ -1106,12 +1121,12 @@ export default function ProFormaPage() {
                         <Clock className="w-3 h-3" />
                         {format(new Date(log.imported_at), 'MMM d, yyyy h:mm a')}
                       </span>
-                      <span>{log.properties_updated} {log.properties_updated === 1 ? 'property' : 'properties'} updated</span>
+                      <span>{t('proForma.importHistory.propertiesUpdated', { count: log.properties_updated })}</span>
                       {log.records_imported > 0 && (
-                        <span className="text-success">{log.records_imported} new records</span>
+                        <span className="text-success">{t('proForma.importHistory.newRecords', { count: log.records_imported })}</span>
                       )}
                       {log.records_skipped > 0 && (
-                        <span className="text-warning">{log.records_skipped} skipped (dupes)</span>
+                        <span className="text-warning">{t('proForma.importHistory.skippedDupes', { count: log.records_skipped })}</span>
                       )}
                     </div>
                   </div>
@@ -1126,10 +1141,10 @@ export default function ProFormaPage() {
       <Sheet open={!!historyProperty} onOpenChange={open => { if (!open) setHistoryProperty(null) }}>
         <SheetContent side="right" className="w-full sm:w-[480px] flex flex-col">
           <SheetHeader>
-            <SheetTitle className="text-base truncate">{historyProperty?.name} - Cleaning History</SheetTitle>
+            <SheetTitle className="text-base truncate">{t('proForma.cleaningHistory.sheetTitle', { name: historyProperty?.name ?? '' })}</SheetTitle>
           </SheetHeader>
           <p className="text-xs text-muted-foreground mt-1">
-            Individual clean records imported from CSV. Duplicates are blocked at the database level.
+            {t('proForma.cleaningHistory.description')}
           </p>
           <div className="flex-1 overflow-y-auto mt-4">
             {cleanHistoryLoading ? (
@@ -1138,16 +1153,16 @@ export default function ProFormaPage() {
               </div>
             ) : !propertyCleanHistory || propertyCleanHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">
-                No cleaning records found. Import a CSV to populate history.
+                {t('proForma.cleaningHistory.empty')}
               </p>
             ) : (
               <div className="overflow-auto rounded-lg border border-border">
                 <table className="w-full text-xs">
                   <thead className="bg-muted/60 sticky top-0">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Clean Date</th>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Cleaner</th>
-                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Imported</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">{t('proForma.cleaningHistory.cleanDate')}</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">{t('proForma.cleaningHistory.cleaner')}</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">{t('proForma.cleaningHistory.imported')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1163,7 +1178,7 @@ export default function ProFormaPage() {
                   </tbody>
                 </table>
                 <p className="text-xs text-muted-foreground text-right px-3 py-2 border-t border-border">
-                  {propertyCleanHistory.length} record{propertyCleanHistory.length !== 1 ? 's' : ''}
+                  {t('proForma.cleaningHistory.recordCount', { count: propertyCleanHistory.length })}
                 </p>
               </div>
             )}

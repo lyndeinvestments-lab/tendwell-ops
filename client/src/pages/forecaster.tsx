@@ -4,6 +4,8 @@ import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { slugify } from '@/lib/issues'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,7 +66,8 @@ function monthBounds(yyyymm: string): { start: string; end: string } {
 
 export default function ForecasterPage() {
   const inWrapper = useInProFormaWrapper()
-  usePageTitle(inWrapper ? 'Pro Forma - Live' : 'Forecaster')
+  const { t } = useLocale('financials')
+  usePageTitle(inWrapper ? t('forecaster.page.titleWrapped') : t('forecaster.page.title', undefined, 'Forecaster'))
   const { toast } = useToast()
   const qc = useQueryClient()
 
@@ -496,11 +499,11 @@ export default function ForecasterPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/proforma_months'] })
-      toast({ title: 'Tasks count saved' })
+      toast({ title: t('forecaster.toasts.taskCountSaved') })
       setUploadOpen(false)
       setUploadCount('')
     },
-    onError: (err: any) => toast({ title: 'Upload failed', description: err?.message, variant: 'destructive' }),
+    onError: (err: any) => toast({ title: t('forecaster.toasts.uploadFailed'), description: err?.message, variant: 'destructive' }),
   })
 
   // ── Render ──────────────────────────────
@@ -533,10 +536,10 @@ export default function ForecasterPage() {
         </SelectContent>
       </Select>
       <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setUploadOpen(o => !o)} data-testid="button-upload-tasks">
-        <Upload className="w-3.5 h-3.5" /> Upload Tasks
+        <Upload className="w-3.5 h-3.5" /> {t('forecaster.page.uploadTasks')}
       </Button>
       <span className="text-2xs text-muted-foreground" data-testid="text-qbo-refresh-note">
-        Actuals refresh nightly from the scheduled QBO import.
+        {t('forecaster.page.qboRefreshNote')}
       </span>
     </div>
   )
@@ -545,13 +548,13 @@ export default function ForecasterPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       {!inWrapper ? (
         <PageHeader
-          title="Forecaster"
-          subtitle="Live proforma - actuals from completed tasks & QBO compared to estimated cost formulas."
+          title={t('forecaster.page.title')}
+          subtitle={t('forecaster.page.subtitle')}
           actions={controls}
         />
       ) : (
         <div className="flex items-center justify-between gap-4 flex-wrap mb-3">
-          <div className="text-xs text-muted-foreground">Period &amp; sources</div>
+          <div className="text-xs text-muted-foreground">{t('forecaster.page.periodSources')}</div>
           {controls}
         </div>
       )}
@@ -562,17 +565,17 @@ export default function ForecasterPage() {
           data-testid="status-breezeway-last-import"
         >
           <span className="inline-flex items-center gap-1.5 font-medium">
-            <Sparkles className="w-3 h-3 text-primary" /> Breezeway
+            <Sparkles className="w-3 h-3 text-primary" /> {t('forecaster.breezewayStatus.label')}
           </span>
           <span className="text-muted-foreground">
-            last import {formatDistanceToNow(new Date(lastBreezeway.imported_at), { addSuffix: true })}
+            {t('forecaster.breezewayStatus.lastImport', { time: formatDistanceToNow(new Date(lastBreezeway.imported_at), { addSuffix: true }) })}
           </span>
           <span className="text-foreground">
-            {lastBreezeway.source_label ?? '—'} · {lastBreezeway.rows_inserted} tasks
+            {t('forecaster.breezewayStatus.importSummary', { label: lastBreezeway.source_label ?? '—', count: lastBreezeway.rows_inserted })}
             <span className="text-muted-foreground">
-              {' ('}{lastBreezeway.cleans_in_batch} cleans
-              {lastBreezeway.deep_cleans_in_batch ? <> · {lastBreezeway.deep_cleans_in_batch} deep</> : null}
-              {')'}
+              {' '}{t('forecaster.breezewayStatus.cleansCount', { count: lastBreezeway.cleans_in_batch })}
+              {lastBreezeway.deep_cleans_in_batch ? t('forecaster.breezewayStatus.deepCleansCount', { count: lastBreezeway.deep_cleans_in_batch }) : null}
+              {t('forecaster.breezewayStatus.closeParen')}
             </span>
           </span>
           {lastBreezeway.notes ? (
@@ -587,24 +590,24 @@ export default function ForecasterPage() {
         <Card className="border-card-border">
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium">
-              <Upload className="w-4 h-4 text-muted-foreground" /> Upload completed tasks for {selectedMonth}
+              <Upload className="w-4 h-4 text-muted-foreground" /> {t('forecaster.upload.heading', { month: selectedMonth })}
             </div>
             <p className="text-xs text-muted-foreground">
-              Quick entry - type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&amp;L gives the actual cost; the variance below shows the gap. Trellis task counts sync hourly into the snapshot tables (see the Trellis Tasks page).
+              {t('forecaster.upload.description')}
             </p>
             <div className="flex items-center gap-2">
               <Input
                 type="number"
                 min="0"
                 step="1"
-                placeholder="# tasks completed"
+                placeholder={t('forecaster.upload.placeholder')}
                 value={uploadCount}
                 onChange={e => setUploadCount(e.target.value)}
                 className="h-8 w-44 text-sm"
                 data-testid="input-task-count"
               />
               <Button size="sm" className="h-8 text-xs" disabled={applying || !uploadCount} onClick={() => applyTaskCount()}>
-                {applying ? 'Saving…' : 'Save'}
+                {applying ? t('common.actions.saving') : t('common.actions.save')}
               </Button>
             </div>
           </CardContent>
@@ -613,7 +616,7 @@ export default function ForecasterPage() {
 
       {actualsSource === 'qbo' && (
         <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="actuals-source-banner">
-          Showing QuickBooks actuals for {selectedMonth} - the <code className="font-mono">proforma_months</code> row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.
+          {t('forecaster.banners.qboPrefix', { month: selectedMonth })} <code className="font-mono">proforma_months</code> {t('forecaster.banners.qboSuffix')}
         </div>
       )}
       {actualsSource === 'estimate' && (
@@ -621,8 +624,7 @@ export default function ForecasterPage() {
           className="rounded-md border border-info/25 bg-info/10 px-3 py-2 text-xs text-info"
           data-testid="actuals-source-banner-estimate"
         >
-          Showing <strong>live estimate</strong> for {selectedMonth} - derived from scheduled Breezeway tasks × per-property rates.
-          QuickBooks actuals haven't posted yet; KPIs below will switch to QBO automatically once the next nightly import lands.
+          {t('forecaster.banners.estimatePrefix')} <strong>{t('forecaster.banners.estimateBold')}</strong> {t('forecaster.banners.estimateSuffix', { month: selectedMonth })}
         </div>
       )}
       {actualsSource === null && (
@@ -630,12 +632,12 @@ export default function ForecasterPage() {
           className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning"
           data-testid="actuals-source-banner-empty"
         >
-          No data available for {selectedMonth}
-          {qboMonthExists ? ' (QBO returned zero totals for this period)' : ''}.
+          {t('forecaster.banners.emptyNoData', { month: selectedMonth })}
+          {qboMonthExists ? t('forecaster.banners.emptyQboZero') : ''}.
           {proformaRow
-            ? <> The <code className="font-mono mx-1">proforma_months</code> row that exists for the period has no financial signal, and</>
-            : <> No <code className="font-mono mx-1">proforma_months</code> row has been written, and</>}
-          {' '}no Breezeway tasks are scheduled for this period.
+            ? <> {t('forecaster.banners.emptyProformaExistsPrefix')} <code className="font-mono mx-1">proforma_months</code> {t('forecaster.banners.emptyProformaExistsSuffix')}</>
+            : <> {t('forecaster.banners.emptyProformaMissingPrefix')} <code className="font-mono mx-1">proforma_months</code> {t('forecaster.banners.emptyProformaMissingSuffix')}</>}
+          {' '}{t('forecaster.banners.emptyNoBreezeway')}
         </div>
       )}
 
@@ -646,18 +648,18 @@ export default function ForecasterPage() {
         ) : actualsRow ? (
           <>
             <StatCard
-              title="Revenue"
+              title={t('forecaster.kpis.revenue')}
               value={fmt(actualsRow.revenue)}
-              subtitle={prevMonth ? `${actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼'} ${fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100)} vs ${prevMonth.label}` : actualsSource === 'qbo' ? 'Source: QBO P&L' : undefined}
+              subtitle={prevMonth ? t('forecaster.kpis.revenueVsPrior', { arrow: actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼', pct: fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100), month: prevMonth.label }) : actualsSource === 'qbo' ? t('forecaster.kpis.revenueSourceQbo') : undefined}
             />
             <StatCard
-              title="Net Income"
+              title={t('forecaster.kpis.netIncome')}
               value={fmt(actualsRow.netIncome)}
               tone={actualsRow.netIncome < 0 ? 'destructive' : 'primary'}
-              subtitle={`Margin ${fmtPct(actualsRow.netMargin)}`}
+              subtitle={t('forecaster.kpis.netIncomeMargin', { pct: fmtPct(actualsRow.netMargin) })}
             />
             <StatCard
-              title="Tasks"
+              title={t('forecaster.kpis.tasks')}
               value={String(
                 // For historical months prefer the canonical deduped count from
                 // financial_monthly_cleans (same source as Financial Overview).
@@ -670,12 +672,12 @@ export default function ForecasterPage() {
                     : (actualsRow.tasks ?? totalPeriodTasks ?? 0)
                 })()
               )}
-              subtitle={`${actualsRow.properties ?? activePropsInPeriod ?? 0} properties`}
+              subtitle={t('forecaster.kpis.tasksSubtitle', { count: actualsRow.properties ?? activePropsInPeriod ?? 0 })}
             />
             <StatCard
-              title="Gross Margin"
+              title={t('forecaster.kpis.grossMargin')}
               value={fmtPct(actualsRow.grossMargin)}
-              subtitle={`COGS ${fmt(actualsRow.cogs)}`}
+              subtitle={t('forecaster.kpis.grossMarginSubtitle', { amount: fmt(actualsRow.cogs) })}
             />
           </>
         ) : (
@@ -683,8 +685,8 @@ export default function ForecasterPage() {
             <CardContent className="p-6">
               <EmptyState
                 icon={Calculator}
-                title="No actuals yet for this month"
-                description="Actuals refresh nightly from the scheduled QuickBooks import. You can also enter the completed-task count for this period above to populate task estimates."
+                title={t('forecaster.kpis.emptyTitle')}
+                description={t('forecaster.kpis.emptyDescription')}
               />
             </CardContent>
           </Card>
@@ -693,9 +695,9 @@ export default function ForecasterPage() {
 
       <Tabs defaultValue="variance" className="flex-1 flex flex-col">
         <TabsList className="self-start">
-          <TabsTrigger value="variance" data-testid="tab-variance">Variance</TabsTrigger>
-          <TabsTrigger value="historical" data-testid="tab-historical">Historical</TabsTrigger>
-          <TabsTrigger value="forecast" data-testid="tab-forecast">Forecast</TabsTrigger>
+          <TabsTrigger value="variance" data-testid="tab-variance">{t('forecaster.tabs.variance')}</TabsTrigger>
+          <TabsTrigger value="historical" data-testid="tab-historical">{t('forecaster.tabs.historical')}</TabsTrigger>
+          <TabsTrigger value="forecast" data-testid="tab-forecast">{t('forecaster.tabs.forecast')}</TabsTrigger>
         </TabsList>
 
         {/* ── Variance tab ───────────────────────── */}
@@ -705,28 +707,28 @@ export default function ForecasterPage() {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                  <h3 className="text-sm font-semibold">Estimated vs Actual - {selectedMonth}</h3>
+                  <h3 className="text-sm font-semibold">{t('forecaster.variance.heading', { month: selectedMonth })}</h3>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {totalPeriodTasks} completed task{totalPeriodTasks === 1 ? '' : 's'} · {activePropsInPeriod} active propert{activePropsInPeriod === 1 ? 'y' : 'ies'}
+                  {t('forecaster.variance.taskSummary', { tasks: totalPeriodTasks, properties: activePropsInPeriod })}
                 </span>
               </div>
               {!variance ? (
                 <EmptyState
                   icon={Calculator}
-                  title="Need both estimates and actuals"
-                  description="Estimates roll up from per-property Cost Tracking. Actuals come from this month's proforma row. Make sure tasks are marked Done for the period."
+                  title={t('forecaster.variance.emptyTitle')}
+                  description={t('forecaster.variance.emptyDescription')}
                 />
               ) : (
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Category</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Estimated</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Actual</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Variance</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">% Variance</th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 pl-3">Status</th>
+                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.variance.headers.category')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.variance.headers.estimated')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.variance.headers.actual')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.variance.headers.variance')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.variance.headers.percentVariance')}</th>
+                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 pl-3">{t('forecaster.variance.headers.status')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -734,9 +736,13 @@ export default function ForecasterPage() {
                       const isRevenue = row.category === 'Revenue'
                       // For revenue, "favorable" = actual ≥ estimated (more revenue is good).
                       const fav = isRevenue ? row.variance >= 0 : row.favorable
+                      // `row.category` is a plain UI string from the computeVariance
+                      // call sites (not a DB enum) — displayed via slug lookup with
+                      // the raw value as fallback; the data-testid below still keys
+                      // off the untranslated category so selectors stay stable.
                       return (
                         <tr key={row.category} className="border-b border-border/50" data-testid={`variance-row-${row.category.toLowerCase().replace(/\s+/g, '-')}`}>
-                          <td className="py-2 text-foreground">{row.category}</td>
+                          <td className="py-2 text-foreground">{t(`forecaster.variance.category.${slugify(row.category)}`, undefined, row.category)}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.estimated)}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.actual)}</td>
                           <td className={`py-2 text-right tabular-nums font-medium ${fav ? 'text-success' : 'text-destructive'}`}>
@@ -749,7 +755,7 @@ export default function ForecasterPage() {
                             <span className={`text-xs px-2 py-0.5 rounded-full border ${fav
                               ? 'text-success bg-success/10 border-success/25'
                               : 'text-destructive bg-destructive/10 border-destructive/25'}`}>
-                              {fav ? 'Favorable' : 'Unfavorable'}
+                              {fav ? t('forecaster.variance.favorable') : t('forecaster.variance.unfavorable')}
                             </span>
                           </td>
                         </tr>
@@ -767,7 +773,7 @@ export default function ForecasterPage() {
           <Card className="border-card-border">
             <CardContent className="p-4">
               <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-muted-foreground" /> Monthly Revenue &amp; Net Income
+                <BarChart3 className="w-4 h-4 text-muted-foreground" /> {t('forecaster.historical.chartTitle')}
               </h3>
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
@@ -777,8 +783,8 @@ export default function ForecasterPage() {
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={(v: number) => fmt(v)} />
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
-                    <Bar dataKey="revenue" name="Revenue" fill="hsl(var(--primary))" />
-                    <Bar dataKey="netIncome" name="Net Income" fill="#10b981" />
+                    <Bar dataKey="revenue" name={t('forecaster.kpis.revenue')} fill="hsl(var(--primary))" />
+                    <Bar dataKey="netIncome" name={t('forecaster.kpis.netIncome')} fill="#10b981" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -787,19 +793,19 @@ export default function ForecasterPage() {
 
           <Card className="border-card-border">
             <CardContent className="p-4">
-              <h3 className="text-sm font-semibold mb-3">All Months</h3>
+              <h3 className="text-sm font-semibold mb-3">{t('forecaster.historical.tableTitle')}</h3>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Month</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Tasks</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Properties</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Revenue</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">COGS</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Gross Profit</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Net Income</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">GM %</th>
+                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.month')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.tasks')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.properties')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.revenue')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.cogs')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.grossProfit')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.netIncome')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.gmPercent')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -828,30 +834,30 @@ export default function ForecasterPage() {
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <h3 className="text-sm font-semibold flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-muted-foreground" /> 12-Month Forecast
+                  <TrendingUp className="w-4 h-4 text-muted-foreground" /> {t('forecaster.forecast.heading')}
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
                   {(['current', 'conservative', 'aggressive'] as const).map(p => (
                     <Button key={p} size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSliders(FORECAST_PRESETS[p])}>
-                      {p[0].toUpperCase() + p.slice(1)}
+                      {t(`forecaster.forecast.presets.${p}`)}
                     </Button>
                   ))}
                   <div className="flex items-center gap-2">
                     <Switch checked={seasonal} onCheckedChange={setSeasonal} id="seasonal-toggle" />
-                    <Label htmlFor="seasonal-toggle" className="text-xs">Seasonal</Label>
+                    <Label htmlFor="seasonal-toggle" className="text-xs">{t('forecaster.forecast.seasonal')}</Label>
                   </div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <SliderInput label="Property growth /mo" value={sliders.propGrowth} onChange={v => setSliders(s => ({ ...s, propGrowth: v }))} step={1} />
-                <SliderInput label="Tasks per property" value={sliders.tasksPerProp} onChange={v => setSliders(s => ({ ...s, tasksPerProp: v }))} step={0.1} />
-                <SliderInput label="Revenue / task ($)" value={sliders.revPerTask} onChange={v => setSliders(s => ({ ...s, revPerTask: v }))} step={5} />
-                <SliderInput label="Contractor %" value={sliders.contractorPct} onChange={v => setSliders(s => ({ ...s, contractorPct: v }))} step={1} />
-                <SliderInput label="Laundry %" value={sliders.laundryPct} onChange={v => setSliders(s => ({ ...s, laundryPct: v }))} step={1} />
-                <SliderInput label="Supplies %" value={sliders.suppliesPct} onChange={v => setSliders(s => ({ ...s, suppliesPct: v }))} step={1} />
-                <SliderInput label="Leadership ($/mo)" value={sliders.leadership} onChange={v => setSliders(s => ({ ...s, leadership: v }))} step={100} />
-                <SliderInput label="OpEx ($/mo)" value={sliders.opex} onChange={v => setSliders(s => ({ ...s, opex: v }))} step={100} />
+                <SliderInput label={t('forecaster.forecast.sliders.propGrowth')} value={sliders.propGrowth} onChange={v => setSliders(s => ({ ...s, propGrowth: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.tasksPerProp')} value={sliders.tasksPerProp} onChange={v => setSliders(s => ({ ...s, tasksPerProp: v }))} step={0.1} />
+                <SliderInput label={t('forecaster.forecast.sliders.revPerTask')} value={sliders.revPerTask} onChange={v => setSliders(s => ({ ...s, revPerTask: v }))} step={5} />
+                <SliderInput label={t('forecaster.forecast.sliders.contractorPct')} value={sliders.contractorPct} onChange={v => setSliders(s => ({ ...s, contractorPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.laundryPct')} value={sliders.laundryPct} onChange={v => setSliders(s => ({ ...s, laundryPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.suppliesPct')} value={sliders.suppliesPct} onChange={v => setSliders(s => ({ ...s, suppliesPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.leadership')} value={sliders.leadership} onChange={v => setSliders(s => ({ ...s, leadership: v }))} step={100} />
+                <SliderInput label={t('forecaster.forecast.sliders.opex')} value={sliders.opex} onChange={v => setSliders(s => ({ ...s, opex: v }))} step={100} />
               </div>
 
               <div className="h-64">
@@ -862,8 +868,8 @@ export default function ForecasterPage() {
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${(v / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={(v: number) => fmt(v)} />
                     <Legend wrapperStyle={{ fontSize: '11px' }} />
-                    <Line type="monotone" dataKey="revenue" name="Revenue" stroke="hsl(var(--primary))" strokeWidth={2} />
-                    <Line type="monotone" dataKey="netIncome" name="Net Income" stroke="#10b981" strokeWidth={2} />
+                    <Line type="monotone" dataKey="revenue" name={t('forecaster.kpis.revenue')} stroke="hsl(var(--primary))" strokeWidth={2} />
+                    <Line type="monotone" dataKey="netIncome" name={t('forecaster.kpis.netIncome')} stroke="#10b981" strokeWidth={2} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -872,19 +878,19 @@ export default function ForecasterPage() {
 
           <Card className="border-card-border">
             <CardContent className="p-4">
-              <h3 className="text-sm font-semibold mb-3">Forecast Detail</h3>
+              <h3 className="text-sm font-semibold mb-3">{t('forecaster.forecast.detailTitle')}</h3>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Month</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Properties</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Tasks</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Revenue</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">COGS</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Gross Profit</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">Net Income</th>
-                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">GM %</th>
+                      <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.month')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.properties')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.tasks')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.revenue')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.cogs')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.grossProfit')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.netIncome')}</th>
+                      <th className="text-right text-xs font-medium text-muted-foreground uppercase tracking-wide py-2">{t('forecaster.historical.headers.gmPercent')}</th>
                     </tr>
                   </thead>
                   <tbody>

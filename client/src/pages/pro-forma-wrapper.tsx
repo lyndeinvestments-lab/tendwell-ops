@@ -3,6 +3,7 @@ import { useLocation } from 'wouter'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrendingUp, Building2, Users } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 
 // Live Pro Forma (formerly /forecaster) — variance + historical + forecast.
 // Per-Property Pro Forma — the legacy table showing per-property economics.
@@ -29,22 +30,8 @@ function defaultTabFromLocation(loc: string): TabValue {
   return 'per-property'
 }
 
-const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
-  'live': {
-    title: 'Live Pro Forma',
-    subtitle: 'Actuals from completed tasks & QBO compared to estimated cost formulas - month-by-month variance and 12-month forecast.',
-  },
-  'per-property': {
-    title: 'Per-Property Pro Forma',
-    subtitle: 'Estimated monthly revenue, cost, and profit per property - with CSV import.',
-  },
-  'by-client': {
-    title: 'Pro Forma by Client',
-    subtitle: 'Client rollup: total revenue, cleaner pay, and gross margin grouped by owner, with expandable property rows.',
-  },
-}
-
 export default function ProFormaWrapperPage() {
+  const { t } = useLocale('financials')
   const [location] = useLocation()
   const [tab, setTab] = useState<TabValue>(() => defaultTabFromLocation(location))
 
@@ -54,6 +41,21 @@ export default function ProFormaWrapperPage() {
     setTab(defaultTabFromLocation(location))
   }, [location])
 
+  const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
+    'live': {
+      title: t('wrapper.meta.live.title'),
+      subtitle: t('wrapper.meta.live.subtitle'),
+    },
+    'per-property': {
+      title: t('wrapper.meta.perProperty.title'),
+      subtitle: t('wrapper.meta.perProperty.subtitle'),
+    },
+    'by-client': {
+      title: t('wrapper.meta.byClient.title'),
+      subtitle: t('wrapper.meta.byClient.subtitle'),
+    },
+  }
+
   const meta = TAB_META[tab]
 
   return (
@@ -62,20 +64,20 @@ export default function ProFormaWrapperPage() {
         <div className="px-5 pt-4 pb-2 border-b border-border/40 bg-background sticky top-0 z-10">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div>
-              <h1 className="text-xl font-semibold text-foreground" data-testid="page-title-pro-forma">Pro Forma</h1>
+              <h1 className="text-xl font-semibold text-foreground" data-testid="page-title-pro-forma">{t('wrapper.pageTitle')}</h1>
               <p className="text-sm text-muted-foreground">{meta.subtitle}</p>
             </div>
           </div>
           <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)} className="mt-3">
             <TabsList>
               <TabsTrigger value="live" data-testid="tab-pro-forma-live" className="gap-1.5">
-                <TrendingUp className="w-3.5 h-3.5" /> Live Pro Forma
+                <TrendingUp className="w-3.5 h-3.5" /> {t('wrapper.tabs.live')}
               </TabsTrigger>
               <TabsTrigger value="per-property" data-testid="tab-pro-forma-per-property" className="gap-1.5">
-                <Building2 className="w-3.5 h-3.5" /> Per-Property
+                <Building2 className="w-3.5 h-3.5" /> {t('wrapper.tabs.perProperty')}
               </TabsTrigger>
               <TabsTrigger value="by-client" data-testid="tab-pro-forma-by-client" className="gap-1.5">
-                <Users className="w-3.5 h-3.5" /> By Client
+                <Users className="w-3.5 h-3.5" /> {t('wrapper.tabs.byClient')}
               </TabsTrigger>
             </TabsList>
           </Tabs>

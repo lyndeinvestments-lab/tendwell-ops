@@ -20,6 +20,11 @@ import { thumbUrl } from '@/lib/image'
 import { resizeImageFile } from '@/lib/resize-image'
 import { signAgreement, downloadAgreementPdf } from '@/lib/agreements'
 import { SignaturePad } from '@/components/SignaturePad'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
+import { LanguageToggle } from '@/components/LanguageToggle'
+
+type DateFormatFn = (date: Date | number, pattern: string) => string
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
 // field the owner can't see (visibility enforced in the DB), so every value
@@ -83,7 +88,7 @@ function initialForm(p: OwnerProperty): FormState {
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 type OwnerTask = { source: string; title: string; task_date: string | null; status: string | null }
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, format: DateFormatFn): string {
   if (!iso) return '—'
   // Date-only strings (YYYY-MM-DD) must be constructed in local time to avoid
   // UTC-midnight anchoring rolling them back a day in Eastern/other western TZs.
@@ -91,14 +96,16 @@ function formatDate(iso: string | null): string {
     const [y, m, d] = iso.split('-').map(Number)
     const dt = new Date(y, m - 1, d)
     if (isNaN(dt.getTime())) return '—'
-    return dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    return format(dt, 'MMM d, yyyy')
   }
   const d = new Date(iso)
   if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return format(d, 'MMM d, yyyy')
 }
 
 function TasksSection({ propertyId }: { propertyId: number }) {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-tasks', propertyId],
     queryFn: async (): Promise<OwnerTask[]> => {
@@ -115,21 +122,21 @@ function TasksSection({ propertyId }: { propertyId: number }) {
       </div>
     )
   }
-  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load tasks" description="Something went wrong loading scheduled tasks." />
+  if (isError) return <ErrorState onRetry={() => refetch()} title={t('tasks.loadFailedTitle')} description={t('tasks.loadFailedDescription')} />
   if (!data || data.length === 0) {
-    return <EmptyState icon={CalendarClock} title="No scheduled tasks" description="Tasks from inspections and Trellis will appear here." />
+    return <EmptyState icon={CalendarClock} title={t('tasks.emptyTitle')} description={t('tasks.emptyDescription')} />
   }
 
   return (
     <ul className="divide-y divide-border rounded-lg border border-border">
-      {data.map((t, i) => (
+      {data.map((task, i) => (
         <li key={i} className="flex items-center justify-between gap-3 px-3 py-2">
           <div className="min-w-0">
-            <p className="text-sm text-foreground truncate">{t.title}</p>
-            <p className="text-2xs text-muted-foreground">{formatDate(t.task_date)}</p>
+            <p className="text-sm text-foreground truncate">{task.title}</p>
+            <p className="text-2xs text-muted-foreground">{formatDate(task.task_date, format)}</p>
           </div>
           <Badge variant="outline" className="shrink-0 capitalize">
-            {t.source === 'trellis' ? 'Trellis' : t.source}
+            {task.source === 'trellis' ? t('tasks.sourceTrellis') : task.source}
           </Badge>
         </li>
       ))}
@@ -141,6 +148,8 @@ function TasksSection({ propertyId }: { propertyId: number }) {
 type OwnerNote = { id: string; content: string; created_at: string }
 
 function OwnerNotesSection({ propertyId }: { propertyId: number }) {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [text, setText] = useState('')
@@ -163,21 +172,21 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Note added' })
+      toast({ title: t('notes.added') })
       setText('')
       queryClient.invalidateQueries({ queryKey: ['owner-property-notes', propertyId] })
     },
     onError: (e: unknown) =>
-      toast({ title: 'Could not add note', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' }),
+      toast({ title: t('notes.addFailedTitle'), description: e instanceof Error ? e.message : t('notes.addFailedDefault'), variant: 'destructive' }),
   })
 
   return (
     <section className="space-y-3">
-      <h3 className="text-sm font-medium text-foreground">Notes</h3>
+      <h3 className="text-sm font-medium text-foreground">{t('notes.title')}</h3>
       <div className="space-y-2">
         <Textarea
           rows={2}
-          placeholder="Add a note..."
+          placeholder={t('notes.placeholder')}
           value={text}
           onChange={e => setText(e.target.value)}
           data-testid={`textarea-owner-note-${propertyId}`}
@@ -189,7 +198,7 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
             disabled={!text.trim() || add.isPending}
             data-testid={`button-add-note-${propertyId}`}
           >
-            {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add note'}
+            {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('notes.addButton')}
           </Button>
         </div>
       </div>
@@ -198,16 +207,16 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
           {[1, 2].map(i => <Skeleton key={i} className="h-9 rounded-md" />)}
         </div>
       )}
-      {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load notes" description="Something went wrong loading notes." />}
+      {isError && <ErrorState onRetry={() => refetch()} title={t('notes.loadFailedTitle')} description={t('notes.loadFailedDescription')} />}
       {!isLoading && !isError && (data ?? []).length === 0 && (
-        <p className="text-sm text-muted-foreground">No notes yet.</p>
+        <p className="text-sm text-muted-foreground">{t('notes.empty')}</p>
       )}
       {!isLoading && !isError && (data ?? []).length > 0 && (
         <ul className="divide-y divide-border rounded-lg border border-border">
           {(data ?? []).map(n => (
             <li key={n.id} className="px-3 py-2 space-y-0.5">
               <p className="text-sm text-foreground whitespace-pre-wrap">{n.content}</p>
-              <p className="text-2xs text-muted-foreground">{formatDate(n.created_at)}</p>
+              <p className="text-2xs text-muted-foreground">{formatDate(n.created_at, format)}</p>
             </li>
           ))}
         </ul>
@@ -223,6 +232,7 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
 type OwnerPhoto = { id: string; photo_url: string; sort_order: number | null }
 
 function OwnerPhotosSection({ propertyId, canAdd }: { propertyId: number; canAdd: boolean }) {
+  const { t } = useLocale('ownerPortal')
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [uploading, setUploading] = useState(false)
@@ -262,9 +272,9 @@ function OwnerPhotosSection({ propertyId, canAdd }: { propertyId: number; canAdd
         if (insertErr) throw insertErr
       }
       queryClient.invalidateQueries({ queryKey: ['owner-property-photos', propertyId] })
-      toast({ title: `${files.length} photo(s) uploaded` })
+      toast({ title: t('photos.uploadedToast', { count: files.length }) })
     } catch (err: any) {
-      toast({ title: 'Upload failed', description: err?.message, variant: 'destructive' })
+      toast({ title: t('photos.uploadFailedTitle'), description: err?.message, variant: 'destructive' })
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -274,13 +284,13 @@ function OwnerPhotosSection({ propertyId, canAdd }: { propertyId: number; canAdd
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-        <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" /> Photos
+        <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" /> {t('photos.title')}
       </h3>
       {canAdd && (
         <label className={`flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg p-4 cursor-pointer hover:border-primary/50 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
           <input type="file" accept="image/*" multiple onChange={handleUpload} className="hidden" data-testid={`input-owner-photos-${propertyId}`} />
           <Plus className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">{uploading ? 'Uploading…' : 'Click to upload photos'}</span>
+          <span className="text-xs text-muted-foreground">{uploading ? t('photos.uploading') : t('photos.uploadCta')}</span>
         </label>
       )}
       {isLoading && (
@@ -288,9 +298,9 @@ function OwnerPhotosSection({ propertyId, canAdd }: { propertyId: number; canAdd
           {[1, 2, 3].map(i => <Skeleton key={i} className="aspect-square rounded-md" />)}
         </div>
       )}
-      {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load photos" description="Something went wrong loading photos." />}
+      {isError && <ErrorState onRetry={() => refetch()} title={t('photos.loadFailedTitle')} description={t('photos.loadFailedDescription')} />}
       {!isLoading && !isError && (photos ?? []).length === 0 && (
-        <p className="text-sm text-muted-foreground">No photos yet.</p>
+        <p className="text-sm text-muted-foreground">{t('photos.empty')}</p>
       )}
       {!isLoading && !isError && (photos ?? []).length > 0 && (
         <div className="grid grid-cols-3 gap-2">
@@ -324,6 +334,7 @@ function ReadOnlyValue({ value }: { value: string | number | null | undefined })
 
 // ─── Per-property editable card ────────────────────────────────────────────────
 function PropertyCard({ property }: { property: OwnerProperty }) {
+  const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(() => initialForm(property))
@@ -356,7 +367,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
       for (const k of ['king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'square_footage', 'bedrooms', 'full_baths', 'half_baths'] as const) {
         const v = form[k]
         if (typeof v === 'number' && (isNaN(v) || v < 0)) {
-          throw new Error('Counts and square footage must be positive numbers.')
+          throw new Error(t('properties.validationCountsPositive'))
         }
       }
       // Build a payload of only the columns this owner may edit. The DB guard
@@ -371,11 +382,11 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Saved', description: `${property.name} updated.` })
+      toast({ title: t('properties.saved'), description: t('properties.savedDescription', { name: property.name }) })
       queryClient.invalidateQueries({ queryKey: ['owner-properties'] })
     },
     onError: (e: unknown) => {
-      toast({ title: 'Could not save', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' })
+      toast({ title: t('properties.saveFailedTitle'), description: e instanceof Error ? e.message : t('properties.saveFailedDefault'), variant: 'destructive' })
     },
   })
 
@@ -421,7 +432,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
           onClick={() => setOpen(o => !o)}
           aria-expanded={open}
         >
-          {open ? 'Hide' : 'Manage'}
+          {open ? t('properties.hide') : t('properties.manage')}
           <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
         </Button>
       </CardHeader>
@@ -432,10 +443,10 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
           {showDetails && (
           <section className="space-y-4">
             <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" /> Property details
+              <ClipboardList className="w-3.5 h-3.5 text-muted-foreground" /> {t('fields.sectionTitle')}
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {renderField('address', 'Address', 'address', () => (
+              {renderField('address', t('fields.address'), 'address', () => (
                 <AddressAutocomplete value={(form.address as string) ?? ''} onChange={next => set('address', next || null)} />
               ), 'sm:col-span-2')}
               {(() => {
@@ -443,28 +454,28 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                 if (!p.visible) return null
                 return (
                   <>
-                    <Field label="King beds" locked={!p.editable}>
+                    <Field label={t('fields.kingBeds')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.king_beds as number) ?? ''} onChange={e => setNum('king_beds', e.target.value)} />
                       ) : (
                         <ReadOnlyValue value={property.king_beds} />
                       )}
                     </Field>
-                    <Field label="Queen beds" locked={!p.editable}>
+                    <Field label={t('fields.queenBeds')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.queen_beds as number) ?? ''} onChange={e => setNum('queen_beds', e.target.value)} />
                       ) : (
                         <ReadOnlyValue value={property.queen_beds} />
                       )}
                     </Field>
-                    <Field label="Full beds" locked={!p.editable}>
+                    <Field label={t('fields.fullBeds')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.full_beds as number) ?? ''} onChange={e => setNum('full_beds', e.target.value)} />
                       ) : (
                         <ReadOnlyValue value={property.full_beds} />
                       )}
                     </Field>
-                    <Field label="Twin beds" locked={!p.editable}>
+                    <Field label={t('fields.twinBeds')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.twin_beds as number) ?? ''} onChange={e => setNum('twin_beds', e.target.value)} />
                       ) : (
@@ -474,7 +485,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   </>
                 )
               })()}
-              {renderField('bedrooms', 'Bedrooms', 'bedrooms', () => (
+              {renderField('bedrooms', t('fields.bedrooms'), 'bedrooms', () => (
                 <Input type="number" min={0} value={(form.bedrooms as number) ?? ''} onChange={e => setNum('bedrooms', e.target.value)} />
               ))}
               {(() => {
@@ -482,14 +493,14 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                 if (!p.visible) return null
                 return (
                   <>
-                    <Field label="Full baths" locked={!p.editable}>
+                    <Field label={t('fields.fullBaths')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.full_baths as number) ?? ''} onChange={e => setNum('full_baths', e.target.value)} />
                       ) : (
                         <ReadOnlyValue value={property.full_baths} />
                       )}
                     </Field>
-                    <Field label="Half baths" locked={!p.editable}>
+                    <Field label={t('fields.halfBaths')} locked={!p.editable}>
                       {p.editable ? (
                         <Input type="number" min={0} value={(form.half_baths as number) ?? ''} onChange={e => setNum('half_baths', e.target.value)} />
                       ) : (
@@ -499,7 +510,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   </>
                 )
               })()}
-              {renderField('square_footage', 'Square footage', 'square_footage', () => (
+              {renderField('square_footage', t('fields.squareFootage'), 'square_footage', () => (
                 <Input
                   type="number"
                   min={0}
@@ -507,23 +518,23 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   onChange={e => setNum('square_footage', e.target.value)}
                 />
               ))}
-              {renderField('door_code', 'Door / access code', 'door_code', () => (
+              {renderField('door_code', t('fields.doorCode'), 'door_code', () => (
                 <Input value={(form.door_code as string) ?? ''} onChange={e => set('door_code', e.target.value || null)} />
               ))}
-              {renderField('other_codes', 'Other codes', 'other_codes', () => (
+              {renderField('other_codes', t('fields.otherCodes'), 'other_codes', () => (
                 <Textarea
                   rows={2}
                   value={(form.other_codes as string) ?? ''}
                   onChange={e => set('other_codes', e.target.value || null)}
-                  placeholder="Gate codes, alarm codes, etc."
+                  placeholder={t('fields.otherCodesPlaceholder')}
                 />
               ), 'sm:col-span-2')}
-              {renderField('wifi_info', 'Wi-Fi information', 'wifi_info', () => (
+              {renderField('wifi_info', t('fields.wifiInfo'), 'wifi_info', () => (
                 <Textarea
                   rows={2}
                   value={(form.wifi_info as string) ?? ''}
                   onChange={e => set('wifi_info', e.target.value || null)}
-                  placeholder="Network name and password"
+                  placeholder={t('fields.wifiInfoPlaceholder')}
                 />
               ), 'sm:col-span-2')}
               {(() => {
@@ -537,18 +548,18 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                     data-testid={`select-${key.replace('_', '-')}-${property.id}`}
                   >
                     {/* Placeholder only: once a value exists, owners must pick Yes or No. */}
-                    <option value="" disabled>Not set</option>
-                    <option value="true">Yes</option>
-                    <option value="false">No</option>
+                    <option value="" disabled>{t('fields.notSet')}</option>
+                    <option value="true">{t('common.actions.yes')}</option>
+                    <option value="false">{t('common.actions.no')}</option>
                   </select>
                 )
-                const boolLabel = (v: boolean | null | undefined) => (v == null ? null : v ? 'Yes' : 'No')
+                const boolLabel = (v: boolean | null | undefined) => (v == null ? null : v ? t('common.actions.yes') : t('common.actions.no'))
                 return (
                   <>
-                    <Field label="Hot tub" locked={!p.editable}>
+                    <Field label={t('fields.hotTub')} locked={!p.editable}>
                       {p.editable ? boolSelect('hot_tub') : <ReadOnlyValue value={boolLabel(property.hot_tub)} />}
                     </Field>
-                    <Field label="Pool" locked={!p.editable}>
+                    <Field label={t('fields.pool')} locked={!p.editable}>
                       {p.editable ? boolSelect('pool') : <ReadOnlyValue value={boolLabel(property.pool)} />}
                     </Field>
                   </>
@@ -559,16 +570,16 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                 if (!p.visible) return null
                 return (
                   <>
-                    <Field label="Check-in time" locked={!p.editable}>
+                    <Field label={t('fields.checkInTime')} locked={!p.editable}>
                       {p.editable ? (
-                        <Input value={(form.check_in_time as string) ?? ''} onChange={e => set('check_in_time', e.target.value || null)} placeholder="4:00 PM" />
+                        <Input value={(form.check_in_time as string) ?? ''} onChange={e => set('check_in_time', e.target.value || null)} placeholder={t('fields.checkInPlaceholder')} />
                       ) : (
                         <ReadOnlyValue value={property.check_in_time} />
                       )}
                     </Field>
-                    <Field label="Check-out time" locked={!p.editable}>
+                    <Field label={t('fields.checkOutTime')} locked={!p.editable}>
                       {p.editable ? (
-                        <Input value={(form.check_out_time as string) ?? ''} onChange={e => set('check_out_time', e.target.value || null)} placeholder="10:00 AM" />
+                        <Input value={(form.check_out_time as string) ?? ''} onChange={e => set('check_out_time', e.target.value || null)} placeholder={t('fields.checkOutPlaceholder')} />
                       ) : (
                         <ReadOnlyValue value={property.check_out_time} />
                       )}
@@ -576,15 +587,15 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                   </>
                 )
               })()}
-              {renderField('filter_size', 'A/C filter size', 'filter_size', () => (
-                <Input value={(form.filter_size as string) ?? ''} onChange={e => set('filter_size', e.target.value || null)} placeholder="20x25x1" />
+              {renderField('filter_size', t('fields.filterSize'), 'filter_size', () => (
+                <Input value={(form.filter_size as string) ?? ''} onChange={e => set('filter_size', e.target.value || null)} placeholder={t('fields.filterSizePlaceholder')} />
               ))}
-              {renderField('ical_url', 'Booking calendar (iCal URL)', 'ical_url', () => (
+              {renderField('ical_url', t('fields.icalUrl'), 'ical_url', () => (
                 <Input
                   type="url"
                   value={(form.ical_url as string) ?? ''}
                   onChange={e => set('ical_url', e.target.value || null)}
-                  placeholder="https://..."
+                  placeholder={t('fields.icalUrlPlaceholder')}
                 />
               ), 'sm:col-span-2')}
             </div>
@@ -594,7 +605,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
           {showDetails && anyEditable && (
             <div className="flex justify-end">
               <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid={`button-save-${property.id}`}>
-                {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
+                {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('properties.saveChanges')}
               </Button>
             </div>
           )}
@@ -610,7 +621,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
           {/* Scheduled tasks */}
           <section className="space-y-3">
             <h3 className="text-sm font-medium text-foreground flex items-center gap-1.5">
-              <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" /> Scheduled tasks
+              <CalendarClock className="w-3.5 h-3.5 text-muted-foreground" /> {t('tasks.title')}
             </h3>
             <TasksSection propertyId={property.id} />
           </section>
@@ -621,11 +632,12 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
 }
 
 function Field({ label, children, className, locked }: { label: string; children: React.ReactNode; className?: string; locked?: boolean }) {
+  const { t } = useLocale('ownerPortal')
   return (
     <div className={`space-y-1.5 ${className ?? ''}`}>
       <Label className="text-xs text-muted-foreground flex items-center gap-1">
         {label}
-        {locked && <span className="text-2xs text-muted-foreground/70">(view only)</span>}
+        {locked && <span className="text-2xs text-muted-foreground/70">{t('properties.viewOnly')}</span>}
       </Label>
       {children}
     </div>
@@ -646,6 +658,8 @@ type OwnerShipment = {
 }
 
 function ShipmentsSection() {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-shipments'],
     queryFn: async (): Promise<OwnerShipment[]> => {
@@ -658,7 +672,7 @@ function ShipmentsSection() {
 
   if (isLoading) return <Skeleton className="h-24 rounded-2xl" />
   if (isError) {
-    return <ErrorState onRetry={() => refetch()} title="Couldn't load shipments" description="Something went wrong loading your shipments. Please try again." />
+    return <ErrorState onRetry={() => refetch()} title={t('shipments.loadFailedTitle')} description={t('shipments.loadFailedDescription')} />
   }
   const shipments = data ?? []
   // Hide the section entirely when there's nothing to show (keeps the portal tidy).
@@ -668,7 +682,7 @@ function ShipmentsSection() {
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Package className="w-4 h-4 text-muted-foreground" /> Incoming shipments
+          <Package className="w-4 h-4 text-muted-foreground" /> {t('shipments.title')}
         </h2>
       </CardHeader>
       <CardContent className="space-y-2 pb-4">
@@ -677,20 +691,20 @@ function ShipmentsSection() {
           return (
             <div key={s.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{s.description || s.sender_name || 'Shipment'}</p>
+                <p className="text-sm font-medium text-foreground truncate">{s.description || s.sender_name || t('shipments.fallbackName')}</p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {[s.property_name, s.sender_name ? `from ${s.sender_name}` : null, s.tracking_number].filter(Boolean).join(' · ')}
+                  {[s.property_name, s.sender_name ? t('shipments.fromPrefix', { name: s.sender_name }) : null, s.tracking_number].filter(Boolean).join(' · ')}
                 </p>
                 <p className="text-2xs text-muted-foreground">
                   {received
-                    ? `Received ${formatDate(s.received_at)}`
+                    ? t('shipments.receivedOn', { date: formatDate(s.received_at, format) })
                     : s.estimated_delivery
-                      ? `Est. delivery ${formatDate(s.estimated_delivery)}`
-                      : 'In transit'}
+                      ? t('shipments.estDelivery', { date: formatDate(s.estimated_delivery, format) })
+                      : t('shipments.inTransit')}
                 </p>
               </div>
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${received ? 'bg-success/10 text-success' : 'bg-info/10 text-info'}`}>
-                {received ? 'Received' : 'In transit'}
+                {received ? t('shipments.received') : t('shipments.inTransit')}
               </span>
             </div>
           )
@@ -713,9 +727,6 @@ type OwnerReferral = {
   created_at: string
 }
 
-const REFERRAL_STATUS_LABEL: Record<string, string> = {
-  submitted: 'Submitted', contacted: 'Contacted', converted: 'Converted', declined: 'Declined',
-}
 const REFERRAL_STATUS_TONE: Record<string, string> = {
   submitted: 'bg-info/10 text-info',
   contacted: 'bg-warning/10 text-warning',
@@ -724,6 +735,8 @@ const REFERRAL_STATUS_TONE: Record<string, string> = {
 }
 
 function ReferralsSection({ ownerId }: { ownerId: string }) {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -756,12 +769,12 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Referral submitted', description: 'Thanks! Our team will follow up.' })
+      toast({ title: t('referrals.submittedToastTitle'), description: t('referrals.submittedToastDescription') })
       setForm({ referred_name: '', referred_email: '', referred_phone: '', note: '' })
       setOpen(false)
       queryClient.invalidateQueries({ queryKey: ['owner-referrals'] })
     },
-    onError: (e: any) => toast({ title: 'Could not submit referral', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('referrals.submitFailedTitle'), description: e?.message ?? t('referrals.submitFailedDefault'), variant: 'destructive' }),
   })
 
   const referrals = data ?? []
@@ -770,43 +783,43 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Gift className="w-4 h-4 text-muted-foreground" /> Refer a friend
+          <Gift className="w-4 h-4 text-muted-foreground" /> {t('referrals.title')}
         </h2>
         <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-referral-form">
-          {open ? 'Cancel' : 'Refer someone'}
+          {open ? t('common.actions.cancel') : t('referrals.referSomeone')}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
-        <p className="text-sm text-muted-foreground">Know someone who could use Tendwell? Send them our way and our team takes it from there.</p>
+        <p className="text-sm text-muted-foreground">{t('referrals.description')}</p>
 
         {open && (
           <div className="space-y-3 rounded-lg border border-border/60 p-3">
-            <Field label="Their name">
+            <Field label={t('referrals.theirName')}>
               <Input value={form.referred_name} onChange={e => setForm(f => ({ ...f, referred_name: e.target.value }))} data-testid="input-referral-name" />
             </Field>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Email">
+              <Field label={t('referrals.email')}>
                 <Input type="email" value={form.referred_email} onChange={e => setForm(f => ({ ...f, referred_email: e.target.value }))} data-testid="input-referral-email" />
               </Field>
-              <Field label="Phone">
+              <Field label={t('referrals.phone')}>
                 <Input value={form.referred_phone} onChange={e => setForm(f => ({ ...f, referred_phone: e.target.value }))} data-testid="input-referral-phone" />
               </Field>
             </div>
-            <Field label="Anything we should know?">
+            <Field label={t('referrals.note')}>
               <Textarea value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} rows={2} data-testid="input-referral-note" />
             </Field>
             <div className="flex justify-end">
               <Button size="sm" disabled={!form.referred_name.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-referral">
-                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit referral'}
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('referrals.submit')}
               </Button>
             </div>
           </div>
         )}
 
         {isLoading && <Skeleton className="h-16 rounded-lg" />}
-        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load referrals" description="Please try again." />}
+        {isError && <ErrorState onRetry={() => refetch()} title={t('referrals.loadFailedTitle')} description={t('referrals.loadFailedDescription')} />}
         {!isLoading && !isError && referrals.length === 0 && !open && (
-          <p className="text-sm text-muted-foreground">You haven't referred anyone yet.</p>
+          <p className="text-sm text-muted-foreground">{t('referrals.empty')}</p>
         )}
         {referrals.map(r => (
           <div key={r.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/60 p-3">
@@ -814,11 +827,12 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
               <p className="text-sm font-medium text-foreground truncate">{r.referred_name}</p>
               <p className="text-xs text-muted-foreground truncate">{[r.referred_email, r.referred_phone].filter(Boolean).join(' · ') || '—'}</p>
               <p className="text-2xs text-muted-foreground">
-                Referred {formatDate(r.created_at)}{r.reward_status !== 'pending' ? ` · Reward: ${r.reward_status}` : ''}
+                {t('referrals.referredOn', { date: formatDate(r.created_at, format) })}
+                {r.reward_status !== 'pending' ? t('referrals.rewardSuffix', { status: t(`referrals.reward.${r.reward_status}`, undefined, r.reward_status) }) : ''}
               </p>
             </div>
             <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${REFERRAL_STATUS_TONE[r.status] ?? 'bg-muted text-muted-foreground'}`}>
-              {REFERRAL_STATUS_LABEL[r.status] ?? r.status}
+              {t(`referrals.status.${r.status}`, undefined, r.status)}
             </span>
           </div>
         ))}
@@ -838,9 +852,6 @@ type OwnerTestimonial = {
   created_at: string
 }
 
-const TESTIMONIAL_STATUS_LABEL: Record<string, string> = {
-  submitted: 'Submitted', approved: 'Approved', published: 'Published', declined: 'Declined',
-}
 const TESTIMONIAL_STATUS_TONE: Record<string, string> = {
   submitted: 'bg-info/10 text-info',
   approved: 'bg-warning/10 text-warning',
@@ -849,6 +860,8 @@ const TESTIMONIAL_STATUS_TONE: Record<string, string> = {
 }
 
 function TestimonialsSection({ ownerId }: { ownerId: string }) {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -878,12 +891,12 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Thank you!', description: 'Your testimonial was submitted for review.' })
+      toast({ title: t('testimonials.thankYouToastTitle'), description: t('testimonials.thankYouToastDescription') })
       setForm({ rating: '5', body: '', display_preference: 'full_name', allow_photo: false })
       setOpen(false)
       queryClient.invalidateQueries({ queryKey: ['owner-testimonials'] })
     },
-    onError: (e: any) => toast({ title: 'Could not submit', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('testimonials.submitFailedTitle'), description: e?.message ?? t('testimonials.submitFailedDefault'), variant: 'destructive' }),
   })
 
   const items = data ?? []
@@ -892,19 +905,19 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <Quote className="w-4 h-4 text-muted-foreground" /> Share your experience
+          <Quote className="w-4 h-4 text-muted-foreground" /> {t('testimonials.title')}
         </h2>
         <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-testimonial-form">
-          {open ? 'Cancel' : 'Write a testimonial'}
+          {open ? t('common.actions.cancel') : t('testimonials.writeButton')}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
-        <p className="text-sm text-muted-foreground">Loved working with Tendwell? Share a few words. You control how your name is shown, and we review before anything is published.</p>
+        <p className="text-sm text-muted-foreground">{t('testimonials.description')}</p>
 
         {open && (
           <div className="space-y-3 rounded-lg border border-border/60 p-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Field label="Rating">
+              <Field label={t('testimonials.rating')}>
                 <select
                   className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
                   value={form.rating}
@@ -914,49 +927,49 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
                   {[5, 4, 3, 2, 1].map(n => <option key={n} value={String(n)}>{'★'.repeat(n)} ({n})</option>)}
                 </select>
               </Field>
-              <Field label="Show my name as">
+              <Field label={t('testimonials.showNameAs')}>
                 <select
                   className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
                   value={form.display_preference}
                   onChange={e => setForm(f => ({ ...f, display_preference: e.target.value }))}
                   data-testid="select-testimonial-display"
                 >
-                  <option value="full_name">Full name</option>
-                  <option value="first_name">First name only</option>
-                  <option value="anonymous">Anonymous</option>
+                  <option value="full_name">{t('testimonials.fullName')}</option>
+                  <option value="first_name">{t('testimonials.firstNameOnly')}</option>
+                  <option value="anonymous">{t('testimonials.anonymous')}</option>
                 </select>
               </Field>
             </div>
-            <Field label="Your testimonial">
+            <Field label={t('testimonials.yourTestimonial')}>
               <Textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={4} data-testid="input-testimonial-body" />
             </Field>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               <input type="checkbox" checked={form.allow_photo} onChange={e => setForm(f => ({ ...f, allow_photo: e.target.checked }))} data-testid="checkbox-testimonial-photo" />
-              You may use a property photo alongside my testimonial
+              {t('testimonials.allowPhotoLabel')}
             </label>
             <div className="flex justify-end">
               <Button size="sm" disabled={!form.body.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-testimonial">
-                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit testimonial'}
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('testimonials.submit')}
               </Button>
             </div>
           </div>
         )}
 
         {isLoading && <Skeleton className="h-16 rounded-lg" />}
-        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load testimonials" description="Please try again." />}
+        {isError && <ErrorState onRetry={() => refetch()} title={t('testimonials.loadFailedTitle')} description={t('testimonials.loadFailedDescription')} />}
         {!isLoading && !isError && items.length === 0 && !open && (
-          <p className="text-sm text-muted-foreground">You haven't submitted a testimonial yet.</p>
+          <p className="text-sm text-muted-foreground">{t('testimonials.empty')}</p>
         )}
-        {items.map(t => (
-          <div key={t.id} className="rounded-lg border border-border/60 p-3 space-y-1">
+        {items.map(item => (
+          <div key={item.id} className="rounded-lg border border-border/60 p-3 space-y-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-amber-500">{t.rating ? '★'.repeat(t.rating) : ''}</span>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${TESTIMONIAL_STATUS_TONE[t.status] ?? 'bg-muted text-muted-foreground'}`}>
-                {TESTIMONIAL_STATUS_LABEL[t.status] ?? t.status}
+              <span className="text-xs text-amber-500">{item.rating ? '★'.repeat(item.rating) : ''}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${TESTIMONIAL_STATUS_TONE[item.status] ?? 'bg-muted text-muted-foreground'}`}>
+                {t(`testimonials.status.${item.status}`, undefined, item.status)}
               </span>
             </div>
-            <p className="text-sm text-foreground/90">{t.body}</p>
-            <p className="text-2xs text-muted-foreground">Submitted {formatDate(t.created_at)}</p>
+            <p className="text-sm text-foreground/90">{item.body}</p>
+            <p className="text-2xs text-muted-foreground">{t('testimonials.submittedOn', { date: formatDate(item.created_at, format) })}</p>
           </div>
         ))}
       </CardContent>
@@ -973,9 +986,6 @@ type OwnerFeedback = {
   created_at: string
 }
 
-const FEEDBACK_STATUS_LABEL: Record<string, string> = {
-  open: 'Open', reviewing: 'Reviewing', planned: 'Planned', done: 'Done', declined: 'Declined',
-}
 const FEEDBACK_STATUS_TONE: Record<string, string> = {
   open: 'bg-info/10 text-info',
   reviewing: 'bg-warning/10 text-warning',
@@ -985,6 +995,8 @@ const FEEDBACK_STATUS_TONE: Record<string, string> = {
 }
 
 function FeedbackSection({ ownerId }: { ownerId: string }) {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -1012,12 +1024,12 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Feedback sent', description: 'Thanks! We read every note.' })
+      toast({ title: t('feedback.sentToastTitle'), description: t('feedback.sentToastDescription') })
       setForm({ category: 'suggestion', body: '' })
       setOpen(false)
       queryClient.invalidateQueries({ queryKey: ['owner-feedback'] })
     },
-    onError: (e: any) => toast({ title: 'Could not send', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('feedback.sendFailedTitle'), description: e?.message ?? t('feedback.sendFailedDefault'), variant: 'destructive' }),
   })
 
   const items = data ?? []
@@ -1026,56 +1038,56 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-muted-foreground" /> Feedback &amp; suggestions
+          <MessageSquare className="w-4 h-4 text-muted-foreground" /> {t('feedback.title')}
         </h2>
         <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-feedback-form">
-          {open ? 'Cancel' : 'Send feedback'}
+          {open ? t('common.actions.cancel') : t('feedback.sendButton')}
         </Button>
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
-        <p className="text-sm text-muted-foreground">Have an idea, a request, or something that could be better? Tell us.</p>
+        <p className="text-sm text-muted-foreground">{t('feedback.description')}</p>
 
         {open && (
           <div className="space-y-3 rounded-lg border border-border/60 p-3">
-            <Field label="Type">
+            <Field label={t('feedback.type')}>
               <select
                 className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
                 value={form.category}
                 onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
                 data-testid="select-feedback-category"
               >
-                <option value="suggestion">Suggestion</option>
-                <option value="issue">Issue</option>
-                <option value="praise">Praise</option>
-                <option value="other">Other</option>
+                <option value="suggestion">{t('feedback.category.suggestion')}</option>
+                <option value="issue">{t('feedback.category.issue')}</option>
+                <option value="praise">{t('feedback.category.praise')}</option>
+                <option value="other">{t('feedback.category.other')}</option>
               </select>
             </Field>
-            <Field label="Your message">
+            <Field label={t('feedback.yourMessage')}>
               <Textarea value={form.body} onChange={e => setForm(f => ({ ...f, body: e.target.value }))} rows={3} data-testid="input-feedback-body" />
             </Field>
             <div className="flex justify-end">
               <Button size="sm" disabled={!form.body.trim() || submit.isPending} onClick={() => submit.mutate()} data-testid="button-submit-feedback">
-                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send'}
+                {submit.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('feedback.send')}
               </Button>
             </div>
           </div>
         )}
 
         {isLoading && <Skeleton className="h-16 rounded-lg" />}
-        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load feedback" description="Please try again." />}
+        {isError && <ErrorState onRetry={() => refetch()} title={t('feedback.loadFailedTitle')} description={t('feedback.loadFailedDescription')} />}
         {!isLoading && !isError && items.length === 0 && !open && (
-          <p className="text-sm text-muted-foreground">No feedback submitted yet.</p>
+          <p className="text-sm text-muted-foreground">{t('feedback.empty')}</p>
         )}
-        {items.map(f => (
-          <div key={f.id} className="rounded-lg border border-border/60 p-3 space-y-1">
+        {items.map(item => (
+          <div key={item.id} className="rounded-lg border border-border/60 p-3 space-y-1">
             <div className="flex items-center justify-between gap-2">
-              <span className="text-2xs uppercase tracking-wide text-muted-foreground">{f.category}</span>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${FEEDBACK_STATUS_TONE[f.status] ?? 'bg-muted text-muted-foreground'}`}>
-                {FEEDBACK_STATUS_LABEL[f.status] ?? f.status}
+              <span className="text-2xs uppercase tracking-wide text-muted-foreground">{t(`feedback.category.${item.category}`, undefined, item.category)}</span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${FEEDBACK_STATUS_TONE[item.status] ?? 'bg-muted text-muted-foreground'}`}>
+                {t(`feedback.status.${item.status}`, undefined, item.status)}
               </span>
             </div>
-            <p className="text-sm text-foreground/90">{f.body}</p>
-            <p className="text-2xs text-muted-foreground">Sent {formatDate(f.created_at)}</p>
+            <p className="text-sm text-foreground/90">{item.body}</p>
+            <p className="text-2xs text-muted-foreground">{t('feedback.sentOn', { date: formatDate(item.created_at, format) })}</p>
           </div>
         ))}
       </CardContent>
@@ -1085,18 +1097,19 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
 
 // ─── Onboarding ───────────────────────────────────────────────────────────────
 function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
+  const { t } = useLocale('ownerPortal')
   const onboarding = properties.filter(p => p.stage === 'Onboarding')
   if (onboarding.length === 0) return null
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-muted-foreground" /> Onboarding in progress
+          <ClipboardList className="w-4 h-4 text-muted-foreground" /> {t('onboarding.title')}
         </h2>
       </CardHeader>
       <CardContent className="space-y-3 pb-5">
         <p className="text-sm text-muted-foreground">
-          We're getting {onboarding.length === 1 ? 'your property' : 'your properties'} ready. Please make sure the details below (access codes, Wi-Fi, bed sizes) are complete - it helps us start clean.
+          {onboarding.length === 1 ? t('onboarding.messageSingular') : t('onboarding.messagePlural')}
         </p>
         <ul className="space-y-1">
           {onboarding.map(p => (
@@ -1106,7 +1119,7 @@ function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
           ))}
         </ul>
         <a href="/#/onboarding" className="inline-block text-sm font-medium text-primary hover:underline">
-          Onboarding a new property? Start here →
+          {t('onboarding.startHere')}
         </a>
       </CardContent>
     </Card>
@@ -1137,6 +1150,8 @@ function formatMoney(n: number | null | undefined): string {
 }
 
 function QuotesSection() {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -1156,16 +1171,16 @@ function QuotesSection() {
     },
     onSuccess: (_d, v) => {
       toast({
-        title: v.response === 'approved' ? 'Quote approved' : 'Quote declined',
-        description: v.response === 'approved' ? 'Thanks! Our team will begin onboarding.' : 'Thanks for letting us know.',
+        title: v.response === 'approved' ? t('quotes.approvedToastTitle') : t('quotes.declinedToastTitle'),
+        description: v.response === 'approved' ? t('quotes.approvedToastDescription') : t('quotes.declinedToastDescription'),
       })
       queryClient.invalidateQueries({ queryKey: ['owner-quotes'] })
     },
-    onError: (e: any) => toast({ title: 'Could not submit', description: e?.message ?? 'Please try again.', variant: 'destructive' }),
+    onError: (e: any) => toast({ title: t('quotes.respondFailedTitle'), description: e?.message ?? t('quotes.respondFailedDefault'), variant: 'destructive' }),
   })
 
   if (isLoading) return <Skeleton className="h-28 rounded-2xl" />
-  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load your quote" description="Please try again." />
+  if (isError) return <ErrorState onRetry={() => refetch()} title={t('quotes.loadFailedTitle')} description={t('quotes.loadFailedDescription')} />
   const quotes = data ?? []
   if (quotes.length === 0) return null
 
@@ -1173,7 +1188,7 @@ function QuotesSection() {
     <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/30">
       <CardHeader className="py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <FileText className="w-4 h-4 text-muted-foreground" /> Your quote{quotes.length > 1 ? 's' : ''}
+          <FileText className="w-4 h-4 text-muted-foreground" /> {quotes.length > 1 ? t('quotes.titlePlural') : t('quotes.titleSingular')}
         </h2>
       </CardHeader>
       <CardContent className="space-y-3 pb-5">
@@ -1186,24 +1201,24 @@ function QuotesSection() {
                 <p className="text-sm font-semibold text-foreground">{q.name}</p>
                 {!pending && (
                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium shrink-0 ${approved ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}>
-                    {approved ? 'Approved' : 'Declined'}
+                    {approved ? t('quotes.approved') : t('quotes.declined')}
                   </span>
                 )}
               </div>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="text-muted-foreground">Cleaning fee (per turn)</span>
+                  <span className="text-muted-foreground">{t('quotes.cleaningFee')}</span>
                   <span className="font-medium text-foreground">{formatMoney(q.ce_charged)}</span>
                 </div>
                 {q.deep_clean_3x_ce ? (
                   <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Onboarding deep clean</span>
+                    <span className="text-muted-foreground">{t('quotes.onboardingDeepClean')}</span>
                     <span className="font-medium text-foreground">{formatMoney(q.deep_clean_3x_ce)}</span>
                   </div>
                 ) : null}
                 {q.linen_program && q.linen_program_cost ? (
                   <div className="flex justify-between gap-3">
-                    <span className="text-muted-foreground">Linen program (monthly)</span>
+                    <span className="text-muted-foreground">{t('quotes.linenProgram')}</span>
                     <span className="font-medium text-foreground">{formatMoney(q.linen_program_cost)}</span>
                   </div>
                 ) : null}
@@ -1211,14 +1226,14 @@ function QuotesSection() {
               {pending ? (
                 <div className="flex gap-2 justify-end pt-1">
                   <Button size="sm" variant="outline" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'declined' })} data-testid={`button-decline-quote-${q.id}`}>
-                    Decline
+                    {t('quotes.decline')}
                   </Button>
                   <Button size="sm" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'approved' })} data-testid={`button-approve-quote-${q.id}`}>
-                    {respond.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Approve'}
+                    {respond.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('quotes.approve')}
                   </Button>
                 </div>
               ) : (
-                <p className="text-2xs text-muted-foreground">Responded {formatDate(q.quote_responded_at)}</p>
+                <p className="text-2xs text-muted-foreground">{t('quotes.respondedOn', { date: formatDate(q.quote_responded_at, format) })}</p>
               )}
             </div>
           )
@@ -1242,6 +1257,8 @@ type OwnerAgreement = {
 }
 
 function AgreementSection() {
+  const { t } = useLocale('ownerPortal')
+  const { format } = useDateFormat()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -1284,7 +1301,7 @@ function AgreementSection() {
   }, [a?.id])
 
   if (isLoading) return <Skeleton className="h-28 rounded-2xl" />
-  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load agreement" description="Please try again." />
+  if (isError) return <ErrorState onRetry={() => refetch()} title={t('agreements.loadFailedTitle')} description={t('agreements.loadFailedDescription')} />
 
   // No agreement assigned for this owner.
   if (!a) return null
@@ -1296,12 +1313,12 @@ function AgreementSection() {
       <Card className="rounded-2xl shadow-sm overflow-hidden">
         <CardHeader className="py-4">
           <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <FileText className="w-4 h-4 text-muted-foreground" /> Service Agreement
+            <FileText className="w-4 h-4 text-muted-foreground" /> {t('agreements.signedTitle')}
           </h2>
         </CardHeader>
         <CardContent className="space-y-4 pb-5">
           <p className="text-sm text-muted-foreground">
-            Signed on {formatDate(a.owner_signed_at)}. You can download a copy of the fully signed agreement below.
+            {t('agreements.signedOn', { date: formatDate(a.owner_signed_at, format) })}
           </p>
           <Button
             variant="outline"
@@ -1309,13 +1326,13 @@ function AgreementSection() {
             onClick={async () => {
               const result = await downloadAgreementPdf(a.id)
               if (!result.ok) {
-                toast({ title: 'Could not download', description: result.error ?? 'Please try again.', variant: 'destructive' })
+                toast({ title: t('agreements.downloadFailedTitle'), description: result.error ?? t('agreements.downloadFailedDefault'), variant: 'destructive' })
               }
             }}
             data-testid="button-download-agreement"
           >
             <Download className="w-4 h-4" />
-            Download signed PDF
+            {t('agreements.downloadButton')}
           </Button>
         </CardContent>
       </Card>
@@ -1323,7 +1340,7 @@ function AgreementSection() {
   }
 
   // status === 'sent'
-  const today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+  const today = format(new Date(), 'MMMM d, yyyy')
 
   async function handleSign() {
     if (!sig || !consent || !ownerPrintedName.trim() || isPending) return
@@ -1343,10 +1360,10 @@ function AgreementSection() {
     })
     setIsPending(false)
     if (result.ok) {
-      toast({ title: 'Agreement signed. Thank you!' })
+      toast({ title: t('agreements.signedToast') })
       queryClient.invalidateQueries({ queryKey: ['owner-agreement'] })
     } else {
-      toast({ title: 'Could not sign agreement', description: result.error ?? 'Please try again.', variant: 'destructive' })
+      toast({ title: t('agreements.signFailedTitle'), description: result.error ?? t('agreements.signFailedDefault'), variant: 'destructive' })
     }
   }
 
@@ -1355,14 +1372,14 @@ function AgreementSection() {
       <CardHeader className="py-4">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
           <PenLine className="w-4 h-4 text-primary" />
-          Action needed: review and sign your Service Agreement
+          {t('agreements.actionNeededTitle')}
         </h2>
       </CardHeader>
       <CardContent className="space-y-6 pb-6">
         {/* Open agreement */}
         <div className="space-y-2">
           <p className="text-sm text-muted-foreground">
-            Please review the Cleaning Services Agreement, then complete and sign below. Your signature is legally binding.
+            {t('agreements.intro')}
           </p>
           <a
             href="/agreements/service-agreement-v1.pdf"
@@ -1372,15 +1389,15 @@ function AgreementSection() {
             data-testid="link-open-agreement"
           >
             <ExternalLink className="w-4 h-4" />
-            Open agreement
+            {t('agreements.openAgreement')}
           </a>
         </div>
 
         {/* Party fields */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Your information</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t('agreements.yourInformation')}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Owner name">
+            <Field label={t('agreements.ownerName')}>
               <Input
                 className="text-base sm:text-sm"
                 value={ownerName}
@@ -1388,16 +1405,16 @@ function AgreementSection() {
                 data-testid="input-agreement-owner-name"
               />
             </Field>
-            <Field label="Entity (optional)">
+            <Field label={t('agreements.entityOptional')}>
               <Input
                 className="text-base sm:text-sm"
                 value={entity}
                 onChange={e => setEntity(e.target.value)}
-                placeholder="LLC, Trust, etc."
+                placeholder={t('agreements.entityPlaceholder')}
                 data-testid="input-agreement-entity"
               />
             </Field>
-            <Field label="Mailing address" className="sm:col-span-2">
+            <Field label={t('agreements.mailingAddress')} className="sm:col-span-2">
               <Input
                 className="text-base sm:text-sm"
                 value={mailingAddress}
@@ -1405,17 +1422,17 @@ function AgreementSection() {
                 data-testid="input-agreement-mailing-address"
               />
             </Field>
-            <Field label="Property address(es)" className="sm:col-span-2">
+            <Field label={t('agreements.propertyAddresses')} className="sm:col-span-2">
               <Textarea
                 className="text-base sm:text-sm"
                 rows={2}
                 value={propertyAddresses}
                 onChange={e => setPropertyAddresses(e.target.value)}
-                placeholder="One address per line"
+                placeholder={t('agreements.propertyAddressesPlaceholder')}
                 data-testid="textarea-agreement-property-addresses"
               />
             </Field>
-            <Field label="Email">
+            <Field label={t('agreements.email')}>
               <Input
                 type="email"
                 className="text-base sm:text-sm"
@@ -1424,7 +1441,7 @@ function AgreementSection() {
                 data-testid="input-agreement-email"
               />
             </Field>
-            <Field label="Phone">
+            <Field label={t('agreements.phone')}>
               <Input
                 className="text-base sm:text-sm"
                 value={phone}
@@ -1437,31 +1454,31 @@ function AgreementSection() {
 
         {/* Signature block */}
         <section className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">Your signature</h3>
+          <h3 className="text-sm font-semibold text-foreground">{t('agreements.yourSignature')}</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Printed name">
+            <Field label={t('agreements.printedName')}>
               <Input
                 className="text-base sm:text-sm"
                 value={ownerPrintedName}
                 onChange={e => setOwnerPrintedName(e.target.value)}
-                placeholder="Your full legal name"
+                placeholder={t('agreements.printedNamePlaceholder')}
                 data-testid="input-agreement-printed-name"
               />
             </Field>
-            <Field label="Title or capacity">
+            <Field label={t('agreements.titleOrCapacity')}>
               <Input
                 className="text-base sm:text-sm"
                 value={ownerTitle}
                 onChange={e => setOwnerTitle(e.target.value)}
-                placeholder="Owner, Manager, Trustee, etc."
+                placeholder={t('agreements.titleOrCapacityPlaceholder')}
                 data-testid="input-agreement-title"
               />
             </Field>
           </div>
           <div className="text-sm text-muted-foreground">
-            Date: <span className="font-medium text-foreground">{today}</span>
+            {t('agreements.date')}: <span className="font-medium text-foreground">{today}</span>
           </div>
-          <Field label="Signature">
+          <Field label={t('agreements.signatureLabel')}>
             <SignaturePad onChange={setSig} data-testid="signature-pad" />
           </Field>
         </section>
@@ -1476,7 +1493,7 @@ function AgreementSection() {
             data-testid="checkbox-agreement-consent"
           />
           <span className="text-sm text-foreground leading-snug">
-            I agree to sign electronically and I have read and agree to the Cleaning Services Agreement.
+            {t('agreements.consentText')}
           </span>
         </label>
 
@@ -1489,7 +1506,7 @@ function AgreementSection() {
           data-testid="button-sign-agreement"
         >
           {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-          Sign agreement
+          {t('agreements.signButton')}
         </Button>
       </CardContent>
     </Card>
@@ -1498,6 +1515,7 @@ function AgreementSection() {
 
 // ─── Trellis portal card ───────────────────────────────────────────────────────
 function TrellisPortalCard() {
+  const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
   const [copied, setCopied] = useState(false)
 
@@ -1525,21 +1543,21 @@ function TrellisPortalCard() {
     try {
       await navigator.clipboard.writeText(url!)
       setCopied(true)
-      toast({ title: 'Link copied' })
+      toast({ title: t('trellis.linkCopied') })
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast({ title: 'Could not copy link', description: 'Please copy it manually.', variant: 'destructive' })
+      toast({ title: t('trellis.copyFailedTitle'), description: t('trellis.copyFailedDescription'), variant: 'destructive' })
     }
   }
 
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground">Your Trellis portal</h2>
+        <h2 className="text-base font-semibold text-foreground">{t('trellis.title')}</h2>
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
         <p className="text-sm text-muted-foreground">
-          Access your Trellis owner portal to view reservations, work orders, and more.
+          {t('trellis.description')}
         </p>
         <div className="flex flex-wrap gap-2">
           {isOpenable && (
@@ -1551,7 +1569,7 @@ function TrellisPortalCard() {
               data-testid="link-open-trellis"
             >
               <ExternalLink className="w-4 h-4" />
-              Open Trellis portal
+              {t('trellis.open')}
             </a>
           )}
           <button
@@ -1560,7 +1578,7 @@ function TrellisPortalCard() {
             data-testid="button-copy-trellis-link"
           >
             {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-            {copied ? 'Copied' : 'Copy link'}
+            {copied ? t('trellis.copied') : t('trellis.copyLink')}
           </button>
         </div>
       </CardContent>
@@ -1570,6 +1588,7 @@ function TrellisPortalCard() {
 
 // ─── Owner-wide contact & payment card ────────────────────────────────────────
 function ContactPaymentCard() {
+  const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
   const queryClient = useQueryClient()
 
@@ -1612,11 +1631,11 @@ function ContactPaymentCard() {
   const save = useMutation({
     mutationFn: async () => {
       const email = form.email.trim().toLowerCase()
-      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address.')
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(t('contact.invalidEmail'))
       const emailChanged = email !== initialEmail.toLowerCase()
       if (emailChanged) {
         const r = await changeOwnerEmail(email)
-        if (!r.ok) throw new Error(r.error || 'Could not change email.')
+        if (!r.ok) throw new Error(r.error || t('contact.emailChangeFailedDefault'))
       }
       const { error } = await supabase.rpc('owner_update_self_contact', {
         p_name: form.name.trim() || null,
@@ -1627,51 +1646,51 @@ function ContactPaymentCard() {
       if (emailChanged) await supabase.auth.refreshSession()
     },
     onSuccess: () => {
-      toast({ title: 'Saved', description: 'Your contact information was updated.' })
+      toast({ title: t('contact.saved'), description: t('contact.savedDescription') })
       queryClient.invalidateQueries({ queryKey: ['owner-self'] })
     },
     onError: (e: unknown) =>
-      toast({ title: 'Could not save', description: e instanceof Error ? e.message : 'Please try again.', variant: 'destructive' }),
+      toast({ title: t('contact.saveFailedTitle'), description: e instanceof Error ? e.message : t('contact.saveFailedDefault'), variant: 'destructive' }),
   })
 
   if (isLoading) return <Skeleton className="h-40 rounded-2xl" />
-  if (isError) return <ErrorState onRetry={() => refetch()} title="Couldn't load your info" description="Please try again." />
+  if (isError) return <ErrorState onRetry={() => refetch()} title={t('contact.loadFailedTitle')} description={t('contact.loadFailedDescription')} />
 
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground">Your contact &amp; payment</h2>
+        <h2 className="text-base font-semibold text-foreground">{t('contact.title')}</h2>
       </CardHeader>
       <CardContent className="space-y-4 pb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Contact name">
+          <Field label={t('contact.contactName')}>
             <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-owner-name" />
           </Field>
-          <Field label="Contact phone">
+          <Field label={t('contact.contactPhone')}>
             <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} data-testid="input-owner-phone" />
           </Field>
-          <Field label="Login email">
+          <Field label={t('contact.loginEmail')}>
             <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
           </Field>
-          <Field label="Preferred payment method">
+          <Field label={t('contact.preferredPaymentMethod')}>
             <select
               className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
               value={form.preferred_payment_method}
               onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
               data-testid="select-owner-payment"
             >
-              <option value="">Select a method</option>
-              <option value="QuickBooks">QuickBooks</option>
-              <option value="Bill.com">Bill.com</option>
+              <option value="">{t('contact.selectMethod')}</option>
+              <option value="QuickBooks">{t('contact.methodQuickBooks')}</option>
+              <option value="Bill.com">{t('contact.methodBillCom')}</option>
             </select>
           </Field>
         </div>
         <p className="text-2xs text-muted-foreground">
-          Changing your login email updates the address you sign in with. It does not change your properties or access.
+          {t('contact.emailChangeNote')}
         </p>
         <div className="flex justify-end">
           <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="button-save-owner-contact">
-            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save changes'}
+            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('contact.saveChanges')}
           </Button>
         </div>
       </CardContent>
@@ -1681,6 +1700,7 @@ function ContactPaymentCard() {
 
 // ─── Account security ─────────────────────────────────────────────────────────
 function AccountSecurityCard() {
+  const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
   const { updatePassword } = useAuth()
   const [password, setPassword] = useState('')
@@ -1690,46 +1710,46 @@ function AccountSecurityCard() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (password.length < 8) {
-      toast({ title: 'Password too short', description: 'Use at least 8 characters.', variant: 'destructive' })
+      toast({ title: t('security.tooShortTitle'), description: t('security.tooShortDescription'), variant: 'destructive' })
       return
     }
     if (password !== confirm) {
-      toast({ title: 'Passwords do not match', description: 'Please re-enter them.', variant: 'destructive' })
+      toast({ title: t('security.mismatchTitle'), description: t('security.mismatchDescription'), variant: 'destructive' })
       return
     }
     setSubmitting(true)
     const { error } = await updatePassword(password)
     setSubmitting(false)
     if (error) {
-      toast({ title: 'Could not update password', description: error, variant: 'destructive' })
+      toast({ title: t('security.updateFailedTitle'), description: error, variant: 'destructive' })
       return
     }
     setPassword(''); setConfirm('')
-    toast({ title: 'Password updated', description: 'Your new password is now active.' })
+    toast({ title: t('security.updatedTitle'), description: t('security.updatedDescription') })
   }
 
   return (
     <Card className="rounded-2xl shadow-sm overflow-hidden">
       <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground">Account security</h2>
+        <h2 className="text-base font-semibold text-foreground">{t('security.title')}</h2>
       </CardHeader>
       <CardContent className="pb-6">
         <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="New password">
+            <Field label={t('security.newPassword')}>
               <Input type="password" autoComplete="new-password" value={password}
-                onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters"
+                onChange={e => setPassword(e.target.value)} placeholder={t('security.newPasswordPlaceholder')}
                 data-testid="input-owner-new-password" />
             </Field>
-            <Field label="Confirm password">
+            <Field label={t('security.confirmPassword')}>
               <Input type="password" autoComplete="new-password" value={confirm}
-                onChange={e => setConfirm(e.target.value)} placeholder="Re-enter password"
+                onChange={e => setConfirm(e.target.value)} placeholder={t('security.confirmPasswordPlaceholder')}
                 data-testid="input-owner-confirm-password" />
             </Field>
           </div>
           <div className="flex justify-end">
             <Button type="submit" disabled={submitting} data-testid="button-owner-update-password">
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Update password'}
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : t('security.updateButton')}
             </Button>
           </div>
         </form>
@@ -1740,7 +1760,8 @@ function AccountSecurityCard() {
 
 // ─── Portal shell ───────────────────────────────────────────────────────────────
 export default function OwnerPortalPage() {
-  usePageTitle('Owner Portal')
+  const { t } = useLocale('ownerPortal')
+  usePageTitle(t('header.pageTitle'))
   const { user, logout, canActAsOwner, setActingAsOwner } = useAuth()
   // For a pure owner, user.id is the property_owners id; for a staff user acting
   // as owner it's on ownerIdentity. Used as owner_id on owner-scoped inserts.
@@ -1776,21 +1797,22 @@ export default function OwnerPortalPage() {
               alt="Tendwell"
               className="h-7 sm:h-8 w-auto max-w-[180px] object-contain object-left hidden dark:block"
             />
-            <span className="text-2xs text-muted-foreground uppercase tracking-[0.2em]">Owner portal</span>
+            <span className="text-2xs text-muted-foreground uppercase tracking-[0.2em]">{t('header.eyebrow')}</span>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {firstName && (
               <span className="hidden sm:inline text-sm text-muted-foreground mr-1 truncate max-w-[160px]">
-                Welcome back, {firstName}
+                {t('header.welcomeBack', { name: firstName })}
               </span>
             )}
+            <LanguageToggle />
             {canActAsOwner && (
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
-                <ArrowLeft className="w-4 h-4" /> Staff view
+                <ArrowLeft className="w-4 h-4" /> {t('header.staffView')}
               </Button>
             )}
             <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
-              <LogOut className="w-4 h-4" /> Sign out
+              <LogOut className="w-4 h-4" /> {t('header.signOut')}
             </Button>
           </div>
         </div>
@@ -1803,9 +1825,9 @@ export default function OwnerPortalPage() {
         {ownerId && <TrellisPortalCard />}
         {ownerId && <AgreementSection />}
         <div>
-          <h1 className="text-lg font-semibold text-foreground">Your properties</h1>
+          <h1 className="text-lg font-semibold text-foreground">{t('properties.heading')}</h1>
           <p className="text-sm text-muted-foreground">
-            Review and update your property information and view upcoming scheduled tasks.
+            {t('properties.subtitle')}
           </p>
         </div>
 
@@ -1815,13 +1837,13 @@ export default function OwnerPortalPage() {
           </div>
         )}
 
-        {isError && <ErrorState onRetry={() => refetch()} title="Couldn't load your properties" description="Something went wrong loading your properties. Please try again." />}
+        {isError && <ErrorState onRetry={() => refetch()} title={t('properties.loadFailedTitle')} description={t('properties.loadFailedDescription')} />}
 
         {!isLoading && !isError && (data?.length ?? 0) === 0 && (
           <EmptyState
             icon={Home}
-            title="No properties assigned"
-            description="No properties are linked to your account yet. Please contact Tendwell."
+            title={t('properties.emptyTitle')}
+            description={t('properties.emptyDescription')}
           />
         )}
 

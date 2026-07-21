@@ -12,32 +12,35 @@ import { PageContainer } from '@/components/PageContainer'
 import { StatusBadge } from '@/components/StatusBadge'
 import { profitTier } from '@/lib/profit-colors'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 
 // ---------------------------------------------------------------------------
 // Helpers (mirrored from revenue-report.tsx)
 // ---------------------------------------------------------------------------
 
 function ProfitBadge({ pct }: { pct: number | null }) {
+  const { t } = useLocale('financials')
   if (pct == null) return <span className="text-muted-foreground">-</span>
-  const t = profitTier(pct)
-  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const tone = t === 'high' ? 'success' : t === 'mid' ? 'warning' : 'destructive'
+  const tierKey = profitTier(pct)
+  const tier = tierKey === 'high' ? t('byClient.profitTier.high') : tierKey === 'mid' ? t('byClient.profitTier.mid') : t('byClient.profitTier.low')
+  const tone = tierKey === 'high' ? 'success' : tierKey === 'mid' ? 'warning' : 'destructive'
   return (
     <StatusBadge tone={tone}>
-      {pct.toFixed(1)}%<span className="sr-only"> ({tier} profit)</span>
+      {pct.toFixed(1)}%<span className="sr-only">{t('byClient.profitSr', { tier })}</span>
     </StatusBadge>
   )
 }
 
 function HealthDot({ pct }: { pct: number }) {
-  const t = profitTier(pct)
-  const tier = t === 'high' ? 'High' : t === 'mid' ? 'Mid' : 'Low'
-  const color = t === 'high' ? 'bg-success' : t === 'mid' ? 'bg-warning' : 'bg-destructive'
+  const { t } = useLocale('financials')
+  const tierKey = profitTier(pct)
+  const tier = tierKey === 'high' ? t('byClient.profitTier.high') : tierKey === 'mid' ? t('byClient.profitTier.mid') : t('byClient.profitTier.low')
+  const color = tierKey === 'high' ? 'bg-success' : tierKey === 'mid' ? 'bg-warning' : 'bg-destructive'
   return (
     <span
       className={`inline-block w-2.5 h-2.5 rounded-full ${color}`}
       role="img"
-      aria-label={`${tier} profit: ${pct.toFixed(1)}%`}
+      aria-label={t('byClient.healthAria', { tier, pct: pct.toFixed(1) })}
     />
   )
 }
@@ -58,8 +61,9 @@ type SortKey = 'name' | 'ce_charged' | 'cleaner_pay' | 'profit' | 'profit_pct'
 // ---------------------------------------------------------------------------
 
 export default function ProFormaByClientPage() {
+  const { t } = useLocale('financials')
   const inWrapper = useInProFormaWrapper()
-  usePageTitle(inWrapper ? 'Pro Forma - By Client' : 'Pro Forma by Client')
+  usePageTitle(inWrapper ? t('byClient.page.titleWrapped') : t('byClient.page.title'))
 
   const { openPropertyModal } = usePropertyModal()
   const [sortKey, setSortKey] = useState<SortKey>('ce_charged')
@@ -131,7 +135,7 @@ export default function ProFormaByClientPage() {
       const key = contact ? `contact_${contact.id}` : 'unassigned'
       if (!groups[key]) {
         groups[key] = {
-          name: contact?.full_name || 'Unassigned',
+          name: contact?.full_name || t('byClient.unassigned'),
           paymentMethod: contact?.payment_method || null,
           contactId: contact?.id || null,
           properties: [],
@@ -171,7 +175,7 @@ export default function ProFormaByClientPage() {
         if (av > bv) return sortDir === 'asc' ? 1 : -1
         return 0
       })
-  }, [sorted, contacts])
+  }, [sorted, contacts, t])
 
   // ------------------------------------------------------------------
   // Interactions
@@ -218,28 +222,28 @@ export default function ProFormaByClientPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               <th className={thCls} onClick={() => toggleSort('name')}>
-                Client <SortIcon col="name" />
+                {t('byClient.table.client')} <SortIcon col="name" />
               </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">
-                Payment
+                {t('byClient.table.payment')}
               </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">
-                Properties
+                {t('byClient.table.properties')}
               </th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>
-                Client Charged <SortIcon col="ce_charged" />
+                {t('byClient.table.clientCharged')} <SortIcon col="ce_charged" />
               </th>
               <th className={thCls} onClick={() => toggleSort('cleaner_pay')}>
-                Cleaner Pay <SortIcon col="cleaner_pay" />
+                {t('byClient.table.cleanerPay')} <SortIcon col="cleaner_pay" />
               </th>
               <th className={thCls} onClick={() => toggleSort('profit')}>
-                Gross Margin <SortIcon col="profit" />
+                {t('byClient.table.grossMargin')} <SortIcon col="profit" />
               </th>
               <th className={thCls} onClick={() => toggleSort('profit_pct')}>
-                Gross Margin % <SortIcon col="profit_pct" />
+                {t('byClient.table.grossMarginPct')} <SortIcon col="profit_pct" />
               </th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">
-                Health
+                {t('byClient.table.health')}
               </th>
             </tr>
           </thead>
@@ -259,8 +263,8 @@ export default function ProFormaByClientPage() {
                 <td colSpan={8}>
                   <EmptyState
                     icon={Users}
-                    title="No clients"
-                    description="No active properties with client data found."
+                    title={t('byClient.empty.title')}
+                    description={t('byClient.empty.description')}
                   />
                 </td>
               </tr>

@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Building2, Upload, X } from 'lucide-react'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { resizeImageFile } from '@/lib/resize-image'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { LanguageToggle } from '@/components/LanguageToggle'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -15,16 +17,16 @@ type YesNo = '' | 'yes' | 'no'
 type IntegrationKind = '' | 'ical' | 'api_key' | 'none'
 
 type BedSize = 'king' | 'queen' | 'full' | 'twin'
-const BED_SIZES: { key: BedSize; label: string }[] = [
-  { key: 'king', label: 'King' },
-  { key: 'queen', label: 'Queen' },
-  { key: 'full', label: 'Full' },
-  { key: 'twin', label: 'Twin' },
-]
+const BED_SIZE_KEYS: BedSize[] = ['king', 'queen', 'full', 'twin']
+// Canonical English labels for the free-text `bed_sizes` DB column (parsed by
+// OnboardingReviewDialog's `parseBeds` regex) — kept English regardless of UI
+// locale; the visible bed-size labels use `t('intake.bedSizes.<key>')` instead.
+const BED_SIZE_EN_LABELS: Record<BedSize, string> = { king: 'King', queen: 'Queen', full: 'Full', twin: 'Twin' }
 
 interface UploadedPhoto { url: string; path: string; name: string }
 
 export default function OnboardingIntakePage() {
+  const { t } = useLocale('onboarding')
   const [submitted, setSubmitted] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -96,12 +98,12 @@ export default function OnboardingIntakePage() {
     const next: UploadedPhoto[] = []
     for (const file of Array.from(files)) {
       if (file.size > 20 * 1024 * 1024) {
-        setError(`${file.name} is over 20 MB - please resize and try again.`)
+        setError(t('intake.errors.tooLarge', { name: file.name }))
         continue
       }
       const result = await uploadFile(file)
       if (result) next.push(result)
-      else setError(`Failed to upload ${file.name}.`)
+      else setError(t('intake.errors.uploadFailed', { name: file.name }))
     }
     setPhotos(prev => [...prev, ...next])
     setPhotoUploading(false)
@@ -117,15 +119,19 @@ export default function OnboardingIntakePage() {
 
   async function handleSubmit() {
     setError('')
-    if (!clientName.trim()) { setError('Please enter your name.'); return }
-    if (!address.trim()) { setError('Please enter the property address.'); return }
-    const bedTotal = BED_SIZES.reduce((sum, s) => sum + (parseInt(bedCounts[s.key]) || 0), 0)
-    if (bedTotal === 0) { setError('Please enter a count for at least one bed size.'); return }
+    if (!clientName.trim()) { setError(t('intake.errors.nameRequired')); return }
+    if (!address.trim()) { setError(t('intake.errors.addressRequired')); return }
+    const bedTotal = BED_SIZE_KEYS.reduce((sum, k) => sum + (parseInt(bedCounts[k]) || 0), 0)
+    if (bedTotal === 0) { setError(t('intake.errors.bedCountRequired')); return }
 
     setSaving(true)
+    // Free text stored in `bed_sizes` is consumed by the staff-only review
+    // dialog (OnboardingReviewDialog's `parseBeds`, which regex-matches the
+    // English keywords King/Queen/Full/Twin) — keep these labels canonical
+    // English regardless of UI locale, like other DB-bound values.
     const bedSizesText = [
-      ...BED_SIZES
-        .map(s => ({ label: s.label, count: parseInt(bedCounts[s.key]) || 0 }))
+      ...BED_SIZE_KEYS
+        .map(k => ({ label: BED_SIZE_EN_LABELS[k], count: parseInt(bedCounts[k]) || 0 }))
         .filter(s => s.count > 0)
         .map(s => `${s.count} ${s.label}`),
       otherBeds.trim() && `Other: ${otherBeds.trim()}`,
@@ -176,7 +182,7 @@ export default function OnboardingIntakePage() {
 
     setSaving(false)
     if (insertErr) {
-      setError('Something went wrong. Please try again or email us directly.')
+      setError(t('intake.errors.generic'))
       return
     }
     setSubmitted(true)
@@ -197,9 +203,9 @@ export default function OnboardingIntakePage() {
             <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto">
               <Check className="w-6 h-6 text-success" />
             </div>
-            <h2 className="text-lg font-semibold">Submitted</h2>
+            <h2 className="text-lg font-semibold">{t('intake.success.title')}</h2>
             <p className="text-sm text-muted-foreground">
-              Thank you! We've received your property information. Our team will review it and follow up shortly.
+              {t('intake.success.body')}
             </p>
           </CardContent>
         </Card>
@@ -218,13 +224,13 @@ export default function OnboardingIntakePage() {
           onClick={() => onChange('no')}
           data-testid={`${dataTestId}-no`}
           className={`flex-1 h-10 rounded-md border text-sm transition-colors ${value === 'no' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
-        >No</button>
+        >{t('common.actions.no')}</button>
         <button
           type="button"
           onClick={() => onChange('yes')}
           data-testid={`${dataTestId}-yes`}
           className={`flex-1 h-10 rounded-md border text-sm transition-colors ${value === 'yes' ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
-        >Yes</button>
+        >{t('common.actions.yes')}</button>
       </div>
     )
   }
@@ -232,40 +238,44 @@ export default function OnboardingIntakePage() {
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8">
       <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center justify-end">
+          <LanguageToggle size="lg" />
+        </div>
+
         <div className="text-center space-y-2">
           <div className="w-10 h-10 rounded-md bg-primary/10 flex items-center justify-center mx-auto">
             <Building2 className="w-5 h-5 text-primary" />
           </div>
-          <h1 className="text-xl font-semibold">Property Onboarding</h1>
+          <h1 className="text-xl font-semibold">{t('intake.page.title')}</h1>
           <p className="text-sm text-muted-foreground">
-            Fill in your property details so we can set up service. Required fields marked with *.
+            {t('intake.page.subtitle')}
           </p>
         </div>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Contact & Property</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.contactProperty')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Your Name *</label>
+                <label className={labelCls}>{t('intake.fields.yourName')}</label>
                 <Input value={clientName} onChange={e => setClientName(e.target.value)} className={inputCls} data-testid="input-client-name" />
               </div>
               <div>
-                <label className={labelCls}>Property Name</label>
-                <Input value={propertyName} onChange={e => setPropertyName(e.target.value)} className={inputCls} placeholder="Mountain View Cabin" data-testid="input-property-name" />
+                <label className={labelCls}>{t('intake.fields.propertyName')}</label>
+                <Input value={propertyName} onChange={e => setPropertyName(e.target.value)} className={inputCls} placeholder={t('intake.fields.propertyNamePlaceholder')} data-testid="input-property-name" />
               </div>
               <div>
-                <label className={labelCls}>Email</label>
+                <label className={labelCls}>{t('intake.fields.email')}</label>
                 <Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} className={inputCls} data-testid="input-contact-email" />
               </div>
               <div>
-                <label className={labelCls}>Phone</label>
+                <label className={labelCls}>{t('intake.fields.phone')}</label>
                 <Input type="tel" value={contactPhone} onChange={e => setContactPhone(e.target.value)} className={inputCls} data-testid="input-contact-phone" />
               </div>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className={`${labelCls} !mb-0`}>Invoice Email</label>
+                <label className={`${labelCls} !mb-0`}>{t('intake.fields.invoiceEmail')}</label>
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
                   <input
                     type="checkbox"
@@ -274,7 +284,7 @@ export default function OnboardingIntakePage() {
                     className="h-3.5 w-3.5"
                     data-testid="checkbox-invoice-same-as-primary"
                   />
-                  Same as primary email
+                  {t('intake.fields.invoiceSameAsPrimary')}
                 </label>
               </div>
               <Input
@@ -282,73 +292,73 @@ export default function OnboardingIntakePage() {
                 value={invoiceSameAsPrimary ? contactEmail : invoiceEmail}
                 onChange={e => setInvoiceEmail(e.target.value)}
                 disabled={invoiceSameAsPrimary}
-                placeholder={invoiceSameAsPrimary ? '' : 'invoices@example.com'}
+                placeholder={invoiceSameAsPrimary ? '' : t('intake.fields.invoiceEmailPlaceholder')}
                 className={`${inputCls} ${invoiceSameAsPrimary ? 'opacity-60' : ''}`}
                 data-testid="input-invoice-email"
               />
-              <p className="text-xs text-muted-foreground mt-1">Where we should send invoices. Defaults to your primary email.</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('intake.fields.invoiceEmailHint')}</p>
             </div>
             <div>
-              <label className={labelCls}>Property Address *</label>
-              <AddressAutocomplete value={address} onChange={setAddress} className={inputCls} placeholder="123 Cabin Road, Gatlinburg, TN 37738" />
+              <label className={labelCls}>{t('intake.fields.propertyAddress')}</label>
+              <AddressAutocomplete value={address} onChange={setAddress} className={inputCls} placeholder={t('intake.fields.addressPlaceholder')} />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Property Details</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.propertyDetails')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <div><label className={labelCls}>Bedrooms</label><Input type="number" min="0" value={bedrooms} onChange={e => setBedrooms(e.target.value)} className={inputCls} data-testid="input-bedrooms" /></div>
-              <div><label className={labelCls}>Square Footage</label><Input type="number" min="0" value={squareFootage} onChange={e => setSquareFootage(e.target.value)} className={inputCls} data-testid="input-square-footage" /></div>
-              <div><label className={labelCls}>Full Baths</label><Input type="number" min="0" value={fullBaths} onChange={e => setFullBaths(e.target.value)} className={inputCls} data-testid="input-full-baths" /></div>
-              <div><label className={labelCls}>Half Baths</label><Input type="number" min="0" value={halfBaths} onChange={e => setHalfBaths(e.target.value)} className={inputCls} data-testid="input-half-baths" /></div>
+              <div><label className={labelCls}>{t('intake.fields.bedrooms')}</label><Input type="number" min="0" value={bedrooms} onChange={e => setBedrooms(e.target.value)} className={inputCls} data-testid="input-bedrooms" /></div>
+              <div><label className={labelCls}>{t('intake.fields.squareFootage')}</label><Input type="number" min="0" value={squareFootage} onChange={e => setSquareFootage(e.target.value)} className={inputCls} data-testid="input-square-footage" /></div>
+              <div><label className={labelCls}>{t('intake.fields.fullBaths')}</label><Input type="number" min="0" value={fullBaths} onChange={e => setFullBaths(e.target.value)} className={inputCls} data-testid="input-full-baths" /></div>
+              <div><label className={labelCls}>{t('intake.fields.halfBaths')}</label><Input type="number" min="0" value={halfBaths} onChange={e => setHalfBaths(e.target.value)} className={inputCls} data-testid="input-half-baths" /></div>
             </div>
             <div>
-              <label className={labelCls}>Beds by Size *</label>
+              <label className={labelCls}>{t('intake.fields.bedsBySize')}</label>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {BED_SIZES.map(s => (
-                  <div key={s.key}>
-                    <label className={labelCls}>{s.label}</label>
+                {BED_SIZE_KEYS.map(k => (
+                  <div key={k}>
+                    <label className={labelCls}>{t(`intake.bedSizes.${k}`)}</label>
                     <Input
                       type="number"
                       min="0"
-                      value={bedCounts[s.key]}
-                      onChange={e => setBedCounts(prev => ({ ...prev, [s.key]: e.target.value }))}
+                      value={bedCounts[k]}
+                      onChange={e => setBedCounts(prev => ({ ...prev, [k]: e.target.value }))}
                       placeholder="0"
                       className={inputCls}
-                      data-testid={`input-beds-${s.key}`}
+                      data-testid={`input-beds-${k}`}
                     />
                   </div>
                 ))}
               </div>
               <div className="mt-3">
-                <label className={labelCls}>Other Sleeping Arrangements</label>
+                <label className={labelCls}>{t('intake.fields.otherSleeping')}</label>
                 <Input
                   value={otherBeds}
                   onChange={e => setOtherBeds(e.target.value)}
-                  placeholder="e.g. Queen sleeper sofa in loft, twin bunk beds"
+                  placeholder={t('intake.fields.otherSleepingPlaceholder')}
                   className={inputCls}
                   data-testid="input-other-beds"
                 />
               </div>
-              <p className="text-xs text-muted-foreground mt-1">How many beds of each size, so we can stock the right linens.</p>
+              <p className="text-xs text-muted-foreground mt-1">{t('intake.fields.bedsHint')}</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div>
-                <label className={labelCls}>Hot Tub</label>
+                <label className={labelCls}>{t('intake.fields.hotTub')}</label>
                 <ToggleYesNo value={hotTub} onChange={setHotTub} dataTestId="toggle-hot-tub" />
               </div>
               <div>
-                <label className={labelCls}>Pool</label>
+                <label className={labelCls}>{t('intake.fields.pool')}</label>
                 <ToggleYesNo value={pool} onChange={setPool} dataTestId="toggle-pool" />
               </div>
               <div>
-                <label className={labelCls}>Linen Program</label>
+                <label className={labelCls}>{t('intake.fields.linenProgram')}</label>
                 <ToggleYesNo value={linenProgram} onChange={setLinenProgram} dataTestId="toggle-linen-program" />
               </div>
               <div>
-                <label className={labelCls}>Onboarding Deep Clean</label>
+                <label className={labelCls}>{t('intake.fields.onboardingDeepClean')}</label>
                 <ToggleYesNo value={deepClean} onChange={setDeepClean} dataTestId="toggle-onboarding-deep-clean" />
               </div>
             </div>
@@ -356,43 +366,43 @@ export default function OnboardingIntakePage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Access Codes</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.accessCodes')}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Front Door Code</label>
+                <label className={labelCls}>{t('intake.fields.frontDoorCode')}</label>
                 <Input value={doorCode} onChange={e => setDoorCode(e.target.value)} className={inputCls} data-testid="input-door-code" />
               </div>
               <div>
-                <label className={labelCls}>Pool Code</label>
+                <label className={labelCls}>{t('intake.fields.poolCode')}</label>
                 <Input value={poolCode} onChange={e => setPoolCode(e.target.value)} className={inputCls} data-testid="input-pool-code" />
               </div>
               <div>
-                <label className={labelCls}>Cleaner Closet Code</label>
+                <label className={labelCls}>{t('intake.fields.closetCode')}</label>
                 <Input value={closetCode} onChange={e => setClosetCode(e.target.value)} className={inputCls} data-testid="input-closet-code" />
               </div>
               <div>
-                <label className={labelCls}>Lockbox Code</label>
+                <label className={labelCls}>{t('intake.fields.lockboxCode')}</label>
                 <Input value={lockboxCode} onChange={e => setLockboxCode(e.target.value)} className={inputCls} data-testid="input-lockbox-code" />
               </div>
               <div>
-                <label className={labelCls}>Other Codes</label>
-                <Input value={otherCodes} onChange={e => setOtherCodes(e.target.value)} className={inputCls} placeholder="Anything else" data-testid="input-other-codes" />
+                <label className={labelCls}>{t('intake.fields.otherCodes')}</label>
+                <Input value={otherCodes} onChange={e => setOtherCodes(e.target.value)} className={inputCls} placeholder={t('intake.fields.otherCodesPlaceholder')} data-testid="input-other-codes" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Wi-Fi</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.wifi')}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Network Name</label>
+                <label className={labelCls}>{t('intake.fields.wifiNetwork')}</label>
                 <Input value={wifiNetwork} onChange={e => setWifiNetwork(e.target.value)} className={inputCls} data-testid="input-wifi-network" />
               </div>
               <div>
-                <label className={labelCls}>Password</label>
+                <label className={labelCls}>{t('intake.fields.wifiPassword')}</label>
                 <Input value={wifiPassword} onChange={e => setWifiPassword(e.target.value)} className={inputCls} data-testid="input-wifi-password" />
               </div>
             </div>
@@ -400,38 +410,38 @@ export default function OnboardingIntakePage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Check-in & Check-out Times</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.checkTimes')}</CardTitle></CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelCls}>Check-in Time</label>
-                <Input value={checkInTime} onChange={e => setCheckInTime(e.target.value)} className={inputCls} placeholder="e.g. 4:00 PM" data-testid="input-check-in-time" />
+                <label className={labelCls}>{t('intake.fields.checkInTime')}</label>
+                <Input value={checkInTime} onChange={e => setCheckInTime(e.target.value)} className={inputCls} placeholder={t('intake.fields.checkInPlaceholder')} data-testid="input-check-in-time" />
               </div>
               <div>
-                <label className={labelCls}>Check-out Time</label>
-                <Input value={checkOutTime} onChange={e => setCheckOutTime(e.target.value)} className={inputCls} placeholder="e.g. 10:00 AM" data-testid="input-check-out-time" />
+                <label className={labelCls}>{t('intake.fields.checkOutTime')}</label>
+                <Input value={checkOutTime} onChange={e => setCheckOutTime(e.target.value)} className={inputCls} placeholder={t('intake.fields.checkOutPlaceholder')} data-testid="input-check-out-time" />
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">A/C Filter (optional)</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.acFilter')}</CardTitle></CardHeader>
           <CardContent>
-            <label className={labelCls}>Filter Size</label>
-            <Input value={filterSize} onChange={e => setFilterSize(e.target.value)} className={inputCls} placeholder='e.g. 20x25x1 (or list multiple sizes if different per unit)' data-testid="input-filter-size" />
+            <label className={labelCls}>{t('intake.fields.filterSize')}</label>
+            <Input value={filterSize} onChange={e => setFilterSize(e.target.value)} className={inputCls} placeholder={t('intake.fields.filterSizePlaceholder')} data-testid="input-filter-size" />
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Booking Calendar</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.bookingCalendar')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground">Share your booking calendar so we can schedule cleans automatically. Pick one option.</p>
+            <p className="text-xs text-muted-foreground">{t('intake.booking.hint')}</p>
             <div className="flex gap-2 flex-wrap">
               {([
-                { key: 'ical', label: 'iCal link' },
-                { key: 'api_key', label: 'API key' },
-                { key: 'none', label: 'None / send later' },
+                { key: 'ical', label: t('intake.booking.ical') },
+                { key: 'api_key', label: t('intake.booking.apiKey') },
+                { key: 'none', label: t('intake.booking.none') },
               ] as { key: IntegrationKind; label: string }[]).map(opt => (
                 <button
                   key={opt.key}
@@ -444,21 +454,21 @@ export default function OnboardingIntakePage() {
             </div>
             {integrationKind === 'ical' && (
               <div>
-                <label className={labelCls}>iCal URL</label>
-                <Input value={icalUrl} onChange={e => setIcalUrl(e.target.value)} className={inputCls} placeholder="https://..." data-testid="input-ical-url" />
+                <label className={labelCls}>{t('intake.booking.icalUrlLabel')}</label>
+                <Input value={icalUrl} onChange={e => setIcalUrl(e.target.value)} className={inputCls} placeholder={t('intake.booking.icalUrlPlaceholder')} data-testid="input-ical-url" />
               </div>
             )}
             {integrationKind === 'api_key' && (
               <div className="space-y-4">
                 <div>
-                  <label className={labelCls}>Client ID / public key (optional)</label>
+                  <label className={labelCls}>{t('intake.booking.clientIdLabel')}</label>
                   <Input value={apiClientId} onChange={e => setApiClientId(e.target.value)} className={inputCls} data-testid="input-api-client-id" />
-                  <p className="text-xs text-muted-foreground mt-1">For services that provide a client ID or public key, paste it here.</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('intake.booking.clientIdHint')}</p>
                 </div>
                 <div>
-                  <label className={labelCls}>API secret / client secret / token</label>
+                  <label className={labelCls}>{t('intake.booking.apiSecretLabel')}</label>
                   <Input value={apiKey} onChange={e => setApiKey(e.target.value)} className={inputCls} type="password" data-testid="input-api-key" />
-                  <p className="text-xs text-muted-foreground mt-1">Paste your API secret, client secret, or access token from the provider. Only admins can view this.</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t('intake.booking.apiSecretHint')}</p>
                 </div>
               </div>
             )}
@@ -466,10 +476,10 @@ export default function OnboardingIntakePage() {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">Photos & Special Instructions</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t('intake.sections.photosNotes')}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className={labelCls}>Photos</label>
+              <label className={labelCls}>{t('intake.fields.photos')}</label>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -481,7 +491,7 @@ export default function OnboardingIntakePage() {
               />
               <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={photoUploading} className="w-full">
                 <Upload className="w-4 h-4 mr-2" />
-                {photoUploading ? 'Uploading…' : 'Choose Files'}
+                {photoUploading ? t('intake.photoUpload.uploading') : t('intake.photoUpload.chooseFiles')}
               </Button>
               {photos.length > 0 && (
                 <ul className="mt-3 space-y-2">
@@ -497,11 +507,11 @@ export default function OnboardingIntakePage() {
               )}
             </div>
             <div>
-              <label className={labelCls}>Special Instructions / Notes</label>
+              <label className={labelCls}>{t('intake.fields.notes')}</label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
-                placeholder="Anything specific about how you want the property cleaned, set up, or anything we should know."
+                placeholder={t('intake.fields.notesPlaceholder')}
                 className="w-full min-h-[120px] rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
                 data-testid="input-notes"
               />
@@ -512,7 +522,7 @@ export default function OnboardingIntakePage() {
         {error && <p className="text-sm text-destructive text-center">{error}</p>}
 
         <Button className="w-full h-12 text-base" disabled={saving || photoUploading} onClick={handleSubmit} data-testid="button-submit">
-          {saving ? 'Submitting…' : 'Submit Property Information'}
+          {saving ? t('intake.submit.submitting') : t('intake.submit.submit')}
         </Button>
 
         <p className="text-xs text-muted-foreground text-center">Tendwell Cleaning Co.</p>

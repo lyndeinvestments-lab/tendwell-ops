@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Loader2 } from 'lucide-react'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { LanguageToggle } from '@/components/LanguageToggle'
 
 function GoogleIcon() {
   return (
@@ -19,6 +21,7 @@ function GoogleIcon() {
 
 export default function LoginPage() {
   usePageTitle('Sign In')
+  const { t } = useLocale('authPages')
   const { loginWithGoogle, loginWithPassword, requestPasswordReset, isLoading, authError } = useAuth()
 
   const [mode, setMode] = useState<'signin' | 'forgot'>('signin')
@@ -32,7 +35,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLocalError(null)
     if (!email.trim() || !password) {
-      setLocalError('Enter your email and password.')
+      setLocalError(t('errors.missingCredentials'))
       return
     }
     setSubmitting(true)
@@ -44,7 +47,7 @@ export default function LoginPage() {
     e.preventDefault()
     setLocalError(null)
     if (!email.trim()) {
-      setLocalError('Enter your email address.')
+      setLocalError(t('errors.missingEmail'))
       return
     }
     setSubmitting(true)
@@ -66,7 +69,10 @@ export default function LoginPage() {
     'w-full h-10 rounded-full gap-2 border-[#E4D9C7] bg-white/80 text-[#3D3225] font-medium hover:bg-white focus-visible:ring-[#C58A3D]'
 
   return (
-    <div className="marketing-auth marketing-grain min-h-screen flex items-center justify-center bg-[#FAF6EF] px-4 py-10">
+    <div className="marketing-auth marketing-grain relative min-h-screen flex items-center justify-center bg-[#FAF6EF] px-4 py-10">
+      <div className="absolute top-4 right-4 z-20">
+        <LanguageToggle />
+      </div>
       <div className="relative z-10 w-full max-w-sm">
         {/* Brand mark */}
         <div className="flex flex-col items-center mb-8">
@@ -75,12 +81,12 @@ export default function LoginPage() {
             alt="Tendwell Cleaning Co."
             className="w-60 max-w-full h-auto"
           />
-          <p className="mt-3 text-xs uppercase tracking-[0.2em] text-[#8A7860]">Operations</p>
+          <p className="mt-3 text-xs uppercase tracking-[0.2em] text-[#8A7860]">{t('page.caption')}</p>
         </div>
 
         <div className="rounded-2xl border border-[#EDE3D3] bg-white/70 backdrop-blur-sm shadow-[0_8px_30px_rgba(61,50,37,0.10)] px-6 py-6">
           <h1 className="font-display text-2xl leading-snug text-[#22382D] mb-5">
-            {mode === 'forgot' ? 'Reset your password' : 'Sign in to continue'}
+            {mode === 'forgot' ? t('page.resetHeading') : t('page.signInHeading')}
           </h1>
 
           <div className="space-y-4">
@@ -94,31 +100,31 @@ export default function LoginPage() {
                   data-testid="button-sign-in-google"
                 >
                   {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <GoogleIcon />}
-                  {isLoading ? 'Redirecting…' : 'Continue with Google'}
+                  {isLoading ? t('page.redirecting') : t('page.continueWithGoogle')}
                 </Button>
 
                 <div className="flex items-center gap-2">
                   <div className="h-px flex-1 bg-[#E4D9C7]" />
-                  <span className="text-2xs uppercase tracking-wider text-[#8A7860]">or</span>
+                  <span className="text-2xs uppercase tracking-wider text-[#8A7860]">{t('page.or')}</span>
                   <div className="h-px flex-1 bg-[#E4D9C7]" />
                 </div>
 
                 <form onSubmit={handlePasswordSignIn} className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="email" className="text-xs text-[#5C4D3A]">Email</Label>
+                    <Label htmlFor="email" className="text-xs text-[#5C4D3A]">{t('page.emailLabel')}</Label>
                     <Input
                       id="email"
                       type="email"
                       autoComplete="email"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder={t('page.emailPlaceholder')}
                       className={fieldClass}
                       data-testid="input-email"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="password" className="text-xs text-[#5C4D3A]">Password</Label>
+                    <Label htmlFor="password" className="text-xs text-[#5C4D3A]">{t('page.passwordLabel')}</Label>
                     <Input
                       id="password"
                       type="password"
@@ -136,7 +142,7 @@ export default function LoginPage() {
                     disabled={submitting || isLoading}
                     data-testid="button-sign-in-password"
                   >
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign in'}
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : t('page.signIn')}
                   </Button>
                 </form>
 
@@ -146,7 +152,7 @@ export default function LoginPage() {
                   className="text-xs text-[#2F4A3C] hover:text-[#22382D] hover:underline w-full text-center"
                   data-testid="link-forgot-password"
                 >
-                  Forgot your password?
+                  {t('page.forgotPassword')}
                 </button>
               </>
             )}
@@ -154,30 +160,29 @@ export default function LoginPage() {
             {mode === 'forgot' && (
               resetSent ? (
                 <div className="space-y-3 text-center">
-                  <p className="text-sm font-medium text-[#3D3225]">Check your email</p>
+                  <p className="text-sm font-medium text-[#3D3225]">{t('page.checkEmailTitle')}</p>
                   <p className="text-xs text-[#8A7860]">
-                    If an account exists for <span className="font-medium">{email}</span>, a password
-                    reset link is on its way.
+                    {t('page.checkEmailBefore')} <span className="font-medium">{email}</span>{t('page.checkEmailAfter')}
                   </p>
                   <Button
                     variant="outline"
                     className={outlineButtonClass}
                     onClick={() => { setMode('signin'); setResetSent(false); setPassword('') }}
                   >
-                    Back to sign in
+                    {t('page.backToSignIn')}
                   </Button>
                 </div>
               ) : (
                 <form onSubmit={handleForgot} className="space-y-3">
                   <div className="space-y-1.5">
-                    <Label htmlFor="forgot-email" className="text-xs text-[#5C4D3A]">Email</Label>
+                    <Label htmlFor="forgot-email" className="text-xs text-[#5C4D3A]">{t('page.emailLabel')}</Label>
                     <Input
                       id="forgot-email"
                       type="email"
                       autoComplete="email"
                       value={email}
                       onChange={e => setEmail(e.target.value)}
-                      placeholder="you@example.com"
+                      placeholder={t('page.emailPlaceholder')}
                       className={fieldClass}
                       data-testid="input-forgot-email"
                     />
@@ -188,14 +193,14 @@ export default function LoginPage() {
                     disabled={submitting}
                     data-testid="button-send-reset"
                   >
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send reset link'}
+                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : t('page.sendResetLink')}
                   </Button>
                   <button
                     type="button"
                     onClick={() => { setMode('signin'); setLocalError(null) }}
                     className="text-xs text-[#8A7860] hover:text-[#3D3225] w-full text-center"
                   >
-                    Back to sign in
+                    {t('page.backToSignIn')}
                   </button>
                 </form>
               )
@@ -208,7 +213,7 @@ export default function LoginPage() {
             )}
 
             <p className="text-xs text-[#8A7860] text-center">
-              Access is restricted to invited users and property owners.
+              {t('page.restrictedAccess')}
             </p>
           </div>
         </div>
