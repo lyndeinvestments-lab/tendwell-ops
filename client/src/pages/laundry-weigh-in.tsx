@@ -5,117 +5,21 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Check, Camera, Shirt, Sparkles, X } from 'lucide-react'
 import { resizeImageFile } from '@/lib/resize-image'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { LanguageToggle } from '@/components/LanguageToggle'
 
 // Public page — uses anon key directly (no auth required)
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const publicSupabase = createClient(supabaseUrl, supabaseAnonKey)
 
-type Lang = 'en' | 'es'
 type LaundryType = 'clean' | 'dirty'
 
-const T = {
-  en: {
-    title: 'Daily Laundry Weigh-In',
-    subtitle: 'Record laundry bags you are taking or dropping off.',
-    nameLabel: 'Your Name',
-    namePlaceholder: 'First and last name',
-    photoLabel: 'Photo',
-    photoTake: 'Take Photo',
-    photoRetake: 'Retake Photo',
-    photoRemove: 'Remove',
-    photoHint: 'Tap to take a photo of the laundry bag(s).',
-    poundsLabel: 'Pounds of Laundry',
-    poundsPlaceholder: 'e.g. 25',
-    poundsUnit: 'lbs',
-    typeLabel: 'Laundry Type',
-    typeClean: 'Clean (drop-off)',
-    typeDirty: 'Dirty (pick-up)',
-    specialLinensLabel: 'Special Linens?',
-    specialLinensHint: 'Items that require special handling or care.',
-    specialLinensYes: 'Yes',
-    specialLinensNo: 'No',
-    specialLinensPropertyLabel: 'Property',
-    specialLinensPropertyPlaceholder: 'Search property…',
-    specialLinensDescLabel: 'Description of Special Linens',
-    specialLinensDescPlaceholder: 'e.g. King duvet, delicate curtains…',
-    specialLinensPhotoLabel: 'Photo of Special Linens',
-    specialLinensPhotoTake: 'Take Photo',
-    specialLinensPhotoRetake: 'Retake Photo',
-    specialLinensPhotoHint: 'Tap to take a photo of the special item(s).',
-    specialLinensWeightLabel: 'Weight of Special Linens',
-    specialLinensWeightPlaceholder: 'e.g. 5',
-    submit: 'Submit Weigh-In',
-    submitting: 'Submitting…',
-    successTitle: 'Weigh-In Submitted',
-    successBody: 'Thanks! Your laundry weigh-in has been recorded.',
-    submitAnother: 'Submit Another',
-    errRequired: 'Please fill in your name, pounds, and laundry type.',
-    errPounds: 'Pounds must be a number greater than zero.',
-    errSpecialLinens: 'Please fill in the property, description, and weight for special linens.',
-    errSpecialWeight: 'Special linen weight must be a number greater than zero.',
-    errPhoto: 'Could not upload photo. Please try again.',
-    errGeneric: 'Something went wrong. Please try again.',
-    footer: 'Tendwell Cleaning Co.',
-    langToggle: 'Español',
-  },
-  es: {
-    title: 'Pesaje Diario de Lavandería',
-    subtitle: 'Registra las bolsas de ropa que estás llevando o dejando.',
-    nameLabel: 'Tu Nombre',
-    namePlaceholder: 'Nombre y apellido',
-    photoLabel: 'Foto',
-    photoTake: 'Tomar Foto',
-    photoRetake: 'Tomar de Nuevo',
-    photoRemove: 'Quitar',
-    photoHint: 'Toca para tomar una foto de la(s) bolsa(s) de ropa.',
-    poundsLabel: 'Libras de Ropa',
-    poundsPlaceholder: 'ej. 25',
-    poundsUnit: 'lbs',
-    typeLabel: 'Tipo de Ropa',
-    typeClean: 'Limpia (entrega)',
-    typeDirty: 'Sucia (recogida)',
-    specialLinensLabel: '¿Ropa Especial?',
-    specialLinensHint: 'Artículos que requieren atención o cuidado especial.',
-    specialLinensYes: 'Sí',
-    specialLinensNo: 'No',
-    specialLinensPropertyLabel: 'Propiedad',
-    specialLinensPropertyPlaceholder: 'Buscar propiedad…',
-    specialLinensDescLabel: 'Descripción de Ropa Especial',
-    specialLinensDescPlaceholder: 'ej. Edredón king, cortinas delicadas…',
-    specialLinensPhotoLabel: 'Foto de Ropa Especial',
-    specialLinensPhotoTake: 'Tomar Foto',
-    specialLinensPhotoRetake: 'Tomar de Nuevo',
-    specialLinensPhotoHint: 'Toca para tomar una foto del artículo especial.',
-    specialLinensWeightLabel: 'Peso de Ropa Especial',
-    specialLinensWeightPlaceholder: 'ej. 5',
-    submit: 'Enviar Pesaje',
-    submitting: 'Enviando…',
-    successTitle: 'Pesaje Enviado',
-    successBody: 'Gracias. Tu pesaje de ropa ha sido registrado.',
-    submitAnother: 'Enviar Otro',
-    errRequired: 'Por favor completa tu nombre, libras y tipo de ropa.',
-    errPounds: 'Las libras deben ser un número mayor que cero.',
-    errSpecialLinens: 'Por favor completa la propiedad, descripción y peso de la ropa especial.',
-    errSpecialWeight: 'El peso de la ropa especial debe ser un número mayor que cero.',
-    errPhoto: 'No se pudo subir la foto. Inténtalo de nuevo.',
-    errGeneric: 'Algo salió mal. Inténtalo de nuevo.',
-    footer: 'Tendwell Cleaning Co.',
-    langToggle: 'English',
-  },
-} as const
-
-const LANG_KEY = 'laundry-weigh-in-lang'
-
+// Locale context comes from the app-wide <LocaleProvider autoDetect> in
+// App.tsx — a first-time cleaner with a Spanish-language phone still lands
+// in Spanish. Locale is also persisted onto the submitted row (`language`).
 export default function LaundryWeighInPage() {
-  const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window === 'undefined') return 'en'
-    const saved = localStorage.getItem(LANG_KEY)
-    if (saved === 'en' || saved === 'es') return saved
-    const navLang = (navigator.language || 'en').toLowerCase()
-    return navLang.startsWith('es') ? 'es' : 'en'
-  })
-  const t = T[lang]
+  const { t, locale } = useLocale('weighIns')
 
   const [name, setName] = useState('')
   const [pounds, setPounds] = useState('')
@@ -176,10 +80,9 @@ export default function LaundryWeighInPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LANG_KEY, lang)
-      document.documentElement.lang = lang
+      document.documentElement.lang = locale
     }
-  }, [lang])
+  }, [locale])
 
   useEffect(() => {
     return () => {
@@ -259,21 +162,21 @@ export default function LaundryWeighInPage() {
     const trimmedName = name.trim()
     const poundsNum = parseFloat(pounds)
     if (!trimmedName || !pounds || !laundryType) {
-      setError(t.errRequired)
+      setError(t('validation.required'))
       return
     }
     if (!Number.isFinite(poundsNum) || poundsNum <= 0) {
-      setError(t.errPounds)
+      setError(t('validation.pounds'))
       return
     }
     if (hasSpecialLinens === true) {
       if (!specialLinenProperty.trim() || !specialLinenDesc.trim() || !specialLinenWeight) {
-        setError(t.errSpecialLinens)
+        setError(t('validation.specialLinens'))
         return
       }
       const slWeight = parseFloat(specialLinenWeight)
       if (!Number.isFinite(slWeight) || slWeight <= 0) {
-        setError(t.errSpecialWeight)
+        setError(t('validation.specialWeight'))
         return
       }
     }
@@ -287,14 +190,14 @@ export default function LaundryWeighInPage() {
     try {
       if (photoFile) {
         const result = await uploadPhoto(photoFile, '')
-        if (!result) { setSaving(false); setError(t.errPhoto); return }
+        if (!result) { setSaving(false); setError(t('validation.photo')); return }
         photoUrl = result.url
         photoPath = result.path
       }
 
       if (hasSpecialLinens && specialLinenPhotoFile) {
         const result = await uploadPhoto(specialLinenPhotoFile, 'special-linens/')
-        if (!result) { setSaving(false); setError(t.errPhoto); return }
+        if (!result) { setSaving(false); setError(t('validation.photo')); return }
         specialLinenPhotoUrl = result.url
         specialLinenPhotoPath = result.path
       }
@@ -307,7 +210,7 @@ export default function LaundryWeighInPage() {
           laundry_type: laundryType,
           photo_url: photoUrl,
           photo_path: photoPath,
-          language: lang,
+          language: locale,
           user_agent: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 500) : null,
           submitted_at: new Date().toISOString(),
           has_special_linens: hasSpecialLinens === true,
@@ -319,7 +222,7 @@ export default function LaundryWeighInPage() {
         })
 
       setSaving(false)
-      if (insertErr) { setError(t.errGeneric); return }
+      if (insertErr) { setError(t('validation.generic')); return }
       setKnownNames(prev =>
         prev.some(n => n.toLowerCase() === trimmedName.toLowerCase())
           ? prev
@@ -328,7 +231,7 @@ export default function LaundryWeighInPage() {
       setSubmitted(true)
     } catch {
       setSaving(false)
-      setError(t.errGeneric)
+      setError(t('validation.generic'))
     }
   }
 
@@ -340,9 +243,9 @@ export default function LaundryWeighInPage() {
             <div className="w-12 h-12 rounded-full bg-success/10 flex items-center justify-center mx-auto">
               <Check className="w-6 h-6 text-success" />
             </div>
-            <h2 className="text-lg font-semibold">{t.successTitle}</h2>
-            <p className="text-sm text-muted-foreground">{t.successBody}</p>
-            <Button className="w-full h-11" onClick={resetForm}>{t.submitAnother}</Button>
+            <h2 className="text-lg font-semibold">{t('success.title')}</h2>
+            <p className="text-sm text-muted-foreground">{t('success.body')}</p>
+            <Button className="w-full h-11" onClick={resetForm}>{t('form.submitAnother')}</Button>
           </CardContent>
         </Card>
       </div>
@@ -355,29 +258,21 @@ export default function LaundryWeighInPage() {
     <div className="min-h-screen bg-background p-4 sm:p-8">
       <div className="max-w-md mx-auto space-y-5">
         <div className="flex items-center justify-end">
-          <button
-            type="button"
-            onClick={() => setLang(l => (l === 'en' ? 'es' : 'en'))}
-            className="text-sm font-medium px-3 py-1.5 rounded-md border border-border bg-background hover:bg-accent"
-            aria-label="Toggle language"
-            data-testid="button-lang-toggle"
-          >
-            {t.langToggle}
-          </button>
+          <LanguageToggle size="lg" />
         </div>
 
         <div className="text-center space-y-2">
           <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center mx-auto">
             <Shirt className="w-6 h-6 text-primary" />
           </div>
-          <h1 className="text-2xl font-semibold">{t.title}</h1>
-          <p className="text-sm text-muted-foreground">{t.subtitle}</p>
+          <h1 className="text-2xl font-semibold">{t('form.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('form.subtitle')}</p>
         </div>
 
         {/* Name */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">{t.nameLabel}</CardTitle>
+            <CardTitle className="text-sm">{t('form.name.label')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div ref={nameWrapperRef} className="relative">
@@ -387,7 +282,7 @@ export default function LaundryWeighInPage() {
                 onFocus={() => setNameFocused(true)}
                 onBlur={() => setTimeout(() => setNameFocused(false), 120)}
                 className={inputCls}
-                placeholder={t.namePlaceholder}
+                placeholder={t('form.name.placeholder')}
                 autoComplete="off"
                 data-testid="input-name"
               />
@@ -420,7 +315,7 @@ export default function LaundryWeighInPage() {
         {/* Main photo */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">{t.photoLabel}</CardTitle>
+            <CardTitle className="text-sm">{t('form.photo.label')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <input
@@ -436,7 +331,7 @@ export default function LaundryWeighInPage() {
               <div className="space-y-3">
                 <img
                   src={photoPreview}
-                  alt="Laundry preview"
+                  alt={t('form.photo.previewAlt')}
                   className="w-full h-56 object-cover rounded-md border border-border"
                 />
                 <div className="flex gap-2">
@@ -447,14 +342,14 @@ export default function LaundryWeighInPage() {
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Camera className="w-4 h-4 mr-2" />
-                    {t.photoRetake}
+                    {t('form.photo.retake')}
                   </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     className="h-11"
                     onClick={clearPhoto}
-                    aria-label={t.photoRemove}
+                    aria-label={t('form.photo.remove')}
                   >
                     <X className="w-4 h-4" />
                   </Button>
@@ -468,8 +363,8 @@ export default function LaundryWeighInPage() {
                 data-testid="button-take-photo"
               >
                 <Camera className="w-6 h-6" />
-                <span className="font-medium text-foreground">{t.photoTake}</span>
-                <span className="text-xs">{t.photoHint}</span>
+                <span className="font-medium text-foreground">{t('form.photo.take')}</span>
+                <span className="text-xs">{t('form.photo.hint')}</span>
               </button>
             )}
           </CardContent>
@@ -478,7 +373,7 @@ export default function LaundryWeighInPage() {
         {/* Pounds */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">{t.poundsLabel}</CardTitle>
+            <CardTitle className="text-sm">{t('form.pounds.label')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="relative">
@@ -490,11 +385,11 @@ export default function LaundryWeighInPage() {
                 value={pounds}
                 onChange={e => setPounds(e.target.value)}
                 className={`${inputCls} pr-12`}
-                placeholder={t.poundsPlaceholder}
+                placeholder={t('form.pounds.placeholder')}
                 data-testid="input-pounds"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-                {t.poundsUnit}
+                {t('form.pounds.unit')}
               </span>
             </div>
           </CardContent>
@@ -503,7 +398,7 @@ export default function LaundryWeighInPage() {
         {/* Laundry Type */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">{t.typeLabel}</CardTitle>
+            <CardTitle className="text-sm">{t('form.type.label')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 gap-3">
@@ -518,7 +413,7 @@ export default function LaundryWeighInPage() {
                 data-testid="button-type-clean"
               >
                 <Sparkles className="w-5 h-5" />
-                <span>{t.typeClean}</span>
+                <span>{t('form.type.clean')}</span>
               </button>
               <button
                 type="button"
@@ -531,7 +426,7 @@ export default function LaundryWeighInPage() {
                 data-testid="button-type-dirty"
               >
                 <Shirt className="w-5 h-5" />
-                <span>{t.typeDirty}</span>
+                <span>{t('form.type.dirty')}</span>
               </button>
             </div>
           </CardContent>
@@ -540,10 +435,10 @@ export default function LaundryWeighInPage() {
         {/* Special Linens */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">{t.specialLinensLabel}</CardTitle>
+            <CardTitle className="text-sm">{t('form.specialLinens.label')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <p className="text-xs text-muted-foreground -mt-1">{t.specialLinensHint}</p>
+            <p className="text-xs text-muted-foreground -mt-1">{t('form.specialLinens.hint')}</p>
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
@@ -555,7 +450,7 @@ export default function LaundryWeighInPage() {
                 }`}
                 data-testid="button-special-yes"
               >
-                {t.specialLinensYes}
+                {t('form.specialLinens.yes')}
               </button>
               <button
                 type="button"
@@ -567,7 +462,7 @@ export default function LaundryWeighInPage() {
                 }`}
                 data-testid="button-special-no"
               >
-                {t.specialLinensNo}
+                {t('form.specialLinens.no')}
               </button>
             </div>
 
@@ -576,7 +471,7 @@ export default function LaundryWeighInPage() {
                 {/* Property searchable dropdown */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                    {t.specialLinensPropertyLabel}
+                    {t('form.specialLinens.propertyLabel')}
                   </label>
                   <div ref={propertyWrapperRef} className="relative">
                     <Input
@@ -585,7 +480,7 @@ export default function LaundryWeighInPage() {
                       onFocus={() => setSpecialLinenPropertyFocused(true)}
                       onBlur={() => setTimeout(() => setSpecialLinenPropertyFocused(false), 200)}
                       className={inputCls}
-                      placeholder={t.specialLinensPropertyPlaceholder}
+                      placeholder={t('form.specialLinens.propertyPlaceholder')}
                       autoComplete="off"
                       data-testid="input-special-property"
                     />
@@ -606,7 +501,7 @@ export default function LaundryWeighInPage() {
                             </button>
                           </li>
                         )) : lowerProp ? (
-                          <li className="px-3 py-2.5 text-sm text-muted-foreground">No properties found</li>
+                          <li className="px-3 py-2.5 text-sm text-muted-foreground">{t('form.specialLinens.noPropertiesFound')}</li>
                         ) : null}
                       </ul>
                     )}
@@ -616,13 +511,13 @@ export default function LaundryWeighInPage() {
                 {/* Description */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                    {t.specialLinensDescLabel}
+                    {t('form.specialLinens.descLabel')}
                   </label>
                   <textarea
                     value={specialLinenDesc}
                     onChange={e => setSpecialLinenDesc(e.target.value)}
                     className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-base resize-none focus:outline-none focus:ring-2 focus:ring-ring"
-                    placeholder={t.specialLinensDescPlaceholder}
+                    placeholder={t('form.specialLinens.descPlaceholder')}
                     data-testid="input-special-desc"
                   />
                 </div>
@@ -630,7 +525,7 @@ export default function LaundryWeighInPage() {
                 {/* Special linen photo */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                    {t.specialLinensPhotoLabel}
+                    {t('form.specialLinens.photoLabel')}
                   </label>
                   <input
                     ref={specialLinenFileInputRef}
@@ -645,7 +540,7 @@ export default function LaundryWeighInPage() {
                     <div className="space-y-2">
                       <img
                         src={specialLinenPhotoPreview}
-                        alt="Special linen preview"
+                        alt={t('form.specialLinens.photoPreviewAlt')}
                         className="w-full h-44 object-cover rounded-md border border-border"
                       />
                       <div className="flex gap-2">
@@ -656,14 +551,14 @@ export default function LaundryWeighInPage() {
                           onClick={() => specialLinenFileInputRef.current?.click()}
                         >
                           <Camera className="w-4 h-4 mr-2" />
-                          {t.specialLinensPhotoRetake}
+                          {t('form.specialLinens.photoRetake')}
                         </Button>
                         <Button
                           type="button"
                           variant="ghost"
                           className="h-10"
                           onClick={clearSpecialLinenPhoto}
-                          aria-label={t.photoRemove}
+                          aria-label={t('form.photo.remove')}
                         >
                           <X className="w-4 h-4" />
                         </Button>
@@ -677,8 +572,8 @@ export default function LaundryWeighInPage() {
                       data-testid="button-special-take-photo"
                     >
                       <Camera className="w-5 h-5" />
-                      <span className="font-medium text-foreground">{t.specialLinensPhotoTake}</span>
-                      <span className="text-xs">{t.specialLinensPhotoHint}</span>
+                      <span className="font-medium text-foreground">{t('form.specialLinens.photoTake')}</span>
+                      <span className="text-xs">{t('form.specialLinens.photoHint')}</span>
                     </button>
                   )}
                 </div>
@@ -686,7 +581,7 @@ export default function LaundryWeighInPage() {
                 {/* Weight */}
                 <div>
                   <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                    {t.specialLinensWeightLabel}
+                    {t('form.specialLinens.weightLabel')}
                   </label>
                   <div className="relative">
                     <Input
@@ -697,11 +592,11 @@ export default function LaundryWeighInPage() {
                       value={specialLinenWeight}
                       onChange={e => setSpecialLinenWeight(e.target.value)}
                       className={`${inputCls} pr-12`}
-                      placeholder={t.specialLinensWeightPlaceholder}
+                      placeholder={t('form.specialLinens.weightPlaceholder')}
                       data-testid="input-special-weight"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
-                      {t.poundsUnit}
+                      {t('form.pounds.unit')}
                     </span>
                   </div>
                 </div>
@@ -718,10 +613,10 @@ export default function LaundryWeighInPage() {
           onClick={handleSubmit}
           data-testid="button-submit"
         >
-          {saving ? t.submitting : t.submit}
+          {saving ? t('form.submitting') : t('form.submit')}
         </Button>
 
-        <p className="text-xs text-muted-foreground text-center pb-4">{t.footer}</p>
+        <p className="text-xs text-muted-foreground text-center pb-4">{t('form.footer')}</p>
       </div>
     </div>
   )

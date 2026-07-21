@@ -19,6 +19,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import Papa from 'papaparse'
 
 const LINEN_COLS = [
@@ -49,7 +50,8 @@ export default function LinenTrackerPage() {
   const qc = useQueryClient()
   const { effectiveUser } = useAuth()
   const { openPropertyModal } = usePropertyModal()
-  usePageTitle('Linen Requirements')
+  const { t } = useLocale('linens')
+  usePageTitle(t('tracker.page.title', undefined, 'Linen Requirements'))
   const [search, setSearch] = useState('')
   const [showIncompleteOnly, setShowIncompleteOnly] = useState(false)
   const [copyTarget, setCopyTarget] = useState<any>(null)
@@ -59,6 +61,10 @@ export default function LinenTrackerPage() {
   const [pageSize, setPageSize] = useState(50)
   const [sortKey, setSortKey] = useState<string>('name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+
+  // Column display label — English `label` on LINEN_COLS is the fallback if
+  // a translation key is ever missing.
+  const colLabel = (col: { key: string; label: string }) => t(`items.${col.key}`, undefined, col.label)
 
   const { data: properties, isLoading, isError, refetch } = useQuery({
     queryKey: ['/supabase/linen-tracker'],
@@ -85,9 +91,9 @@ export default function LinenTrackerPage() {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('tracker.toasts.saved', undefined, 'Saved') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('tracker.toasts.updateFailed', undefined, 'Update failed'), description: error?.message, variant: 'destructive' }),
   })
 
   // Computes the 5 towel/mat counts from bed config + baths + hot tub, then
@@ -129,15 +135,15 @@ export default function LinenTrackerPage() {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      if (r.changed === 0) toast({ title: 'Nothing to fill - all towel fields already set' })
-      else toast({ title: `Auto-filled ${r.changed} field${r.changed === 1 ? '' : 's'} (sleep count ${r.sleep})` })
+      if (r.changed === 0) toast({ title: t('tracker.toasts.nothingToFill', undefined, 'Nothing to fill - all towel fields already set') })
+      else toast({ title: t('tracker.toasts.autoFilledFields', { count: r.changed, sleep: r.sleep }, `Auto-filled ${r.changed} field${r.changed === 1 ? '' : 's'} (sleep count ${r.sleep})`) })
     },
-    onError: (error: any) => toast({ title: 'Auto-fill failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('tracker.toasts.autoFillFailed', undefined, 'Auto-fill failed'), description: error?.message, variant: 'destructive' }),
   })
 
   async function bulkAutoFillEmpty() {
     if (!canEditView('linen-tracker', effectiveUser)) {
-      toast({ title: 'Edit access required', variant: 'destructive' })
+      toast({ title: t('tracker.toasts.editAccessRequired', undefined, 'Edit access required'), variant: 'destructive' })
       return
     }
     const candidates = (properties || []).filter((p: any) => {
@@ -148,7 +154,10 @@ export default function LinenTrackerPage() {
       return (hasGuests || hasBeds) && allTowelsEmpty
     })
     if (candidates.length === 0) {
-      toast({ title: 'No rows to fill', description: 'Every row either has no guest count / beds yet or already has towel data.' })
+      toast({
+        title: t('tracker.toasts.noRowsToFill', undefined, 'No rows to fill'),
+        description: t('tracker.toasts.noRowsToFillDescription', undefined, 'Every row either has no guest count / beds yet or already has towel data.'),
+      })
       return
     }
     let ok = 0
@@ -176,7 +185,7 @@ export default function LinenTrackerPage() {
     // Bulk auto-fill touched many properties rows; broad invalidation.
     invalidateAllPropertyQueries(qc)
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
-    toast({ title: `Auto-filled ${ok} of ${candidates.length} rows` })
+    toast({ title: t('tracker.toasts.bulkAutoFilled', { ok, total: candidates.length }, `Auto-filled ${ok} of ${candidates.length} rows`) })
   }
 
   const filtered = useMemo(() => {
@@ -236,8 +245,8 @@ export default function LinenTrackerPage() {
 
   function exportCsv() {
     const rows = filtered.map((p: any) => {
-      const row: Record<string, any> = { 'Property': p.name || '' }
-      LINEN_COLS.forEach(c => { row[c.label] = p[c.key] ?? '' })
+      const row: Record<string, any> = { [t('common.labels.property', undefined, 'Property')]: p.name || '' }
+      LINEN_COLS.forEach(c => { row[colLabel(c)] = p[c.key] ?? '' })
       return row
     })
     const csv = Papa.unparse(rows)
@@ -246,7 +255,7 @@ export default function LinenTrackerPage() {
     const a = document.createElement('a')
     a.href = url; a.download = 'linen-requirements.csv'; a.click()
     URL.revokeObjectURL(url)
-    toast({ title: 'CSV exported', description: `${rows.length} rows exported` })
+    toast({ title: t('tracker.toasts.csvExported', undefined, 'CSV exported'), description: t('tracker.toasts.csvExportedDescription', { count: rows.length }, `${rows.length} rows exported`) })
   }
 
   function ColSortIcon({ col }: { col: string }) {
@@ -276,7 +285,7 @@ export default function LinenTrackerPage() {
       skipEmptyLines: true,
       complete: (result) => {
         if (!result.data?.length || !properties) {
-          toast({ title: 'No data found in CSV', variant: 'destructive' })
+          toast({ title: t('tracker.toasts.csvNoData', undefined, 'No data found in CSV'), variant: 'destructive' })
           return
         }
         // Map CSV headers to DB fields
@@ -288,7 +297,7 @@ export default function LinenTrackerPage() {
         }
         const nameCol = csvHeaders.find(h => headerMap[h] === '_name')
         if (!nameCol) {
-          toast({ title: 'CSV must have a "Property" or "Name" column', variant: 'destructive' })
+          toast({ title: t('tracker.toasts.csvMissingPropertyColumn', undefined, 'CSV must have a "Property" or "Name" column'), variant: 'destructive' })
           return
         }
         // Match CSV rows to existing properties by name (fuzzy)
@@ -322,19 +331,23 @@ export default function LinenTrackerPage() {
           }
         }
         if (rows.length === 0) {
-          toast({ title: 'No importable data found', variant: 'destructive' })
+          toast({ title: t('tracker.toasts.csvNoImportable', undefined, 'No importable data found'), variant: 'destructive' })
           return
         }
         setImportData(rows)
       },
-      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+      error: () => toast({ title: t('tracker.toasts.csvParseFailed', undefined, 'Failed to parse CSV'), variant: 'destructive' }),
     })
   }
 
   async function executeImport() {
     if (!importData) return
     if (!canEditView('linen-tracker', effectiveUser)) {
-      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+      toast({
+        title: t('tracker.toasts.editAccessRequired', undefined, 'Edit access required'),
+        description: t('tracker.toasts.editAccessRequiredDescription', undefined, "You don't have edit access to this page."),
+        variant: 'destructive',
+      })
       return
     }
     setImporting(true)
@@ -351,7 +364,10 @@ export default function LinenTrackerPage() {
     // CSV import mutates property rows — invalidate all property-derived
     // views (master-list, dashboard, cost-tracking), not just linen-tracker.
     invalidateAllPropertyQueries(qc)
-    toast({ title: `Import complete`, description: `${updated} updated, ${skipped} skipped` })
+    toast({
+      title: t('tracker.toasts.importComplete', undefined, 'Import complete'),
+      description: t('tracker.toasts.importCompleteDescription', { updated, skipped }, `${updated} updated, ${skipped} skipped`),
+    })
     setImportData(null)
     setImporting(false)
   }
@@ -359,8 +375,8 @@ export default function LinenTrackerPage() {
   return (
     <PageContainer className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="Linen Requirements"
-        subtitle="Active & onboarding properties - required quantities for one full set"
+        title={t('tracker.page.title', undefined, 'Linen Requirements')}
+        subtitle={t('tracker.page.subtitle', undefined, 'Active & onboarding properties - required quantities for one full set')}
         actions={
           <>
           {incompleteCount > 0 && (
@@ -373,7 +389,7 @@ export default function LinenTrackerPage() {
               }`}
             >
               <AlertTriangle className="w-3 h-3" />
-              {incompleteCount} incomplete
+              {t('tracker.badges.incompleteCount', { count: incompleteCount }, `${incompleteCount} incomplete`)}
             </button>
           )}
           {canEditView('linen-tracker', effectiveUser) && (
@@ -382,15 +398,15 @@ export default function LinenTrackerPage() {
               size="sm"
               onClick={bulkAutoFillEmpty}
               className="h-8 text-xs gap-1.5"
-              title="Compute towel/mat par levels from bed counts for every row with beds entered but no towel data. Never touches rows that already have any towel values."
+              title={t('tracker.actions.autoFillTooltip', undefined, 'Compute towel/mat par levels from bed counts for every row with beds entered but no towel data. Never touches rows that already have any towel values.')}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              Auto-fill empty rows
+              {t('tracker.actions.autoFillEmptyRows', undefined, 'Auto-fill empty rows')}
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="h-8 text-xs gap-1.5">
             <Download className="w-3.5 h-3.5" />
-            Export CSV
+            {t('common.actions.exportCsv', undefined, 'Export CSV')}
           </Button>
           {canEditView('linen-tracker', effectiveUser) && (
             <Button
@@ -409,14 +425,14 @@ export default function LinenTrackerPage() {
               }}
             >
               <Upload className="w-3.5 h-3.5" />
-              Import CSV
+              {t('tracker.actions.importCsv', undefined, 'Import CSV')}
             </Button>
           )}
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Search…"
+              placeholder={t('tracker.filters.searchPlaceholder', undefined, 'Search…')}
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1) }}
               className="pl-8 pr-7 h-8 w-56 text-sm"
@@ -435,7 +451,7 @@ export default function LinenTrackerPage() {
         <div className="flex items-center gap-4 text-xs text-muted-foreground -mt-1 mb-1">
           <span className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-destructive inline-block" />
-            Empty fields (red = needs data)
+            {t('tracker.legend.emptyFieldsHint', undefined, 'Empty fields (red = needs data)')}
           </span>
         </div>
       )}
@@ -453,15 +469,15 @@ export default function LinenTrackerPage() {
       ) : summary ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><BedDouble className="w-3.5 h-3.5" /> Total Properties</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><BedDouble className="w-3.5 h-3.5" /> {t('tracker.summary.totalProperties', undefined, 'Total Properties')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{summary.total}</p>
           </div>
           <div className="rounded-2xl border border-card-border bg-card shadow-sm p-4">
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> Setup Complete</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><CheckCircle2 className="w-3.5 h-3.5" /> {t('tracker.summary.setupComplete', undefined, 'Setup Complete')}</div>
             <p className="mt-1 text-3xl font-bold tabular-nums leading-none text-success">{summary.setupComplete}</p>
           </div>
           <div className={`rounded-2xl border shadow-sm p-4 ${summary.needsSetup > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Needs Setup</div>
+            <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> {t('tracker.summary.needsSetup', undefined, 'Needs Setup')}</div>
             <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.needsSetup > 0 ? 'text-warning' : ''}`}>{summary.needsSetup}</p>
           </div>
         </div>
@@ -479,7 +495,7 @@ export default function LinenTrackerPage() {
                 onClick={() => toggleSort('name')}
               >
                 <span className="flex items-center gap-1">
-                  Property
+                  {t('common.labels.property', undefined, 'Property')}
                   <ColSortIcon col="name" />
                 </span>
               </th>
@@ -490,7 +506,7 @@ export default function LinenTrackerPage() {
                   onClick={c.key !== 'linen_notes' ? () => toggleSort(c.key) : undefined}
                 >
                   <span className="flex items-center gap-1">
-                    {c.label}
+                    {colLabel(c)}
                     {c.key !== 'linen_notes' && <ColSortIcon col={c.key} />}
                   </span>
                 </th>
@@ -511,8 +527,8 @@ export default function LinenTrackerPage() {
                 <td colSpan={LINEN_COLS.length + 1}>
                   <EmptyState
                     icon={BedDouble}
-                    title={showIncompleteOnly ? 'All data complete' : 'No properties'}
-                    description={showIncompleteOnly ? 'All properties have linen data filled in.' : 'No properties found matching your search.'}
+                    title={showIncompleteOnly ? t('tracker.empty.allCompleteTitle', undefined, 'All data complete') : t('tracker.empty.noPropertiesTitle', undefined, 'No properties')}
+                    description={showIncompleteOnly ? t('tracker.empty.allCompleteDescription', undefined, 'All properties have linen data filled in.') : t('tracker.empty.noPropertiesDescription', undefined, 'No properties found matching your search.')}
                   />
                 </td>
               </tr>
@@ -524,7 +540,7 @@ export default function LinenTrackerPage() {
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <div className="flex items-center gap-1.5">
                         {incomplete && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" title="No linen data - all fields are zero" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-destructive flex-shrink-0" title={t('tracker.row.noDataHint', undefined, 'No linen data - all fields are zero')} />
                         )}
                         <button
                           onClick={() => openPropertyModal(p.id, 'linen-tracker')}
@@ -539,15 +555,15 @@ export default function LinenTrackerPage() {
                               onClick={() => autoFillLinens({ p, overwrite: false })}
                               disabled={autoFilling}
                               className="p-0.5 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                              aria-label="Auto-fill empty towel fields from beds"
-                              title={`Auto-fill empty towel fields from guest count (${sleepCount(p)}). Falls back to bed math if guest count is blank. Manual values are kept.`}
+                              aria-label={t('tracker.row.autoFillAriaLabel', undefined, 'Auto-fill empty towel fields from beds')}
+                              title={t('tracker.row.autoFillTooltip', { count: sleepCount(p) }, `Auto-fill empty towel fields from guest count (${sleepCount(p)}). Falls back to bed math if guest count is blank. Manual values are kept.`)}
                             >
                               <Sparkles className="w-3 h-3" />
                             </button>
                             <button
                               onClick={() => setCopyTarget(p)}
                               className="p-0.5 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
-                              aria-label="Copy linen data from another property"
+                              aria-label={t('tracker.row.copyAriaLabel', undefined, 'Copy linen data from another property')}
                             >
                               <Copy className="w-3 h-3" />
                             </button>
@@ -583,7 +599,7 @@ export default function LinenTrackerPage() {
                 {/* Cell-level sticky with opaque bg so the whole totals row stays
                     frozen; first cell pinned left z-20 (above the body's
                     sticky-left column z-10) so it isn't painted over. */}
-                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 bottom-0 z-20 bg-muted border-t-2 border-border">Company Totals ({properties?.length})</td>
+                <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-0 bottom-0 z-20 bg-muted border-t-2 border-border">{t('tracker.table.companyTotals', { count: properties?.length ?? 0 }, `Company Totals (${properties?.length})`)}</td>
                 {LINEN_COLS.map(c => (
                   <td key={c.key} className="py-2 px-3 text-xs tabular-nums font-semibold sticky bottom-0 z-10 bg-muted border-t-2 border-border">
                     {c.key === 'linen_notes' ? '' : companyTotals[c.key]?.toLocaleString() ?? 0}
@@ -603,9 +619,9 @@ export default function LinenTrackerPage() {
       <Dialog open={!!copyTarget} onOpenChange={v => !v && setCopyTarget(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Copy linen data to {copyTarget?.name}</DialogTitle>
+            <DialogTitle>{t('tracker.copyDialog.title', { name: copyTarget?.name ?? '' }, `Copy linen data to ${copyTarget?.name}`)}</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">Select a property to copy linen counts from:</p>
+          <p className="text-sm text-muted-foreground">{t('tracker.copyDialog.prompt', undefined, 'Select a property to copy linen counts from:')}</p>
           <div className="max-h-64 overflow-auto space-y-1">
             {(properties || [])
               .filter((s: any) => s.id !== copyTarget?.id && !hasIncompleteData(s))
@@ -615,7 +631,11 @@ export default function LinenTrackerPage() {
                   className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
                   onClick={() => {
                     if (!canEditView('linen-tracker', effectiveUser)) {
-                      toast({ title: 'Edit access required', description: "You don't have edit access to this page.", variant: 'destructive' })
+                      toast({
+                        title: t('tracker.toasts.editAccessRequired', undefined, 'Edit access required'),
+                        description: t('tracker.toasts.editAccessRequiredDescription', undefined, "You don't have edit access to this page."),
+                        variant: 'destructive',
+                      })
                       return
                     }
                     // One atomic update of every numeric linen field — the
@@ -626,18 +646,21 @@ export default function LinenTrackerPage() {
                     const patch = Object.fromEntries(NUMERIC_KEYS.map(k => [k, s[k] ?? null]))
                     supabase.from('properties').update(patch).eq('id', copyTarget.id).then(({ error }) => {
                       if (error) {
-                        toast({ title: 'Copy failed', description: error.message, variant: 'destructive' })
+                        toast({ title: t('tracker.toasts.copyFailed', undefined, 'Copy failed'), description: error.message, variant: 'destructive' })
                         return
                       }
                       invalidateAllPropertyQueries(qc)
-                      toast({ title: 'Linen data copied', description: `Copied from ${s.name} to ${copyTarget.name}` })
+                      toast({
+                        title: t('tracker.toasts.copyDataSuccess', undefined, 'Linen data copied'),
+                        description: t('tracker.toasts.copyDataSuccessDescription', { from: s.name, to: copyTarget.name }, `Copied from ${s.name} to ${copyTarget.name}`),
+                      })
                       setCopyTarget(null)
                     })
                   }}
                 >
                   <span className="font-medium">{s.name}</span>
                   <span className="text-muted-foreground ml-2 text-xs">
-                    {s.bedrooms}BR - {NUMERIC_KEYS.filter(k => s[k] > 0).length}/{NUMERIC_KEYS.length} fields
+                    {t('tracker.copyDialog.propertyMeta', { bedrooms: s.bedrooms, matched: NUMERIC_KEYS.filter(k => s[k] > 0).length, total: NUMERIC_KEYS.length }, `${s.bedrooms}BR - ${NUMERIC_KEYS.filter(k => s[k] > 0).length}/${NUMERIC_KEYS.length} fields`)}
                   </span>
                 </button>
               ))}
@@ -649,20 +672,19 @@ export default function LinenTrackerPage() {
       <Dialog open={!!importData} onOpenChange={v => !v && !importing && setImportData(null)}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Import Linen Data - Preview</DialogTitle>
+            <DialogTitle>{t('tracker.importDialog.title', undefined, 'Import Linen Data - Preview')}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground">
-            {importData?.filter(r => r.matchedProperty).length} of {importData?.length} rows matched to existing properties.
-            Unmatched rows will be skipped.
+            {t('tracker.importDialog.matchSummary', { matched: importData?.filter(r => r.matchedProperty).length ?? 0, total: importData?.length ?? 0 }, `${importData?.filter(r => r.matchedProperty).length} of ${importData?.length} rows matched to existing properties. Unmatched rows will be skipped.`)}
           </p>
           <div className="overflow-auto flex-1 rounded-lg border border-border">
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border">
                 <tr>
-                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">CSV Name</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Matched To</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Fields</th>
-                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">Status</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">{t('tracker.importDialog.csvName', undefined, 'CSV Name')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">{t('tracker.importDialog.matchedTo', undefined, 'Matched To')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">{t('tracker.importDialog.fields', undefined, 'Fields')}</th>
+                  <th className="text-left py-1.5 px-2 font-medium text-muted-foreground">{t('tracker.importDialog.status', undefined, 'Status')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -670,12 +692,12 @@ export default function LinenTrackerPage() {
                   <tr key={i} className={`border-b border-border/30 ${row.matchedProperty ? '' : 'opacity-50'}`}>
                     <td className="py-1.5 px-2">{row.csvName}</td>
                     <td className="py-1.5 px-2 font-medium">{row.matchedProperty?.name || '—'}</td>
-                    <td className="py-1.5 px-2 text-muted-foreground">{row.changeCount} values</td>
+                    <td className="py-1.5 px-2 text-muted-foreground">{t('tracker.importDialog.valuesCount', { count: row.changeCount }, `${row.changeCount} values`)}</td>
                     <td className="py-1.5 px-2">
                       {row.matchedProperty ? (
-                        <span className="text-success flex items-center gap-1"><Check className="w-3 h-3" /> Ready</span>
+                        <span className="text-success flex items-center gap-1"><Check className="w-3 h-3" /> {t('tracker.importDialog.ready', undefined, 'Ready')}</span>
                       ) : (
-                        <span className="text-muted-foreground">No match</span>
+                        <span className="text-muted-foreground">{t('tracker.importDialog.noMatch', undefined, 'No match')}</span>
                       )}
                     </td>
                   </tr>
@@ -685,7 +707,7 @@ export default function LinenTrackerPage() {
           </div>
           <div className="flex items-center justify-between pt-2">
             <Button variant="outline" size="sm" onClick={() => setImportData(null)} disabled={importing}>
-              Cancel
+              {t('common.actions.cancel', undefined, 'Cancel')}
             </Button>
             <Button
               size="sm"
@@ -693,7 +715,7 @@ export default function LinenTrackerPage() {
               onClick={executeImport}
               disabled={importing || !importData?.some(r => r.matchedProperty)}
             >
-              {importing ? 'Importing…' : `Import ${importData?.filter(r => r.matchedProperty).length} Properties`}
+              {importing ? t('tracker.importDialog.importing', undefined, 'Importing…') : t('tracker.importDialog.importButton', { count: importData?.filter(r => r.matchedProperty).length ?? 0 }, `Import ${importData?.filter(r => r.matchedProperty).length} Properties`)}
             </Button>
           </div>
         </DialogContent>

@@ -20,6 +20,8 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { Search, Scale, Download, Trash2, Sparkles, Shirt, Camera, ExternalLink, Copy, Check, Users } from 'lucide-react'
 import { format, parseISO, subDays } from 'date-fns'
 import Papa from 'papaparse'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { useDateFormat } from '@/lib/i18n/date'
 
 type WeighIn = {
   id: string
@@ -50,6 +52,8 @@ const RANGE_DAYS: Record<RangeFilter, number | null> = {
 
 export default function LaundryWeighInsPage() {
   usePageTitle('Laundry Weigh-Ins')
+  const { t } = useLocale('weighIns')
+  const { format: formatLocale } = useDateFormat()
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -68,10 +72,10 @@ export default function LaundryWeighInsPage() {
     try {
       await navigator.clipboard.writeText(FORM_URL)
       setCopied(true)
-      toast({ title: 'Link copied', description: FORM_URL })
+      toast({ title: t('list.toasts.linkCopiedTitle'), description: FORM_URL })
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      toast({ title: 'Copy failed', description: 'Select and copy manually.', variant: 'destructive' })
+      toast({ title: t('list.toasts.copyFailedTitle'), description: t('list.toasts.copyFailedDescription'), variant: 'destructive' })
     }
   }
 
@@ -105,11 +109,11 @@ export default function LaundryWeighInsPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      toast({ title: 'Weigh-in deleted' })
+      toast({ title: t('list.toasts.deletedTitle') })
       queryClient.invalidateQueries({ queryKey: ['laundry-weigh-ins'] })
     },
     onError: (e: Error) => {
-      toast({ title: 'Could not delete', description: e.message, variant: 'destructive' })
+      toast({ title: t('list.toasts.deleteFailedTitle'), description: e.message, variant: 'destructive' })
     },
   })
 
@@ -156,39 +160,39 @@ export default function LaundryWeighInsPage() {
     a.download = `laundry-weigh-ins-${format(new Date(), 'yyyy-MM-dd')}.csv`
     a.click()
     URL.revokeObjectURL(url)
-    toast({ title: 'Exported', description: `${filtered.length} rows downloaded.` })
+    toast({ title: t('list.toasts.exportedTitle'), description: t('list.toasts.exportedDescription', { count: filtered.length }) })
   }
 
   return (
     <PageContainer width="xl">
       <PageHeader
-        title="Laundry Weigh-Ins"
-        subtitle="Daily cleaner submissions from the public form"
+        title={t('list.page.title')}
+        subtitle={t('list.page.subtitle')}
         actions={
           <>
             <Button variant="outline" size="sm" asChild>
               <a href={FORM_URL} target="_blank" rel="noreferrer">
                 <ExternalLink className="w-4 h-4 mr-2" />
-                Open form
+                {t('list.actions.openForm')}
               </a>
             </Button>
             <Button variant="outline" size="sm" onClick={handleCopyLink}>
               {copied ? <Check className="w-4 h-4 mr-2 text-success" /> : <Copy className="w-4 h-4 mr-2" />}
-              {copied ? 'Copied' : 'Copy link'}
+              {copied ? t('list.actions.copied') : t('list.actions.copyLink')}
             </Button>
             <Button variant="outline" size="sm" onClick={handleExport} disabled={filtered.length === 0}>
               <Download className="w-4 h-4 mr-2" />
-              Export CSV
+              {t('common.actions.exportCsv')}
             </Button>
           </>
         }
       />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard title="Submissions" value={stats.total.toLocaleString()} icon={Scale} loading={isLoading} />
-        <StatCard title="Clean lbs" value={stats.cleanLbs.toFixed(1)} icon={Sparkles} tone="success" loading={isLoading} />
-        <StatCard title="Dirty lbs" value={stats.dirtyLbs.toFixed(1)} icon={Shirt} tone="warning" loading={isLoading} />
-        <StatCard title="Unique cleaners" value={stats.cleaners.toLocaleString()} icon={Users} loading={isLoading} />
+        <StatCard title={t('list.stats.submissions')} value={stats.total.toLocaleString()} icon={Scale} loading={isLoading} />
+        <StatCard title={t('list.stats.cleanLbs')} value={stats.cleanLbs.toFixed(1)} icon={Sparkles} tone="success" loading={isLoading} />
+        <StatCard title={t('list.stats.dirtyLbs')} value={stats.dirtyLbs.toFixed(1)} icon={Shirt} tone="warning" loading={isLoading} />
+        <StatCard title={t('list.stats.uniqueCleaners')} value={stats.cleaners.toLocaleString()} icon={Users} loading={isLoading} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -197,25 +201,25 @@ export default function LaundryWeighInsPage() {
           <Input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
-            placeholder="Search cleaner name…"
+            placeholder={t('list.filters.searchPlaceholder')}
             className="pl-9 h-9"
           />
         </div>
         <Select value={typeFilter} onValueChange={v => { setTypeFilter(v as TypeFilter); setPage(1) }}>
           <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
-            <SelectItem value="clean">Clean</SelectItem>
-            <SelectItem value="dirty">Dirty</SelectItem>
+            <SelectItem value="all">{t('list.filters.allTypes')}</SelectItem>
+            <SelectItem value="clean">{t('list.filters.clean')}</SelectItem>
+            <SelectItem value="dirty">{t('list.filters.dirty')}</SelectItem>
           </SelectContent>
         </Select>
         <Select value={rangeFilter} onValueChange={v => { setRangeFilter(v as RangeFilter); setPage(1) }}>
           <SelectTrigger className="w-[140px] h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="7d">Last 7 days</SelectItem>
-            <SelectItem value="30d">Last 30 days</SelectItem>
-            <SelectItem value="90d">Last 90 days</SelectItem>
-            <SelectItem value="all">All time</SelectItem>
+            <SelectItem value="7d">{t('list.filters.last7Days')}</SelectItem>
+            <SelectItem value="30d">{t('list.filters.last30Days')}</SelectItem>
+            <SelectItem value="90d">{t('list.filters.last90Days')}</SelectItem>
+            <SelectItem value="all">{t('list.filters.allTime')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -227,12 +231,12 @@ export default function LaundryWeighInsPage() {
           ))}
         </div>
       ) : isError ? (
-        <ErrorState title="Could not load weigh-ins" onRetry={() => refetch()} />
+        <ErrorState title={t('list.errorTitle')} onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={Scale}
-          title="No weigh-ins yet"
-          description="Submissions from the public form will show up here."
+          title={t('list.empty.title')}
+          description={t('list.empty.description')}
         />
       ) : (
         <Card className="shadow-xs">
@@ -241,11 +245,11 @@ export default function LaundryWeighInsPage() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-2 text-left font-medium">Submitted</th>
-                    <th className="px-3 py-2 text-left font-medium">Cleaner</th>
-                    <th className="px-3 py-2 text-left font-medium">Type</th>
-                    <th className="px-3 py-2 text-right font-medium">Pounds</th>
-                    <th className="px-3 py-2 text-left font-medium">Photo</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('list.table.submitted')}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('list.table.cleaner')}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('list.table.type')}</th>
+                    <th className="px-3 py-2 text-right font-medium">{t('list.table.pounds')}</th>
+                    <th className="px-3 py-2 text-left font-medium">{t('list.table.photo')}</th>
                     {canEdit && <th className="px-3 py-2 w-10" />}
                   </tr>
                 </thead>
@@ -253,14 +257,14 @@ export default function LaundryWeighInsPage() {
                   {paged.map(row => (
                     <tr key={row.id} className="border-t border-border/60 hover:bg-muted/30">
                       <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                        {format(parseISO(row.submitted_at), 'MMM d, yyyy h:mm a')}
+                        {formatLocale(parseISO(row.submitted_at), 'MMM d, yyyy h:mm a')}
                       </td>
                       <td className="px-3 py-2 font-medium">{row.cleaner_name}</td>
                       <td className="px-3 py-2">
                         <TypePill type={row.laundry_type} />
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {Number(row.pounds).toFixed(1)} <span className="text-xs text-muted-foreground">lbs</span>
+                        {Number(row.pounds).toFixed(1)} <span className="text-xs text-muted-foreground">{t('form.pounds.unit')}</span>
                       </td>
                       <td className="px-3 py-2">
                         {row.photo_url ? (
@@ -268,14 +272,14 @@ export default function LaundryWeighInsPage() {
                             type="button"
                             onClick={() => setLightboxUrl(row.photo_url)}
                             className="group relative w-12 h-12 rounded-md overflow-hidden border border-border hover:border-primary"
-                            aria-label="View photo"
+                            aria-label={t('list.table.viewPhotoAria')}
                           >
-                            <img src={thumbUrl(row.photo_url, { width: 96 })} alt="Weigh-in" className="w-full h-full object-cover" loading="lazy" decoding="async" />
+                            <img src={thumbUrl(row.photo_url, { width: 96 })} alt={t('list.table.photoAlt')} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                           </button>
                         ) : (
                           <span className="inline-flex items-center text-xs text-muted-foreground">
                             <Camera className="w-3.5 h-3.5 mr-1 opacity-50" />
-                            None
+                            {t('list.table.none')}
                           </span>
                         )}
                       </td>
@@ -286,10 +290,10 @@ export default function LaundryWeighInsPage() {
                             size="icon"
                             className="h-7 w-7 text-muted-foreground hover:text-destructive"
                             onClick={() => {
-                              if (confirm(`Delete weigh-in from ${row.cleaner_name}?`)) deleteMut.mutate(row)
+                              if (confirm(t('list.table.deleteConfirm', { name: row.cleaner_name }))) deleteMut.mutate(row)
                             }}
                             disabled={deleteMut.isPending}
-                            aria-label="Delete weigh-in"
+                            aria-label={t('list.table.deleteAria')}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>
@@ -303,7 +307,7 @@ export default function LaundryWeighInsPage() {
             {pageCount > 1 && (
               <div className="flex items-center justify-between gap-3 border-t border-border/60 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">
-                  Showing {firstShown.toLocaleString()}-{lastShown.toLocaleString()} of {filtered.length.toLocaleString()}
+                  {t('list.table.showing', { first: firstShown.toLocaleString(), last: lastShown.toLocaleString(), total: filtered.length.toLocaleString() })}
                 </span>
                 <div className="flex items-center gap-2">
                   <Button
@@ -312,10 +316,10 @@ export default function LaundryWeighInsPage() {
                     onClick={() => setPage(p => Math.max(1, p - 1))}
                     disabled={safePage <= 1}
                   >
-                    Previous
+                    {t('list.table.previous')}
                   </Button>
                   <span className="text-xs text-muted-foreground tabular-nums">
-                    Page {safePage} of {pageCount}
+                    {t('list.table.pageOf', { page: safePage, total: pageCount })}
                   </span>
                   <Button
                     variant="outline"
@@ -323,7 +327,7 @@ export default function LaundryWeighInsPage() {
                     onClick={() => setPage(p => Math.min(pageCount, p + 1))}
                     disabled={safePage >= pageCount}
                   >
-                    Next
+                    {t('list.table.next')}
                   </Button>
                 </div>
               </div>
@@ -336,14 +340,14 @@ export default function LaundryWeighInsPage() {
         <DialogContent className="max-w-3xl p-2 sm:p-4">
           {lightboxUrl && (
             <div className="relative">
-              <img src={lightboxUrl} alt="Weigh-in photo" loading="lazy" decoding="async" className="w-full h-auto max-h-[80vh] object-contain rounded-md" />
+              <img src={lightboxUrl} alt={t('list.table.photoAlt')} loading="lazy" decoding="async" className="w-full h-auto max-h-[80vh] object-contain rounded-md" />
               <a
                 href={lightboxUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="absolute bottom-2 right-2 px-3 py-1.5 rounded-md bg-background/90 border border-border text-xs hover:bg-background"
               >
-                Open original
+                {t('list.table.openOriginal')}
               </a>
             </div>
           )}
@@ -354,16 +358,17 @@ export default function LaundryWeighInsPage() {
 }
 
 function TypePill({ type }: { type: 'clean' | 'dirty' }) {
+  const { t } = useLocale('weighIns')
   if (type === 'clean') {
     return (
       <StatusBadge tone="success">
-        <Sparkles className="w-3 h-3" /> Clean
+        <Sparkles className="w-3 h-3" /> {t('list.filters.clean')}
       </StatusBadge>
     )
   }
   return (
     <StatusBadge tone="warning">
-      <Shirt className="w-3 h-3" /> Dirty
+      <Shirt className="w-3 h-3" /> {t('list.filters.dirty')}
     </StatusBadge>
   )
 }

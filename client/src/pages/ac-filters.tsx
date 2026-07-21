@@ -19,7 +19,13 @@ import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
+import { useLocale } from '@/lib/i18n/LocaleProvider'
 import Papa from 'papaparse'
+
+/** `'Due soon'` → `'due_soon'`; used to look up the `status.*`/`common.stage.*` dictionary keys for display. */
+function slugify(value: string): string {
+  return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+}
 
 function getDueStatus(nextDue: string | null, intervalDays: number): { label: string; color: string; icon: typeof CheckCircle2 } | null {
   if (!nextDue) return null
@@ -45,6 +51,7 @@ function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: Sort
 
 export default function AcFiltersPage() {
   const { toast } = useToast()
+  const { t } = useLocale('acFilters')
   const qc = useQueryClient()
   const { effectiveUser } = useAuth()
   const { getNumber } = useAppSettings()
@@ -100,9 +107,9 @@ export default function AcFiltersPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-      toast({ title: 'Saved' })
+      toast({ title: t('toasts.saved') })
     },
-    onError: (error: any) => toast({ title: 'Update failed', description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
   function calcNextDue(fromDate: string): string {
@@ -113,7 +120,7 @@ export default function AcFiltersPage() {
 
   function markChangedToday(id: string) {
     if (!canEditView('ac-filters', effectiveUser)) {
-      toast({ title: 'Edit access required', variant: 'destructive' })
+      toast({ title: t('toasts.editAccessRequired'), variant: 'destructive' })
       return
     }
     const today = new Date().toISOString().slice(0, 10)
@@ -124,14 +131,14 @@ export default function AcFiltersPage() {
       next_filter_due: nextDue,
     }).eq('id', Number(id)).then(({ error }) => {
       if (error) {
-        toast({ title: 'Update failed', description: error.message, variant: 'destructive' })
+        toast({ title: t('toasts.updateFailed'), description: error.message, variant: 'destructive' })
       } else {
         logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
         logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
         qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
         qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-        toast({ title: 'Filter marked as changed today', description: `Next due: ${nextDue}` })
+        toast({ title: t('toasts.filterMarkedChanged'), description: t('toasts.nextDueDescription', { date: nextDue }) })
         setJustSavedId(id)
         setTimeout(() => setJustSavedId(null), 1500)
       }
@@ -153,13 +160,13 @@ export default function AcFiltersPage() {
 
   async function bulkSetFilterSize() {
     if (!canEditView('ac-filters', effectiveUser)) {
-      toast({ title: 'Edit access required', variant: 'destructive' })
+      toast({ title: t('toasts.editAccessRequired'), variant: 'destructive' })
       return
     }
     if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
     const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids.map(Number))
-    if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
+    if (error) { toast({ title: t('toasts.bulkUpdateFailed'), description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim(), prop?.name)
@@ -167,14 +174,14 @@ export default function AcFiltersPage() {
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-    toast({ title: `Updated filter size for ${ids.length} properties` })
+    toast({ title: t('toasts.filterSizeUpdated', { count: ids.length }) })
     setBulkSelected(new Set())
     setBulkFilterSize('')
   }
 
   async function bulkMarkChangedToday() {
     if (!canEditView('ac-filters', effectiveUser)) {
-      toast({ title: 'Edit access required', variant: 'destructive' })
+      toast({ title: t('toasts.editAccessRequired'), variant: 'destructive' })
       return
     }
     if (bulkSelected.size === 0) return
@@ -182,7 +189,7 @@ export default function AcFiltersPage() {
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
     const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids.map(Number))
-    if (error) { toast({ title: 'Bulk update failed', description: error.message, variant: 'destructive' }); return }
+    if (error) { toast({ title: t('toasts.bulkUpdateFailed'), description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
@@ -191,7 +198,7 @@ export default function AcFiltersPage() {
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-    toast({ title: `Marked ${ids.length} filters as changed today` })
+    toast({ title: t('toasts.bulkMarkedChanged', { count: ids.length }) })
     setBulkSelected(new Set())
   }
 
@@ -204,14 +211,14 @@ export default function AcFiltersPage() {
         setCsvData(results.data.filter((r: any) => r.Property || r.property || r.Name || r.name))
         setCsvOpen(true)
       },
-      error: () => toast({ title: 'Failed to parse CSV', variant: 'destructive' }),
+      error: () => toast({ title: t('toasts.csvParseFailed'), variant: 'destructive' }),
     })
     e.target.value = ''
   }
 
   async function importCsv() {
     if (!canEditView('ac-filters', effectiveUser)) {
-      toast({ title: 'Edit access required', variant: 'destructive' })
+      toast({ title: t('toasts.editAccessRequired'), variant: 'destructive' })
       return
     }
     if (!csvData.length || !properties) return
@@ -239,7 +246,7 @@ export default function AcFiltersPage() {
     }
     qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-    toast({ title: `Imported ${updated} of ${csvData.length} rows` })
+    toast({ title: t('toasts.csvImported', { updated, total: csvData.length }) })
     setCsvOpen(false)
     setCsvData([])
   }
@@ -274,8 +281,8 @@ export default function AcFiltersPage() {
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
       <PageHeader
-        title="AC Filters"
-        subtitle="Track filter sizes and change schedules - click cells to edit"
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
         actions={
           <>
             <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
@@ -283,9 +290,9 @@ export default function AcFiltersPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="all">{t('page.allStatuses')}</SelectItem>
                 {STATUS_OPTIONS.map(s => (
-                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                  <SelectItem key={s} value={s}>{t(`common.stage.${slugify(s)}`, undefined, s)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -293,7 +300,7 @@ export default function AcFiltersPage() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder="Search…"
+                placeholder={t('page.searchPlaceholder')}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1) }}
                 data-testid="input-search-filters"
@@ -309,11 +316,11 @@ export default function AcFiltersPage() {
               <>
                 <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => { setBulkMode(m => !m); setBulkSelected(new Set()) }}>
                   <Edit3 className="w-3.5 h-3.5" />
-                  {bulkMode ? 'Exit Bulk' : 'Bulk Edit'}
+                  {bulkMode ? t('page.exitBulk') : t('page.bulkEdit')}
                 </Button>
                 <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => csvInputRef.current?.click()}>
                   <Upload className="w-3.5 h-3.5" />
-                  Import CSV
+                  {t('page.importCsv')}
                 </Button>
                 <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
               </>
@@ -325,19 +332,19 @@ export default function AcFiltersPage() {
       {/* Summary strip — at-a-glance filter health */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Wind className="w-3.5 h-3.5" /> Total Tracked</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Wind className="w-3.5 h-3.5" /> {t('tiles.totalTracked')}</div>
           <p className="mt-1 text-3xl font-bold tabular-nums leading-none">{properties?.length ?? 0}</p>
         </div>
         <div className={`rounded-2xl border shadow-sm p-4 ${allOverdue > 0 ? 'border-destructive/30 bg-destructive/5' : 'border-card-border bg-card'}`}>
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> Overdue</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><AlertTriangle className="w-3.5 h-3.5" /> {t('tiles.overdue')}</div>
           <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allOverdue > 0 ? 'text-destructive' : ''}`}>{allOverdue}</p>
         </div>
         <div className={`rounded-2xl border shadow-sm p-4 ${allDueSoon > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> Due Soon (14d)</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Clock className="w-3.5 h-3.5" /> {t('tiles.dueSoon')}</div>
           <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allDueSoon > 0 ? 'text-warning' : ''}`}>{allDueSoon}</p>
         </div>
         <div className={`rounded-2xl border shadow-sm p-4 ${allMissingSize > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
-          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Ruler className="w-3.5 h-3.5" /> Missing Filter Size</div>
+          <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground"><Ruler className="w-3.5 h-3.5" /> {t('tiles.missingFilterSize')}</div>
           <p className={`mt-1 text-3xl font-bold tabular-nums leading-none ${allMissingSize > 0 ? 'text-warning' : ''}`}>{allMissingSize}</p>
         </div>
       </div>
@@ -345,20 +352,20 @@ export default function AcFiltersPage() {
       {/* Bulk action bar */}
       {canEditView('ac-filters', effectiveUser) && bulkMode && bulkSelected.size > 0 && (
         <div className="flex items-center gap-3 p-2 bg-primary/5 border border-primary/20 rounded-lg text-xs">
-          <span className="font-medium">{bulkSelected.size} selected</span>
+          <span className="font-medium">{t('bulk.selected', { count: bulkSelected.size })}</span>
           <div className="flex items-center gap-1.5">
             <Input
               value={bulkFilterSize}
               onChange={e => setBulkFilterSize(e.target.value)}
-              placeholder="Filter size…"
+              placeholder={t('bulk.filterSizePlaceholder')}
               className="h-7 w-32 text-xs"
             />
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={bulkSetFilterSize} disabled={!bulkFilterSize.trim()}>
-              Set Size
+              {t('bulk.setSize')}
             </Button>
           </div>
           <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={bulkMarkChangedToday}>
-            <CalendarCheck className="w-3 h-3" /> Mark Changed Today
+            <CalendarCheck className="w-3 h-3" /> {t('bulk.markChangedToday')}
           </Button>
         </div>
       )}
@@ -383,9 +390,9 @@ export default function AcFiltersPage() {
                 onClick={() => toggleSort('name')}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('name')}
               >
-                <span className="inline-flex items-center">Property <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
+                <span className="inline-flex items-center">{t('common.labels.property')} <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Status</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.status')}</th>
               <th
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
                 aria-sort={sortKey === 'filter_size' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
@@ -393,7 +400,7 @@ export default function AcFiltersPage() {
                 onClick={() => toggleSort('filter_size')}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('filter_size')}
               >
-                <span className="inline-flex items-center">Filter Size <SortIcon column="filter_size" sortKey={sortKey} sortDir={sortDir} /></span>
+                <span className="inline-flex items-center">{t('table.filterSize')} <SortIcon column="filter_size" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
@@ -402,7 +409,7 @@ export default function AcFiltersPage() {
                 onClick={() => toggleSort('last_filter_changed')}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('last_filter_changed')}
               >
-                <span className="inline-flex items-center">Last Changed <SortIcon column="last_filter_changed" sortKey={sortKey} sortDir={sortDir} /></span>
+                <span className="inline-flex items-center">{t('table.lastChanged')} <SortIcon column="last_filter_changed" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
               <th
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground"
@@ -411,11 +418,11 @@ export default function AcFiltersPage() {
                 onClick={() => toggleSort('next_filter_due')}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && toggleSort('next_filter_due')}
               >
-                <span className="inline-flex items-center">Next Due <SortIcon column="next_filter_due" sortKey={sortKey} sortDir={sortDir} /></span>
+                <span className="inline-flex items-center">{t('table.nextDue')} <SortIcon column="next_filter_due" sortKey={sortKey} sortDir={sortDir} /></span>
               </th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8">Due</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">Notes</th>
-              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">Actions</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 w-8">{t('table.due')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('common.labels.notes')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('common.labels.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -430,7 +437,7 @@ export default function AcFiltersPage() {
             ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={8} className="py-12">
-                  <EmptyState icon={Wind} title="No properties found" description="No properties match your current filters." />
+                  <EmptyState icon={Wind} title={t('table.emptyTitle')} description={t('table.emptyDescription')} />
                 </td>
               </tr>
             ) : (
@@ -450,14 +457,14 @@ export default function AcFiltersPage() {
                       </td>
                     )}
                     <td className="py-2 px-3 font-medium text-xs max-w-[200px] truncate" title={p.name}>{p.name}</td>
-                    <td className="py-2 px-3 text-xs text-muted-foreground">{p.stage_name || '—'}</td>
+                    <td className="py-2 px-3 text-xs text-muted-foreground">{p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}</td>
                     <td className="py-2 px-3">
                       <InlineEdit
                         value={p.filter_size}
                         type="text"
                         onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size, propName: p.name })}
                         testId={`inline-filter-size-${p.id}`}
-                        placeholder="Add size…"
+                        placeholder={t('table.addSizePlaceholder')}
                       />
                     </td>
                     <td className="py-2 px-3">
@@ -484,10 +491,10 @@ export default function AcFiltersPage() {
                     <td className="py-2 px-3">
                       <div className="flex items-center gap-1.5">
                         {dueStatus && (
-                          <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} aria-label={dueStatus.label} />
+                          <dueStatus.icon className={`w-4 h-4 ${dueStatus.color}`} aria-label={t(`status.${slugify(dueStatus.label)}`, undefined, dueStatus.label)} />
                         )}
                         {dueStatus?.label === 'Overdue' && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">OVERDUE</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-destructive/10 text-destructive font-medium">{t('table.overdueBadge')}</span>
                         )}
                       </div>
                     </td>
@@ -497,7 +504,7 @@ export default function AcFiltersPage() {
                         type="text"
                         onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes, propName: p.name })}
                         testId={`inline-notes-${p.id}`}
-                        placeholder="Add notes…"
+                        placeholder={t('table.addNotesPlaceholder')}
                         className="w-full min-w-[150px]"
                       />
                     </td>
@@ -508,10 +515,10 @@ export default function AcFiltersPage() {
                         className="h-6 text-xs gap-1 px-2"
                         onClick={() => markChangedToday(p.id)}
                         data-testid={`button-mark-changed-${p.id}`}
-                        title="Mark filter changed today and set next due date"
+                        title={t('table.markChangedTooltip')}
                       >
                         <CalendarCheck className="w-3 h-3" />
-                        Today
+                        {t('table.todayButton')}
                       </Button>
                     </td>
                   </tr>
@@ -530,10 +537,10 @@ export default function AcFiltersPage() {
       {/* CSV Import Dialog */}
       <Dialog open={csvOpen} onOpenChange={setCsvOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle>Import AC Filter Data</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('csvDialog.title')}</DialogTitle></DialogHeader>
           <div className="text-xs text-muted-foreground space-y-2">
-            <p>Found {csvData.length} rows. Columns: Property, Filter Size, Last Changed</p>
-            <p>Matching is by exact property name. Unmatched rows will be skipped.</p>
+            <p>{t('csvDialog.foundRows', { count: csvData.length })}</p>
+            <p>{t('csvDialog.matchingNote')}</p>
             {csvData.length > 0 && (
               <div className="max-h-40 overflow-auto border rounded p-2 space-y-1">
                 {csvData.slice(0, 10).map((row, i) => (
@@ -543,13 +550,13 @@ export default function AcFiltersPage() {
                     <span>{row['Filter Size'] || row.filter_size || '—'}</span>
                   </div>
                 ))}
-                {csvData.length > 10 && <p className="text-muted-foreground">…and {csvData.length - 10} more</p>}
+                {csvData.length > 10 && <p className="text-muted-foreground">{t('csvDialog.moreRows', { count: csvData.length - 10 })}</p>}
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setCsvOpen(false)}>Cancel</Button>
-            <Button size="sm" onClick={importCsv}>Import {csvData.length} Rows</Button>
+            <Button variant="outline" size="sm" onClick={() => setCsvOpen(false)}>{t('common.actions.cancel')}</Button>
+            <Button size="sm" onClick={importCsv}>{t('csvDialog.importRows', { count: csvData.length })}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
