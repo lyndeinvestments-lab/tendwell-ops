@@ -286,11 +286,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const signerName = (ownerPrintedName || ownerName || row.owner_name || 'An owner') as string
     const subject = `Agreement signed: ${signerName}`
+    // composeBodyHtml escapes every line itself (and re-allows the literal
+    // <strong> pair) — pre-escaping here double-encoded entities and leaked
+    // the tags as visible text.
     const bodyHtml = composeBodyHtml({
       lines: [
-        `<strong>${escapeHtml(signerName)}</strong> signed the Cleaning Services Agreement.`,
-        propertyAddresses ? `Property: ${escapeHtml(propertyAddresses)}` : '',
-        email ? `Email: ${escapeHtml(email)}` : '',
+        `<strong>${signerName}</strong> signed the Cleaning Services Agreement.`,
+        propertyAddresses ? `Property: ${propertyAddresses}` : '',
+        email ? `Email: ${email}` : '',
         `Signed at: ${now.toLocaleString('en-US', { timeZone: 'America/New_York' })} ET`,
       ].filter(Boolean),
     })

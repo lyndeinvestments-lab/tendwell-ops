@@ -29,9 +29,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const subject = `You've been added to Tendwell Ops`
   const bodyHtml = composeBodyHtml({
     lines: [
-      `Hi ${escapeHtml(safeName)},`,
+      `Hi ${safeName},`,
       `You've been added as a user on Tendwell Ops, the operations management platform for Tendwell Cleaning Co.`,
-      `Click the button below to sign in using your Google account (${escapeHtml(email)}).`,
+      `Click the button below to sign in using your Google account (${email}).`,
       `If you have any questions, reply to this email or contact your manager.`,
     ],
   })

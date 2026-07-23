@@ -92,7 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!owner?.email) return res.status(404).json({ error: 'Owner not found' })
   if (owner.active === false) return res.json({ ok: false, skipped: 'owner inactive' })
 
-  const bodyHtml = composeBodyHtml({ lines: [`Hi ${escapeHtml(owner.name || 'there')},`, ...tpl.lines] })
+  // composeBodyHtml escapes each line itself — pre-escaping double-encodes.
+  const bodyHtml = composeBodyHtml({ lines: [`Hi ${owner.name || 'there'},`, ...tpl.lines] })
   const html = renderEmailLayout({ title: tpl.subject, bodyHtml, ctaUrl: SITE_URL, ctaLabel: 'Open your portal' })
   const result = await sendEmail({ to: owner.email, subject: tpl.subject, html })
 

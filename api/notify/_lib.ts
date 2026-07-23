@@ -309,31 +309,66 @@ export function validateCtaUrl(raw: unknown): string | null {
 
 // Safely compose the email body from structured inputs. Prevents the arbitrary
 // HTML / form injection vector that was possible when bodyHtml was passed raw
-// from the client (bounty finding #2).
+// from the client (bounty finding #2). Every line is fully escaped; the ONLY
+// markup allowed back through is the literal, attribute-free <strong>/<em>
+// pair (re-enabled post-escape), so callers can bold a name without opening
+// an injection surface.
 export function composeBodyHtml(opts: { lines?: string[]; quote?: string | null }): string {
   const escapedLines = (opts.lines || [])
     .filter(l => typeof l === 'string' && l.trim().length > 0)
-    .map(l => `<p style="font-size:14px;line-height:1.6;color:#0f172a;">${escapeHtml(l)}</p>`)
+    .map(l => escapeHtml(l)
+      .replace(/&lt;(\/?)strong&gt;/g, '<$1strong>')
+      .replace(/&lt;(\/?)em&gt;/g, '<$1em>'))
+    .map(l => `<p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:#5C4D3A;">${l}</p>`)
     .join('')
   const quote = opts.quote
-    ? `<blockquote style="border-left:3px solid #e2e8f0;margin:8px 0;padding:4px 12px;color:#334155;">${escapeHtml(opts.quote)}</blockquote>`
+    ? `<blockquote style="border-left:3px solid #E4D9C7;margin:8px 0;padding:4px 12px;color:#5C4D3A;">${escapeHtml(opts.quote)}</blockquote>`
     : ''
   return escapedLines + quote
 }
 
+// Branded email shell shared by every outbound notification (instant, digest,
+// invites, owner mail, agreement-signed, issues bot, test email). Matches the
+// Supabase auth templates in supabase/auth-email-templates/ — cream backdrop,
+// linen-bordered white card, logo lockup, pine pill CTA. Table-based layout
+// for email-client compatibility; keep the two in sync when rebranding.
 export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUrl?: string; ctaLabel?: string }): string {
   // ctaUrl is expected to already have passed validateCtaUrl(). Defensive
   // attribute encoding below in case a future caller forgets.
   const safeCta = opts.ctaUrl ? escapeHtml(opts.ctaUrl) : ''
   const cta = safeCta
-    ? `<p style="margin:24px 0;"><a href="${safeCta}" style="display:inline-block;background:#0f172a;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;font-weight:500;">${escapeHtml(opts.ctaLabel || 'View')}</a></p>`
+    ? `<tr><td style="padding:20px 32px 4px;" align="center">
+        <a href="${safeCta}" style="display:inline-block;background:#22382D;color:#ffffff;padding:12px 28px;border-radius:999px;text-decoration:none;font-size:14px;font-weight:600;">${escapeHtml(opts.ctaLabel || 'View')}</a>
+      </td></tr>`
     : ''
-  return `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;background:#f8fafc;margin:0;padding:24px;color:#0f172a;">
-    <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:24px;">
-      <h2 style="margin:0 0 16px;font-size:18px;font-weight:600;">${escapeHtml(opts.title)}</h2>
-      ${opts.bodyHtml}
-      ${cta}
-      <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0 12px;"/>
-      <p style="font-size:11px;color:#64748b;margin:0;">Tendwell Cleaning Co. — <a href="https://app.tendwellcleaningco.com/#/settings" style="color:#64748b;">manage notifications</a></p>
-    </div></body></html>`
+  return `<!doctype html><html><body style="margin:0;padding:0;">
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background:#FAF6EF;padding:32px 16px;font-family:-apple-system,'Segoe UI',Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table width="560" cellpadding="0" cellspacing="0" role="presentation" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #E4D9C7;border-radius:12px;">
+        <tr>
+          <td style="padding:32px 32px 0;" align="center">
+            <img src="https://app.tendwellcleaningco.com/brand/tendwell-logo-email.png" alt="Tendwell Cleaning Co." width="180" style="display:block;width:180px;max-width:60%;height:auto;" />
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px 0;">
+            <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;font-weight:600;color:#3D3225;">${escapeHtml(opts.title)}</h1>
+            ${opts.bodyHtml}
+          </td>
+        </tr>
+        ${cta}
+        <tr>
+          <td style="padding:24px 32px 28px;">
+            <hr style="border:none;border-top:1px solid #E4D9C7;margin:0 0 12px;"/>
+            <p style="margin:0;font-size:11px;line-height:1.5;color:#8A7860;">
+              Tendwell Cleaning Co. LLC &middot; Tennessee &middot;
+              <a href="https://app.tendwellcleaningco.com/account" style="color:#8A7860;">manage notifications</a>
+            </p>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table></body></html>`
 }

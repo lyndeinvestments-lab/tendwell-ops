@@ -41,7 +41,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const [users, prefs] = await Promise.all([getAllUsersWithViews(sb), getAllPreferences(sb)])
     const recipients = filterRecipients(users, prefs, eventType)
-    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: 'https://app.tendwellcleaningco.com/#/master-list', ctaLabel: 'View in Master List' })
+    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: 'https://app.tendwellcleaningco.com/master-list', ctaLabel: 'View in Master List' })
 
     let sent = 0
     await Promise.all(recipients.map(async u => {
@@ -91,7 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const [users, prefs] = await Promise.all([getAllUsersWithViews(sb), getAllPreferences(sb)])
     const recipients = filterRecipients(users, prefs, eventType)
-    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: 'https://app.tendwellcleaningco.com/#/master-list', ctaLabel: 'View in Master List' })
+    const html = renderEmailLayout({ title: subject, bodyHtml, ctaUrl: 'https://app.tendwellcleaningco.com/master-list', ctaLabel: 'View in Master List' })
 
     let sent = 0
     await Promise.all(recipients.map(async u => {
