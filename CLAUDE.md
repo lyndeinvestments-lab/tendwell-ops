@@ -120,7 +120,7 @@ tendwell-ops/
 
 ## Auth & Roles
 
-- **Login (staff)**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`)
+- **Login (staff)**: Google OAuth via Supabase Auth (`supabase.auth.signInWithOAuth({ provider: 'google' })`), OR email/password once the user sets a password on `/account` → Security (adds an email identity to their auth user; both methods then work — auth resolution is by email, provider-agnostic).
 - **Login (owners)**: Email/password via Supabase Auth (`signInWithPassword`). Forgot-password uses `resetPasswordForEmail` → email link → `/reset-password` → `supabase.auth.updateUser({ password })`. The `PASSWORD_RECOVERY` auth event gates the app behind the reset screen.
 - **Auth email branding**: Supabase Auth emails (password reset, etc.) are configured to send through Resend SMTP as `Tendwell Cleaning Co. <noreply@tendwellcleaningco.com>` with branded HTML templates. Templates + dashboard setup steps live in `supabase/auth-email-templates/` (dashboard-only config; cannot be set from code — keep the folder in sync with the dashboard).
 - **Authorization**: After sign-in, email is looked up first in `app_users.google_email` (staff). If not found, it's looked up in `property_owners.email` (owner role). If neither → signed out with "not authorized" error.
@@ -198,6 +198,7 @@ The following Vercel serverless functions exist for operations that require the 
 
 - `POST /DELETE /api/owners/provision` — admin Bearer-gated. Creates or deletes a Supabase Auth email/password login for an owner. Used by the Settings → Owners tab to provision/remove portal access without exposing the service role key to the client.
 - `POST /api/owners/change-email` — owner-gated (caller's own session token). Changes the authenticated owner's login email immediately and syncs `property_owners.email` in place (id preserved, so permissions and property assignments are unchanged). Uses the service role to call `supabase.auth.admin.updateUserById`.
+- `POST /api/owners/admin-change-email` — admin-gated. Changes ANY owner's login email from Settings → Owners (tap the email cell): same validate → conflict-check → auth update → row sync flow as the self-service endpoint; owners with no provisioned login just get the row update.
 - `POST /api/agreements/sign` — owner-gated (caller's own session). Generates the signed PDF server-side with pdf-lib: fills party fields on page 1, stamps both the Tendwell and owner signatures on page 5, and appends a Certificate of Completion page (timestamps, IP, user-agent, SHA-256 source and signed hashes). Uploads the result to the private `agreements` bucket at `signed/<id>.pdf` and records all audit fields on the `owner_agreements` row.
 - `GET /api/agreements/download?id=` — accessible to the owner of the agreement or any staff member. Returns a 300-second signed URL for the stored PDF in the private bucket.
 - `GET /api/inspections/share/[token]` — **fully public** (no login/API key; the unguessable `inspections.share_token` in the URL is the only credential). Service-role read of a whitelisted inspection-report subset (scores, notes, photos, property name/address, cleaner + inspector names — no financials or codes). Backs the public `/inspection/:token` share page. Self-contained (no `_lib` import), GET-only. Mirrors `api/issues/share/[token].ts`.

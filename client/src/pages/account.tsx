@@ -100,9 +100,13 @@ function SecurityCard() {
     if (error) {
       toast({ title: t('security.updateFailed'), description: error.message, variant: 'destructive' })
     } else {
+      const wasFirstPassword = !hasPasswordLogin
       setNewPassword('')
       setConfirmPassword('')
-      toast({ title: t('security.updated') })
+      // Setting a password on a Google-only account adds an email/password
+      // identity — from now on either sign-in method works.
+      if (wasFirstPassword) setHasPasswordLogin(true)
+      toast({ title: wasFirstPassword ? t('security.setSuccess') : t('security.updated') })
     }
   }
 
@@ -112,9 +116,11 @@ function SecurityCard() {
         <KeyRound className="w-4 h-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold">{t('security.title')}</h2>
       </div>
-      {hasPasswordLogin === null ? null : hasPasswordLogin ? (
+      {hasPasswordLogin === null ? null : (
         <div className="space-y-2 max-w-sm">
-          <p className="text-xs text-muted-foreground">{t('security.description')}</p>
+          <p className="text-xs text-muted-foreground">
+            {hasPasswordLogin ? t('security.description') : t('security.setDescription')}
+          </p>
           <Input
             type="password"
             autoComplete="new-password"
@@ -132,11 +138,9 @@ function SecurityCard() {
             data-testid="account-confirm-password"
           />
           <Button size="sm" onClick={changePassword} disabled={saving || !newPassword} data-testid="account-change-password">
-            {saving ? t('security.updating') : t('security.updateButton')}
+            {saving ? t('security.updating') : hasPasswordLogin ? t('security.updateButton') : t('security.setButton')}
           </Button>
         </div>
-      ) : (
-        <p className="text-xs text-muted-foreground">{t('security.googleManaged')}</p>
       )}
     </div>
   )
