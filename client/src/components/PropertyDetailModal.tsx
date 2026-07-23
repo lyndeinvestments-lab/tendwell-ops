@@ -530,45 +530,47 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
         </Button>
       </div>
       <div className="rounded-lg border border-border overflow-hidden">
-        <table className="w-full text-xs">
-          <thead className="bg-muted/60">
-            <tr>
-              <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Item</th>
-              <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Par</th>
-              <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Qty</th>
-              <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-24">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(supplies || []).map((s: any) => {
-              const low = s.current_qty < s.par_level
-              return (
-                <tr key={s.id} className={`border-t border-border/50 ${low ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
-                  <td className="py-2 px-3">{s.item_name}</td>
-                  <td className="py-2 px-3 text-center tabular-nums text-muted-foreground">{s.par_level}</td>
-                  <td className="py-2 px-3 text-center">
-                    <input
-                      type="number"
-                      min={0}
-                      value={s.current_qty}
-                      onChange={e => updateQty({ id: s.id, current_qty: Number(e.target.value) })}
-                      className="w-14 h-6 text-xs border border-input rounded px-1.5 bg-background tabular-nums text-center"
-                    />
-                  </td>
-                  <td className="py-2 px-3">
-                    {low ? (
-                      <span className="px-1.5 py-0.5 rounded text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800">
-                        Needs Restock
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">OK</span>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/60">
+              <tr>
+                <th className="text-left py-1.5 px-3 font-medium text-muted-foreground">Item</th>
+                <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Par</th>
+                <th className="text-center py-1.5 px-3 font-medium text-muted-foreground w-20">Qty</th>
+                <th className="text-left py-1.5 px-3 font-medium text-muted-foreground w-24">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(supplies || []).map((s: any) => {
+                const low = s.current_qty < s.par_level
+                return (
+                  <tr key={s.id} className={`border-t border-border/50 ${low ? 'bg-amber-50/30 dark:bg-amber-900/5' : ''}`}>
+                    <td className="py-2 px-3">{s.item_name}</td>
+                    <td className="py-2 px-3 text-center tabular-nums text-muted-foreground">{s.par_level}</td>
+                    <td className="py-2 px-3 text-center">
+                      <input
+                        type="number"
+                        min={0}
+                        value={s.current_qty}
+                        onChange={e => updateQty({ id: s.id, current_qty: Number(e.target.value) })}
+                        className="w-14 h-6 text-xs border border-input rounded px-1.5 bg-background tabular-nums text-center"
+                      />
+                    </td>
+                    <td className="py-2 px-3">
+                      {low ? (
+                        <span className="px-1.5 py-0.5 rounded text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800">
+                          Needs Restock
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">OK</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
       <div className="flex items-center gap-2">
         <input
@@ -1481,7 +1483,7 @@ export function PropertyDetailModal() {
 
             {/* ── Overview Tab ── */}
             <TabsContent value="overview" className="mt-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { label: t('overview.stage'), field: '_stage', value: t(`common.stage.${slugify(stageName)}`, undefined, stageName), editable: false },
                 ].map(row => (
@@ -1748,7 +1750,7 @@ export function PropertyDetailModal() {
             {/* ── Financials Tab ── */}
             {canViewFinancials && (
               <TabsContent value="financials" className="mt-3 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {([
                     { label: t('financials.fields.clientCharged'), field: 'ce_charged', value: property.ce_charged, target: 0.14 },
                     { label: t('financials.fields.cleanerPay'), field: 'cleaner_pay', value: property.cleaner_pay, target: 0.07 },

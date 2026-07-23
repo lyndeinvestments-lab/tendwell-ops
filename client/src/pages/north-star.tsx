@@ -428,7 +428,7 @@ export default function NorthStarPage() {
 
       {/* Add/Edit Metric Dialog */}
       <Dialog open={!!metricDialog} onOpenChange={v => !v && setMetricDialog(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{metricDialog?.id ? t('northStar.dialog.editTitle') : t('northStar.dialog.addTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
             <div>
@@ -442,7 +442,7 @@ export default function NorthStarPage() {
               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.metricName')}</label>
               <Input value={metricForm.name} onChange={e => setMetricForm(f => ({ ...f, name: e.target.value }))} className="h-8 text-xs" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.type')}</label>
                 <select value={metricForm.metric_type} onChange={e => setMetricForm(f => ({ ...f, metric_type: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
@@ -455,7 +455,7 @@ export default function NorthStarPage() {
                 <Input type="number" value={metricForm.monthly_target} onChange={e => setMetricForm(f => ({ ...f, monthly_target: e.target.value }))} className="h-8 text-xs" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('northStar.dialog.owner')}</label>
                 <select value={metricForm.owner_name} onChange={e => setMetricForm(f => ({ ...f, owner_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">

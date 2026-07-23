@@ -1814,10 +1814,10 @@ function WorkflowTemplatesSection() {
       )}
 
       <Dialog open={addOpen} onOpenChange={v => { if (!v) { setAddOpen(false); setEditId(null) } }}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editId ? t('templates.editDialogTitle') : t('templates.addDialogTitle')}</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.fromStageLabel')}</label>
                 <select value={form.from_stage} onChange={e => setForm(f => ({ ...f, from_stage: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
@@ -1840,7 +1840,7 @@ function WorkflowTemplatesSection() {
               <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.descriptionLabel')}</label>
               <textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="w-full h-16 rounded-md border border-input px-2 py-1.5 text-xs bg-background resize-none" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1">{t('templates.defaultAssigneeLabel')}</label>
                 <select value={form.default_assignee_name} onChange={e => setForm(f => ({ ...f, default_assignee_name: e.target.value }))} className="w-full h-8 text-xs border border-input rounded px-2 bg-background">
@@ -2566,7 +2566,7 @@ function AddOwnerDialog({ open, onOpenChange, owners, prefillContactId }: {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) reset(); onOpenChange(o) }}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('owners.add.title')}</DialogTitle>
         </DialogHeader>

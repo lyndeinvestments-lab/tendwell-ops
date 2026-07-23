@@ -93,7 +93,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={v => !create.isPending && onOpenChange(v)}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('newCase.title')}</DialogTitle>
           <DialogDescription className="text-xs">
@@ -114,7 +114,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">{t('detail.fields.foundAt')}</Label>
               <Input
@@ -135,7 +135,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">{t('detail.fields.guestName')}</Label>
               <Input
@@ -155,7 +155,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">{t('detail.fields.guestPhone')}</Label>
               <Input
@@ -174,7 +174,7 @@ export function NewLostItemCaseDialog({ open, onOpenChange, onCreated }: Props) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div>
               <Label className="text-xs">{t('newCase.initialStatus')}</Label>
               <Select value={form.status} onValueChange={v => patch('status', v as LostItemStatus)}>

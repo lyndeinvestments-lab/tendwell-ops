@@ -403,7 +403,7 @@ function MergePropertyDialog({
 
   return (
     <Dialog open={!!submission} onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('queue.merge.title')}</DialogTitle>
           <DialogDescription>
