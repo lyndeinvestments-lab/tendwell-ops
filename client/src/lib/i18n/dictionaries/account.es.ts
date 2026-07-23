@@ -23,6 +23,9 @@ export const accountEs: typeof accountEn = {
     tooShort: 'La contraseña debe tener al menos 8 caracteres',
     mismatch: 'Las contraseñas no coinciden',
     googleManaged: 'Inicias sesión con Google, así que tu contraseña se administra en tu cuenta de Google.',
+    setDescription: 'Inicias sesión con Google. Establece una contraseña aquí y podrás usar cualquiera de los dos métodos en la página de inicio de sesión.',
+    setButton: 'Establecer contraseña',
+    setSuccess: 'Contraseña establecida - ahora puedes iniciar sesión con Google o con correo y contraseña',
   },
   notifications: {
     title: 'Notificaciones',

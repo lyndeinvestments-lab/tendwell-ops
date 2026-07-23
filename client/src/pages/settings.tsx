@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import {
-  provisionOwnerLogin, deleteOwnerLogin,
+  provisionOwnerLogin, deleteOwnerLogin, adminChangeOwnerEmail,
   OWNER_FIELD_DEFS, defaultOwnerPermissions, normalizeOwnerPermissions,
   type OwnerFieldKey, type OwnerPermissions,
 } from '@/lib/owners'
@@ -2723,12 +2723,82 @@ function LinkClientDialog({ owner, onOpenChange }: {
   )
 }
 
+/**
+ * Admin change of an owner's portal login email. Server-side at
+ * /api/owners/admin-change-email: updates the Supabase Auth email (when a
+ * login exists) and property_owners.email in place; the contact-sync trigger
+ * mirrors it to the linked Clients record.
+ */
+function ChangeOwnerEmailDialog({ owner, onOpenChange }: {
+  owner: OwnerRow | null
+  onOpenChange: (o: boolean) => void
+}) {
+  const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  const [newEmail, setNewEmail] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { setNewEmail('') }, [owner?.id])
+
+  async function handleSave() {
+    if (!owner) return
+    setSaving(true)
+    try {
+      const result = await adminChangeOwnerEmail(owner.id, newEmail.trim().toLowerCase())
+      if (!result.ok) {
+        toast({ title: t('toasts.ownerEmailChangeFailed'), description: result.error, variant: 'destructive' })
+        return
+      }
+      logActivity({
+        entity_type: 'other', action: 'update', entity_name: 'property_owner',
+        field_name: 'email', old_value: owner.email, new_value: newEmail.trim().toLowerCase(),
+        changed_by: user?.label ?? null,
+      })
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-clients'] })
+      toast({ title: t('toasts.ownerEmailChanged') })
+      onOpenChange(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open={!!owner} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{t('owners.changeEmail.title')}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">{t('owners.changeEmail.description')}</p>
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{t('owners.changeEmail.currentLabel')}: <span className="font-medium text-foreground">{owner?.email}</span></p>
+          <Input
+            type="email"
+            value={newEmail}
+            onChange={e => setNewEmail(e.target.value)}
+            placeholder={t('owners.changeEmail.newEmailPlaceholder')}
+            data-testid="input-admin-change-owner-email"
+          />
+        </div>
+        <DialogFooter>
+          <Button size="sm" disabled={saving || !newEmail.trim()} onClick={handleSave} data-testid="button-confirm-change-owner-email">
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t('owners.changeEmail.saveButton')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function OwnersSection() {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const { user, requestPasswordReset } = useAuth()
   const [search, setSearch] = useState('')
+  const [emailOwner, setEmailOwner] = useState<OwnerRow | null>(null)
   // Deep link from the Clients page: /settings?tab=owners&portalFor=<contactId>
   // opens the Add Owner dialog with that client preselected.
   const [portalForContact] = useState<string | null>(() => new URLSearchParams(window.location.search).get('portalFor'))
@@ -2904,7 +2974,16 @@ function OwnersSection() {
                             o.name || <span className="italic text-muted-foreground">{t('owners.noName')}</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 text-xs text-muted-foreground">{o.email}</td>
+                        <td className="py-2 px-3 text-xs text-muted-foreground">
+                          <button
+                            className="hover:underline underline-offset-2 hover:text-foreground text-left"
+                            onClick={() => setEmailOwner(o)}
+                            title={t('owners.changeEmail.cellTitle')}
+                            data-testid={`button-change-owner-email-${o.id}`}
+                          >
+                            {o.email}
+                          </button>
+                        </td>
                         <td className="py-2 px-3 text-xs text-muted-foreground">
                           {editingId === o.id ? (
                             <Input value={editPhone} onChange={e => setEditPhone(e.target.value)} className="h-7 text-xs" placeholder={t('owners.add.phoneLabel')} />
@@ -3034,6 +3113,7 @@ function OwnersSection() {
 
       <AddOwnerDialog open={addOpen} onOpenChange={setAddOpen} owners={owners || []} prefillContactId={portalForContact} />
       <LinkClientDialog owner={linkOwner} onOpenChange={(o) => { if (!o) setLinkOwner(null) }} />
+      <ChangeOwnerEmailDialog owner={emailOwner} onOpenChange={(o) => { if (!o) setEmailOwner(null) }} />
       <AssignPropertiesDialog owner={assignOwner} open={!!assignOwner} onOpenChange={(o) => { if (!o) setAssignOwner(null) }} />
       <OwnerPermissionsDialog owner={permsOwner} open={!!permsOwner} onOpenChange={(o) => { if (!o) setPermsOwner(null) }} />
     </>

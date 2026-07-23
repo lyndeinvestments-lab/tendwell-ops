@@ -201,6 +201,14 @@ export const settingsPageEn = {
     syncedToClientsTitle: "This owner's info is synced to a Clients record",
     noClientsLinked: 'No Clients record linked',
     linkClient: 'Link client',
+    changeEmail: {
+      title: 'Change login email',
+      description: 'Changes the email this owner signs in with, immediately and without a verification step. Their assignments, permissions, and linked Clients record are preserved.',
+      currentLabel: 'Current',
+      newEmailPlaceholder: 'new-email@example.com',
+      saveButton: 'Change email',
+      cellTitle: 'Change this owner’s login email',
+    },
     link: {
       title: 'Link to a client',
       description: "Connect this portal login to a Clients record so contact info stays in sync and the client's properties are assigned automatically.",
@@ -565,6 +573,8 @@ export const settingsPageEn = {
     ownerAlreadyExistsDesc: 'An owner with that email is already set up.',
     ownerRecordFailed: 'Login created, but record failed',
     ownerLinked: 'Linked to {{name}}',
+    ownerEmailChanged: 'Login email changed',
+    ownerEmailChangeFailed: "Couldn't change login email",
     ownerLinkFailed: "Couldn't link client",
     propertiesAssigned: '{{count}} properties assigned automatically.',
     noNewProperties: 'No new properties to assign.',

@@ -26,6 +26,9 @@ export const accountEn = {
     tooShort: 'Password must be at least 8 characters',
     mismatch: "Passwords don't match",
     googleManaged: 'You sign in with Google, so your password is managed by your Google account.',
+    setDescription: 'You sign in with Google. Set a password here and you can use either sign-in method on the login page.',
+    setButton: 'Set password',
+    setSuccess: 'Password set - you can now sign in with Google or email + password',
   },
   notifications: {
     title: 'Notifications',

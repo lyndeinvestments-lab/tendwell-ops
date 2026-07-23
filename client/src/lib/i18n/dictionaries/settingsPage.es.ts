@@ -174,6 +174,14 @@ export const settingsPageEs: typeof settingsPageEn = {
     syncedToClients: 'Sincronizado con Clientes',
     syncedToClientsTitle: 'La información de este propietario está sincronizada con un registro de Clientes',
     linkClient: 'Vincular cliente',
+    changeEmail: {
+      title: 'Cambiar correo de acceso',
+      description: 'Cambia el correo con el que este propietario inicia sesión, de inmediato y sin paso de verificación. Sus asignaciones, permisos y registro de Clientes vinculado se conservan.',
+      currentLabel: 'Actual',
+      newEmailPlaceholder: 'nuevo-correo@ejemplo.com',
+      saveButton: 'Cambiar correo',
+      cellTitle: 'Cambiar el correo de acceso de este propietario',
+    },
     link: {
       title: 'Vincular a un cliente',
       description: 'Conecta este acceso al portal con un registro de Clientes para que la información de contacto se mantenga sincronizada y las propiedades del cliente se asignen automáticamente.',
@@ -517,6 +525,8 @@ export const settingsPageEs: typeof settingsPageEn = {
     ownerAlreadyExistsDesc: 'Ya hay un propietario configurado con ese correo.',
     ownerRecordFailed: 'Inicio de sesión creado, pero el registro falló',
     ownerLinked: 'Vinculado a {{name}}',
+    ownerEmailChanged: 'Correo de acceso cambiado',
+    ownerEmailChangeFailed: 'No se pudo cambiar el correo de acceso',
     ownerLinkFailed: 'No se pudo vincular el cliente',
     propertiesAssigned: '{{count}} propiedades asignadas automáticamente.',
     noNewProperties: 'No hay propiedades nuevas para asignar.',
