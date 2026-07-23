@@ -5,6 +5,11 @@ import type { contactsEn } from './contacts.en'
  * Typed as `typeof contactsEn` so TypeScript enforces key parity.
  */
 export const contactsEs: typeof contactsEn = {
+  portal: {
+    active: 'Portal activo',
+    inactive: 'Portal inactivo',
+    create: 'Crear portal',
+  },
   page: {
     title: 'Clientes',
     subtitle: 'Gestiona clientes y relaciones',
@@ -30,6 +35,7 @@ export const contactsEs: typeof contactsEn = {
     payment: 'Pago',
     clientSince: 'Cliente Desde',
     tags: 'Etiquetas',
+    portal: 'Portal',
     noneBadge: 'ninguna',
     csv: {
       name: 'Nombre',

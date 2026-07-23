@@ -14,6 +14,12 @@
  */
 // Deliberately NOT `as const` — see issues.en.ts for the parity rationale.
 export const contactsEn = {
+  // Owner-portal status shown on the Clients table (linked via property_owners.contact_id).
+  portal: {
+    active: 'Portal active',
+    inactive: 'Portal inactive',
+    create: 'Create portal',
+  },
   page: {
     title: 'Clients',
     subtitle: 'Manage clients and relationships',
@@ -39,6 +45,7 @@ export const contactsEn = {
     payment: 'Payment',
     clientSince: 'Client Since',
     tags: 'Tags',
+    portal: 'Portal',
     noneBadge: 'none',
     csv: {
       name: 'Name',
