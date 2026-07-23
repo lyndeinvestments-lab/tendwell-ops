@@ -720,6 +720,7 @@ export default function ForecasterPage() {
                   description={t('forecaster.variance.emptyDescription')}
                 />
               ) : (
+                <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
@@ -763,6 +764,7 @@ export default function ForecasterPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
               )}
             </CardContent>
           </Card>

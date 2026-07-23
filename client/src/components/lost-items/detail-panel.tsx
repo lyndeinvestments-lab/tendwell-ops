@@ -124,7 +124,7 @@ export function LostItemDetailPanel({ caseId, detail, assignment, canEdit }: Pro
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
         <InlineText label={t('common.labels.property')} value={detail.property?.name ?? detail.property_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ property_name: v || null })} />
         <InlineText label={t('detail.fields.guestName')} value={detail.guest_name ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_name: v || null })} />
         <InlineText label={t('detail.fields.guestEmail')} value={detail.guest_email ?? ''} canEdit={canEdit} onSave={v => updateField.mutate({ guest_email: v || null })} />

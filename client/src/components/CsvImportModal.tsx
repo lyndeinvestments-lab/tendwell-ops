@@ -575,7 +575,7 @@ export function CsvImportModal({ properties, onClose, onImportComplete }: CsvImp
             <p className="text-xs text-muted-foreground">
               {t('mapping.loadedRows', { count: allRows.length, fileName })}
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 { label: t('mapping.propertyName'), value: colPropName, setter: setColPropName },
                 { label: t('mapping.cleanDate'), value: colCleanDate, setter: setColCleanDate },

@@ -901,7 +901,7 @@ export default function PipelinePage() {
 
 
       <Dialog open={addLeadOpen} onOpenChange={(open) => { setAddLeadOpen(open); if (!open) resetAddLeadForm() }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('addLead.dialogTitle')}</DialogTitle>
           </DialogHeader>
@@ -941,7 +941,7 @@ export default function PipelinePage() {
               />
             </div>
             {/* Row 3: Email + Phone */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="lead-email">{t('addLead.emailLabel')}</Label>
                 <Input
@@ -966,7 +966,7 @@ export default function PipelinePage() {
               </div>
             </div>
             {/* Row 4: Estimated Bedrooms + Source */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="lead-bedrooms">{t('addLead.bedroomsLabel')}</Label>
                 <Input

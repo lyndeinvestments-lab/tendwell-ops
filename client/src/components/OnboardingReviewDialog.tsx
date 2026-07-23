@@ -345,7 +345,7 @@ export function OnboardingReviewDialog({
                   <span className="font-medium text-foreground">{t('review.bedSection.clientTyped')}</span> {submission.bed_sizes}
                 </p>
               )}
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {BED_COLS.map(b => (
                   <div key={b.key}>
                     <label className="text-[11px] text-muted-foreground">{t(`review.bedSizes.${b.labelKey}`)}</label>

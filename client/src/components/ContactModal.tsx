@@ -350,7 +350,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
 
   return (
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
-      <SheetContent side="right" className="w-[480px] overflow-y-auto" data-testid="contact-modal">
+      <SheetContent side="right" className="w-full sm:w-[480px] sm:max-w-[480px] overflow-y-auto" data-testid="contact-modal">
         <SheetHeader>
           <SheetTitle className="text-base">
             {isCreate ? t('modal.newClientTitle') : isLoading ? <Skeleton className="h-5 w-48" /> : (contact?.full_name || t('modal.clientFallbackTitle'))}
@@ -375,11 +375,11 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
 
             {/* Details Tab */}
             <TabsContent value="details" className="mt-3 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label={t('modal.fieldFullName')} field="full_name" placeholder={t('modal.placeholderClientName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
                 <Field label={t('modal.fieldCompany')} field="company" placeholder={t('modal.placeholderCompanyName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <Label className="text-xs text-muted-foreground">{t('common.labels.email')}</Label>
                   <div className="flex items-center gap-1 mt-0.5">
@@ -404,19 +404,19 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                 </div>
                 <Field label={t('common.labels.phone')} field="phone" type="tel" placeholder={t('modal.placeholderPhone')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label={t('modal.fieldSecondaryPhone')} field="secondary_phone" type="tel" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
                 <Field label={t('modal.fieldMailingAddress')} field="mailing_address" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <SelectField label={t('modal.fieldSource')} field="source" options={SOURCE_OPTIONS} form={form} onSelectField={handleSelectField} optionNamespace="source" />
                 <Field label={t('modal.fieldSourceNotes')} field="source_notes" placeholder={t('modal.placeholderSourceNotes')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <SelectField label={t('modal.fieldPaymentMethod')} field="payment_method" options={PAYMENT_OPTIONS} form={form} onSelectField={handleSelectField} optionNamespace="paymentMethod" />
                 <Field label={t('modal.fieldPaymentNotes')} field="payment_notes" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label={t('modal.fieldClientSince')} field="client_since" type="date" form={form} setForm={setForm} onBlurField={handleFieldBlur} />
                 <div>
                   <Label className="text-xs text-muted-foreground">{t('modal.fieldTags')}</Label>

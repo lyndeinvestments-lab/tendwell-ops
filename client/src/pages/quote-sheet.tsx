@@ -1060,7 +1060,7 @@ export default function QuoteSheetPage() {
             </div>
 
             {/* Property details grid */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.bedrooms')}</Label>
                 <Input type="number" value={newProp.bedrooms} onChange={e => setNewProp(prev => ({ ...prev, bedrooms: e.target.value }))} className="h-8 text-sm" data-testid="input-new-bedrooms" />
@@ -1128,7 +1128,7 @@ export default function QuoteSheetPage() {
                 Number of Beds derives the total from these. */}
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.bedSizes')}</Label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <Input type="number" value={newProp.king_beds} onChange={e => setNewProp(prev => ({ ...prev, king_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeKing')} data-testid="input-new-king_beds" />
                 <Input type="number" value={newProp.queen_beds} onChange={e => setNewProp(prev => ({ ...prev, queen_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeQueen')} data-testid="input-new-queen_beds" />
                 <Input type="number" value={newProp.full_beds} onChange={e => setNewProp(prev => ({ ...prev, full_beds: e.target.value }))} className="h-8 text-sm" placeholder={t('quoteSheet.addDialog.bedSizeFull')} data-testid="input-new-full_beds" />
@@ -1186,7 +1186,7 @@ export default function QuoteSheetPage() {
             </label>
 
             {/* CE Charged and Cleaner Pay — with auto-suggestions */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.clientCharged')}</Label>
                 <Input
