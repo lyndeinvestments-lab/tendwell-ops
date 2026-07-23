@@ -8,6 +8,7 @@ import {
   derivePermissionsFromViews, sanitizePagePermissions,
 } from '@/lib/auth'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { SearchSelect } from '@/components/issues/SearchSelect'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -2408,19 +2409,93 @@ function OwnerPermissionsDialog({
   )
 }
 
-function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+/** Minimal Clients row used by the owner-portal linking UI. */
+interface ClientRow {
+  id: string
+  full_name: string | null
+  email: string | null
+  phone: string | null
+}
+
+/** Shared query for the Clients list used by the Add Owner + Link Client dialogs. */
+function useClientRows() {
+  return useQuery({
+    queryKey: ['/supabase/owner-clients'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<ClientRow[]> => {
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, full_name, email, phone')
+        .order('full_name', { ascending: true })
+      if (error) throw error
+      return (data || []) as ClientRow[]
+    },
+  })
+}
+
+/**
+ * Assigns every property belonging to `contactId` (properties.contact_id) to
+ * the owner's portal (owner_properties), skipping ones already assigned.
+ * Returns the number of newly assigned properties.
+ */
+async function autoAssignClientProperties(ownerId: string, contactId: string): Promise<number> {
+  const [{ data: props, error: propsErr }, { data: existing, error: existingErr }] = await Promise.all([
+    supabase.from('properties').select('id').eq('contact_id', contactId),
+    supabase.from('owner_properties').select('property_id').eq('owner_id', ownerId),
+  ])
+  if (propsErr) throw propsErr
+  if (existingErr) throw existingErr
+  const have = new Set((existing || []).map(r => r.property_id))
+  const missing = (props || []).filter(p => !have.has(p.id))
+  if (missing.length === 0) return 0
+  const { error } = await supabase
+    .from('owner_properties')
+    .insert(missing.map(p => ({ owner_id: ownerId, property_id: p.id })))
+  if (error) throw error
+  return missing.length
+}
+
+// Every new portal starts with the standard owner password; the owner can
+// change it in their portal's Account Security card (or via Forgot password).
+const DEFAULT_OWNER_PASSWORD = 'Tendwellowner1'
+
+function AddOwnerDialog({ open, onOpenChange, owners, prefillContactId }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  owners: OwnerRow[]
+  prefillContactId?: string | null
+}) {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const { user } = useAuth()
   const qc = useQueryClient()
+  const [contactId, setContactId] = useState('')
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
+  const [password, setPassword] = useState(DEFAULT_OWNER_PASSWORD)
   const [submitting, setSubmitting] = useState(false)
 
+  const { data: clients } = useClientRows()
+  const linkedContactIds = useMemo(() => new Set(owners.map(o => o.contact_id).filter(Boolean)), [owners])
+
+  const applyClient = useCallback((id: string) => {
+    const c = (clients || []).find(x => x.id === id)
+    setContactId(id)
+    if (!c) return
+    // Prefill from the Clients record; everything stays editable.
+    if (c.full_name) setName(c.full_name)
+    if (c.email) setEmail(c.email)
+    if (c.phone) setPhone(c.phone)
+  }, [clients])
+
+  // Deep link from the Clients page: preselect the client once the list loads.
+  useEffect(() => {
+    if (open && prefillContactId && clients?.length && !contactId) applyClient(prefillContactId)
+  }, [open, prefillContactId, clients, contactId, applyClient])
+
   function reset() {
-    setEmail(''); setName(''); setPhone(''); setPassword('')
+    setContactId(''); setEmail(''); setName(''); setPhone(''); setPassword(DEFAULT_OWNER_PASSWORD)
   }
 
   async function handleCreate() {
@@ -2439,13 +2514,15 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         toast({ title: t('toasts.ownerCreateLoginFailed'), description: prov.error, variant: 'destructive' })
         return
       }
-      // 2. Create the property_owners record (admin RLS).
-      const { error } = await supabase.from('property_owners').insert({
+      // 2. Create the property_owners record (admin RLS), linked to the
+      //    Clients record when one was picked.
+      const { data: created, error } = await supabase.from('property_owners').insert({
         email: cleanEmail,
         name: name.trim() || null,
         phone: phone.trim() || null,
         active: true,
-      })
+        contact_id: contactId || null,
+      }).select('id').single()
       if (error) {
         // Unique email → owner already exists.
         if (/unique|duplicate/i.test(error.message)) {
@@ -2455,16 +2532,30 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         }
         return
       }
+      // 3. Linked client → assign their properties to the portal automatically.
+      let assignedCount = 0
+      if (contactId && created?.id) {
+        try {
+          assignedCount = await autoAssignClientProperties(created.id, contactId)
+        } catch (e: any) {
+          toast({ title: t('toasts.autoAssignFailed'), description: e?.message, variant: 'destructive' })
+        }
+      }
       logActivity({
         entity_type: 'other', action: 'create', entity_name: 'property_owner',
         field_name: cleanEmail, changed_by: user?.label ?? null,
       })
       qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-assignment-counts'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/contact-portals'] })
       toast({
         title: t('toasts.ownerCreated'),
-        description: prov.created
-          ? t('toasts.ownerCreatedDescNew', { email: cleanEmail })
-          : t('toasts.ownerCreatedDescExisting'),
+        description: [
+          prov.created
+            ? t('toasts.ownerCreatedDescNew', { email: cleanEmail })
+            : t('toasts.ownerCreatedDescExisting'),
+          assignedCount > 0 ? t('toasts.propertiesAssigned', { count: assignedCount }) : null,
+        ].filter(Boolean).join(' '),
       })
       reset()
       onOpenChange(false)
@@ -2483,6 +2574,25 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           {t('owners.add.description')}
         </p>
         <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">{t('owners.add.clientLabel')}</label>
+            <div className="mt-1">
+              <SearchSelect
+                value={contactId}
+                onSelect={(v) => { if (v) applyClient(v); else setContactId('') }}
+                options={(clients || []).map(c => ({
+                  value: c.id,
+                  label: `${c.full_name || c.email || c.id}${linkedContactIds.has(c.id) ? ` · ${t('owners.add.clientHasPortal')}` : ''}`,
+                }))}
+                placeholder={t('owners.add.clientPlaceholder')}
+                searchPlaceholder={t('owners.add.clientSearchPlaceholder')}
+                emptyText={t('owners.add.clientEmpty')}
+              />
+            </div>
+            <p className="text-2xs text-muted-foreground mt-1">
+              {contactId ? t('owners.add.autoAssignHint') : t('owners.add.clientNoneHint')}
+            </p>
+          </div>
           <div>
             <label className="text-xs font-medium text-muted-foreground">{t('owners.add.emailLabel')}</label>
             <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="owner@example.com" className="mt-1" data-testid="input-new-owner-email" />
@@ -2513,13 +2623,117 @@ function AddOwnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
   )
 }
 
+/**
+ * Links an existing portal login to a Clients record: sets
+ * property_owners.contact_id (the DB triggers from 20260709_owner_contact_sync
+ * then keep phone/payment in sync) and auto-assigns the client's properties.
+ * Suggests a match by exact email, falling back to exact name.
+ */
+function LinkClientDialog({ owner, onOpenChange }: {
+  owner: OwnerRow | null
+  onOpenChange: (o: boolean) => void
+}) {
+  const { toast } = useToast()
+  const { t } = useLocale('settingsPage')
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  const { data: clients } = useClientRows()
+  const [contactId, setContactId] = useState('')
+  const [linking, setLinking] = useState(false)
+
+  const suggestion = useMemo(() => {
+    if (!owner || !clients) return null
+    const byEmail = clients.find(c => c.email && c.email.toLowerCase() === owner.email.toLowerCase())
+    if (byEmail) return byEmail
+    if (owner.name) {
+      const byName = clients.find(c => c.full_name && c.full_name.trim().toLowerCase() === owner.name!.trim().toLowerCase())
+      if (byName) return byName
+    }
+    return null
+  }, [owner, clients])
+
+  // Preselect the suggested match each time the dialog opens for an owner.
+  useEffect(() => {
+    setContactId(suggestion?.id ?? '')
+  }, [owner?.id, suggestion?.id])
+
+  async function handleLink() {
+    if (!owner || !contactId) return
+    setLinking(true)
+    try {
+      const { error } = await supabase.from('property_owners').update({ contact_id: contactId }).eq('id', owner.id)
+      if (error) {
+        toast({ title: t('toasts.ownerLinkFailed'), description: error.message, variant: 'destructive' })
+        return
+      }
+      let assignedCount = 0
+      try {
+        assignedCount = await autoAssignClientProperties(owner.id, contactId)
+      } catch (e: any) {
+        toast({ title: t('toasts.autoAssignFailed'), description: e?.message, variant: 'destructive' })
+      }
+      logActivity({
+        entity_type: 'other', action: 'update', entity_name: 'property_owner',
+        field_name: 'contact_id', new_value: contactId, changed_by: user?.label ?? null,
+      })
+      qc.invalidateQueries({ queryKey: ['/supabase/owners'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/owner-assignment-counts'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/contact-portals'] })
+      const clientName = clients?.find(c => c.id === contactId)?.full_name || ''
+      toast({
+        title: t('toasts.ownerLinked', { name: clientName }),
+        description: assignedCount > 0 ? t('toasts.propertiesAssigned', { count: assignedCount }) : t('toasts.noNewProperties'),
+      })
+      onOpenChange(false)
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  return (
+    <Dialog open={!!owner} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{t('owners.link.title')}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">{t('owners.link.description')}</p>
+        <div className="space-y-2">
+          <SearchSelect
+            value={contactId}
+            onSelect={(v) => setContactId(v)}
+            options={(clients || []).map(c => ({ value: c.id, label: c.full_name || c.email || c.id }))}
+            placeholder={t('owners.add.clientPlaceholder')}
+            searchPlaceholder={t('owners.add.clientSearchPlaceholder')}
+            emptyText={t('owners.add.clientEmpty')}
+          />
+          {suggestion && contactId === suggestion.id && (
+            <p className="text-2xs text-muted-foreground">
+              {t('owners.link.suggested', { name: suggestion.full_name || suggestion.email || '' })}
+            </p>
+          )}
+          <p className="text-2xs text-muted-foreground">{t('owners.add.autoAssignHint')}</p>
+        </div>
+        <DialogFooter>
+          <Button size="sm" disabled={linking || !contactId} onClick={handleLink} data-testid="button-confirm-link-client">
+            {linking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : t('owners.link.saveButton')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function OwnersSection() {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
   const { user, requestPasswordReset } = useAuth()
   const [search, setSearch] = useState('')
-  const [addOpen, setAddOpen] = useState(false)
+  // Deep link from the Clients page: /settings?tab=owners&portalFor=<contactId>
+  // opens the Add Owner dialog with that client preselected.
+  const [portalForContact] = useState<string | null>(() => new URLSearchParams(window.location.search).get('portalFor'))
+  const [addOpen, setAddOpen] = useState(() => !!portalForContact)
+  const [linkOwner, setLinkOwner] = useState<OwnerRow | null>(null)
   const [assignOwner, setAssignOwner] = useState<OwnerRow | null>(null)
   const [permsOwner, setPermsOwner] = useState<OwnerRow | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -2540,6 +2754,10 @@ function OwnersSection() {
       return (data || []) as OwnerRow[]
     },
   })
+
+  // Clients lookup for the sync column (contact_id → client name).
+  const { data: clientRows } = useClientRows()
+  const clientsById = useMemo(() => new Map((clientRows || []).map(c => [c.id, c])), [clientRows])
 
   // Per-owner property counts (one query, grouped client-side).
   const { data: counts } = useQuery({
@@ -2714,10 +2932,17 @@ function OwnersSection() {
                             <div className="text-muted-foreground">{o.preferred_payment_method || <span className="italic">-</span>}</div>
                             {o.contact_id ? (
                               <Link href="/contacts" className="inline-flex items-center gap-1 text-2xs text-primary hover:underline" title={t('owners.syncedToClientsTitle')}>
-                                <ExternalLink className="w-3 h-3" /> {t('owners.syncedToClients')}
+                                <ExternalLink className="w-3 h-3" /> {clientsById?.get(o.contact_id)?.full_name || t('owners.syncedToClients')}
                               </Link>
                             ) : (
-                              <span className="text-2xs text-muted-foreground/60 italic">{t('owners.noClientsLinked')}</span>
+                              <button
+                                className="text-2xs text-warning hover:underline underline-offset-2"
+                                onClick={() => setLinkOwner(o)}
+                                title={t('owners.link.title')}
+                                data-testid={`button-link-client-${o.id}`}
+                              >
+                                {t('owners.linkClient')}
+                              </button>
                             )}
                           </div>
                         </td>
@@ -2807,7 +3032,8 @@ function OwnersSection() {
         </p>
       </div>
 
-      <AddOwnerDialog open={addOpen} onOpenChange={setAddOpen} />
+      <AddOwnerDialog open={addOpen} onOpenChange={setAddOpen} owners={owners || []} prefillContactId={portalForContact} />
+      <LinkClientDialog owner={linkOwner} onOpenChange={(o) => { if (!o) setLinkOwner(null) }} />
       <AssignPropertiesDialog owner={assignOwner} open={!!assignOwner} onOpenChange={(o) => { if (!o) setAssignOwner(null) }} />
       <OwnerPermissionsDialog owner={permsOwner} open={!!permsOwner} onOpenChange={(o) => { if (!o) setPermsOwner(null) }} />
     </>
@@ -3689,6 +3915,9 @@ export default function SettingsPage() {
   usePageTitle('Settings')
   const { user } = useAuth() // Always uses real user, NOT effectiveUser
   const { t } = useLocale('settingsPage')
+  // Deep-link support: /settings?tab=owners lands on a specific tab (used by
+  // the Clients page's "Create portal" shortcut).
+  const [initialTab] = useState(() => new URLSearchParams(window.location.search).get('tab') ?? 'users')
 
   return (
     <PageContainer width="lg" className="space-y-6 md:h-full md:flex md:flex-col">
@@ -3697,7 +3926,7 @@ export default function SettingsPage() {
         subtitle={t('page.subtitle')}
       />
 
-      <Tabs defaultValue="users" className="flex-1 flex flex-col min-h-0">
+      <Tabs defaultValue={initialTab} className="flex-1 flex flex-col min-h-0">
         <TabsList className="self-start flex-wrap h-auto">
           <TabsTrigger value="users" data-testid="tab-users">{t('tabs.users')}</TabsTrigger>
           <TabsTrigger value="owners" data-testid="tab-owners">{t('tabs.owners')}</TabsTrigger>

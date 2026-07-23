@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useLocation } from 'wouter'
 import { supabase, logActivity } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
 import { Input } from '@/components/ui/input'
@@ -60,7 +61,28 @@ export default function ContactsPage() {
   const { t } = useLocale('contacts')
   const { format: formatDate } = useDateFormat()
   const { toast } = useToast()
+  const { effectiveUser } = useAuth()
+  const [, navigate] = useLocation()
   usePageTitle('Clients')
+  // Owner-portal logins linked to each client (property_owners.contact_id).
+  // Drives the Portal column: synced badge vs. an admin "Create portal"
+  // shortcut that deep-links into Settings → Owners with the client picked.
+  const isAdmin = effectiveUser?.role === 'admin'
+  const { data: portalsByContact } = useQuery({
+    queryKey: ['/supabase/contact-portals'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.from('property_owners').select('id, contact_id, active')
+      if (error) throw error
+      const m = new Map<string, { anyActive: boolean }>()
+      for (const o of (data || [])) {
+        if (!o.contact_id) continue
+        const prev = m.get(o.contact_id)
+        m.set(o.contact_id, { anyActive: (prev?.anyActive ?? false) || !!o.active })
+      }
+      return m
+    },
+  })
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState(() => {
     try { return localStorage.getItem('contacts_source_filter') || 'all' } catch { return 'all' }
@@ -301,6 +323,7 @@ export default function ContactsPage() {
               <SortHeader label={t('table.payment')} sortKey="payment_method" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label={t('table.clientSince')} sortKey="client_since" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label={t('common.labels.properties')} sortKey="properties" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3" role="columnheader">{t('table.portal')}</th>
               <SortHeader label={t('table.tags')} sortKey="tags" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
             </tr>
           </thead>
@@ -308,14 +331,14 @@ export default function ContactsPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(9)].map((_, j) => (
+                  {[...Array(10)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : paged.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   {contacts && contacts.length === 0 ? (
                     <EmptyState
                       icon={Users}
@@ -354,6 +377,25 @@ export default function ContactsPage() {
                     {(c.properties?.length || 0) > 0
                       ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
                       : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">{t('table.noneBadge')}</span>}
+                  </td>
+                  <td className="py-2 px-3 text-xs">
+                    {portalsByContact?.get(c.id) ? (
+                      portalsByContact.get(c.id)!.anyActive ? (
+                        <span className="inline-flex items-center rounded-full bg-success/10 text-success px-2 py-0.5 text-2xs font-medium ring-1 ring-success/20">{t('portal.active')}</span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-2xs font-medium text-muted-foreground ring-1 ring-border">{t('portal.inactive')}</span>
+                      )
+                    ) : isAdmin ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/settings?tab=owners&portalFor=${c.id}`) }}
+                        className="text-2xs text-primary hover:underline underline-offset-2"
+                        data-testid={`button-create-portal-${c.id}`}
+                      >
+                        {t('portal.create')}
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </td>
                   <td className="py-2 px-3 text-xs">
                     {(c.tags || []).length > 0 ? (
