@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
@@ -383,7 +384,10 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
     },
     onSuccess: () => {
       toast({ title: t('properties.saved'), description: t('properties.savedDescription', { name: property.name }) })
-      queryClient.invalidateQueries({ queryKey: ['owner-properties'] })
+      // Owner edits shared property columns (address/beds/sqft/codes/wifi) — the
+      // shared helper refreshes the owner's own list and, if a staff view is
+      // open, every staff property cache too.
+      invalidateAllPropertyQueries(queryClient)
     },
     onError: (e: unknown) => {
       toast({ title: t('properties.saveFailedTitle'), description: e instanceof Error ? e.message : t('properties.saveFailedDefault'), variant: 'destructive' })

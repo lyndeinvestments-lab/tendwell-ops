@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth, canEditView } from '@/lib/auth'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { InlineEdit } from '@/components/InlineEdit'
@@ -104,7 +105,7 @@ export default function AcFiltersPage() {
       logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: t('toasts.saved') })
@@ -135,7 +136,7 @@ export default function AcFiltersPage() {
       } else {
         logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
         logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
-        qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+        invalidateAllPropertyQueries(qc)
         qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
         toast({ title: t('toasts.filterMarkedChanged'), description: t('toasts.nextDueDescription', { date: nextDue }) })
@@ -171,7 +172,7 @@ export default function AcFiltersPage() {
       const prop = properties?.find((p: any) => p.id === id)
       logPropertyEdit(id, 'filter_size', prop?.filter_size, bulkFilterSize.trim(), prop?.name)
     })
-    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    invalidateAllPropertyQueries(qc)
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
     toast({ title: t('toasts.filterSizeUpdated', { count: ids.length }) })
@@ -195,7 +196,7 @@ export default function AcFiltersPage() {
       logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
       logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
     })
-    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    invalidateAllPropertyQueries(qc)
     qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
     toast({ title: t('toasts.bulkMarkedChanged', { count: ids.length }) })
@@ -244,7 +245,7 @@ export default function AcFiltersPage() {
         if (lastChanged) logPropertyEdit(match.id, 'last_filter_changed', match.last_filter_changed, lastChanged, match.name)
       }
     }
-    qc.invalidateQueries({ queryKey: ['/supabase/ac-filters'] })
+    invalidateAllPropertyQueries(qc)
     qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
     toast({ title: t('toasts.csvImported', { updated, total: csvData.length }) })
     setCsvOpen(false)
