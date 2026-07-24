@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { useAuth, canEditView } from '@/lib/auth'
 import { supabase, STAGE_COLORS } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -311,7 +312,9 @@ export default function QuoteSheetPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      // New property row — refresh every property-derived view (pipeline,
+      // master list, dashboard, command palette, …), not just this page.
+      invalidateAllPropertyQueries(qc)
       toast({ title: t('quoteSheet.toasts.propertyAdded') })
       setAddOpen(false)
       setNewProp(EMPTY_PROP)
@@ -365,9 +368,9 @@ export default function QuoteSheetPage() {
       if (!result.ok) throw new Error(result.error)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/pipeline'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      // Stage change touches every property-derived cache; the shared helper
+      // covers quote-sheet/pipeline/master-list/property-detail/dashboards/etc.
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       toast({ title: t('quoteSheet.toasts.movedToOnboarding') })
       setConverting(null)
@@ -428,7 +431,7 @@ export default function QuoteSheetPage() {
       if (updErr) throw updErr
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      invalidateAllPropertyQueries(qc)
       // Email the owner that a quote is waiting (best-effort).
       notifyOwner(sendOwnerId, 'quote_sent', { propertyName: sendingQuote?.name })
       toast({ title: t('quoteSheet.toasts.quoteSent') })
@@ -486,7 +489,9 @@ export default function QuoteSheetPage() {
       // Clear the local edit for this field now that it's persisted; keep other
       // edits on the same row (server-side profit_percentage may still be stale
       // so derived values re-use the merged value until refetch completes).
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      // Broad invalidation so the same row on the modal/master-list/pipeline/
+      // dashboards refreshes too — not just this quote sheet.
+      invalidateAllPropertyQueries(qc)
       setEdits(prev => {
         const row = prev[vars.id]
         if (!row) return prev
@@ -517,7 +522,7 @@ export default function QuoteSheetPage() {
     },
     onSuccess: () => {
       toast({ title: t('quoteSheet.toasts.quoteArchived') })
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      invalidateAllPropertyQueries(qc)
       setArchivingTarget(null)
       setArchiveReason('')
     },
@@ -534,7 +539,7 @@ export default function QuoteSheetPage() {
     },
     onSuccess: () => {
       toast({ title: t('quoteSheet.toasts.quoteRestored') })
-      qc.invalidateQueries({ queryKey: ['/supabase/quote-sheet'] })
+      invalidateAllPropertyQueries(qc)
     },
     onError: (e: any) => toast({ title: t('quoteSheet.toasts.restoreFailed'), description: e?.message, variant: 'destructive' }),
   })

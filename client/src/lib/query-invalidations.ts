@@ -36,6 +36,29 @@ const PROPERTY_QUERY_KEY_PREFIXES = [
   // the bulk-edit save, etc. — left linen-tracker stale until window-focus
   // refetch.
   '/supabase/linen-tracker',
+  // Property-derived read views that were previously NOT invalidated, so an
+  // edit made anywhere (modal, quote sheet, master list, …) left them stale
+  // until their staleTime lapsed — the "have to hard-refresh to see it" bug.
+  // These all read property fields the modal edits (address, door/other codes,
+  // Wi-Fi, filter size, bed counts, cleaner pay, stage, etc.).
+  '/supabase/access-codes',            // Access Codes page (operational_properties view)
+  '/supabase/ac-filters',              // AC Filters page (operational_properties view)
+  '/supabase/alerts-properties',       // Alerts page property scan
+  '/supabase/issues-properties',       // Issues page property picker
+  '/supabase/all-assignments',         // Cleaners page (joins properties)
+  '/supabase/cleaners-active-props',   // Cleaners page active-properties list
+  '/supabase/inspection-priority/properties', // Inspection priority dashboard
+  '/supabase/inspection-form-properties',      // Inspection form property picker
+  '/supabase/assignable-properties',   // ContactModal property picker
+  '/supabase/hostaway-property-options',       // Hostaway link picker
+  '/supabase/trellis-sync',            // API Sync page (opsProperties sub-query)
+  '/supabase/owner-assignable-properties',     // Settings → Owners property picker
+  '/supabase/owner-assigned-props',    // Settings → Owners assigned list
+  '/supabase/owner-props-for-agreements',      // Settings → Agreements picker
+  '/onboarding_submissions/merge-candidates',  // Onboarding queue merge picker
+  // Owner portal's own property list (RPC get_owner_properties). Note: no
+  // '/supabase/' prefix — the startsWith predicate handles it either way.
+  'owner-properties',
 ]
 
 export function invalidateAllPropertyQueries(

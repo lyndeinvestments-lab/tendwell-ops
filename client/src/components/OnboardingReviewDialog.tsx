@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
@@ -260,7 +261,9 @@ export function OnboardingReviewDialog({
             }),
       })
       qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/properties'] })
+      // Newly created/merged property — refresh every property-derived view
+      // (quote sheet, master list, pipeline, pro-forma, dashboards, …).
+      invalidateAllPropertyQueries(qc)
       onDone()
     },
     onError: (e: any) => toast({ title: t('toasts.saveFailed'), description: e?.message || t('toasts.tryAgain'), variant: 'destructive' }),

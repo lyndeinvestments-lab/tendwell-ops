@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
@@ -180,10 +181,11 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         new_value: contact?.full_name ?? String(contactId),
         changed_by: user?.label ?? null,
       })
-      qc.invalidateQueries({ queryKey: ['/supabase/contact-properties', contactId] })
-      qc.invalidateQueries({ queryKey: ['/supabase/assignable-properties'] })
+      // Assigning contact_id changes a shared property row — refresh every
+      // property-derived view (covers contact-properties, assignable-properties,
+      // dashboard-unassigned, master list, pipeline, quote sheet, …).
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-unassigned'] })
       setAssignPropId('')
       toast({ title: t('modal.toastPropertyAssigned') })
     },

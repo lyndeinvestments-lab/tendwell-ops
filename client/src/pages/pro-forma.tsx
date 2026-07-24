@@ -66,8 +66,7 @@ function FrequencyCell({ id, value, avgCleans }: { id: string; value: string; av
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       toast({ title: t('proForma.toasts.frequencySaved') })
     },
     onError: (error: any) => toast({ title: t('proForma.toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
@@ -158,7 +157,7 @@ function WhatIfPopover({
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
+      invalidateAllPropertyQueries(qc)
       toast({ title: t('proForma.toasts.saved') })
       setOpen(false)
     },
@@ -382,7 +381,7 @@ export default function ProFormaPage() {
       const { error } = await supabase.from('properties').update({ first_clean_date: value || null }).eq('id', Number(id))
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] }),
+    onSuccess: () => invalidateAllPropertyQueries(qc),
     onError: (error: any) => toast({ title: t('proForma.toasts.updateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
@@ -395,8 +394,7 @@ export default function ProFormaPage() {
       if (error) throw error
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/pro-forma'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/dashboard-stats'] })
+      invalidateAllPropertyQueries(qc)
       const count = selected.size
       setSelected(new Set())
       setBulkFreq('')

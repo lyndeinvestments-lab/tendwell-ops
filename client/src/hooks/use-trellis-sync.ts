@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 
 const KEY = ['/supabase/trellis-sync'] as const
 
@@ -265,6 +266,9 @@ export function useTrellisSync() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: [...KEY, 'recon'] })
       qc.invalidateQueries({ queryKey: [...KEY, 'exceptions'] })
+      // Writing properties.trellis_id changes a shared property row — refresh
+      // every property-derived view (and the opsProperties sub-query here).
+      invalidateAllPropertyQueries(qc)
     },
   })
 

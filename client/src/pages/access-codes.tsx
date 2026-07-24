@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { InlineEdit } from '@/components/InlineEdit'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -186,7 +187,7 @@ export default function AccessCodesPage() {
       logPropertyEdit(id, field, oldValue, value, propName)
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/access-codes'] })
+      invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       toast({ title: t('toasts.saved') })

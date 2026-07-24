@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'wouter'
 import { supabase, logActivity } from '@/lib/supabase'
+import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth, canEditView } from '@/lib/auth'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -572,6 +573,9 @@ function DuplicateDetectionModal({ open, onClose, contacts }: { open: boolean; o
       // Refresh the shared useContacts cache app-wide; fuzzy matching also
       // covers this page's ['contacts', 'with-property-counts'] join query.
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      // The merge reassigned properties.contact_id to the primary — refresh
+      // every property-derived view so the reassignment shows without a reload.
+      invalidateAllPropertyQueries(qc)
       toast({ title: t('duplicates.toastMerged') })
     } catch (e: any) {
       toast({ title: t('duplicates.toastMergeFailed'), description: e?.message, variant: 'destructive' })
