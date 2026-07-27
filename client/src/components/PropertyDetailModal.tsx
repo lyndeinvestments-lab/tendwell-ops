@@ -1106,7 +1106,10 @@ export function PropertyDetailModal() {
 
   const canEditProperty = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser)
   const canEditFinancials = canEditView('cost-tracking', effectiveUser)
-  const canEditAccess = canEditView('access-codes', effectiveUser)
+  // The Access Codes page has no separate edit gate: anyone who can view it can
+  // edit codes inline. Mirror that here so access fields are editable in the
+  // modal for the same audience (not admins only), matching the page.
+  const canEditAccess = canAccessView('access-codes', effectiveUser)
   const canEditLinens = canEditView('linen-tracker', effectiveUser)
   const canEditAC = canEditView('ac-filters', effectiveUser)
   const canEdit = canEditProperty || canEditFinancials || canEditAccess || canEditLinens || canEditAC
