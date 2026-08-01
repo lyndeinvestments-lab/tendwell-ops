@@ -1,6 +1,6 @@
 import { Switch, Route, Router, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,7 +16,7 @@ import { useAlerts } from "@/pages/alerts";
 import { useState, useEffect, useMemo, lazy, Suspense, ComponentType } from 'react';
 import LoginPage from "@/pages/login";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Bell, HelpCircle, Bot } from 'lucide-react';
+import { Search, Bell, HelpCircle, Bot, RefreshCw } from 'lucide-react';
 import { ChatBot } from '@/components/ChatBot';
 import { Analytics } from '@vercel/analytics/react';
 import { ThemeProvider } from 'next-themes';
@@ -303,9 +303,24 @@ const spinnerFallback = (
 function AppLayout() {
   const { user, isLoading, isPasswordRecovery, actingAsOwner } = useAuth();
   const [location] = useLocation();
+  const qc = useQueryClient();
   const [cmdOpen, setCmdOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Manual escape hatch for stale data — writes made outside this tab (another
+  // device, a teammate, the in-app AI assistant's server-side tool calls) never
+  // go through this tab's own mutation/invalidate path, so the cache can't know
+  // to refetch on its own. Re-fetches every currently mounted query.
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await qc.invalidateQueries();
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   useKeyboardShortcuts({
     onOpenCheatSheet: () => setShortcutsOpen(true),
@@ -429,6 +444,16 @@ function AppLayout() {
                     <kbd className="hidden sm:inline bg-muted border border-border rounded px-1 py-0.5 text-xs">⌘K</kbd>
                   </button>
                 </div>
+                <button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted disabled:opacity-50"
+                  aria-label="Refresh data"
+                  title="Refresh data"
+                  data-testid="button-refresh"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+                </button>
                 <button
                   onClick={() => setShortcutsOpen(true)}
                   className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-foreground transition-colors rounded-md hover:bg-muted"
