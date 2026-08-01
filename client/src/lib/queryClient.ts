@@ -45,8 +45,14 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: 60_000,
+      // Data is frequently changed from outside the current tab — another
+      // device, a teammate, the in-app AI assistant's server-side tool calls
+      // — none of which go through this tab's own mutation/invalidate path.
+      // Without a focus/reconnect refetch, a tab can sit showing stale data
+      // indefinitely until someone thinks to hard-reload the app.
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      staleTime: 15_000,
       retry: 1,
     },
     mutations: {
