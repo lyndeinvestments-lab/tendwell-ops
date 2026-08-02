@@ -31,6 +31,7 @@ export const acFiltersEs: typeof acFiltersEn = {
     addSizePlaceholder: 'Agregar tamaño…',
     addNotesPlaceholder: 'Agregar notas…',
     todayButton: 'Hoy',
+    savingButton: 'Guardando…',
     markChangedTooltip: 'Marcar el filtro como cambiado hoy y establecer la próxima fecha de vencimiento',
     emptyTitle: 'No se encontraron propiedades',
     emptyDescription: 'Ninguna propiedad coincide con tus filtros actuales.',
