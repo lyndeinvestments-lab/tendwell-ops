@@ -63,6 +63,7 @@ export default function AcFiltersPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [justSavedId, setJustSavedId] = useState<string | null>(null)
+  const [savingId, setSavingId] = useState<string | null>(null)
   const [sortKey, setSortKey] = useState<SortKey | null>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [bulkMode, setBulkMode] = useState(false)
@@ -119,31 +120,38 @@ export default function AcFiltersPage() {
     return d.toISOString().slice(0, 10)
   }
 
-  function markChangedToday(id: string) {
+  async function markChangedToday(id: string) {
     if (!canEditView('ac-filters', effectiveUser)) {
       toast({ title: t('toasts.editAccessRequired'), variant: 'destructive' })
       return
     }
+    // Guard against duplicate submissions: on a slow connection (common for
+    // field staff on-site) the row doesn't visibly change until the refetch
+    // completes, which reads as "didn't save" and invites repeated taps —
+    // each one a redundant write. A disabled button with a spinner makes the
+    // in-flight state visible instead.
+    if (savingId === id) return
+    setSavingId(id)
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
     const prop = properties?.find((p: any) => p.id === id)
-    supabase.from('properties').update({
+    const { error } = await supabase.from('properties').update({
       last_filter_changed: today,
       next_filter_due: nextDue,
-    }).eq('id', Number(id)).then(({ error }) => {
-      if (error) {
-        toast({ title: t('toasts.updateFailed'), description: error.message, variant: 'destructive' })
-      } else {
-        logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
-        logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
-        invalidateAllPropertyQueries(qc)
-        qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
+    }).eq('id', Number(id))
+    setSavingId(null)
+    if (error) {
+      toast({ title: t('toasts.updateFailed'), description: error.message, variant: 'destructive' })
+    } else {
+      logPropertyEdit(id, 'last_filter_changed', prop?.last_filter_changed, today, prop?.name)
+      logPropertyEdit(id, 'next_filter_due', prop?.next_filter_due, nextDue, prop?.name)
+      invalidateAllPropertyQueries(qc)
+      qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
-        toast({ title: t('toasts.filterMarkedChanged'), description: t('toasts.nextDueDescription', { date: nextDue }) })
-        setJustSavedId(id)
-        setTimeout(() => setJustSavedId(null), 1500)
-      }
-    })
+      toast({ title: t('toasts.filterMarkedChanged'), description: t('toasts.nextDueDescription', { date: nextDue }) })
+      setJustSavedId(id)
+      setTimeout(() => setJustSavedId(null), 1500)
+    }
   }
 
   function toggleBulkSelect(id: string) {
@@ -515,11 +523,12 @@ export default function AcFiltersPage() {
                         size="sm"
                         className="h-6 text-xs gap-1 px-2"
                         onClick={() => markChangedToday(p.id)}
+                        disabled={savingId === p.id}
                         data-testid={`button-mark-changed-${p.id}`}
                         title={t('table.markChangedTooltip')}
                       >
-                        <CalendarCheck className="w-3 h-3" />
-                        {t('table.todayButton')}
+                        <CalendarCheck className={`w-3 h-3 ${savingId === p.id ? 'animate-pulse' : ''}`} />
+                        {savingId === p.id ? t('table.savingButton') : t('table.todayButton')}
                       </Button>
                     </td>
                   </tr>

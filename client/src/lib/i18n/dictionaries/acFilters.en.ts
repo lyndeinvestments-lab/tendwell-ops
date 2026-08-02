@@ -41,6 +41,7 @@ export const acFiltersEn = {
     addSizePlaceholder: 'Add size…',
     addNotesPlaceholder: 'Add notes…',
     todayButton: 'Today',
+    savingButton: 'Saving…',
     markChangedTooltip: 'Mark filter changed today and set next due date',
     emptyTitle: 'No properties found',
     emptyDescription: 'No properties match your current filters.',
