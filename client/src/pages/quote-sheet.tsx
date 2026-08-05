@@ -119,8 +119,12 @@ export default function QuoteSheetPage() {
   const [viewMode, setViewMode] = useState<'active' | 'archived' | 'all'>('active')
   const [archivingTarget, setArchivingTarget] = useState<any>(null)
   const [archiveReason, setArchiveReason] = useState('')
-  const [sortKey, setSortKey] = useState<string | null>('name')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  // Default to newest-first by quote date so a just-added quote lands at the
+  // top of the list where people look for it. Alphabetical-by-name (the old
+  // default) scattered new quotes into the middle of the list — or onto page 2
+  // once the list grew past one page — so they looked "missing" after saving.
+  const [sortKey, setSortKey] = useState<string | null>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   // Google-sheet-style live edits: per-row field overrides that merge with the
