@@ -322,6 +322,37 @@ function AppLayout() {
     }
   }
 
+  // Auto-refresh data when the app returns to the foreground. React Query's
+  // refetchOnWindowFocus covers real browser tabs, but the installed iOS
+  // home-screen Web app doesn't reliably fire the focus event it hangs off,
+  // and a reopen from the background is often a bfcache restore (pageshow
+  // persisted) that React Query doesn't listen to at all — so writes made
+  // elsewhere (another device, the in-app assistant writing straight to the
+  // DB) stayed invisible on mobile until a manual refresh. Re-fetch active
+  // queries on every foreground transition, throttled so rapid app-switching
+  // doesn't hammer the network.
+  useEffect(() => {
+    let last = 0;
+    const refresh = () => {
+      const now = Date.now();
+      if (now - last < 3000) return;
+      last = now;
+      qc.invalidateQueries({ refetchType: 'active' });
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refresh();
+    };
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+    };
+  }, [qc]);
+
   useKeyboardShortcuts({
     onOpenCheatSheet: () => setShortcutsOpen(true),
   });
