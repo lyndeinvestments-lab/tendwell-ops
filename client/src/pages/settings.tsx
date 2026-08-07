@@ -22,6 +22,10 @@ import { roleBadgeClasses } from '@/lib/role-colors'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { notifyOwner } from '@/lib/notify'
+import {
+  BUILD_PR_NUMBER, BUILD_PR_URL, BUILD_SHA_SHORT, BUILD_COMMIT_URL,
+  BUILD_COMMIT_REF, BUILD_COMMIT_TITLE, BUILD_TIME, IS_LOCAL_BUILD,
+} from '@/lib/version'
 import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS } from '@/lib/notif-prefs'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation, Link } from 'wouter'
@@ -31,6 +35,7 @@ import {
   ClipboardCheck, Plus, Pencil, Check, X, Eye, SlidersHorizontal, RotateCcw,
   Lock, Plug, MapPin, Database, Receipt, KeyRound, Bell as BellIcon,
   Home, Search, Mail, Loader2, ExternalLink, FileText, Download, Send, XCircle,
+  GitCommit,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -1880,6 +1885,76 @@ function describeMapsStatus(s: GoogleMapsRuntimeStatus, t: (key: string, vars?: 
   }
 }
 
+// Build/version info shown at the top of the Integrations tab so we (and
+// anyone reporting a bug) can tell which deploy a device is running. The
+// values are injected at build time from the Vercel git context — see
+// vite.config.ts and client/src/lib/version.ts. Copy here is intentionally
+// English: this is admin-only technical metadata, like the other system
+// tooling that stays untranslated.
+function AppVersionCard() {
+  let builtAt = ''
+  if (BUILD_TIME) {
+    const d = new Date(BUILD_TIME)
+    builtAt = isNaN(d.getTime()) ? '' : d.toLocaleString()
+  }
+
+  return (
+    <div className="rounded-lg border border-border p-3">
+      <div className="flex items-start gap-3">
+        <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
+          <GitCommit className="w-4 h-4 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium">App version</span>
+            {IS_LOCAL_BUILD ? (
+              <span className="text-2xs px-1.5 py-0.5 rounded border bg-muted text-muted-foreground">
+                Local dev build
+              </span>
+            ) : BUILD_PR_NUMBER ? (
+              <a
+                href={BUILD_PR_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-2xs px-1.5 py-0.5 rounded border bg-info/10 text-info hover:underline inline-flex items-center gap-1"
+                data-testid="version-pr-link"
+              >
+                PR #{BUILD_PR_NUMBER}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : null}
+          </div>
+
+          {BUILD_COMMIT_TITLE ? (
+            <p className="text-xs text-muted-foreground mt-1">{BUILD_COMMIT_TITLE}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground mt-1">
+              Not built on Vercel — no git version info available.
+            </p>
+          )}
+
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-2xs text-muted-foreground/80 mt-1.5">
+            {BUILD_SHA_SHORT ? (
+              <a
+                href={BUILD_COMMIT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono hover:underline inline-flex items-center gap-1"
+                data-testid="version-commit-link"
+              >
+                {BUILD_SHA_SHORT}
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : null}
+            {BUILD_COMMIT_REF ? <span>branch: {BUILD_COMMIT_REF}</span> : null}
+            {builtAt ? <span>built {builtAt}</span> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function IntegrationsSection() {
   // Integrations are read from import.meta.env at build time. We never read or
   // display the actual key value — only whether a public env var is configured.
@@ -1995,6 +2070,7 @@ function IntegrationsSection() {
 
   return (
     <div className="space-y-3">
+      <AppVersionCard />
       <h2 className="text-base font-medium flex items-center gap-2">
         <Plug className="w-4 h-4" />
         {t('integrations.heading')}
