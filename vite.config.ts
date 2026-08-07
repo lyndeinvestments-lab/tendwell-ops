@@ -2,8 +2,23 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
+// Build metadata surfaced in Settings → Integrations so we can tell which
+// deploy a device is running. On Vercel these come from the deployment's git
+// context (present in process.env during `vercel build`); in local dev they
+// resolve to empty strings and the dev-server start time.
+const buildCommitSha = process.env.VERCEL_GIT_COMMIT_SHA || "";
+const buildCommitRef = process.env.VERCEL_GIT_COMMIT_REF || "";
+const buildCommitMsg = process.env.VERCEL_GIT_COMMIT_MESSAGE || "";
+const buildTime = new Date().toISOString();
+
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_COMMIT_SHA__: JSON.stringify(buildCommitSha),
+    __APP_COMMIT_REF__: JSON.stringify(buildCommitRef),
+    __APP_COMMIT_MSG__: JSON.stringify(buildCommitMsg),
+    __APP_BUILD_TIME__: JSON.stringify(buildTime),
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "client", "src"),
