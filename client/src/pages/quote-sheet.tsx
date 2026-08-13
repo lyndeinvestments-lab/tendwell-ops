@@ -280,6 +280,24 @@ export default function QuoteSheetPage() {
   const { mutate: addProperty, isPending: addPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async () => {
       if (!quoteStage) throw new Error('No Quote stage')
+      // Duplicate guard: re-adding an existing property is almost always a
+      // stale-list accident (the quote "disappeared" because a teammate
+      // converted/edited it, so it got typed in again — prod had 4 names
+      // with 2-3 live rows each, all created that way). Check the LIVE db,
+      // not this tab's cache, and check every stage: the original is often
+      // no longer in Quote, which is exactly why it looked missing.
+      const trimmedName = newProp.name.trim()
+      const { data: dupes, error: dupErr } = await supabase
+        .from('properties')
+        .select('id, name, stage_id, archived_at')
+        .ilike('name', trimmedName)
+        .is('archived_at', null)
+        .is('deleted_at', null)
+        .limit(1)
+      if (!dupErr && dupes && dupes.length > 0) {
+        const stageName = stages?.find((s: any) => s.id === dupes[0].stage_id)?.name ?? 'another stage'
+        throw new Error(t('quoteSheet.toasts.duplicateName', { name: dupes[0].name, stage: stageName }))
+      }
       const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
       const fullBaths = newProp.full_baths ? parseFloat(newProp.full_baths) : 0
       const kitchens = newProp.number_of_kitchens ? parseInt(newProp.number_of_kitchens) : 1
