@@ -594,6 +594,7 @@ export const financialsEs: typeof financialsEn = {
     },
     toasts: {
       propertyAdded: 'Propiedad agregada a la etapa de Cotización',
+      duplicateName: '"{{name}}" ya existe (en {{stage}}). Ábrela desde la búsqueda en lugar de agregarla de nuevo.',
       addError: 'Error: {{message}}',
       clientCreated: 'Cliente creado',
       clientCreateFailed: 'No se pudo crear el cliente',
