@@ -856,10 +856,17 @@ export function PropertyDetailModal() {
     onError: (error: any) => toast({ title: t('toasts.clientUpdateFailed'), description: error?.message, variant: 'destructive' }),
   })
 
+  // The form values the CURRENT edit session started from — the dirty-field
+  // diff in saveEdits compares against this so untouched fields are never
+  // submitted (and can't clobber fresher writes from other paths/tabs/users).
+  const formBaselineRef = useRef<Record<string, any> | null>(null)
+
   // Reset form when property changes
   useEffect(() => {
     if (property) {
-      setForm(buildFormFromProperty(property))
+      const built = buildFormFromProperty(property)
+      setForm(built)
+      formBaselineRef.current = built
       setIsEditing(false)
     }
   }, [property?.id])
@@ -872,53 +879,70 @@ export function PropertyDetailModal() {
 
   const { mutate: saveEdits, isPending: saving } = useMutation({
     mutationFn: async () => {
-      const updates: Record<string, any> = {}
-      if (canEditProperty) {
-        updates.address = form.address || null
-        updates.bedrooms = form.bedrooms !== '' ? parseFloat(String(form.bedrooms)) : null
-        updates.full_baths = form.full_baths !== '' ? parseFloat(String(form.full_baths)) : null
-        updates.square_footage = form.square_footage !== '' ? parseFloat(String(form.square_footage)) : null
-        updates.guest_count = form.guest_count !== '' ? parseFloat(String(form.guest_count)) : null
-        updates.number_of_beds = form.number_of_beds !== '' ? parseFloat(String(form.number_of_beds)) : null
-        updates.kitchens = form.kitchens !== '' ? parseFloat(String(form.kitchens)) : null
-        updates.hot_tub = !!form.hot_tub
-        updates.check_in_time = form.check_in_time || null
-        updates.check_out_time = form.check_out_time || null
-      }
-      if (canEditFinancials) {
-        updates.ce_charged = form.ce_charged !== '' ? parseFloat(String(form.ce_charged)) : null
-        updates.cleaner_pay = form.cleaner_pay !== '' ? parseFloat(String(form.cleaner_pay)) : null
-      }
-      if (canEditAccess) {
-        for (const k of ACCESS_FIELD_KEYS) updates[k] = form[k] || null
-      }
-      if (canEditLinens) {
-        for (const k of LINEN_FIELD_KEYS) {
-          updates[k] = form[k] !== '' ? parseFloat(String(form[k])) : null
+      // Build the candidate payload from a form snapshot.
+      const buildPayload = (src: Record<string, any>) => {
+        const out: Record<string, any> = {}
+        if (canEditProperty) {
+          out.address = src.address || null
+          out.bedrooms = src.bedrooms !== '' ? parseFloat(String(src.bedrooms)) : null
+          out.full_baths = src.full_baths !== '' ? parseFloat(String(src.full_baths)) : null
+          out.square_footage = src.square_footage !== '' ? parseFloat(String(src.square_footage)) : null
+          out.guest_count = src.guest_count !== '' ? parseFloat(String(src.guest_count)) : null
+          out.number_of_beds = src.number_of_beds !== '' ? parseFloat(String(src.number_of_beds)) : null
+          out.kitchens = src.kitchens !== '' ? parseFloat(String(src.kitchens)) : null
+          out.hot_tub = !!src.hot_tub
+          out.check_in_time = src.check_in_time || null
+          out.check_out_time = src.check_out_time || null
         }
+        if (canEditFinancials) {
+          out.ce_charged = src.ce_charged !== '' ? parseFloat(String(src.ce_charged)) : null
+          out.cleaner_pay = src.cleaner_pay !== '' ? parseFloat(String(src.cleaner_pay)) : null
+        }
+        if (canEditAccess) {
+          for (const k of ACCESS_FIELD_KEYS) out[k] = src[k] || null
+        }
+        if (canEditLinens) {
+          for (const k of LINEN_FIELD_KEYS) {
+            out[k] = src[k] !== '' ? parseFloat(String(src[k])) : null
+          }
+        }
+        if (canEditAC) {
+          out.filter_size = src.filter_size || null
+          out.last_filter_changed = src.last_filter_changed || null
+        }
+        return out
       }
-      if (canEditAC) {
-        updates.filter_size = form.filter_size || null
-        updates.last_filter_changed = form.last_filter_changed || null
+      // DIRTY-FIELD DIFF (2026-08-13, the "my access codes vanished" bug):
+      // this save used to write EVERY editable field from the form snapshot,
+      // which was built when the modal OPENED — so a field edited through any
+      // other path in the meantime (the Access tab's inline editors, a
+      // teammate, another tab) was silently overwritten with the stale
+      // snapshot value. Audit trail for property 526: door_code + other_codes
+      // saved inline at 13:23-13:24, then nulled at 13:24:35 by this very
+      // mutation carrying the pre-edit empty form values. Only fields the
+      // user actually CHANGED in this form are submitted now.
+      const updates = buildPayload(form)
+      const baseline = buildPayload(formBaselineRef.current ?? {})
+      for (const k of Object.keys(updates)) {
+        if (Object.is(updates[k], baseline[k]) || JSON.stringify(updates[k]) === JSON.stringify(baseline[k])) {
+          delete updates[k]
+        }
       }
       if (Object.keys(updates).length === 0) return null
       const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return data
+      return { row: data, written: Object.keys(updates) }
     },
-    onSuccess: (data) => {
+    onSuccess: (result) => {
+      const data = result?.row ?? null
       // Drop the write's own representation into the detail cache (captures
       // trigger-recomputed fields like towel pars/financials) so the modal
       // updates immediately instead of racing a stale re-read.
       if (data) qc.setQueryData(['/supabase/property-detail', propertyId], data)
-      // Log each changed field to activity_log
-      const changedFields: string[] = []
-      if (canEditProperty) changedFields.push('address', 'bedrooms', 'full_baths', 'square_footage', 'guest_count', 'number_of_beds', 'kitchens', 'hot_tub', 'check_in_time', 'check_out_time')
-      if (canEditFinancials) changedFields.push('ce_charged', 'cleaner_pay')
-      if (canEditAccess) changedFields.push(...ACCESS_FIELD_KEYS)
-      if (canEditLinens) changedFields.push(...LINEN_FIELD_KEYS)
-      if (canEditAC) changedFields.push(...AC_FIELD_KEYS)
-      for (const field of changedFields) {
+      // Log each field this save actually WROTE (the dirty-field set from
+      // the mutation) — not every editable field, which would log phantom
+      // edits for fields someone else changed since the form loaded.
+      for (const field of result?.written ?? []) {
         const oldVal = (property as any)?.[field] ?? null
         const newVal = form[field] !== '' ? form[field] : null
         if (String(oldVal ?? '') !== String(newVal ?? '')) {
@@ -1376,7 +1400,14 @@ export function PropertyDetailModal() {
               {canEdit && !isLoading && (
                 isEditing ? (
                   <button
-                    onClick={() => { setIsEditing(false); if (property) setForm(buildFormFromProperty(property)) }}
+                    onClick={() => {
+                      setIsEditing(false)
+                      if (property) {
+                        const built = buildFormFromProperty(property)
+                        setForm(built)
+                        formBaselineRef.current = built
+                      }
+                    }}
                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     title={t('header.cancelEditTooltip')}
                     data-testid="modal-cancel-edit"
@@ -1385,7 +1416,17 @@ export function PropertyDetailModal() {
                   </button>
                 ) : (
                   <button
-                    onClick={() => setIsEditing(true)}
+                    onClick={() => {
+                      // Re-sync the form from the FRESHEST property row on
+                      // every edit-mode entry (it used to keep the snapshot
+                      // from when the modal opened, however stale).
+                      if (property) {
+                        const built = buildFormFromProperty(property)
+                        setForm(built)
+                        formBaselineRef.current = built
+                      }
+                      setIsEditing(true)
+                    }}
                     className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     title={t('header.editTooltip')}
                     data-testid="modal-edit-btn"
