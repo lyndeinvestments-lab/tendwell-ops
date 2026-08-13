@@ -22,6 +22,20 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storageKey: 'tendwell-sb-auth',
   },
+  // cache: 'no-store' on every REST call (2026-08-13, the "quote sheet
+  // frozen at 80 quotes while Safari shows 81" bug). Supabase's gateway
+  // returns NO Cache-Control header, and the iOS home-screen web app's HTTP
+  // cache served repeat GETs of the SAME URL from disk without hitting the
+  // network — Supabase's API logs showed the created row's POST (201) and
+  // the moving-timestamp KPI queries arriving, while the static-URL list
+  // query never arrived again after its first fetch. React Query "refetched"
+  // into the stale cached bytes, so invalidation, the manual refresh button,
+  // and focus refetches all appeared to do nothing. no-store forces every
+  // read to the network; payloads here are small and this app's whole point
+  // is freshness.
+  global: {
+    fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+  },
 })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
