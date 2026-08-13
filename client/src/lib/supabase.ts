@@ -167,14 +167,18 @@ export async function logPropertyEdit(
     changed_by: resolvedChangedBy,
   })
 
-  // Legacy table — log errors but never throw
-  // Note: property_edit_log may not have changed_by column; keep insert minimal
+  // Legacy table — log errors but never throw. Kept because the property
+  // modal's profit-history chart reads ce_charged/cleaner_pay history from
+  // it. `changed_by` IS a real column with DEFAULT 'ops-user' — omitting it
+  // (as this insert used to) is where every mystery "ops-user" row in the
+  // Activity feed came from; pass the resolved name so both logs agree.
   try {
     const { error } = await supabase.from('property_edit_log').insert({
       property_id: Number(propertyId),
       field_name: fieldName,
       old_value: oldValue != null ? String(oldValue) : null,
       new_value: newValue != null ? String(newValue) : null,
+      changed_by: resolvedChangedBy ?? undefined,
     })
     if (error) console.warn('[logPropertyEdit] legacy insert failed:', error.message)
   } catch (e) {
