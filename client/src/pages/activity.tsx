@@ -263,11 +263,36 @@ export default function ActivityFeedPage() {
 
   const isLoading = loadingActivity || loadingEdit
 
-  // Merge both sources, deduplicate by id, sort newest first
+  // Merge both sources, deduplicate, sort newest first.
+  //
+  // Content dedupe (2026-08-13, the "why is every edit shown twice as
+  // Jordan AND ops-user" report): logPropertyEdit dual-writes every edit to
+  // activity_log (with the user's name) AND legacy property_edit_log (whose
+  // changed_by used to fall back to the column default 'ops-user'). The old
+  // id-only dedupe below never matched across tables, so the feed rendered
+  // both copies. Drop a legacy row when an activity_log row exists for the
+  // same property + field + values within 10 seconds — the activity_log copy
+  // (correct attribution) wins. Legacy-only rows (pre-dual-write history)
+  // still render.
   const allEntries = useMemo(() => {
+    const activity = activityLog || []
+    const contentKey = (e: any) =>
+      `${e.entity_id}|${e.field_name ?? ''}|${e.old_value ?? ''}|${e.new_value ?? ''}`
+    const activityTimes = new Map<string, number[]>()
+    for (const e of activity) {
+      const k = contentKey(e)
+      const list = activityTimes.get(k) ?? []
+      list.push(new Date(e.created_at).getTime())
+      activityTimes.set(k, list)
+    }
+    const legacy = (editLog || []).filter(e => {
+      const times = activityTimes.get(contentKey(e))
+      if (!times) return true
+      const t = new Date(e.created_at).getTime()
+      return !times.some(at => Math.abs(at - t) < 10_000)
+    })
     const seen = new Set<string>()
-    const combined = [...(activityLog || []), ...(editLog || [])]
-    return combined
+    return [...activity, ...legacy]
       .filter(e => {
         if (seen.has(e.id)) return false
         seen.add(e.id)
