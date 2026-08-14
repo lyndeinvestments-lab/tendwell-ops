@@ -28,6 +28,9 @@
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts,api/issues/_translate-core.ts,api/notify/_lib.ts"
     },
+    "api/data/*.ts": {
+      "includeFiles": "api/data/_lib.ts,api/issues/_lib.ts,shared/api-areas.ts"
+    },
     "api/qbo/*.ts": {
       "includeFiles": "api/qbo/_lib.ts"
     },

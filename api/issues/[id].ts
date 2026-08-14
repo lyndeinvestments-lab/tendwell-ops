@@ -7,6 +7,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
+  API_SCOPES,
   ISSUES_TABLE,
   jsonError,
   requireApiKey,
@@ -23,7 +24,15 @@ import { ensureIssueSpanish, ISSUE_TRANSLATABLE_FIELDS, withSoftBudget } from '.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!requireApiKey(req, res)) return
+  // Scope required per operation: fetching reads, PATCH/PUT updates.
+  // Accept the uniform view/edit scopes plus the legacy granular aliases.
+  const scope =
+    req.method === 'GET' ? [API_SCOPES.ISSUES_VIEW, API_SCOPES.ISSUES_READ]
+    : req.method === 'PATCH' || req.method === 'PUT' ? [API_SCOPES.ISSUES_EDIT, API_SCOPES.ISSUES_UPDATE]
+    : null
+  if (scope) {
+    if (!(await requireApiKey(req, res, scope))) return
+  }
 
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id
   if (typeof id !== 'string' || !UUID_RE.test(id)) {
