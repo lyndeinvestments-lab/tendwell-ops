@@ -23,7 +23,9 @@ export const EXPORT_FORMATS: Array<{ id: ExportFormat; label: string }> = [
   { id: 'ramp', label: 'Ramp bill CSV' },
   { id: 'qbo_flat', label: 'QBO CSV (flat)' },
   { id: 'qbo_multiline', label: 'QBO CSV (official)' },
-  { id: 'billcom', label: 'bill.com CSV (draft template)' },
+  // bill.com has no import — this is a worksheet listing everything (client,
+  // property, service, dates, amount) for manual invoice creation there.
+  { id: 'billcom', label: 'bill.com manual-entry list' },
 ]
 
 export const LINE_KINDS: Array<{ id: LineKind; label: string }> = [

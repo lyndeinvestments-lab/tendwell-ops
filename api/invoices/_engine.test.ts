@@ -297,6 +297,17 @@ describe('reconcile — money rules', () => {
     expect(lines[0].clientChargeAmount).toBe(600) // no deep_clean_3x_ce → ce 200 × 3
   })
 
+  it('bills Onboarding Clean at Client Charged + $50, paid whole to the vendor', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
+    )
+    expect(lines).toHaveLength(1)
+    expect(lines[0].serviceType).toBe('Onboarding Clean')
+    expect(lines[0].cleanerPayAmount).toBe(253.52) // vendor paid what they billed
+    expect(lines[0].clientChargeAmount).toBe(200) // ce_charged 150 + 50
+    expect(lines[0].flags).not.toContain(FLAGS.BILLED_WHOLE)
+  })
+
   it('excludes Cleaner Self-Inspection lines', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawNoteText: 'Cleaner Self-Inspection', rawAmount: 30, rawDateMentioned: '2026-08-08' })]),

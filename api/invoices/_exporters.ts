@@ -208,9 +208,11 @@ export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
   return Papa.unparse({ fields: QBO_ML_HEADERS, data: rows }, { newline: '\r\n' })
 }
 
-// ─── bill.com (PLACEHOLDER — real import template TBD from Nina) ─────────────
-// Minimal generic AR shape, grouped by client, so non-Haven lines always have
-// somewhere to land. Swap the columns for the real template when it arrives.
+// ─── bill.com manual-entry worksheet ─────────────────────────────────────────
+// bill.com has no CSV import (confirmed by Jordan 2026-08-14) — non-Haven
+// lines are emitted as a worksheet grouped by client with everything needed
+// to create the invoices manually in bill.com: client, dates, service,
+// property, description, amount.
 const BILLCOM_HEADERS = [
   'Customer',
   'Invoice Date',
