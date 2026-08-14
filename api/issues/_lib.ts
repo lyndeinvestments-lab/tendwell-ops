@@ -77,20 +77,41 @@ function getSupabase(): SupabaseConfig {
   return { url, serviceKey }
 }
 
-// Canonical scope vocabulary. A scope is `<area>:<operation>`. Keep in sync
-// with the client-side picker in ApiKeysSection.tsx.
+// Canonical scope vocabulary for the Issues endpoints. Scopes are
+// `<area>:<operation>`. The uniform model (shared/api-areas.ts) uses
+// view/edit; the older create/read/update names are kept as accepted aliases
+// so any early-adopter key keeps working.
 export const API_SCOPES = {
-  ISSUES_CREATE: 'issues:create',
-  ISSUES_READ: 'issues:read',
-  ISSUES_UPDATE: 'issues:update',
+  ISSUES_VIEW: 'issues:view',
+  ISSUES_EDIT: 'issues:edit',
+  ISSUES_CREATE: 'issues:create', // legacy alias
+  ISSUES_READ: 'issues:read',     // legacy alias
+  ISSUES_UPDATE: 'issues:update', // legacy alias
 } as const
 export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES]
 
 interface ApiKeyRow {
   id: string
+  name: string
   scopes: string[] | null
   revoked_at: string | null
   expires_at: string | null
+}
+
+// Context about the authenticated key, returned to callers so writes can be
+// attributed in the audit log. `id` is null and `scopes` is null for the
+// legacy full-access env key.
+export interface ApiKeyContext {
+  id: string | null
+  name: string
+  scopes: string[] | null
+}
+
+export interface AuthResult {
+  ok: boolean
+  status?: number
+  error?: string
+  key?: ApiKeyContext
 }
 
 function extractKey(req: VercelRequest): string | undefined {
@@ -110,60 +131,55 @@ function keysMatch(a: string, b: string): boolean {
   return timingSafeEqual(da, db)
 }
 
-// Authenticate the request and authorize it for `requiredScope`.
+// Authenticate the request and authorize it against `requiredScopes` (any-of).
 //
 // Two credential paths, checked in order:
-//   1. Legacy env key (`ISSUES_API_KEY`) — full access to every issue scope.
-//      Kept so pre-existing bots/integrations don't break. Optional: if the
-//      env var is unset we simply skip it and rely on DB-backed keys.
+//   1. Legacy env key (`ISSUES_API_KEY`) — full access. Kept so pre-existing
+//      bots don't break. Optional: if unset we rely solely on DB-backed keys.
 //   2. DB-backed keys (`api_keys` table) — minted in Settings → API Keys with
 //      an explicit scope allow-list. The presented key is hashed and looked up;
-//      the request is allowed only if the key is active, unexpired, and its
-//      `scopes` include `requiredScope`.
+//      the request is allowed only if the key is active, unexpired, and holds
+//      at least one of `requiredScopes`.
 //
-// Returns true on success. On failure it writes the appropriate error response
-// (401 missing / 403 invalid|revoked|expired|insufficient-scope) and returns
-// false, so callers keep the `if (!(await requireApiKey(...))) return` shape.
-export async function requireApiKey(
+// Returns a structured result (never writes to the response) so both the
+// issues endpoints (via requireApiKey) and the generic data gateway (which
+// needs the key context for audit logging) can share it.
+export async function authenticateApiKey(
   req: VercelRequest,
-  res: VercelResponse,
-  requiredScope: ApiScope,
-): Promise<boolean> {
+  requiredScopes: string | string[],
+): Promise<AuthResult> {
+  const needed = Array.isArray(requiredScopes) ? requiredScopes : [requiredScopes]
   const provided = extractKey(req)
   if (!provided) {
-    res.status(401).json({ error: 'Missing API key. Send header x-api-key: <key> or Authorization: Bearer <key>' })
-    return false
+    return { ok: false, status: 401, error: 'Missing API key. Send header x-api-key: <key> or Authorization: Bearer <key>' }
   }
 
   // Path 1: legacy full-access env key.
   const legacy = process.env.ISSUES_API_KEY
-  if (legacy && keysMatch(provided, legacy)) return true
+  if (legacy && keysMatch(provided, legacy)) {
+    return { ok: true, key: { id: null, name: 'legacy-env', scopes: null } }
+  }
 
   // Path 2: DB-backed scoped key.
   const hash = createHash('sha256').update(provided).digest('hex')
   let row: ApiKeyRow | undefined
   try {
     const rows = await sbFetch<ApiKeyRow[]>(
-      `api_keys?key_hash=eq.${hash}&select=id,scopes,revoked_at,expires_at&limit=1`,
+      `api_keys?key_hash=eq.${hash}&select=id,name,scopes,revoked_at,expires_at&limit=1`,
     )
     row = Array.isArray(rows) ? rows[0] : undefined
   } catch (e) {
     console.error('api_keys lookup failed:', e)
-    res.status(500).json({ error: 'Key verification failed' })
-    return false
+    return { ok: false, status: 500, error: 'Key verification failed' }
   }
 
-  if (!row || row.revoked_at) {
-    res.status(403).json({ error: 'Invalid API key' })
-    return false
-  }
+  if (!row || row.revoked_at) return { ok: false, status: 403, error: 'Invalid API key' }
   if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
-    res.status(403).json({ error: 'API key expired' })
-    return false
+    return { ok: false, status: 403, error: 'API key expired' }
   }
-  if (!Array.isArray(row.scopes) || !row.scopes.includes(requiredScope)) {
-    res.status(403).json({ error: `API key is not authorized for this operation (requires scope: ${requiredScope})` })
-    return false
+  const scopes = Array.isArray(row.scopes) ? row.scopes : []
+  if (!needed.some(s => scopes.includes(s))) {
+    return { ok: false, status: 403, error: `API key is not authorized for this operation (requires one of: ${needed.join(', ')})` }
   }
 
   // Best-effort "last used" bump — never fail the request over it.
@@ -175,6 +191,21 @@ export async function requireApiKey(
     })
   } catch (e) {
     console.error('api_keys last_used_at bump failed (non-fatal):', e)
+  }
+  return { ok: true, key: { id: row.id, name: row.name, scopes } }
+}
+
+// Response-writing wrapper: authenticate, and on failure write the error
+// response. Callers keep the `if (!(await requireApiKey(...))) return` shape.
+export async function requireApiKey(
+  req: VercelRequest,
+  res: VercelResponse,
+  requiredScope: string | string[],
+): Promise<boolean> {
+  const result = await authenticateApiKey(req, requiredScope)
+  if (!result.ok) {
+    res.status(result.status ?? 403).json({ error: result.error ?? 'Forbidden' })
+    return false
   }
   return true
 }
