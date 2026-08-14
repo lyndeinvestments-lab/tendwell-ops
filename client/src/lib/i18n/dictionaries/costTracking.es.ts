@@ -44,6 +44,7 @@ export const costTrackingEs: typeof costTrackingEn = {
   table: {
     property: 'Propiedad',
     status: 'Estado',
+    client: 'Cliente',
     address: 'Dirección',
     bdBa: 'Hab / Baño',
     clientCharged: 'Cobrado al Cliente',
@@ -247,6 +248,7 @@ export const costTrackingEs: typeof costTrackingEn = {
   csv: {
     property: 'Propiedad',
     status: 'Estado',
+    client: 'Cliente',
     clientCharged: 'Cobrado al Cliente',
     cleanerPay: 'Pago de Limpieza',
     laundry: 'Lavandería',
