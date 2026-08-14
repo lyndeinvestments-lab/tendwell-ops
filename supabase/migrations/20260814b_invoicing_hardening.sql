@@ -27,6 +27,10 @@ REVOKE ALL ON FUNCTION public.next_qbo_invoice_no() FROM public;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invoice_runs_qbo_no_unique
   ON invoice_runs (qbo_invoice_no) WHERE qbo_invoice_no IS NOT NULL;
 
+-- FK index (perf advisor: unindexed foreign key; matters for cascade deletes
+-- from properties). Applied separately as invoicing_alias_fk_index.
+CREATE INDEX IF NOT EXISTS idx_vendor_aliases_property ON vendor_property_aliases(property_id);
+
 -- ─── 2. Admin-only RLS ───────────────────────────────────────────────────────
 DROP POLICY IF EXISTS "vendors_all_staff" ON vendors;
 CREATE POLICY "vendors_all_admin"
