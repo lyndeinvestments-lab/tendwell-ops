@@ -33,6 +33,20 @@ export interface ExportLine {
   reviewStatus: string
 }
 
+// CSV formula-injection guard: vendor-authored free text (notes, invoice
+// numbers, property strings) flows into files Nina opens in Excel before
+// importing. Any text cell starting with =, +, @, tab, or CR — or a '-' that
+// isn't just a negative number — gets a leading apostrophe so spreadsheet
+// apps render it as text instead of executing it. Our own generated numeric
+// strings (amounts, dates) never hit this path.
+export function sanitizeCell(v: string): string {
+  if (!v) return v
+  const first = v[0]
+  if (first === '=' || first === '+' || first === '@' || first === '\t' || first === '\r') return `'${v}`
+  if (first === '-' && !/^-\d+(\.\d+)?$/.test(v)) return `'${v}`
+  return v
+}
+
 // $#,##0.00 — QBO flat template requires the currency-formatted string.
 export function fmtUsd(n: number): string {
   const sign = n < 0 ? '-' : ''
@@ -68,8 +82,10 @@ function isArLine(l: ExportLine, channel: BillingChannel): boolean {
 function lineDescription(l: ExportLine): string {
   const parts = [l.serviceType, l.propertyName].filter(Boolean)
   const base = parts.join(' — ')
-  return l.note ? (base ? `${base} (${l.note})` : l.note) : base
+  return sanitizeCell(l.note ? (base ? `${base} (${l.note})` : l.note) : base)
 }
+
+const s = sanitizeCell
 
 // ─── Ramp Bill Import ────────────────────────────────────────────────────────
 // Header fields repeat on every line-item row (Ramp groups by invoice number).
@@ -96,9 +112,9 @@ const RAMP_HEADERS = [
 
 export function toRampCsv(run: ExportRun, lines: ExportLine[]): string {
   const rows = lines.filter(isApLine).map(l => ({
-    'Vendor name': run.vendorName,
+    'Vendor name': s(run.vendorName),
     'Description (optional)': `Cleaning services${run.periodEnd ? ` — week ending ${run.periodEnd}` : ''}`,
-    'Invoice number': run.vendorInvoiceNumber ?? '',
+    'Invoice number': s(run.vendorInvoiceNumber ?? ''),
     'Invoice date': run.invoiceDate ?? '',
     'Accounting date (optional)': run.invoiceDate ?? '',
     'Due date': run.dueDate ?? run.invoiceDate ?? '',
@@ -106,7 +122,7 @@ export function toRampCsv(run: ExportRun, lines: ExportLine[]): string {
     'Line item amount': (l.cleanerPayAmount ?? 0).toFixed(2),
     'QuickBooks Category (optional)': '',
     'QuickBooks Billable (optional)': '',
-    'QuickBooks Class (optional)': l.propertyName ?? '',
+    'QuickBooks Class (optional)': s(l.propertyName ?? ''),
     'QuickBooks Customer/Job (optional)': '',
     'Line item description': lineDescription(l),
     'Inventory line item quantity': '',
@@ -135,11 +151,11 @@ export function toQboFlatCsv(run: ExportRun, lines: ExportLine[]): string {
   const invoiceDate = fmtUsDate(run.invoiceDate)
   const dueDate = fmtUsDate(run.dueDate ?? run.invoiceDate)
   const rows = lines.filter(l => isArLine(l, 'qbo_haven')).map(l => [
-    l.serviceType ?? '',
+    s(l.serviceType ?? ''),
     fmtUsDate(l.serviceDate),
-    l.propertyName ?? '',
+    s(l.propertyName ?? ''),
     fmtUsd(l.clientChargeAmount ?? 0),
-    l.propertyName ?? '',
+    s(l.propertyName ?? ''),
     run.qboInvoiceNo != null ? String(run.qboInvoiceNo) : '',
     'Haven',
     invoiceDate,
@@ -177,8 +193,8 @@ export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
     i === 0 ? fmtUsDate(run.dueDate ?? run.invoiceDate) : '',
     i === 0 ? 'Due on receipt' : '',
     '',
-    i === 0 ? `${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim() : '',
-    l.serviceType ?? '',
+    i === 0 ? s(`${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim()) : '',
+    s(l.serviceType ?? ''),
     lineDescription(l),
     '1',
     (l.clientChargeAmount ?? 0).toFixed(2),
@@ -207,12 +223,12 @@ export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
     .filter(l => isArLine(l, 'bill_com'))
     .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') || (a.serviceDate ?? '').localeCompare(b.serviceDate ?? ''))
     .map(l => [
-      l.clientName ?? '',
+      s(l.clientName ?? ''),
       fmtUsDate(run.invoiceDate),
       fmtUsDate(run.dueDate ?? run.invoiceDate),
-      l.serviceType ?? '',
+      s(l.serviceType ?? ''),
       fmtUsDate(l.serviceDate),
-      l.propertyName ?? '',
+      s(l.propertyName ?? ''),
       lineDescription(l),
       (l.clientChargeAmount ?? 0).toFixed(2),
     ])

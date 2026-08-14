@@ -70,6 +70,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // Hard guard: a client-billable line without a billing channel would be
+  // paid to the vendor but silently missing from BOTH AR exports (the
+  // formatters filter by channel). Hand-resolved lines can end up here when
+  // the property fix didn't re-derive the channel — refuse rather than leak.
+  const { count: unrouted, error: chErr } = await supabase
+    .from('invoice_lines')
+    .select('id', { count: 'exact', head: true })
+    .eq('run_id', runId)
+    .not('line_kind', 'in', '(operating_expense,excluded)')
+    .neq('review_status', 'excluded')
+    .or('billing_channel.is.null,billing_channel.eq.none')
+  if (chErr) {
+    res.status(500).json({ error: 'Failed to check billing channels', detail: chErr.message })
+    return
+  }
+  if ((unrouted ?? 0) > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${unrouted} billable line(s) have no billing channel (would be paid to the vendor but never invoiced to a client). Fix the property/client link and re-run reconcile.`,
+    })
+    return
+  }
+
   const { error: updErr } = await supabase
     .from('invoice_runs')
     .update({ status: 'approved', approved_by: admin.email, approved_at: new Date().toISOString() })

@@ -5,12 +5,9 @@ import { supabase } from '@/lib/supabase'
  * only — server API + DB already exist, see api/invoices/*.ts and the
  * `invoice_runs`/`invoice_lines`/`vendor_property_aliases` tables).
  *
- * NOTE: `shared/database.types.ts` has not been regenerated since the
- * `qbo_invoice_no` column was added to `invoice_runs` (server code reads it
- * via an untyped service-role client, so it never needed the codegen to
- * catch up). Rather than fight the generated `Row` type, this file defines
- * its own domain types (same pattern as `SnapshotTask` in trellis-tasks.tsx)
- * and casts query results at the boundary.
+ * These domain types narrow the generated `Row` types (status/kind unions,
+ * joined vendor/property shapes) — same pattern as `SnapshotTask` in
+ * trellis-tasks.tsx. Query results are cast at the boundary.
  */
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
