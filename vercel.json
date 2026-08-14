@@ -39,6 +39,9 @@
     },
     "api/agreements/*.ts": {
       "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts"
+    },
+    "api/invoices/*.ts": {
+      "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/qbo/_lib.ts"
     }
   },
   "rewrites": [

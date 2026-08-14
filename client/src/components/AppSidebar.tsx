@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks
+  ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks, Receipt
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -89,6 +89,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'API Sync', href: '/api-sync', view: 'trellis-sync', icon: Plug },
+      { title: 'Invoicing', href: '/invoicing', view: 'invoicing', icon: Receipt },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },

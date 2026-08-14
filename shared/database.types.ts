@@ -237,6 +237,7 @@ export type Database = {
           id: number
           label: string | null
           password_hash: string | null
+          preferred_locale: string | null
           role: string
         }
         Insert: {
@@ -248,6 +249,7 @@ export type Database = {
           id?: number
           label?: string | null
           password_hash?: string | null
+          preferred_locale?: string | null
           role: string
         }
         Update: {
@@ -259,6 +261,7 @@ export type Database = {
           id?: number
           label?: string | null
           password_hash?: string | null
+          preferred_locale?: string | null
           role?: string
         }
         Relationships: []
@@ -1105,6 +1108,7 @@ export type Database = {
         Row: {
           additional_properties_count: number | null
           additional_properties_notes: string | null
+          billing_channel: string
           client_since: string | null
           company: string | null
           created_at: string | null
@@ -1126,6 +1130,7 @@ export type Database = {
         Insert: {
           additional_properties_count?: number | null
           additional_properties_notes?: string | null
+          billing_channel?: string
           client_since?: string | null
           company?: string | null
           created_at?: string | null
@@ -1147,6 +1152,7 @@ export type Database = {
         Update: {
           additional_properties_count?: number | null
           additional_properties_notes?: string | null
+          billing_channel?: string
           client_since?: string | null
           company?: string | null
           created_at?: string | null
@@ -1637,6 +1643,202 @@ export type Database = {
           url?: string | null
         }
         Relationships: []
+      }
+      invoice_lines: {
+        Row: {
+          alias_confidence: number | null
+          billing_channel: string | null
+          cleaner_pay_amount: number | null
+          client_charge_amount: number | null
+          created_at: string | null
+          flags: string[]
+          id: string
+          line_kind: string
+          line_no: number
+          matched_task_id: string | null
+          property_id: number | null
+          raw_amount: number
+          raw_date_mentioned: string | null
+          raw_note_text: string | null
+          raw_property_text: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          review_note: string | null
+          review_status: string
+          run_id: string
+          service_type: string | null
+          source: string
+          split_group: number | null
+        }
+        Insert: {
+          alias_confidence?: number | null
+          billing_channel?: string | null
+          cleaner_pay_amount?: number | null
+          client_charge_amount?: number | null
+          created_at?: string | null
+          flags?: string[]
+          id?: string
+          line_kind?: string
+          line_no: number
+          matched_task_id?: string | null
+          property_id?: number | null
+          raw_amount: number
+          raw_date_mentioned?: string | null
+          raw_note_text?: string | null
+          raw_property_text?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_note?: string | null
+          review_status?: string
+          run_id: string
+          service_type?: string | null
+          source?: string
+          split_group?: number | null
+        }
+        Update: {
+          alias_confidence?: number | null
+          billing_channel?: string | null
+          cleaner_pay_amount?: number | null
+          client_charge_amount?: number | null
+          created_at?: string | null
+          flags?: string[]
+          id?: string
+          line_kind?: string
+          line_no?: number
+          matched_task_id?: string | null
+          property_id?: number | null
+          raw_amount?: number
+          raw_date_mentioned?: string | null
+          raw_note_text?: string | null
+          raw_property_text?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          review_note?: string | null
+          review_status?: string
+          run_id?: string
+          service_type?: string | null
+          source?: string
+          split_group?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoice_runs: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          computed_subtotal: number | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          invoice_date: string | null
+          invoice_number: string | null
+          period_end: string | null
+          period_start: string | null
+          qbo_invoice_no: number | null
+          source: string
+          source_file_path: string | null
+          source_file_sha256: string | null
+          stated_subtotal: number | null
+          status: string
+          vendor_id: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          computed_subtotal?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          qbo_invoice_no?: number | null
+          source: string
+          source_file_path?: string | null
+          source_file_sha256?: string | null
+          stated_subtotal?: number | null
+          status?: string
+          vendor_id?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          computed_subtotal?: number | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          invoice_date?: string | null
+          invoice_number?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          qbo_invoice_no?: number | null
+          source?: string
+          source_file_path?: string | null
+          source_file_sha256?: string | null
+          stated_subtotal?: number | null
+          status?: string
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_runs_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       issue_comments: {
         Row: {
@@ -4192,6 +4394,7 @@ export type Database = {
           id: string
           name: string | null
           phone: string | null
+          preferred_locale: string | null
           preferred_payment_method: string | null
           trellis_portal_url: string | null
         }
@@ -4203,6 +4406,7 @@ export type Database = {
           id?: string
           name?: string | null
           phone?: string | null
+          preferred_locale?: string | null
           preferred_payment_method?: string | null
           trellis_portal_url?: string | null
         }
@@ -4214,6 +4418,7 @@ export type Database = {
           id?: string
           name?: string | null
           phone?: string | null
+          preferred_locale?: string | null
           preferred_payment_method?: string | null
           trellis_portal_url?: string | null
         }
@@ -5352,6 +5557,116 @@ export type Database = {
         }
         Relationships: []
       }
+      vendor_property_aliases: {
+        Row: {
+          alias_raw: string
+          confidence: number | null
+          confirmed_by: string | null
+          created_at: string | null
+          id: string
+          property_id: number
+          vendor_id: string | null
+        }
+        Insert: {
+          alias_raw: string
+          confidence?: number | null
+          confirmed_by?: string | null
+          created_at?: string | null
+          id?: string
+          property_id: number
+          vendor_id?: string | null
+        }
+        Update: {
+          alias_raw?: string
+          confidence?: number | null
+          confirmed_by?: string | null
+          created_at?: string | null
+          id?: string
+          property_id?: number
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendors: {
+        Row: {
+          active: boolean
+          contact_email: string | null
+          created_at: string | null
+          id: string
+          name: string
+          qbo_vendor_id: string | null
+          ramp_vendor_id: string | null
+        }
+        Insert: {
+          active?: boolean
+          contact_email?: string | null
+          created_at?: string | null
+          id?: string
+          name: string
+          qbo_vendor_id?: string | null
+          ramp_vendor_id?: string | null
+        }
+        Update: {
+          active?: boolean
+          contact_email?: string | null
+          created_at?: string | null
+          id?: string
+          name?: string
+          qbo_vendor_id?: string | null
+          ramp_vendor_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       breezeway_exceptions: {
@@ -6140,6 +6455,7 @@ export type Database = {
           month: string
         }[]
       }
+      set_my_locale: { Args: { p_locale: string }; Returns: undefined }
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
       tendwell_normalize_street: { Args: { p: string }; Returns: string }
     }
