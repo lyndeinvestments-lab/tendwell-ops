@@ -517,9 +517,14 @@ export function classifyLine(
       if (deepCe == null) line = needsReview(line, FLAGS.MISSING_RATE)
       if (deepConflict) line = needsReview(line, FLAGS.DEEP_MISMATCH)
       if (!matchedTask) line = needsReview(line, FLAGS.UNMATCHED_TASK)
+    } else if (isOnboarding) {
+      // Onboarding Clean bills the client at Client Charged + $50 (confirmed
+      // by Jordan 2026-08-14; matches real QBO invoices, e.g. #1083 line 54).
+      line.clientChargeAmount = ceCharged != null ? round2(ceCharged + 50) : null
+      if (ceCharged == null) line = needsReview(line, FLAGS.MISSING_RATE)
     } else {
-      // Double/Onboarding client rate pending Nina's confirmation — bill whole
-      // at the invoiced amount and mark it so the review UI shows it.
+      // Double Clean client rate still unconfirmed — bill whole at the
+      // invoiced amount and mark it so the review UI shows it.
       line.clientChargeAmount = round2(raw.rawAmount)
       line = flag(line, FLAGS.BILLED_WHOLE)
     }
