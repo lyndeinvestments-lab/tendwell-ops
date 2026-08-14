@@ -44,6 +44,18 @@ describe('parseVendorCsv', () => {
     expect(lines[0].rawAmount).toBe(100.5)
   })
 
+  it('rounds qty × rate penny-exact (0.25 × 8.54 = 2.14, not 2.13)', () => {
+    const csv = ['Name,Qty,Rate', 'Michael Rohwer 2455,0.25,8.54'].join('\n')
+    const { lines } = parseVendorCsv(csv)
+    expect(lines[0].rawAmount).toBe(2.14)
+  })
+
+  it('parses accounting-notation credits "($45.00)" as negative', () => {
+    const csv = ['Item Name,Total', 'Michael Rohwer 2455,"($45.00)"'].join('\n')
+    const { lines } = parseVendorCsv(csv)
+    expect(lines[0].rawAmount).toBe(-45)
+  })
+
   it('strips currency symbols and commas from amounts', () => {
     const csv = ['Item Name,Amount', 'Michael Rohwer 2455,"$1,150.50"'].join('\n')
     const { lines } = parseVendorCsv(csv)

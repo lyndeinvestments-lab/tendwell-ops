@@ -44,10 +44,15 @@ function pickHeader(headers: string[], candidates: string[]): string | null {
 function parseAmount(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null
   if (typeof v !== 'string') return null
-  const cleaned = v.replace(/[^0-9.-]/g, '')
+  const trimmed = v.trim()
+  // Accounting-notation credits: "($45.00)" means −45.00 — stripping the
+  // parens must not flip a credit into a positive charge.
+  const parenNegative = /^\(.*\)$/.test(trimmed)
+  const cleaned = trimmed.replace(/[^0-9.-]/g, '')
   if (!cleaned) return null
   const n = Number(cleaned)
-  return Number.isFinite(n) ? n : null
+  if (!Number.isFinite(n)) return null
+  return parenNegative ? -Math.abs(n) : n
 }
 
 // A "date header" row: no meaningful amount and the text is just a date.
@@ -97,7 +102,10 @@ export function parseVendorCsv(csvText: string): ParsedInvoiceCsv {
     if (amount == null && qtyCol && rateCol) {
       const qty = parseAmount(row[qtyCol])
       const rate = parseAmount(row[rateCol])
-      if (qty != null && rate != null) amount = round2(qty * rate)
+      // Multiply in integer cents — round2(0.25 * 8.54) lands on 2.13 instead
+      // of the penny-exact 2.14 that vendor software produces, tripping the
+      // subtotal gate for no real reason.
+      if (qty != null && rate != null) amount = Math.round(qty * Math.round(rate * 100)) / 100
     }
 
     // Subtotal/total footer rows → capture, never ingest as a line.

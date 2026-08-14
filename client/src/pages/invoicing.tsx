@@ -960,10 +960,32 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
       const cleanerPayNum = cleanerPay.trim() === '' ? null : Number(cleanerPay)
       const clientChargeNum = clientCharge.trim() === '' ? null : Number(clientCharge)
 
+      // Re-derive the billing channel when the property changes — resolved
+      // rows are preserved by reconcile, so a stale 'none' here would leave
+      // the line off BOTH AR exports forever (paid to vendor, never billed).
+      let billingChannel = line.billing_channel
+      if (propertyChanged && propertyId != null) {
+        billingChannel = 'none'
+        const { data: propRow } = await supabase
+          .from('properties')
+          .select('contact_id')
+          .eq('id', propertyId)
+          .maybeSingle()
+        if (propRow?.contact_id) {
+          const { data: contactRow } = await supabase
+            .from('contacts')
+            .select('billing_channel')
+            .eq('id', propRow.contact_id)
+            .maybeSingle()
+          billingChannel = (contactRow?.billing_channel as typeof billingChannel) ?? 'none'
+        }
+      }
+
       const { error } = await supabase
         .from('invoice_lines')
         .update({
           property_id: propertyId,
+          billing_channel: billingChannel,
           service_type: serviceType || null,
           line_kind: lineKind,
           review_note: reviewNote || null,
@@ -987,9 +1009,17 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
             confirmed_by: userLabel,
           })
           // Ignore duplicate-alias conflicts (unique constraint) — a
-          // previously-confirmed alias for this text already exists.
+          // previously-confirmed alias for this text already exists. Any
+          // other alias failure must NOT read as "save failed": the line
+          // update above already committed. Surface an honest partial-
+          // success toast instead so the user knows the vendor will be
+          // asked about this name again.
           if (aliasErr && aliasErr.code !== '23505') {
-            throw new Error(aliasErr.message)
+            toast({
+              title: 'Line saved, but the alias fix didn’t persist',
+              description: `This vendor spelling will hit the review queue again next time (${aliasErr.message})`,
+              variant: 'destructive',
+            })
           }
         }
       }

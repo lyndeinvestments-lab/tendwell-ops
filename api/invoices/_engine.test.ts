@@ -213,14 +213,61 @@ describe('reconcile — money rules', () => {
     expect(base.splitGroup).toBe(extra.splitGroup)
   })
 
-  it('negative split → whole line becomes a standalone extra, never a negative row', () => {
+  it('negative split → whole line becomes a standalone extra (flagged for review), never a negative row', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawAmount: 40, rawNoteText: 'extra trash pickup only' })]),
     )
     expect(lines).toHaveLength(1)
     expect(lines[0].lineKind).toBe('extra')
     expect(lines[0].cleanerPayAmount).toBe(40)
+    expect(lines[0].flags).toContain(FLAGS.NEGATIVE_SPLIT_STANDALONE)
+    expect(lines[0].reviewStatus).toBe('needs_review')
     expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+  })
+
+  it('does NOT relabel an underpayment as an extra on a spurious keyword ("no pets seen")', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 40, rawNoteText: 'no pets seen at checkout, everything fine' })]),
+    )
+    expect(lines[0].lineKind).toBe('clean')
+    expect(lines[0].serviceType).not.toBe('Pet Fee')
+    expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('task verdict beats note text: "deep clean of the fridge" on a regular clean → review, not silent 3×', () => {
+    const { lines } = reconcile(
+      input([
+        vendorLine({
+          rawAmount: 100,
+          rawDateMentioned: '2026-08-05',
+          rawNoteText: 'Did a deep clean of the fridge and oven, otherwise normal turn',
+        }),
+      ]),
+    )
+    expect(lines[0].matchedTaskId).toBe('t1') // a regular Departure Clean
+    expect(lines[0].flags).toContain(FLAGS.DEEP_MISMATCH)
+    expect(lines[0].reviewStatus).toBe('needs_review') // never auto-approved either way
+  })
+
+  it('deep clean with NO matching task is a review case (large money swing)', () => {
+    const { lines } = reconcile(
+      input([
+        vendorLine({ rawAmount: 300, rawNoteText: 'Deep clean on 8/20/26', rawDateMentioned: null }),
+      ]),
+    )
+    expect(lines[0].lineKind).toBe('deep_clean')
+    expect(lines[0].matchedTaskId).toBeNull()
+    expect(lines[0].flags).toContain(FLAGS.UNMATCHED_TASK)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('negative amounts (vendor credits) are never guessed — review with credit_line flag', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: -45 })]))
+    expect(lines[0].flags).toContain(FLAGS.CREDIT_LINE)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].cleanerPayAmount).toBe(-45) // passes through to AP, human decides
+    expect(lines[0].clientChargeAmount).toBeNull()
   })
 
   it('flags an unexplained amount mismatch instead of guessing', () => {

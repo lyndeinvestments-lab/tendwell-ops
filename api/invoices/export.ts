@@ -12,12 +12,12 @@ import { getServiceClient, requireAdminBearer } from './_lib.js'
 const FORMATS = ['ramp', 'qbo_flat', 'qbo_multiline', 'billcom'] as const
 type Format = (typeof FORMATS)[number]
 
+// Atomic single-statement increment (public.next_qbo_invoice_no) — a plain
+// read-then-update here could hand two concurrent exports the same number.
 async function nextQboInvoiceNo(supabase: NonNullable<ReturnType<typeof getServiceClient>>): Promise<number> {
-  const { data } = await supabase.from('app_settings').select('value').eq('key', 'invoicing_qbo_next_number').single()
-  const current = Number(data?.value ?? '1001')
-  const next = Number.isFinite(current) ? current : 1001
-  await supabase.from('app_settings').update({ value: String(next + 1) }).eq('key', 'invoicing_qbo_next_number')
-  return next
+  const { data, error } = await supabase.rpc('next_qbo_invoice_no')
+  if (error || data == null) throw new Error(`Failed to allocate QBO invoice number: ${error?.message ?? 'no row'}`)
+  return Number(data)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -67,7 +67,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Assign our sequential QBO invoice number on first QBO export.
   let qboInvoiceNo = run.qbo_invoice_no as number | null
   if ((format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null) {
-    qboInvoiceNo = await nextQboInvoiceNo(supabase)
+    try {
+      qboInvoiceNo = await nextQboInvoiceNo(supabase)
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
+      return
+    }
     await supabase.from('invoice_runs').update({ qbo_invoice_no: qboInvoiceNo }).eq('id', runId)
   }
 

@@ -103,6 +103,8 @@ export const FLAGS = {
   DEEP_RATE_ASSUMED: 'deep_rate_assumed',
   OPERATING_EXPENSE: 'operating_expense',
   RATE_STALE: 'rate_stale',
+  DEEP_MISMATCH: 'deep_mismatch',
+  CREDIT_LINE: 'credit_line',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -182,17 +184,20 @@ const TITLE_RULES: TitleRule[] = [
   { re: /(vacancy\s*clean|touch\s*up)/i, title: 'Vacancy Clean / Touch Up Clean' },
 ]
 
-// Extra-charge keywords found in note text. First match wins.
+// Extra-charge keywords found in note text. First match wins. Kept
+// deliberately tight (word-bounded, fee/charge-anchored where the bare noun
+// is common in benign notes like "no pets seen") — a spurious keyword match
+// here would auto-relabel a real payment discrepancy as an extra charge.
 const EXTRA_RULES: TitleRule[] = [
   { re: /double\s*clean/i, title: 'Double Clean' },
   { re: /trash/i, title: 'Excessive Trash Pickup' },
   { re: /hot\s*tub/i, title: 'Hot Tub Refresh Requested by Guest' },
-  { re: /pet/i, title: 'Pet Fee' },
+  { re: /\bpet\s*(fee|charge)\b/i, title: 'Pet Fee' },
   { re: /trip\s*fee/i, title: 'Trip Fee' },
   { re: /reimburse/i, title: 'Reimbursement' },
-  { re: /(left\s*item|mail)/i, title: 'Mailed Left Items by the Guest' },
+  { re: /\b(left\s*items?|mailed)\b/i, title: 'Mailed Left Items by the Guest' },
   { re: /touch\s*up/i, title: 'Vacancy Clean / Touch Up Clean' },
-  { re: /extra/i, title: 'Extra Cleaning' },
+  { re: /\bextra\b/i, title: 'Extra Cleaning' },
 ]
 
 export function isExcludedTitle(text: string | null): boolean {
@@ -434,6 +439,17 @@ export function classifyLine(
 
   const text = `${raw.rawPropertyText ?? ''} ${raw.rawNoteText ?? ''}`
 
+  // Credits/refunds (negative amounts) — the spec doesn't define how a vendor
+  // credit maps to AR, so never guess: pass the amount through to the AP side
+  // and force human review.
+  if (raw.rawAmount < 0) {
+    line.lineKind = 'extra'
+    line.serviceType = 'Reimbursement'
+    line.cleanerPayAmount = round2(raw.rawAmount)
+    line.clientChargeAmount = null
+    return [withChannel(needsReview(line, FLAGS.CREDIT_LINE), property)]
+  }
+
   // Unresolved property: bulk/ops-expense text → operating expense list;
   // anything else is a probable misspelling → review queue.
   if (resolution.propertyId == null || property == null) {
@@ -478,19 +494,29 @@ export function classifyLine(
     line = flag(line, FLAGS.UNMATCHED_TASK)
   }
 
-  const isDeep = matchedTask?.isDeepClean || /deep\s*clean/i.test(text)
+  // Deep classification: the matched task's verdict wins over note text —
+  // "deep clean of the fridge" in a note must not silently 3× the client
+  // charge on a regular clean. Note-vs-task conflicts and deep cleans with no
+  // task at all are review cases (large money swing), never silent.
+  const noteSaysDeep = /deep\s*clean/i.test(text)
+  const taskSaysDeep = matchedTask?.isDeepClean ?? false
+  const deepConflict = matchedTask != null && !taskSaysDeep && noteSaysDeep
+  const isDeep = matchedTask ? taskSaysDeep : noteSaysDeep
   const isDouble = /double\s*clean/i.test(text)
   const isOnboarding = std?.title === 'Onboarding Clean'
 
   // Deep / Double / Onboarding: billed whole, never split.
-  if (isDeep || isDouble || isOnboarding) {
-    line.lineKind = isDeep ? 'deep_clean' : 'extra'
-    line.serviceType = isDeep ? 'Deep Clean' : isDouble ? 'Double Clean' : 'Onboarding Clean'
+  if (isDeep || deepConflict || isDouble || isOnboarding) {
+    const asDeep = isDeep || deepConflict
+    line.lineKind = asDeep ? 'deep_clean' : 'extra'
+    line.serviceType = asDeep ? 'Deep Clean' : isDouble ? 'Double Clean' : 'Onboarding Clean'
     line.cleanerPayAmount = round2(raw.rawAmount)
-    if (isDeep) {
+    if (asDeep) {
       const deepCe = property.deepClean3xCe ?? (ceCharged != null ? round2(ceCharged * 3) : null)
       line.clientChargeAmount = deepCe
       if (deepCe == null) line = needsReview(line, FLAGS.MISSING_RATE)
+      if (deepConflict) line = needsReview(line, FLAGS.DEEP_MISMATCH)
+      if (!matchedTask) line = needsReview(line, FLAGS.UNMATCHED_TASK)
     } else {
       // Double/Onboarding client rate pending Nina's confirmation — bill whole
       // at the invoiced amount and mark it so the review UI shows it.
@@ -563,13 +589,15 @@ export function classifyLine(
   }
 
   // Underage WITH an explaining extra-note → the base clean was billed
-  // elsewhere; treat this line as a standalone extra (never a negative split).
+  // elsewhere; treat this line as a standalone extra (never a negative
+  // split). Still a review case: a spurious keyword hit here would otherwise
+  // silently underpay the vendor and bill the client a fabricated extra.
   if (diff < 0 && noteExtra != null) {
     line.lineKind = 'extra'
     line.serviceType = noteExtra
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = round2(raw.rawAmount)
-    return [withChannel(flag(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), property)]
+    return [withChannel(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), property)]
   }
 
   // Amount differs from Cleaner Pay with NO explaining note → discrepancy.
