@@ -960,8 +960,18 @@ function UsersSection() {
       })
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      const email = variables.email.toLowerCase().trim()
+      logActivity({
+        entity_type: 'other',
+        action: 'create',
+        entity_name: 'user_added',
+        field_name: variables.label || email,
+        new_value: `${variables.role} · ${email}`,
+        changed_by: user?.label ?? null,
+        metadata: { email, label: variables.label, role: variables.role },
+      })
       toast({ title: t('toasts.userInvited'), description: t('toasts.userInvitedDesc', { email: newEmail }) })
       setInviteOpen(false)
       setNewEmail('')
@@ -1045,12 +1055,23 @@ function UsersSection() {
   }
 
   const { mutate: deleteUser, isPending: deleting } = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('app_users').delete().eq('id', Number(id))
+    // Accept the full row (not just the id) so the audit entry can record who
+    // was removed — after the delete the row is gone and can't be looked up.
+    mutationFn: async (target: { id: string; email?: string | null; label?: string | null; role?: string | null }) => {
+      const { error } = await supabase.from('app_users').delete().eq('id', Number(target.id))
       if (error) throw error
     },
-    onSuccess: () => {
+    onSuccess: (_data, target) => {
       qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      logActivity({
+        entity_type: 'other',
+        action: 'delete',
+        entity_name: 'user_removed',
+        field_name: target.label || target.email || String(target.id),
+        old_value: `${target.role ?? 'unknown'} · ${target.email ?? ''}`.trim(),
+        changed_by: user?.label ?? null,
+        metadata: { email: target.email, label: target.label, role: target.role },
+      })
       toast({ title: t('toasts.userRemoved') })
       setConfirmDeleteId(null)
     },
@@ -1259,7 +1280,7 @@ function UsersSection() {
                                 size="sm"
                                 className="h-6 px-2 text-xs"
                                 disabled={deleting}
-                                onClick={() => deleteUser(u.id)}
+                                onClick={() => deleteUser({ id: u.id, email: u.google_email, label: u.label, role: u.role })}
                                 data-testid={`button-confirm-delete-user-${u.id}`}
                               >
                                 {deleting ? t('users.removing') : t('common.actions.confirm')}
