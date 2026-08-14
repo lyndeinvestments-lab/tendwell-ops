@@ -370,6 +370,81 @@ describe('reconcile — money rules', () => {
   })
 })
 
+// ─── Real-invoice fixture: Busy Bee I260810795 (2026-08-09) ─────────────────
+// Two lines, $884.00 total, rates/channels copied from the live DB at build
+// time. Until Nina's hand-built golden fixture arrives, this is the canonical
+// end-to-end regression for a real vendor invoice.
+
+describe('real Busy Bee invoice I260810795', () => {
+  const REAL_PROPS: PropertyRates[] = [
+    { id: 505, name: 'Brandi Tropf 2505', ceCharged: 260, cleanerPay: 130, deepClean3xCe: 780, billingChannel: 'bill_com' },
+    { id: 284, name: 'CTN-Black Bear Cub', ceCharged: 560, cleanerPay: 320, deepClean3xCe: 1680, billingChannel: 'bill_com' },
+  ]
+  const REAL_TASKS: TaskRow[] = [
+    // Black Bear Cub's missed clean from the prior week; Brandi Tropf's deep
+    // clean has NO Breezeway task (true in the live data for that week).
+    { externalId: 'bbc-1', propertyId: 284, dueDate: '2026-07-29', title: 'Departure Clean', isClean: true, isDeepClean: false, totalCostRef: 320 },
+  ]
+  const REAL_LINES: RawLine[] = [
+    {
+      lineNo: 1,
+      source: 'vendor',
+      rawPropertyText: 'Brandi Tropf 2505',
+      rawNoteText: 'Deep clean on 8/7/26',
+      rawAmount: 564,
+      rawDateMentioned: null,
+    },
+    {
+      lineNo: 2,
+      source: 'vendor',
+      rawPropertyText: 'Ctn Black Bear Cub',
+      rawNoteText: 'We forgot to add this cabin on last invoice from week 7/27/26 to 8/1/26',
+      rawAmount: 320,
+      rawDateMentioned: null,
+    },
+  ]
+
+  const result = reconcile({
+    vendorId: 'busybee',
+    lines: REAL_LINES,
+    aliases: [],
+    properties: REAL_PROPS,
+    tasks: REAL_TASKS,
+    periodStart: '2026-07-27',
+    periodEnd: '2026-08-09',
+  })
+
+  it('passes the subtotal gate at $884.00', () => {
+    expect(validateSubtotal(REAL_LINES, 884).ok).toBe(true)
+    expect(result.summary.totalInvoiced).toBe(884)
+  })
+
+  it('resolves "Ctn Black Bear Cub" to the hyphenated canonical name without an alias', () => {
+    const bbc = result.lines.find(l => l.lineNo === 2)!
+    expect(bbc.propertyId).toBe(284)
+    expect(bbc.lineKind).toBe('clean')
+    expect(bbc.cleanerPayAmount).toBe(320) // vendor amount == cleaner pay
+    expect(bbc.clientChargeAmount).toBe(560) // billed at Client Charged
+    expect(bbc.billingChannel).toBe('bill_com')
+    expect(bbc.matchedTaskId).toBe('bbc-1') // note date 7/27 → task 7/29 (±3d)
+    expect(bbc.reviewStatus).toBe('ok')
+  })
+
+  it('routes the taskless deep clean to review instead of silently billing $780', () => {
+    const deep = result.lines.find(l => l.lineNo === 1)!
+    expect(deep.propertyId).toBe(505)
+    expect(deep.lineKind).toBe('deep_clean')
+    expect(deep.cleanerPayAmount).toBe(564)
+    expect(deep.clientChargeAmount).toBe(780) // provisional, pending review
+    expect(deep.flags).toContain(FLAGS.UNMATCHED_TASK)
+    expect(deep.reviewStatus).toBe('needs_review')
+  })
+
+  it('keeps every dollar off the Haven QBO file (both clients are bill.com)', () => {
+    expect(result.lines.every(l => l.billingChannel === 'bill_com')).toBe(true)
+  })
+})
+
 // ─── Draft generation ────────────────────────────────────────────────────────
 
 describe('generateDraftLines', () => {
