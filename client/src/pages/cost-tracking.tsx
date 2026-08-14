@@ -1043,6 +1043,7 @@ export default function CostTrackingPage() {
     const rows = filtered.map((p: any) => ({
       [t('csv.property')]: p.name || '',
       [t('csv.status')]: p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '',
+      [t('csv.client')]: resolveClient(p).label || '',
       [t('csv.clientCharged')]: p.ce_charged ?? '',
       [t('csv.cleanerPay')]: p.cleaner_pay ?? '',
       [t('csv.laundry')]: p.est_laundry ?? '',
@@ -1319,6 +1320,7 @@ export default function CostTrackingPage() {
             <tr>
               <th className={`${thCls} sticky left-0 top-0 z-30 bg-muted`} onClick={() => toggleSort('name')}><span className="pl-6">{t('table.property')}</span> <SortIcon col="name" /></th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.status')}</th>
+              <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.client')}</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.address')}</th>
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 whitespace-nowrap">{t('table.bdBa')}</th>
               <th className={thCls} onClick={() => toggleSort('ce_charged')}>{t('table.clientCharged')} <SortIcon col="ce_charged" /></th>
@@ -1340,14 +1342,14 @@ export default function CostTrackingPage() {
             {isLoading ? (
               [...Array(8)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(17)].map((_, j) => (
+                  {[...Array(18)].map((_, j) => (
                     <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>
                   ))}
                 </tr>
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={17}>
+                <td colSpan={18}>
                   <EmptyState icon={DollarSignIcon} title={t('page.emptyTitle')} description={t('page.emptyDescription')} />
                 </td>
               </tr>
@@ -1453,6 +1455,9 @@ export default function CostTrackingPage() {
                         {p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}
                       </span>
                     )}
+                  </td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={resolveClient(p).label || ''} data-testid={`row-client-${p.id}`}>
+                    {resolveClient(p).label || '—'}
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground max-w-[200px] truncate" title={p.address || ''}>
                     {isAdmin ? (
@@ -1560,7 +1565,7 @@ export default function CostTrackingPage() {
                 </ContextMenu>
                 {expandedRow === p.id && (
                   <tr className="bg-muted/30 border-b border-border/50">
-                    <td colSpan={17} className="py-4 px-6 space-y-4">
+                    <td colSpan={18} className="py-4 px-6 space-y-4">
                       {/* Banner — every value here (name, stage, client, address)
                           is inline-editable for users with master-list edit
                           permission. Stage routes through changeStage so audit

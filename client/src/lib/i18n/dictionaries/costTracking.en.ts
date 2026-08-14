@@ -50,6 +50,7 @@ export const costTrackingEn = {
   table: {
     property: 'Property',
     status: 'Status',
+    client: 'Client',
     address: 'Address',
     bdBa: 'Bd / Ba',
     clientCharged: 'Client Charged',
@@ -253,6 +254,7 @@ export const costTrackingEn = {
   csv: {
     property: 'Property',
     status: 'Status',
+    client: 'Client',
     clientCharged: 'Client Charged',
     cleanerPay: 'Cleaner Pay',
     laundry: 'Laundry',
