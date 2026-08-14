@@ -48,6 +48,7 @@ import { SignaturePad } from '@/components/SignaturePad'
 import { downloadAgreementPdf } from '@/lib/agreements'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
+import { ApiKeysSection } from '@/components/settings/ApiKeysSection'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -4116,6 +4117,7 @@ export default function SettingsPage() {
           <TabsTrigger value="app" data-testid="tab-app">{t('tabs.app')}</TabsTrigger>
           <TabsTrigger value="templates" data-testid="tab-templates">{t('tabs.templates')}</TabsTrigger>
           <TabsTrigger value="integrations" data-testid="tab-integrations">{t('tabs.integrations')}</TabsTrigger>
+          <TabsTrigger value="api-keys" data-testid="tab-api-keys">{t('tabs.apiKeys', undefined, 'API Keys')}</TabsTrigger>
         </TabsList>
 
         <div className="flex-1 overflow-y-auto mt-4">
@@ -4153,6 +4155,9 @@ export default function SettingsPage() {
           </TabsContent>
           <TabsContent value="integrations" className="mt-0">
             <IntegrationsSection />
+          </TabsContent>
+          <TabsContent value="api-keys" className="mt-0">
+            <ApiKeysSection />
           </TabsContent>
         </div>
       </Tabs>
