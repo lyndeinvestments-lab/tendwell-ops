@@ -62,17 +62,21 @@ const LINES: ExportLine[] = [
 ]
 
 describe('sanitizeCell — CSV formula-injection guard', () => {
-  it('neutralizes formula-leading characters', () => {
-    expect(sanitizeCell('=HYPERLINK("http://evil","x")')).toBe(`'=HYPERLINK("http://evil","x")`)
-    expect(sanitizeCell('+1+1')).toBe(`'+1+1`)
-    expect(sanitizeCell('@SUM(A1)')).toBe(`'@SUM(A1)`)
-    expect(sanitizeCell('\tcmd')).toBe(`'\tcmd`)
-    expect(sanitizeCell('-2+3+cmd|/c calc!A0')).toBe(`'-2+3+cmd|/c calc!A0`)
+  it('neutralizes formula-leading characters with a leading space (import-safe, unlike apostrophe)', () => {
+    expect(sanitizeCell('=HYPERLINK("http://evil","x")')).toBe(` =HYPERLINK("http://evil","x")`)
+    expect(sanitizeCell('+1+1')).toBe(` +1+1`)
+    expect(sanitizeCell('@SUM(A1)')).toBe(` @SUM(A1)`)
+    expect(sanitizeCell('\tcmd')).toBe(` \tcmd`)
+    expect(sanitizeCell('-2+3+cmd|/c calc!A0')).toBe(` -2+3+cmd|/c calc!A0`)
   })
   it('leaves plain text and negative numbers alone', () => {
     expect(sanitizeCell('Michael Rohwer 2455')).toBe('Michael Rohwer 2455')
     expect(sanitizeCell('-42.10')).toBe('-42.10')
     expect(sanitizeCell('')).toBe('')
+  })
+  it('never bakes a literal apostrophe into import-bound files', () => {
+    expect(sanitizeCell('=1+1')[0]).toBe(' ')
+    expect(sanitizeCell('-CR-1042')).toBe(' -CR-1042')
   })
   it('guards description cells that BEGIN with vendor note text (the executable case)', () => {
     // Formula execution only happens when the cell's first character is a
@@ -89,7 +93,7 @@ describe('sanitizeCell — CSV formula-injection guard', () => {
       toQboMultilineCsv(RUN, [evil]),
       toBillComCsv(RUN, [{ ...evil, billingChannel: 'bill_com' }]),
     ]) {
-      expect(csv).toContain(`'=cmd`)
+      expect(csv).toContain(` =cmd`)
       expect(csv).not.toMatch(/(^|,|")=cmd/m)
     }
   })
@@ -98,10 +102,11 @@ describe('sanitizeCell — CSV formula-injection guard', () => {
     const evilRun: ExportRun = { ...RUN, vendorInvoiceNumber: '=1+1' }
     const evilLine: ExportLine = { ...LINES[0], propertyName: '@SUM(A1)' }
     const ramp = toRampCsv(evilRun, [evilLine])
-    expect(ramp).toContain(`'=1+1`)
-    expect(ramp).toContain(`'@SUM(A1)`)
+    expect(ramp).toContain(` =1+1`)
+    expect(ramp).toContain(` @SUM(A1)`)
+    expect(ramp).not.toMatch(/(^|,|")[=@]/m)
     const flat = toQboFlatCsv(RUN, [evilLine])
-    expect(flat).toContain(`'@SUM(A1)`)
+    expect(flat).toContain(` @SUM(A1)`)
   })
 })
 

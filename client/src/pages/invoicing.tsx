@@ -964,8 +964,13 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
       // rows are preserved by reconcile, so a stale 'none' here would leave
       // the line off BOTH AR exports forever (paid to vendor, never billed).
       let billingChannel = line.billing_channel
-      if (propertyChanged && propertyId != null) {
+      if (propertyChanged) {
+        // Any property change — including CLEARING it — resets the channel;
+        // a stale 'qbo_haven' on a property-less line would export a Haven
+        // invoice row with a blank property.
         billingChannel = 'none'
+      }
+      if (propertyChanged && propertyId != null) {
         const { data: propRow } = await supabase
           .from('properties')
           .select('contact_id')
