@@ -12,6 +12,11 @@
 //
 // Defaults to the prod app at https://www.tendwellcleaning.com — override
 // with API_BASE=http://localhost:5000 (or any Vercel preview URL) for tests.
+//
+// The key can be either the legacy full-access ISSUES_API_KEY env value, or a
+// scoped key minted in-app at Settings → API Keys. A scoped key only works for
+// the operations its scopes allow (e.g. a create-only key gets 403 on `list`,
+// `get`, and `update`) — mint it with the scopes the integration actually needs.
 
 const BASE = process.env.API_BASE || 'https://www.tendwellcleaning.com'
 const API_KEY = process.env.ISSUES_API_KEY

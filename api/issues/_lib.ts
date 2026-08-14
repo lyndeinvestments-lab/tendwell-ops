@@ -77,28 +77,104 @@ function getSupabase(): SupabaseConfig {
   return { url, serviceKey }
 }
 
-// Constant-time API-key comparison so timing attacks can't leak the key
-// byte-by-byte. Hash both sides first to handle length differences safely.
-export function requireApiKey(req: VercelRequest, res: VercelResponse): boolean {
-  const expected = process.env.ISSUES_API_KEY
-  if (!expected) {
-    res.status(503).json({ error: 'ISSUES_API_KEY not configured on server' })
-    return false
-  }
-  const provided =
+// Canonical scope vocabulary. A scope is `<area>:<operation>`. Keep in sync
+// with the client-side picker in ApiKeysSection.tsx.
+export const API_SCOPES = {
+  ISSUES_CREATE: 'issues:create',
+  ISSUES_READ: 'issues:read',
+  ISSUES_UPDATE: 'issues:update',
+} as const
+export type ApiScope = (typeof API_SCOPES)[keyof typeof API_SCOPES]
+
+interface ApiKeyRow {
+  id: string
+  scopes: string[] | null
+  revoked_at: string | null
+  expires_at: string | null
+}
+
+function extractKey(req: VercelRequest): string | undefined {
+  return (
     (req.headers['x-api-key'] as string | undefined) ||
     (req.headers.authorization?.startsWith('Bearer ')
       ? req.headers.authorization.slice(7)
       : undefined)
+  )
+}
+
+// Constant-time compare of two secrets by SHA-256 digest (handles length
+// differences safely and avoids leaking the key byte-by-byte via timing).
+function keysMatch(a: string, b: string): boolean {
+  const da = createHash('sha256').update(a).digest()
+  const db = createHash('sha256').update(b).digest()
+  return timingSafeEqual(da, db)
+}
+
+// Authenticate the request and authorize it for `requiredScope`.
+//
+// Two credential paths, checked in order:
+//   1. Legacy env key (`ISSUES_API_KEY`) — full access to every issue scope.
+//      Kept so pre-existing bots/integrations don't break. Optional: if the
+//      env var is unset we simply skip it and rely on DB-backed keys.
+//   2. DB-backed keys (`api_keys` table) — minted in Settings → API Keys with
+//      an explicit scope allow-list. The presented key is hashed and looked up;
+//      the request is allowed only if the key is active, unexpired, and its
+//      `scopes` include `requiredScope`.
+//
+// Returns true on success. On failure it writes the appropriate error response
+// (401 missing / 403 invalid|revoked|expired|insufficient-scope) and returns
+// false, so callers keep the `if (!(await requireApiKey(...))) return` shape.
+export async function requireApiKey(
+  req: VercelRequest,
+  res: VercelResponse,
+  requiredScope: ApiScope,
+): Promise<boolean> {
+  const provided = extractKey(req)
   if (!provided) {
     res.status(401).json({ error: 'Missing API key. Send header x-api-key: <key> or Authorization: Bearer <key>' })
     return false
   }
-  const a = createHash('sha256').update(provided).digest()
-  const b = createHash('sha256').update(expected).digest()
-  if (!timingSafeEqual(a, b)) {
+
+  // Path 1: legacy full-access env key.
+  const legacy = process.env.ISSUES_API_KEY
+  if (legacy && keysMatch(provided, legacy)) return true
+
+  // Path 2: DB-backed scoped key.
+  const hash = createHash('sha256').update(provided).digest('hex')
+  let row: ApiKeyRow | undefined
+  try {
+    const rows = await sbFetch<ApiKeyRow[]>(
+      `api_keys?key_hash=eq.${hash}&select=id,scopes,revoked_at,expires_at&limit=1`,
+    )
+    row = Array.isArray(rows) ? rows[0] : undefined
+  } catch (e) {
+    console.error('api_keys lookup failed:', e)
+    res.status(500).json({ error: 'Key verification failed' })
+    return false
+  }
+
+  if (!row || row.revoked_at) {
     res.status(403).json({ error: 'Invalid API key' })
     return false
+  }
+  if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) {
+    res.status(403).json({ error: 'API key expired' })
+    return false
+  }
+  if (!Array.isArray(row.scopes) || !row.scopes.includes(requiredScope)) {
+    res.status(403).json({ error: `API key is not authorized for this operation (requires scope: ${requiredScope})` })
+    return false
+  }
+
+  // Best-effort "last used" bump — never fail the request over it.
+  try {
+    await sbFetch(`api_keys?id=eq.${row.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ last_used_at: new Date().toISOString() }),
+    })
+  } catch (e) {
+    console.error('api_keys last_used_at bump failed (non-fatal):', e)
   }
   return true
 }
