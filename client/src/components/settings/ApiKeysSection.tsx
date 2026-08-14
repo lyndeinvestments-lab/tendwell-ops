@@ -1,10 +1,14 @@
 // Settings → API Keys (admin only).
 //
-// Mint named, scoped API keys for external integrations (e.g. a Slack → Issues
-// workflow), copy the value once, and revoke it later. The plaintext key is
-// generated in the browser; only its SHA-256 hash + a short prefix are stored,
-// so the server can verify a presented key without the value ever being
-// retrievable again.
+// Mint named API keys for external integrations, choosing per app area whether
+// the key can View or Create/Edit, copy the value once, and revoke it later.
+// The plaintext key is generated in the browser; only its SHA-256 hash + a
+// short prefix are stored, so the value is never retrievable again.
+//
+// Areas + scopes come from the shared catalogue (shared/api-areas.ts), which
+// the server-side gateway (api/data/[resource].ts) enforces. Sensitive areas
+// (users, API keys, owners, agreements, settings) are absent from that
+// catalogue and can never be granted here.
 //
 // Intentionally English (admin/integration tooling), matching the API Sync
 // admin surface rather than the localized end-user pages.
@@ -14,9 +18,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logActivity } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
+import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
@@ -29,36 +33,22 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { KeyRound, Plus, Copy, Check, Trash2, ShieldAlert } from 'lucide-react'
+import { API_AREAS, scopeEdit, scopeView, type ApiArea } from '@shared/api-areas'
 
-// ─── Scope catalogue ─────────────────────────────────────────────────────────
-// A scope is `<area>:<operation>`. Keep the values in sync with API_SCOPES in
-// api/issues/_lib.ts (the server rejects any request whose required scope is
-// absent). New areas plug in here as their API endpoints are built.
-interface ScopeDef {
-  value: string
-  label: string
-  hint: string
-}
-interface ScopeGroup {
-  area: string
-  description: string
-  scopes: ScopeDef[]
-}
+type AccessLevel = 'none' | 'view' | 'edit'
 
-const SCOPE_GROUPS: ScopeGroup[] = [
-  {
-    area: 'Issues Tracker',
-    description: 'The /api/issues endpoints (the cleaning_issues tracker).',
-    scopes: [
-      { value: 'issues:create', label: 'Create issues', hint: 'POST /api/issues — log new tracker records' },
-      { value: 'issues:read', label: 'Read issues', hint: 'GET /api/issues and /api/issues/:id' },
-      { value: 'issues:update', label: 'Update issues', hint: 'PATCH /api/issues/:id' },
-    ],
-  },
-]
+const AREA_LABEL = new Map(API_AREAS.map(a => [a.key, a.label]))
 
-const ALL_SCOPES = SCOPE_GROUPS.flatMap(g => g.scopes)
-const SCOPE_LABEL = new Map(ALL_SCOPES.map(s => [s.value, s.label]))
+// Preserve catalogue order but bucket by group for the picker.
+const GROUPS: { group: string; areas: ApiArea[] }[] = (() => {
+  const order: string[] = []
+  const byGroup = new Map<string, ApiArea[]>()
+  for (const a of API_AREAS) {
+    if (!byGroup.has(a.group)) { byGroup.set(a.group, []); order.push(a.group) }
+    byGroup.get(a.group)!.push(a)
+  }
+  return order.map(group => ({ group, areas: byGroup.get(group)! }))
+})()
 
 interface ApiKeyRow {
   id: string
@@ -72,7 +62,6 @@ interface ApiKeyRow {
   expires_at: string | null
 }
 
-// Generate a random key + its SHA-256 hash + a display prefix, all client-side.
 async function generateKey(): Promise<{ key: string; hash: string; prefix: string }> {
   const bytes = new Uint8Array(24)
   crypto.getRandomValues(bytes)
@@ -86,8 +75,54 @@ async function generateKey(): Promise<{ key: string; hash: string; prefix: strin
 
 function fmtDate(iso: string | null): string {
   if (!iso) return '—'
-  const d = new Date(iso)
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+}
+
+// Turn a scopes[] into compact { label, level } chips for the list view.
+function scopeChips(scopes: string[]): { label: string; level: AccessLevel }[] {
+  const byArea = new Map<string, AccessLevel>()
+  for (const s of scopes) {
+    const idx = s.lastIndexOf(':')
+    if (idx < 0) continue
+    const key = s.slice(0, idx)
+    const op = s.slice(idx + 1)
+    if (op === 'edit') byArea.set(key, 'edit')
+    else if (op === 'view' && byArea.get(key) !== 'edit') byArea.set(key, 'view')
+  }
+  return Array.from(byArea.entries()).map(([key, level]) => ({ label: AREA_LABEL.get(key) ?? key, level }))
+}
+
+// A compact 2- or 3-option segmented control for one area.
+function AccessToggle({ area, value, onChange }: { area: ApiArea; value: AccessLevel; onChange: (v: AccessLevel) => void }) {
+  const options: { v: AccessLevel; label: string }[] =
+    area.access === 'rw'
+      ? [{ v: 'none', label: 'None' }, { v: 'view', label: 'View' }, { v: 'edit', label: 'Create & Edit' }]
+      : [{ v: 'none', label: 'None' }, { v: 'view', label: 'View' }]
+  return (
+    <div className="inline-flex rounded-md border overflow-hidden shrink-0">
+      {options.map(o => (
+        <button
+          key={o.v}
+          type="button"
+          aria-pressed={value === o.v}
+          onClick={() => onChange(o.v)}
+          className={cn(
+            'px-2.5 py-1 text-xs transition-colors',
+            value === o.v
+              ? o.v === 'edit'
+                ? 'bg-warning/15 text-warning font-medium'
+                : o.v === 'view'
+                  ? 'bg-info/15 text-info font-medium'
+                  : 'bg-muted text-foreground font-medium'
+              : 'text-muted-foreground hover:bg-muted/60',
+          )}
+          data-testid={`access-${area.key}-${o.v}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 export function ApiKeysSection() {
@@ -107,38 +142,47 @@ export function ApiKeysSection() {
     },
   })
 
-  // Create dialog state
   const [open, setOpen] = useState(false)
   const [name, setName] = useState('')
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [access, setAccess] = useState<Record<string, AccessLevel>>({})
   const [creating, setCreating] = useState(false)
-  const [revealed, setRevealed] = useState<string | null>(null) // plaintext, shown once
+  const [revealed, setRevealed] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const canCreate = name.trim().length > 0 && selected.size > 0 && !creating
+  const grantedCount = useMemo(() => Object.values(access).filter(v => v !== 'none').length, [access])
+  const canCreate = name.trim().length > 0 && grantedCount > 0 && !creating
 
   function resetDialog() {
     setName('')
-    setSelected(new Set())
+    setAccess({})
     setRevealed(null)
     setCopied(false)
     setCreating(false)
   }
 
-  function toggleScope(value: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(value)) next.delete(value)
-      else next.add(value)
-      return next
-    })
+  function setAll(level: AccessLevel) {
+    const next: Record<string, AccessLevel> = {}
+    for (const a of API_AREAS) {
+      next[a.key] = level === 'edit' && a.access !== 'rw' ? 'view' : level
+    }
+    setAccess(next)
+  }
+
+  function buildScopes(): string[] {
+    const out: string[] = []
+    for (const a of API_AREAS) {
+      const lvl = access[a.key] ?? 'none'
+      if (lvl === 'view') out.push(scopeView(a.key))
+      else if (lvl === 'edit') { out.push(scopeView(a.key)); out.push(scopeEdit(a.key)) }
+    }
+    return out
   }
 
   async function handleCreate() {
     if (!canCreate) return
     setCreating(true)
     try {
-      const scopes = ALL_SCOPES.map(s => s.value).filter(v => selected.has(v)) // canonical order
+      const scopes = buildScopes()
       const { key, hash, prefix } = await generateKey()
       const { error } = await supabase.from('api_keys').insert({
         name: name.trim(),
@@ -153,7 +197,7 @@ export function ApiKeysSection() {
         action: 'create',
         entity_name: 'api_key_created',
         field_name: name.trim(),
-        new_value: scopes.join(', '),
+        new_value: `${scopes.length} scopes`,
         changed_by: user?.label ?? null,
         metadata: { prefix, scopes },
       })
@@ -178,25 +222,14 @@ export function ApiKeysSection() {
 
   const revoke = useMutation({
     mutationFn: async (row: ApiKeyRow) => {
-      const { error } = await supabase
-        .from('api_keys')
-        .update({ revoked_at: new Date().toISOString() })
-        .eq('id', row.id)
+      const { error } = await supabase.from('api_keys').update({ revoked_at: new Date().toISOString() }).eq('id', row.id)
       if (error) throw error
       await logActivity({
-        entity_type: 'other',
-        action: 'update',
-        entity_name: 'api_key_revoked',
-        field_name: row.name,
-        old_value: (row.scopes ?? []).join(', '),
-        changed_by: user?.label ?? null,
-        metadata: { prefix: row.key_prefix },
+        entity_type: 'other', action: 'update', entity_name: 'api_key_revoked',
+        field_name: row.name, changed_by: user?.label ?? null, metadata: { prefix: row.key_prefix },
       })
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['api-keys'] })
-      toast({ title: 'Key revoked' })
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['api-keys'] }); toast({ title: 'Key revoked' }) },
     onError: (e: any) => toast({ title: 'Revoke failed', description: e?.message, variant: 'destructive' }),
   })
 
@@ -205,18 +238,11 @@ export function ApiKeysSection() {
       const { error } = await supabase.from('api_keys').delete().eq('id', row.id)
       if (error) throw error
       await logActivity({
-        entity_type: 'other',
-        action: 'delete',
-        entity_name: 'api_key_deleted',
-        field_name: row.name,
-        changed_by: user?.label ?? null,
-        metadata: { prefix: row.key_prefix },
+        entity_type: 'other', action: 'delete', entity_name: 'api_key_deleted',
+        field_name: row.name, changed_by: user?.label ?? null, metadata: { prefix: row.key_prefix },
       })
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['api-keys'] })
-      toast({ title: 'Key deleted' })
-    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['api-keys'] }); toast({ title: 'Key deleted' }) },
     onError: (e: any) => toast({ title: 'Delete failed', description: e?.message, variant: 'destructive' }),
   })
 
@@ -230,9 +256,10 @@ export function ApiKeysSection() {
             <KeyRound className="w-5 h-5" /> API Keys
           </h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
-            Mint scoped keys for external tools (e.g. a Slack workflow that logs issues). Each key can do
-            only what its scopes allow — the server rejects anything outside them. Send the key as the{' '}
-            <code className="text-xs bg-muted px-1 py-0.5 rounded">x-api-key</code> header.
+            Mint scoped keys for external tools. Pick, per area, whether a key can <span className="text-info font-medium">View</span> or{' '}
+            <span className="text-warning font-medium">Create &amp; Edit</span>. Keys call{' '}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">/api/data/&lt;area&gt;</code> with the{' '}
+            <code className="text-xs bg-muted px-1 py-0.5 rounded">x-api-key</code> header. The server rejects anything outside a key's scopes.
             {activeCount > 0 && <> {activeCount} active.</>}
           </p>
         </div>
@@ -259,7 +286,7 @@ export function ApiKeysSection() {
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <th className="px-4 py-2 font-medium">Name</th>
                 <th className="px-4 py-2 font-medium">Key</th>
-                <th className="px-4 py-2 font-medium">Scopes</th>
+                <th className="px-4 py-2 font-medium">Access</th>
                 <th className="px-4 py-2 font-medium">Last used</th>
                 <th className="px-4 py-2 font-medium">Created</th>
                 <th className="px-4 py-2 font-medium">Status</th>
@@ -267,61 +294,73 @@ export function ApiKeysSection() {
               </tr>
             </thead>
             <tbody>
-              {(keys ?? []).map(k => (
-                <tr key={k.id} className="border-b last:border-0" data-testid={`row-api-key-${k.id}`}>
-                  <td className="px-4 py-2 font-medium">{k.name}</td>
-                  <td className="px-4 py-2 font-mono text-xs text-muted-foreground">{k.key_prefix}…</td>
-                  <td className="px-4 py-2">
-                    <div className="flex flex-wrap gap-1">
-                      {(k.scopes ?? []).map(s => (
-                        <span key={s} className="text-2xs bg-muted px-1.5 py-0.5 rounded font-mono">
-                          {SCOPE_LABEL.get(s) ?? s}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-2 text-muted-foreground">{fmtDate(k.last_used_at)}</td>
-                  <td className="px-4 py-2 text-muted-foreground">
-                    {fmtDate(k.created_at)}
-                    {k.created_by && <span className="block text-2xs">by {k.created_by}</span>}
-                  </td>
-                  <td className="px-4 py-2">
-                    {k.revoked_at ? (
-                      <StatusBadge tone="neutral">Revoked</StatusBadge>
-                    ) : k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? (
-                      <StatusBadge tone="warning">Expired</StatusBadge>
-                    ) : (
-                      <StatusBadge tone="success">Active</StatusBadge>
-                    )}
-                  </td>
-                  <td className="px-4 py-2 text-right whitespace-nowrap">
-                    {k.revoked_at ? (
-                      <button
-                        className="text-muted-foreground hover:text-destructive p-1"
-                        title="Delete permanently"
-                        onClick={() => {
-                          if (window.confirm(`Permanently delete "${k.name}"? This cannot be undone.`)) remove.mutate(k)
-                        }}
-                        data-testid={`button-delete-api-key-${k.id}`}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => {
-                          if (window.confirm(`Revoke "${k.name}"? Any integration using it will stop working immediately.`)) revoke.mutate(k)
-                        }}
-                        data-testid={`button-revoke-api-key-${k.id}`}
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {(keys ?? []).map(k => {
+                const chips = scopeChips(k.scopes ?? [])
+                const shown = chips.slice(0, 8)
+                const extra = chips.length - shown.length
+                return (
+                  <tr key={k.id} className="border-b last:border-0 align-top" data-testid={`row-api-key-${k.id}`}>
+                    <td className="px-4 py-2 font-medium">{k.name}</td>
+                    <td className="px-4 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">{k.key_prefix}…</td>
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-1 max-w-md">
+                        {chips.length === 0 ? (
+                          <span className="text-2xs text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            {shown.map(c => (
+                              <span
+                                key={c.label}
+                                className={cn(
+                                  'text-2xs px-1.5 py-0.5 rounded',
+                                  c.level === 'edit' ? 'bg-warning/15 text-warning' : 'bg-info/15 text-info',
+                                )}
+                              >
+                                {c.label}{c.level === 'edit' ? ' ✎' : ''}
+                              </span>
+                            ))}
+                            {extra > 0 && <span className="text-2xs text-muted-foreground px-1">+{extra}</span>}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">{fmtDate(k.last_used_at)}</td>
+                    <td className="px-4 py-2 text-muted-foreground whitespace-nowrap">
+                      {fmtDate(k.created_at)}
+                      {k.created_by && <span className="block text-2xs">by {k.created_by}</span>}
+                    </td>
+                    <td className="px-4 py-2">
+                      {k.revoked_at ? (
+                        <StatusBadge tone="neutral">Revoked</StatusBadge>
+                      ) : k.expires_at && new Date(k.expires_at).getTime() < Date.now() ? (
+                        <StatusBadge tone="warning">Expired</StatusBadge>
+                      ) : (
+                        <StatusBadge tone="success">Active</StatusBadge>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right whitespace-nowrap">
+                      {k.revoked_at ? (
+                        <button
+                          className="text-muted-foreground hover:text-destructive p-1"
+                          title="Delete permanently"
+                          onClick={() => { if (window.confirm(`Permanently delete "${k.name}"? This cannot be undone.`)) remove.mutate(k) }}
+                          data-testid={`button-delete-api-key-${k.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <Button
+                          variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                          onClick={() => { if (window.confirm(`Revoke "${k.name}"? Any integration using it will stop working immediately.`)) revoke.mutate(k) }}
+                          data-testid={`button-revoke-api-key-${k.id}`}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -329,14 +368,14 @@ export function ApiKeysSection() {
 
       {/* Create / reveal dialog */}
       <Dialog open={open} onOpenChange={o => { setOpen(o); if (!o) resetDialog() }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           {revealed ? (
             <>
               <DialogHeader>
                 <DialogTitle>Copy your API key</DialogTitle>
                 <DialogDescription>
-                  This is the only time the full key is shown. Copy it now and store it in your integration's
-                  secrets. If you lose it, revoke this key and create a new one.
+                  This is the only time the full key is shown. Copy it now and store it in your integration's secrets.
+                  If you lose it, revoke this key and create a new one.
                 </DialogDescription>
               </DialogHeader>
               <div className="rounded-lg border bg-muted/40 p-3 flex items-center gap-2">
@@ -348,7 +387,7 @@ export function ApiKeysSection() {
               </div>
               <div className="flex items-start gap-2 text-xs text-muted-foreground">
                 <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>Send it as the <code className="bg-muted px-1 rounded">x-api-key</code> header. It grants only the scopes you selected.</span>
+                <span>Send it as the <code className="bg-muted px-1 rounded">x-api-key</code> header. It grants only the areas and levels you selected.</span>
               </div>
               <DialogFooter>
                 <Button onClick={() => { setOpen(false); resetDialog() }} data-testid="button-done-api-key">Done</Button>
@@ -359,7 +398,7 @@ export function ApiKeysSection() {
               <DialogHeader>
                 <DialogTitle>Create API key</DialogTitle>
                 <DialogDescription>
-                  Name the key after where you'll use it, then choose exactly what it can do.
+                  Name the key after where you'll use it, then choose what it can reach. View = read only; Create &amp; Edit = read + write.
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
@@ -372,31 +411,39 @@ export function ApiKeysSection() {
                     data-testid="input-api-key-name"
                   />
                 </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">Scopes</label>
-                  {SCOPE_GROUPS.map(group => (
-                    <div key={group.area} className="rounded-lg border p-3 space-y-2">
-                      <div>
-                        <p className="text-sm font-medium">{group.area}</p>
-                        <p className="text-xs text-muted-foreground">{group.description}</p>
-                      </div>
-                      <div className="space-y-2">
-                        {group.scopes.map(s => (
-                          <label key={s.value} className="flex items-start gap-2 cursor-pointer">
-                            <Checkbox
-                              checked={selected.has(s.value)}
-                              onCheckedChange={() => toggleScope(s.value)}
-                              data-testid={`checkbox-scope-${s.value}`}
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Access by area</label>
+                    <div className="flex items-center gap-2 text-xs">
+                      <button type="button" className="text-info hover:underline" onClick={() => setAll('view')} data-testid="button-grant-all-view">Grant View to all</button>
+                      <span className="text-muted-foreground">·</span>
+                      <button type="button" className="text-muted-foreground hover:underline" onClick={() => setAll('none')} data-testid="button-clear-all">Clear</button>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border divide-y">
+                    {GROUPS.map(({ group, areas }) => (
+                      <div key={group} className="p-3 space-y-2">
+                        <p className="text-2xs uppercase tracking-wide text-muted-foreground font-medium">{group}</p>
+                        {areas.map(a => (
+                          <div key={a.key} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-sm truncate">{a.label}{a.access !== 'rw' && <span className="text-2xs text-muted-foreground"> · read-only</span>}</p>
+                              {a.note && <p className="text-2xs text-muted-foreground truncate">{a.note}</p>}
+                            </div>
+                            <AccessToggle
+                              area={a}
+                              value={access[a.key] ?? 'none'}
+                              onChange={v => setAccess(prev => ({ ...prev, [a.key]: v }))}
                             />
-                            <span className="text-sm leading-tight">
-                              {s.label}
-                              <span className="block text-2xs text-muted-foreground font-mono">{s.value} · {s.hint}</span>
-                            </span>
-                          </label>
+                          </div>
                         ))}
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <p className="text-2xs text-muted-foreground">
+                    {grantedCount} area{grantedCount === 1 ? '' : 's'} selected. Sensitive areas (users, API keys, owners, agreements, settings) can never be granted to a key.
+                  </p>
                 </div>
               </div>
               <DialogFooter>

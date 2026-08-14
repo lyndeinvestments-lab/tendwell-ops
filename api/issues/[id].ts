@@ -25,9 +25,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Scope required per operation: fetching reads, PATCH/PUT updates.
+  // Accept the uniform view/edit scopes plus the legacy granular aliases.
   const scope =
-    req.method === 'GET' ? API_SCOPES.ISSUES_READ
-    : req.method === 'PATCH' || req.method === 'PUT' ? API_SCOPES.ISSUES_UPDATE
+    req.method === 'GET' ? [API_SCOPES.ISSUES_VIEW, API_SCOPES.ISSUES_READ]
+    : req.method === 'PATCH' || req.method === 'PUT' ? [API_SCOPES.ISSUES_EDIT, API_SCOPES.ISSUES_UPDATE]
     : null
   if (scope) {
     if (!(await requireApiKey(req, res, scope))) return

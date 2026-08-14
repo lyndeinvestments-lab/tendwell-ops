@@ -71,9 +71,10 @@ const MAX_LIMIT = 500
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Scope required per operation: listing reads, creating an issue writes.
+  // Accept the uniform view/edit scopes plus the legacy granular aliases.
   const scope =
-    req.method === 'POST' ? API_SCOPES.ISSUES_CREATE
-    : req.method === 'GET' ? API_SCOPES.ISSUES_READ
+    req.method === 'POST' ? [API_SCOPES.ISSUES_EDIT, API_SCOPES.ISSUES_CREATE]
+    : req.method === 'GET' ? [API_SCOPES.ISSUES_VIEW, API_SCOPES.ISSUES_READ]
     : null
   if (scope) {
     if (!(await requireApiKey(req, res, scope))) return
