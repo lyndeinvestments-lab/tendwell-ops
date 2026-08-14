@@ -261,6 +261,15 @@ npm run db:push    # Push Drizzle schema to SQLite
 - Active development branch pattern: `claude/<description>-<id>`
 - No test suite currently configured
 
+### Auto-merge policy (standing instruction from the repo owner, 2026-08-14)
+
+**Auto-merge Claude-authored PRs once CI is green — in every session, without asking.** The owner has durably authorized this, so it overrides the default "confirm before merging."
+
+- **Scope:** PRs Claude opens in the course of the owner's requested work. Do not auto-merge PRs authored by other people.
+- **Green = merge:** once all *required* status checks have passed, squash-merge to `main` immediately (squash is the repo convention). A `skipped` check (e.g. "Supabase Preview") is not a failure — don't wait on it. Never merge while any required check is failing or still running — that's the drive-to-green loop, then merge.
+- **Merge even after the session ends:** at PR creation, also try to enable GitHub native auto-merge (`enable_pr_auto_merge`, squash). If the repo doesn't allow it (no branch protection / feature off), fall back to merging in-session on the CI-green event (Claude is already subscribed to its own PRs).
+- **Holds (do NOT auto-merge):** the owner explicitly says to hold/not merge that PR, or a human reviewer left a "changes requested" review that isn't resolved. Otherwise, merge.
+
 ---
 
 ## Current State & Recent Work
