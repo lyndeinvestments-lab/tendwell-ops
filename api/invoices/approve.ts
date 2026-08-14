@@ -92,6 +92,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // Same class of leak via a different path: a billable line whose property
+  // was cleared in review would export with a blank property name/class.
+  const { count: propertyless, error: propErr } = await supabase
+    .from('invoice_lines')
+    .select('id', { count: 'exact', head: true })
+    .eq('run_id', runId)
+    .not('line_kind', 'in', '(operating_expense,excluded)')
+    .neq('review_status', 'excluded')
+    .is('property_id', null)
+  if (propErr) {
+    res.status(500).json({ error: 'Failed to check property links', detail: propErr.message })
+    return
+  }
+  if ((propertyless ?? 0) > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${propertyless} billable line(s) have no property assigned. Assign a property or exclude the line.`,
+    })
+    return
+  }
+
   const { error: updErr } = await supabase
     .from('invoice_runs')
     .update({ status: 'approved', approved_by: admin.email, approved_at: new Date().toISOString() })

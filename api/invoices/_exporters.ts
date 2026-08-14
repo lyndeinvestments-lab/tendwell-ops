@@ -36,14 +36,18 @@ export interface ExportLine {
 // CSV formula-injection guard: vendor-authored free text (notes, invoice
 // numbers, property strings) flows into files Nina opens in Excel before
 // importing. Any text cell starting with =, +, @, tab, or CR — or a '-' that
-// isn't just a negative number — gets a leading apostrophe so spreadsheet
-// apps render it as text instead of executing it. Our own generated numeric
-// strings (amounts, dates) never hit this path.
+// isn't just a negative number — gets a leading SPACE so spreadsheet apps
+// treat it as text instead of executing it. A space (not the classic
+// apostrophe prefix) because these same files also get fed directly to the
+// Ramp/QBO importers, which parse raw CSV: an apostrophe would be baked
+// verbatim into the imported field, while a leading space is trimmed or
+// harmless. Our own generated numeric strings (amounts, dates) never hit
+// this path.
 export function sanitizeCell(v: string): string {
   if (!v) return v
   const first = v[0]
-  if (first === '=' || first === '+' || first === '@' || first === '\t' || first === '\r') return `'${v}`
-  if (first === '-' && !/^-\d+(\.\d+)?$/.test(v)) return `'${v}`
+  if (first === '=' || first === '+' || first === '@' || first === '\t' || first === '\r') return ` ${v}`
+  if (first === '-' && !/^-\d+(\.\d+)?$/.test(v)) return ` ${v}`
   return v
 }
 
