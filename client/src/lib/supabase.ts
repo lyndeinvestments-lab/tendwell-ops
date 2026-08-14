@@ -22,6 +22,20 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true,
     storageKey: 'tendwell-sb-auth',
   },
+  // cache: 'no-store' on every REST call (2026-08-13, the "quote sheet
+  // frozen at 80 quotes while Safari shows 81" bug). Supabase's gateway
+  // returns NO Cache-Control header, and the iOS home-screen web app's HTTP
+  // cache served repeat GETs of the SAME URL from disk without hitting the
+  // network — Supabase's API logs showed the created row's POST (201) and
+  // the moving-timestamp KPI queries arriving, while the static-URL list
+  // query never arrived again after its first fetch. React Query "refetched"
+  // into the stale cached bytes, so invalidation, the manual refresh button,
+  // and focus refetches all appeared to do nothing. no-store forces every
+  // read to the network; payloads here are small and this app's whole point
+  // is freshness.
+  global: {
+    fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }),
+  },
 })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -167,14 +181,18 @@ export async function logPropertyEdit(
     changed_by: resolvedChangedBy,
   })
 
-  // Legacy table — log errors but never throw
-  // Note: property_edit_log may not have changed_by column; keep insert minimal
+  // Legacy table — log errors but never throw. Kept because the property
+  // modal's profit-history chart reads ce_charged/cleaner_pay history from
+  // it. `changed_by` IS a real column with DEFAULT 'ops-user' — omitting it
+  // (as this insert used to) is where every mystery "ops-user" row in the
+  // Activity feed came from; pass the resolved name so both logs agree.
   try {
     const { error } = await supabase.from('property_edit_log').insert({
       property_id: Number(propertyId),
       field_name: fieldName,
       old_value: oldValue != null ? String(oldValue) : null,
       new_value: newValue != null ? String(newValue) : null,
+      changed_by: resolvedChangedBy ?? undefined,
     })
     if (error) console.warn('[logPropertyEdit] legacy insert failed:', error.message)
   } catch (e) {

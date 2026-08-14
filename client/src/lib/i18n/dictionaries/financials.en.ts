@@ -613,6 +613,7 @@ export const financialsEn = {
     },
     toasts: {
       propertyAdded: 'Property added to Quote stage',
+      duplicateName: '"{{name}}" already exists (in {{stage}}). Open it from search instead of re-adding — a second copy is how quotes look like they \"revert\".',
       addError: 'Error: {{message}}',
       clientCreated: 'Client created',
       clientCreateFailed: 'Could not create client',

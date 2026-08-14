@@ -92,6 +92,12 @@ export const dictionaryEn = {
   financials: financialsEn,
   propertyModal: propertyModalEn,
   palette: paletteEn,
+  // The palette module hosts three sub-areas (palette/csv/shortcuts) but the
+  // components scope by sub-area (`useLocale('csv')` etc.) — without these
+  // aliases every key in CommandPalette/CsvImportModal/KeyboardShortcuts
+  // resolved one level short and rendered raw (e.g. "GROUPS.PROPERTIES").
+  csv: paletteEn.csv,
+  shortcuts: paletteEn.shortcuts,
   authPages: authPagesEn,
   onboarding: onboardingEn,
 }
@@ -124,6 +130,8 @@ export const dictionaryEs: typeof dictionaryEn = {
   financials: financialsEs,
   propertyModal: propertyModalEs,
   palette: paletteEs,
+  csv: paletteEs.csv,
+  shortcuts: paletteEs.shortcuts,
   authPages: authPagesEs,
   onboarding: onboardingEs,
 }
