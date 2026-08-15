@@ -428,7 +428,7 @@ This keeps the file useful as the app grows. Treat it like a living document —
 ## Common Task Checklist
 
 Before starting any feature:
-1. Check which role(s) need access → update `auth.tsx` VIEW_ACCESS if needed
+1. Check which role(s) need access → update `auth.tsx` VIEW_ACCESS if needed. **AND grant the new view id in the live `app_settings.role_permissions` blob** (views array + permissions map per role) — the stored blob overrides the hardcoded `ROLE_VIEWS` fallback, so a new page registered only in code stays hidden from the sidebar for everyone (bit the trellis-tasks page in July and the invoicing page on 2026-08-14).
 2. Check if a Supabase migration is needed → add to `supabase/migrations/`
 3. Use the existing universal property modal — don't create new ones
 4. Add new pages to `App.tsx` router and `AppSidebar.tsx` nav
