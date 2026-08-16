@@ -54,6 +54,8 @@ export const propertyModalEn = {
     fields: {
       bedrooms: 'Bedrooms',
       baths: 'Baths',
+      bathsFullShort: 'Full',
+      bathsHalfShort: 'Half',
       sqFt: 'Sq Ft',
       guests: 'Guests',
       beds: 'Beds',

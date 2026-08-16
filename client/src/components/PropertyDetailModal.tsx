@@ -757,6 +757,7 @@ function buildFormFromProperty(property: any): Record<string, any> {
     address: property.address || '',
     bedrooms: property.bedrooms ?? '',
     full_baths: property.full_baths ?? '',
+    half_baths: property.half_baths ?? '',
     square_footage: property.square_footage ?? '',
     guest_count: property.guest_count ?? '',
     number_of_beds: property.number_of_beds ?? '',
@@ -788,6 +789,8 @@ export function PropertyDetailModal() {
   const [form, setForm] = useState<Record<string, any>>({})
   const [inlineField, setInlineField] = useState<string | null>(null)
   const [inlineValue, setInlineValue] = useState('')
+  // Second slot for the composite Baths cell (full + half in one editor).
+  const [inlineValue2, setInlineValue2] = useState('')
   const [savingMissing, setSavingMissing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [mapPickerOpen, setMapPickerOpen] = useState(false)
@@ -886,6 +889,7 @@ export function PropertyDetailModal() {
           out.address = src.address || null
           out.bedrooms = src.bedrooms !== '' ? parseFloat(String(src.bedrooms)) : null
           out.full_baths = src.full_baths !== '' ? parseFloat(String(src.full_baths)) : null
+          out.half_baths = src.half_baths !== '' ? parseFloat(String(src.half_baths)) : null
           out.square_footage = src.square_footage !== '' ? parseFloat(String(src.square_footage)) : null
           out.guest_count = src.guest_count !== '' ? parseFloat(String(src.guest_count)) : null
           out.number_of_beds = src.number_of_beds !== '' ? parseFloat(String(src.number_of_beds)) : null
@@ -961,27 +965,35 @@ export function PropertyDetailModal() {
     onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
 
-  // Per-field inline save (click a field to edit it without pencil icon)
+  // Per-field inline save (click a field to edit it without pencil icon).
+  // Accepts a multi-field patch too, so a composite cell (Baths = full + half)
+  // commits both columns in ONE write instead of racing two updates.
   const { mutate: saveInlineField } = useMutation({
-    mutationFn: async ({ field, value }: { field: string; value: any }) => {
-      const numFields = ['bedrooms', 'full_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', ...LINEN_FIELD_KEYS]
-      const dbValue = numFields.includes(field) ? (value !== '' ? parseFloat(String(value)) : null) : (value || null)
-      const { data, error } = await supabase.from('properties').update({ [field]: dbValue }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+    mutationFn: async (input: { field: string; value: any } | { patch: Record<string, any> }) => {
+      const numFields = ['bedrooms', 'full_baths', 'half_baths', 'square_footage', 'guest_count', 'ce_charged', 'cleaner_pay', ...LINEN_FIELD_KEYS]
+      const toDb = (field: string, value: any) =>
+        numFields.includes(field) ? (value !== '' && value != null ? parseFloat(String(value)) : null) : (value || null)
+      const raw = 'patch' in input ? input.patch : { [input.field]: input.value }
+      const updates: Record<string, any> = {}
+      for (const [field, value] of Object.entries(raw)) updates[field] = toDb(field, value)
+      const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
-      return { field, dbValue, row: data }
+      return { updates, row: data }
     },
     onSuccess: (result) => {
-      const { field, dbValue, row } = result as { field: string; dbValue: any; row: any }
+      const { updates, row } = result as { updates: Record<string, any>; row: any }
       // Fresh row from the write's representation — immediate, consistent.
       if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
-      logPropertyEdit(
-        propertyId!,
-        field,
-        (property as any)?.[field] ?? null,
-        dbValue ?? null,
-        property?.name ?? null,
-        user?.label ?? null,
-      )
+      for (const [field, dbValue] of Object.entries(updates)) {
+        logPropertyEdit(
+          propertyId!,
+          field,
+          (property as any)?.[field] ?? null,
+          dbValue ?? null,
+          property?.name ?? null,
+          user?.label ?? null,
+        )
+      }
       // Inline single-field edit — same broad scope as the bulk edit; the
       // edited field could be a financial, the address, or anything else
       // that the dashboards/master list/pipeline derive from. Keep the detail
@@ -1126,6 +1138,26 @@ export function PropertyDetailModal() {
       return
     }
     saveInlineField({ field, value })
+  }
+
+  // Baths is a composite cell: `full_baths` + `half_baths` live in two columns
+  // but read as one number to users, so both are edited together and written
+  // in a single update.
+  function startBathsInlineEdit() {
+    if (!canEditProperty || isEditing) return
+    setInlineField('full_baths')
+    setInlineValue(property?.full_baths != null ? String(property.full_baths) : '')
+    setInlineValue2(property?.half_baths != null ? String(property.half_baths) : '')
+  }
+
+  function commitBathsInlineEdit() {
+    const same = (next: string, current: any) =>
+      next.trim() === (current != null ? String(current) : '')
+    if (same(inlineValue, property?.full_baths) && same(inlineValue2, property?.half_baths)) {
+      setInlineField(null)
+      return
+    }
+    saveInlineField({ patch: { full_baths: inlineValue.trim(), half_baths: inlineValue2.trim() } })
   }
 
   const canEditProperty = canEditView('property-list', effectiveUser) || canEditView('master-list', effectiveUser)
@@ -1651,7 +1683,7 @@ export function PropertyDetailModal() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
                   { label: t('overview.fields.bedrooms'), field: 'bedrooms', value: property.bedrooms, editable: true, inputType: 'number' },
-                  { label: t('overview.fields.baths'), field: 'full_baths', value: property.full_baths != null ? `${property.full_baths}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: false, inputType: 'number' },
+                  { label: t('overview.fields.baths'), field: 'full_baths', value: (property.full_baths != null || property.half_baths != null) ? `${property.full_baths ?? 0}${property.half_baths ? `/${property.half_baths}h` : ''}` : null, editable: true, inputType: 'number' },
                   { label: t('overview.fields.sqFt'), field: 'square_footage', value: property.square_footage?.toLocaleString(), editable: true, inputType: 'number' },
                   { label: t('overview.fields.guests'), field: 'guest_count', value: property.guest_count, editable: true, inputType: 'number' },
                   { label: t('overview.fields.beds'), field: 'number_of_beds', value: property.number_of_beds, editable: true, inputType: 'number' },
@@ -1661,7 +1693,74 @@ export function PropertyDetailModal() {
                 ] as { label: string; field: string; value: any; editable: boolean; inputType: 'number' | 'text' }[]).map(row => (
                   <div key={row.field}>
                     <Label className="text-xs text-muted-foreground">{row.label}</Label>
-                    {isEditing && canEditProperty && row.editable !== false && row.field !== 'full_baths' ? (
+                    {/* Baths spans two columns (full + half), so it gets a paired
+                        editor rather than the single input the other rows use. */}
+                    {row.field === 'full_baths' && isEditing && canEditProperty ? (
+                      <div className="mt-0.5 flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          value={form.full_baths ?? ''}
+                          onChange={e => setForm(f => ({ ...f, full_baths: e.target.value }))}
+                          className={fieldCls('full_baths')}
+                          placeholder={t('overview.fields.bathsFullShort')}
+                          title={t('missingFields.labels.fullBaths')}
+                          aria-label={t('missingFields.labels.fullBaths')}
+                          data-testid="modal-input-full_baths"
+                          autoFocus={highlightFields[0] === 'full_baths'}
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={form.half_baths ?? ''}
+                          onChange={e => setForm(f => ({ ...f, half_baths: e.target.value }))}
+                          className={fieldCls('half_baths')}
+                          placeholder={t('overview.fields.bathsHalfShort')}
+                          title={t('missingFields.labels.halfBaths')}
+                          aria-label={t('missingFields.labels.halfBaths')}
+                          data-testid="modal-input-half_baths"
+                        />
+                      </div>
+                    ) : row.field === 'full_baths' && inlineField === 'full_baths' ? (
+                      <div
+                        className="mt-0.5 flex items-center gap-1"
+                        // Commit once focus leaves the pair — tabbing between the
+                        // two inputs must not fire a save.
+                        onBlur={e => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commitBathsInlineEdit()
+                        }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') commitBathsInlineEdit()
+                          if (e.key === 'Escape') setInlineField(null)
+                        }}
+                      >
+                        <Input
+                          autoFocus
+                          type="number"
+                          min={0}
+                          step="0.5"
+                          value={inlineValue}
+                          onChange={e => setInlineValue(e.target.value)}
+                          className="h-7 text-xs"
+                          placeholder={t('overview.fields.bathsFullShort')}
+                          aria-label={t('missingFields.labels.fullBaths')}
+                          data-testid="modal-inline-full_baths"
+                        />
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={inlineValue2}
+                          onChange={e => setInlineValue2(e.target.value)}
+                          className="h-7 text-xs"
+                          placeholder={t('overview.fields.bathsHalfShort')}
+                          aria-label={t('missingFields.labels.halfBaths')}
+                          data-testid="modal-inline-half_baths"
+                        />
+                      </div>
+                    ) : isEditing && canEditProperty && row.editable !== false ? (
                       <Input
                         type={row.inputType}
                         value={form[row.field] ?? ''}
@@ -1682,7 +1781,11 @@ export function PropertyDetailModal() {
                       />
                     ) : (
                       <p className={`text-sm mt-0.5 ${highlightFields.includes(row.field) && isEditing ? 'text-destructive' : ''} ${canEditProperty && row.editable !== false ? 'cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : ''}`}
-                         onClick={() => row.editable !== false && startInlineEdit(row.field, (property as any)[row.field], canEditProperty)}>
+                         onClick={() => {
+                           if (row.editable === false) return
+                           if (row.field === 'full_baths') startBathsInlineEdit()
+                           else startInlineEdit(row.field, (property as any)[row.field], canEditProperty)
+                         }}>
                         {row.value ?? '—'}
                       </p>
                     )}

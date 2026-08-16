@@ -54,6 +54,10 @@ export const propertyModalEs: typeof propertyModalEn = {
     fields: {
       bedrooms: 'Habitaciones',
       baths: 'Baños',
+      // REVIEW: short placeholders inside the two narrow Baths inputs —
+      // "Completos" / "Medios" (baños) trimmed to fit the 4-column grid.
+      bathsFullShort: 'Compl.',
+      bathsHalfShort: 'Medios',
       sqFt: 'Pies²',
       guests: 'Huéspedes',
       beds: 'Camas',
