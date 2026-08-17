@@ -281,9 +281,14 @@ function AppRoutes() {
         <Route path="/report">{() => <Redirect to="/financial-dashboard" />}</Route>
         <Route path="/cleaner-metrics">{() => <GuardedRoute viewId="cleaner-metrics" component={CleanerMetricsPage} />}</Route>
         <Route path="/north-star">{() => <GuardedRoute viewId="north-star" component={NorthStarPage} />}</Route>
-        <Route path="/api-sync">{() => <AdminRoute component={TrellisSyncPage} />}</Route>
+        {/* Still admin-only, but via ADMIN_ONLY_VIEWS so the sidebar hides it
+            for non-admins instead of showing a link the route refuses. */}
+        <Route path="/api-sync">{() => <GuardedRoute viewId="trellis-sync" component={TrellisSyncPage} />}</Route>
         <Route path="/trellis-sync">{() => <Redirect to="/api-sync" />}</Route>
-        <Route path="/invoicing">{() => <AdminRoute component={InvoicingPage} />}</Route>
+        {/* Permission-driven: the `invoicing` grant in Settings → Roles &
+            Permissions governs the route, the table policies (20260817c) and
+            api/invoices/* alike. */}
+        <Route path="/invoicing">{() => <GuardedRoute viewId="invoicing" component={InvoicingPage} />}</Route>
         <Route path="/trellis-tasks">{() => <GuardedRoute viewId="trellis-tasks" component={TrellisTasksPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />

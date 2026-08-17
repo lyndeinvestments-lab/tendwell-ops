@@ -22,6 +22,95 @@ export function getSupabaseConfig(): SupabaseConfig {
   return { url, serviceKey }
 }
 
+// Resolve the Authorization: Bearer <jwt> to the staff row behind it, writing
+// the 401 response itself on a missing/invalid session. Shared by the admin and
+// permission-scoped gates below so both validate the token identically.
+async function resolveStaffFromBearer(
+  req: VercelRequest,
+  res: VercelResponse,
+): Promise<{ email: string; label: string; role: string } | null> {
+  const auth = req.headers.authorization
+  if (!auth?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Missing Authorization: Bearer <session token>' })
+    return null
+  }
+  const token = auth.slice(7)
+  const sb = getSupabaseConfig()
+  const userRes = await fetch(`${sb.url}/auth/v1/user`, {
+    headers: { Authorization: `Bearer ${token}`, apikey: sb.serviceKey },
+  })
+  if (!userRes.ok) {
+    res.status(401).json({ error: 'Invalid session' })
+    return null
+  }
+  const user = await userRes.json() as { email?: string }
+  if (!user.email) {
+    res.status(401).json({ error: 'Invalid session' })
+    return null
+  }
+  const lookup = await fetch(
+    `${sb.url}/rest/v1/app_users?select=role,label&google_email=eq.${encodeURIComponent(user.email.toLowerCase())}&limit=1`,
+    { headers: { apikey: sb.serviceKey, Authorization: `Bearer ${sb.serviceKey}` } },
+  )
+  if (!lookup.ok) {
+    res.status(403).json({ error: 'Authorization lookup failed' })
+    return null
+  }
+  const rows = await lookup.json() as Array<{ role?: string; label?: string }>
+  const row = rows[0]
+  if (!row?.role) {
+    res.status(403).json({ error: 'Not a staff account' })
+    return null
+  }
+  return { email: user.email, label: row.label ?? row.role, role: row.role }
+}
+
+/** Verify the caller may act on `view` per the RBAC store in
+ *  app_settings.role_permissions, rather than by a hardcoded role check.
+ *  Admins always pass. `mode` picks the view or edit grant.
+ *
+ *  This is what makes a grant in Settings → Roles & Permissions real for an
+ *  API-backed page: /invoicing used to be admin-only at the route, the tables
+ *  AND here, so granting the `invoicing` view only produced a sidebar link
+ *  that every layer below refused.
+ *
+ *  Delegates to the same SQL helpers the table policies use
+ *  (current_user_can_view / current_user_can_edit, 20260817c), so the endpoint
+ *  and RLS can never disagree about what a role is allowed to do. */
+export async function requirePermissionBearer(
+  req: VercelRequest,
+  res: VercelResponse,
+  view: string,
+  mode: 'view' | 'edit' = 'edit',
+): Promise<{ email: string; label: string; role: string } | null> {
+  const staff = await resolveStaffFromBearer(req, res)
+  if (!staff) return null
+  if (staff.role === 'admin') return staff
+
+  const sb = getSupabaseConfig()
+  const fn = mode === 'edit' ? 'current_user_can_edit' : 'current_user_can_view'
+  // Called with the caller's own token (not the service key) so the SECURITY
+  // DEFINER helper resolves auth.uid() to this user.
+  const rpc = await fetch(`${sb.url}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    headers: {
+      apikey: sb.serviceKey,
+      Authorization: req.headers.authorization as string,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ p_view: view }),
+  })
+  if (!rpc.ok) {
+    res.status(403).json({ error: 'Permission lookup failed' })
+    return null
+  }
+  if (await rpc.json() !== true) {
+    res.status(403).json({ error: `Permission required: ${view}:${mode}` })
+    return null
+  }
+  return staff
+}
+
 // Verify the Authorization: Bearer <jwt> belongs to a user whose
 // app_users.role is 'admin'. Returns the resolved user info or null.
 export async function requireAdminBearer(

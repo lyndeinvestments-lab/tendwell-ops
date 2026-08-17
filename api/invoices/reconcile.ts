@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getServiceClient, reconcileRun, requireAdminBearer } from './_lib.js'
+import { getServiceClient, reconcileRun, requireInvoicingBearer } from './_lib.js'
 
 // POST /api/invoices/reconcile  Body: { run_id }
 // Re-runs the deterministic engine over a run's lines (e.g. after new aliases
@@ -11,8 +11,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
-  const admin = await requireAdminBearer(req, res)
-  if (!admin) return
+  const actor = await requireInvoicingBearer(req, res)
+  if (!actor) return
 
   const runId = typeof (req.body as any)?.run_id === 'string' ? (req.body as any).run_id : null
   if (!runId) {

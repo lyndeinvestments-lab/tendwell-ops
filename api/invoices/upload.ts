@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createHash } from 'node:crypto'
 import Papa from 'papaparse'
 import { extractDateFromText, round2, type RawLine } from './_engine.js'
-import { getServiceClient, readRawBody, reconcileRun, requireAdminBearer } from './_lib.js'
+import { getServiceClient, readRawBody, reconcileRun, requireInvoicingBearer } from './_lib.js'
 
 // POST /api/invoices/upload
 //
@@ -196,8 +196,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
-  const admin = await requireAdminBearer(req, res)
-  if (!admin) return
+  const actor = await requireInvoicingBearer(req, res)
+  if (!actor) return
 
   // Body / params
   let csvText: string
@@ -276,7 +276,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stated_subtotal: statedSubtotal,
         status: 'ingested',
         source_file_sha256: sha256,
-        created_by: admin.email,
+        created_by: actor.email,
       })
       .select('id')
       .single()

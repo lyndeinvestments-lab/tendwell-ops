@@ -165,8 +165,22 @@ export function sanitizePagePermissions(
 }
 
 // ─── Central access helpers ─────────────────────────────────────────────────
+
+/** Views whose page is admin-only no matter what the permission matrix says,
+ *  because the data behind it is admin-only too (admin-bearer endpoints +
+ *  admin-only RLS). Enforced here so the sidebar and the route guard agree —
+ *  they both go through canAccessView, and granting one of these in Settings
+ *  used to produce a nav link that the route then refused ("You don't have
+ *  access to this page").
+ *
+ *  To move a view out of this set, widen all three layers first: the route
+ *  guard, the table policies and the endpoints — see `invoicing` and
+ *  20260817c_permission_driven_invoicing.sql for the worked example. */
+export const ADMIN_ONLY_VIEWS: ReadonlySet<string> = new Set(['trellis-sync'])
+
 export function canAccessView(viewId: string, user: AuthUser | null): boolean {
   if (!user) return false
+  if (ADMIN_ONLY_VIEWS.has(viewId) && user.role !== 'admin') return false
   return user.resolvedViews.includes(viewId as ViewId)
 }
 

@@ -17,7 +17,18 @@ import {
   type TaskRow,
 } from './_engine.js'
 
-export { requireAdminBearer } from '../qbo/_lib.js'
+import { requirePermissionBearer } from '../qbo/_lib.js'
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+
+/** Gate for every api/invoices/* endpoint: the caller needs the `invoicing`
+ *  EDIT grant (admins always pass). Every endpoint here mutates a run or
+ *  assigns the sequential QBO invoice number, so none of them are read-only.
+ *  Grant-driven rather than admin-only so Settings → Roles & Permissions
+ *  actually governs this area — see 20260817c_permission_driven_invoicing.sql,
+ *  which points the invoicing table policies at the same SQL helpers. */
+export function requireInvoicingBearer(req: VercelRequest, res: VercelResponse) {
+  return requirePermissionBearer(req, res, 'invoicing', 'edit')
+}
 
 export function getServiceClient(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL

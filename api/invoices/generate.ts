@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { generateDraftLines } from './_engine.js'
-import { getServiceClient, loadEngineContext, reconcileRun, requireAdminBearer, toLineInserts } from './_lib.js'
+import { getServiceClient, loadEngineContext, reconcileRun, requireInvoicingBearer, toLineInserts } from './_lib.js'
 import { reconcile } from './_engine.js'
 
 // POST /api/invoices/generate
@@ -17,8 +17,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
-  const admin = await requireAdminBearer(req, res)
-  if (!admin) return
+  const actor = await requireInvoicingBearer(req, res)
+  if (!actor) return
 
   const body = (req.body ?? {}) as Record<string, unknown>
   const vendorId = typeof body.vendor_id === 'string' ? body.vendor_id : null
@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         period_end: periodEnd,
         invoice_date: periodEnd,
         status: 'ingested',
-        created_by: admin.email,
+        created_by: actor.email,
       })
       .select('id')
       .single()
