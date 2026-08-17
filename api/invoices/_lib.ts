@@ -4,8 +4,10 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  isExcludedTitle,
   reconcile,
   round2,
+  standardizeTitle,
   type AliasRow,
   type BillingChannel,
   type EngineLine,
@@ -47,10 +49,10 @@ export async function loadEngineContext(
   periodStart: string,
   periodEnd: string,
 ): Promise<EngineContext> {
-  const [propsRes, contactsRes, aliasesRes, tasksRes] = await Promise.all([
+  const [propsRes, contactsRes, aliasesRes, tasksRes, trellisRes] = await Promise.all([
     supabase
       .from('properties')
-      .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id')
+      .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id')
       .is('deleted_at', null),
     supabase.from('contacts').select('id, billing_channel'),
     supabase.from('vendor_property_aliases').select('vendor_id, alias_raw, property_id'),
@@ -59,8 +61,18 @@ export async function loadEngineContext(
       .select('external_id, property_id, due_date, task_title, is_clean, is_deep_clean, raw')
       .gte('due_date', shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS))
       .lte('due_date', shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)),
+    // Trellis cleans too: Breezeway alone missed ~half the 8/10–8/16 week
+    // (88 of 172 property-day cleans; 84 existed only in Trellis). Task-level
+    // union with Breezeway winning per (property, day) — the property-level
+    // rule from financial_monthly_cleans undercounts for invoicing.
+    supabase
+      .from('trellis_task_snapshot')
+      .select('trellis_task_id, trellis_property_id, title, status, scheduled_date')
+      .ilike('department_name', '%clean%')
+      .gte('scheduled_date', shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS))
+      .lte('scheduled_date', shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)),
   ])
-  const firstError = propsRes.error ?? contactsRes.error ?? aliasesRes.error ?? tasksRes.error
+  const firstError = propsRes.error ?? contactsRes.error ?? aliasesRes.error ?? tasksRes.error ?? trellisRes.error
   if (firstError) throw new Error(`Failed to load engine context: ${firstError.message}`)
 
   const channelByContact = new Map<string, BillingChannel>()
@@ -68,14 +80,16 @@ export async function loadEngineContext(
     channelByContact.set(c.id, c.billing_channel)
   }
 
-  const properties: PropertyRates[] = ((propsRes.data ?? []) as Array<{
+  const propRows = (propsRes.data ?? []) as Array<{
     id: number
     name: string
     ce_charged: number | null
     cleaner_pay: number | null
     deep_clean_3x_ce: number | null
     contact_id: string | null
-  }>).map(p => ({
+    trellis_id: string | null
+  }>
+  const properties: PropertyRates[] = propRows.map(p => ({
     id: p.id,
     name: p.name,
     ceCharged: p.ce_charged,
@@ -83,6 +97,8 @@ export async function loadEngineContext(
     deepClean3xCe: p.deep_clean_3x_ce,
     billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
   }))
+  const propertyByTrellisId = new Map<string, number>()
+  for (const p of propRows) if (p.trellis_id) propertyByTrellisId.set(p.trellis_id, p.id)
 
   const aliases: AliasRow[] = ((aliasesRes.data ?? []) as Array<{
     vendor_id: string | null
@@ -112,7 +128,51 @@ export async function loadEngineContext(
     }
   })
 
-  return { properties, aliases, tasks }
+  // Trellis cleans for property-days Breezeway doesn't cover. Breezeway wins
+  // per (property, day) so a clean tracked in both systems counts once.
+  // externalId is 'trellis:'-prefixed — matched_task_id historically meant
+  // breezeway_tasks.external_id, and the prefix keeps provenance unambiguous.
+  // Title rules mirror the engine: standardizeTitle must yield a base clean;
+  // Cleaner Self-Inspections / Air Filter Changes are excluded; hot-tub and
+  // other extra-only titles never generate a draft clean.
+  const bwCleanDays = new Set(
+    tasks.filter(t => (t.isClean || t.isDeepClean) && t.propertyId != null && t.dueDate != null)
+      .map(t => `${t.propertyId}|${t.dueDate}`),
+  )
+  const trellisTasks: TaskRow[] = ((trellisRes.data ?? []) as Array<{
+    trellis_task_id: string
+    trellis_property_id: string | null
+    title: string | null
+    status: string | null
+    scheduled_date: string | null
+  }>)
+    .map(t => {
+      const propertyId = t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null
+      const title = t.title ?? ''
+      const excluded = isExcludedTitle(title)
+      const std = standardizeTitle(title)
+      const isDeep = !excluded && /deep\s*clean/i.test(title)
+      return {
+        externalId: `trellis:${t.trellis_task_id}`,
+        propertyId,
+        dueDate: t.scheduled_date,
+        title,
+        isClean: !excluded && !isDeep && std != null && !std.isExtra,
+        isDeepClean: isDeep,
+        totalCostRef: null,
+        status: t.status ?? '',
+      }
+    })
+    .filter(t =>
+      (t.isClean || t.isDeepClean) &&
+      t.propertyId != null &&
+      t.dueDate != null &&
+      !/cancel/i.test(t.status) &&
+      !bwCleanDays.has(`${t.propertyId}|${t.dueDate}`),
+    )
+    .map(({ status: _s, ...t }) => t)
+
+  return { properties, aliases, tasks: [...tasks, ...trellisTasks] }
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────

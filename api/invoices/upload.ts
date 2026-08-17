@@ -28,17 +28,33 @@ import { getServiceClient, readRawBody, reconcileRun, requireAdminBearer } from 
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-function pickHeader(headers: string[], candidates: string[]): string | null {
+function pickHeader(headers: string[], candidates: string[], exclude?: RegExp): string | null {
   const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const pool = exclude ? headers.filter(h => !exclude.test(norm(h))) : headers
   for (const c of candidates) {
-    const hit = headers.find(h => norm(h) === norm(c))
+    const hit = pool.find(h => norm(h) === norm(c))
     if (hit) return hit
   }
   for (const c of candidates) {
-    const hit = headers.find(h => norm(h).includes(norm(c)))
+    const hit = pool.find(h => norm(h).includes(norm(c)))
     if (hit) return hit
   }
   return null
+}
+
+// A column whose value is identical (and non-empty) on every row is invoice-
+// level metadata, not line data — Busy Bee repeats invoice_number/date/amount
+// on all rows.
+function uniformValue(rows: Array<Record<string, string>>, col: string | null): string | null {
+  if (!col) return null
+  let seen: string | null = null
+  for (const row of rows) {
+    const v = (row[col] ?? '').trim()
+    if (!v) continue
+    if (seen == null) seen = v
+    else if (v !== seen) return null
+  }
+  return seen
 }
 
 function parseAmount(v: unknown): number | null {
@@ -67,6 +83,8 @@ function asDateHeader(text: string | null, amount: number | null): string | null
 export interface ParsedInvoiceCsv {
   lines: RawLine[]
   detectedSubtotal: number | null
+  detectedInvoiceNumber: string | null
+  detectedInvoiceDate: string | null // yyyy-mm-dd
 }
 
 // Exported for unit tests.
@@ -81,11 +99,22 @@ export function parseVendorCsv(csvText: string): ParsedInvoiceCsv {
   })
   const headers = parsed.meta.fields ?? []
   const propCol = pickHeader(headers, ['Property', 'Item Name', 'Name', 'Cabin', 'Description'])
-  const noteCol = pickHeader(headers, ['Note', 'Notes', 'Memo', 'Details', 'Comments'])
-  const amountCol = pickHeader(headers, ['Total', 'Amount', 'Line Total', 'Total Price'])
+  // Busy Bee's full export names the note column "description" while
+  // "item_name" carries the property — when Description lost the property
+  // pick, it's the note column.
+  let noteCol = pickHeader(headers, ['Note', 'Notes', 'Memo', 'Details', 'Comments'])
+  if (!noteCol) {
+    const desc = pickHeader(headers, ['Description'])
+    if (desc && desc !== propCol) noteCol = desc
+  }
+  // Invoice-level columns (invoice_amount, invoice_date, invoice_due_date…)
+  // must never be picked as LINE columns: Busy Bee repeats the invoice date on
+  // every row, and picking it as the service date once collapsed all 217
+  // lines of I260810797 onto one day, breaking task matching run-wide.
+  const amountCol = pickHeader(headers, ['Total', 'Amount', 'Line Total', 'Total Price'], /invoice/)
   const qtyCol = pickHeader(headers, ['Quantity', 'Qty'])
   const rateCol = pickHeader(headers, ['Unit Price', 'Rate', 'Price'])
-  const dateCol = pickHeader(headers, ['Service Date', 'Date', 'Due Date'])
+  const dateCol = pickHeader(headers, ['Service Date', 'Date', 'Due Date'], /invoice|payment/)
   if (!propCol) throw new Error(`Could not find a property/item column. Headers seen: ${headers.join(', ')}`)
   if (!amountCol && !(qtyCol && rateCol)) {
     throw new Error(`Could not find an amount column (Total/Amount) or Quantity+Unit Price. Headers seen: ${headers.join(', ')}`)
@@ -146,7 +175,20 @@ export function parseVendorCsv(csvText: string): ParsedInvoiceCsv {
     })
   }
 
-  return { lines, detectedSubtotal }
+  // Invoice-level metadata from uniform columns (Busy Bee repeats these on
+  // every row). invoice_amount arms the penny-exact subtotal gate even when
+  // the file has no "Subtotal" footer row and no stated_subtotal param.
+  const invNoCol = pickHeader(headers, ['Invoice Number', 'Invoice No'])
+  const invDateCol = pickHeader(headers, ['Invoice Date'])
+  const invAmountCol = pickHeader(headers, ['Invoice Amount', 'Invoice Total'])
+  const detectedInvoiceNumber = uniformValue(parsed.data, invNoCol)
+  const detectedInvoiceDate = extractDateFromText(uniformValue(parsed.data, invDateCol))
+  if (detectedSubtotal == null) {
+    const amt = parseAmount(uniformValue(parsed.data, invAmountCol))
+    if (amt != null && amt > 0) detectedSubtotal = amt
+  }
+
+  return { lines, detectedSubtotal, detectedInvoiceNumber, detectedInvoiceDate }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -190,7 +232,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { lines, detectedSubtotal } = parseVendorCsv(csvText)
+    const { lines, detectedSubtotal, detectedInvoiceNumber, detectedInvoiceDate } = parseVendorCsv(csvText)
     if (lines.length === 0) {
       res.status(400).json({ error: 'No line items parsed from CSV' })
       return
@@ -198,10 +240,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const statedParam = parseFloat(String(params.stated_subtotal ?? ''))
     const statedSubtotal = Number.isFinite(statedParam) ? round2(statedParam) : detectedSubtotal
-    const invoiceNumber = typeof params.invoice_number === 'string' ? params.invoice_number : null
-    const invoiceDate = typeof params.invoice_date === 'string' && ISO_DATE.test(params.invoice_date) ? params.invoice_date : null
+    const invoiceNumber = (typeof params.invoice_number === 'string' && params.invoice_number) || detectedInvoiceNumber
+    const invoiceDate =
+      (typeof params.invoice_date === 'string' && ISO_DATE.test(params.invoice_date) ? params.invoice_date : null) ??
+      detectedInvoiceDate
 
-    const lineDates = lines.map(l => l.rawDateMentioned).filter((d): d is string => d != null).sort()
+    // Period bounds from line dates — but anchored to the invoice date when
+    // known: a typo'd date-header block (real case: "5/12/26" for 8/12/26 on
+    // I260810797) must not stretch the run period back months. Out-of-window
+    // lines keep their parsed date and surface via unmatched_task review.
+    const allLineDates = lines.map(l => l.rawDateMentioned).filter((d): d is string => d != null).sort()
+    const anchor = invoiceDate
+    const lineDates = anchor
+      ? allLineDates.filter(d => Math.abs(Date.parse(d) - Date.parse(anchor)) <= 45 * 86_400_000)
+      : allLineDates
     const periodStart =
       typeof params.period_start === 'string' && ISO_DATE.test(params.period_start)
         ? params.period_start

@@ -21,3 +21,6 @@ tests/.auth/
 # Local backups (kept on device, never in repo)
 _backups/
 .superpowers/
+
+# Local machine-specific Claude Code permissions (contains no secrets, but machine-scoped)
+.claude/settings.local.json
