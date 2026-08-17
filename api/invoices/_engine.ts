@@ -162,6 +162,9 @@ const OPERATING_EXPENSE_PATTERNS = [
   /warehouse/i,
   /inspection\s*work/i,
   /bulk/i,
+  // Labor lines are a Tendwell expense: paid to the vendor via Ramp, never
+  // invoiced to Haven or bill.com, and need no property (Jordan 2026-08-17).
+  /\blabou?r\b/i,
 ]
 
 interface TitleRule {
@@ -568,28 +571,33 @@ export function classifyLine(
       if (deepConflict) line = needsReview(line, FLAGS.DEEP_MISMATCH)
       if (!matchedTask) line = needsReview(line, FLAGS.UNMATCHED_TASK)
     } else if (isOnboarding) {
-      // Onboarding Clean bills the client at Client Charged + $50 (confirmed
-      // by Jordan 2026-08-14). Rendered as TWO rows — base at Client Charged
-      // plus a $50 surcharge line, both titled "Onboarding Clean" — because
-      // Finance requires extras broken out from the clean fee (2026-08-17)
-      // and Nina's real QBO sheet (invoice #1085) shows exactly this shape.
-      if (ceCharged == null) {
+      // Onboarding Clean: client billed at Client Charged + $50 AND the
+      // cleaner paid at Cleaner Pay + $50 (Jordan 2026-08-17 — the surcharge
+      // flows through both sides). Rendered as TWO rows — base plus a $50
+      // surcharge line, both titled "Onboarding Clean" — because Finance
+      // requires extras broken out (Nina's real QBO sheet #1085 shape).
+      if (ceCharged == null || cleanerPay == null) {
         line.clientChargeAmount = null
         line = needsReview(line, FLAGS.MISSING_RATE)
         return [withChannel(line, property)]
       }
       const group = splitSeq()
-      const base: EngineLine = {
+      let base: EngineLine = {
         ...line,
         splitGroup: group,
         lineKind: 'combined_split',
-        cleanerPayAmount: round2(raw.rawAmount),
+        cleanerPayAmount: round2(cleanerPay),
         clientChargeAmount: round2(ceCharged),
         flags: [...line.flags, FLAGS.COMBINED_SPLIT],
       }
-      // The surcharge is client-only: the vendor is owed nothing extra
-      // (cleanerPay null) and it's not part of the vendor's stated subtotal
-      // (rawAmount 0; split extras are excluded from the subtotal sum anyway).
+      // Vendor should have billed Cleaner Pay + $50 — anything else is a real
+      // money question, never silently absorbed.
+      if (Math.abs(raw.rawAmount - (cleanerPay + 50)) > PENNY) {
+        base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
+      }
+      // The surcharge row carries the $50 on BOTH sides. rawAmount 0: the
+      // base row keeps the vendor's whole stated amount for the subtotal sum
+      // (split extras are excluded from it).
       const surcharge: EngineLine = {
         ...baseLine(raw),
         splitGroup: group,
@@ -600,7 +608,7 @@ export function classifyLine(
         serviceType: 'Onboarding Clean',
         rawAmount: 0,
         rawNoteText: 'Onboarding surcharge',
-        cleanerPayAmount: null,
+        cleanerPayAmount: 50,
         clientChargeAmount: 50,
         flags: [FLAGS.COMBINED_SPLIT],
         reviewStatus: 'ok',
@@ -729,12 +737,15 @@ export function generateDraftLines(
         rawDateMentioned: t.dueDate,
       })
     } else {
+      // Onboarding cleans pay the cleaner $50 above Cleaner Pay — the draft
+      // must state that amount or reconcile would flag its own suggestion.
+      const isOnboardingTask = standardizeTitle(t.title)?.title === 'Onboarding Clean'
       out.push({
         lineNo: lineNo++,
         source: 'generated',
         rawPropertyText: p?.name ?? String(t.propertyId),
         rawNoteText: `${t.title} on ${t.dueDate ?? 'unknown date'}`,
-        rawAmount: pay != null ? round2(pay) : 0,
+        rawAmount: pay != null ? round2(isOnboardingTask ? pay + 50 : pay) : 0,
         rawDateMentioned: t.dueDate,
       })
     }

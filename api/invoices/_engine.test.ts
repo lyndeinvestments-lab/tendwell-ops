@@ -298,28 +298,50 @@ describe('reconcile — money rules', () => {
     expect(lines[0].clientChargeAmount).toBe(600) // no deep_clean_3x_ce → ce 200 × 3
   })
 
-  it('bills Onboarding Clean as TWO rows: base at Client Charged + a $50 surcharge line', () => {
-    // Finance requires extras broken out from the clean fee; Nina's real QBO
-    // sheet (invoice #1085) renders onboarding as base + $50, both titled
-    // "Onboarding Clean". Total client charge stays Client Charged + 50.
+  it('bills Onboarding Clean as TWO rows with the $50 on BOTH sides (pay + charge)', () => {
+    // Finance requires extras broken out from the clean fee (Nina's #1085
+    // shape) and the cleaner is paid $50 above Cleaner Pay for onboarding
+    // (Jordan 2026-08-17). Vendor billed pay + 50 → fully clean.
     const { lines, summary } = reconcile(
-      input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
+      input([vendorLine({ rawAmount: 150, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
     )
     expect(lines).toHaveLength(2)
     const [base, surcharge] = lines
     expect(base.serviceType).toBe('Onboarding Clean')
     expect(base.lineKind).toBe('combined_split')
-    expect(base.cleanerPayAmount).toBe(253.52) // vendor paid what they billed, whole
+    expect(base.cleanerPayAmount).toBe(100) // cleaner_pay rate
     expect(base.clientChargeAmount).toBe(150) // ce_charged
     expect(surcharge.serviceType).toBe('Onboarding Clean')
     expect(surcharge.lineKind).toBe('extra')
-    expect(surcharge.cleanerPayAmount).toBeNull() // client-only surcharge
+    expect(surcharge.cleanerPayAmount).toBe(50) // cleaner gets the surcharge too
     expect(surcharge.clientChargeAmount).toBe(50)
     expect(surcharge.rawAmount).toBe(0) // not part of the vendor's stated subtotal
     expect(surcharge.splitGroup).toBe(base.splitGroup)
-    expect(base.flags).not.toContain(FLAGS.BILLED_WHOLE)
-    expect(summary.totalClientCharge).toBe(200) // 150 + 50, unchanged in total
-    expect(summary.netDiscrepancy).toBe(0) // surcharge must not skew AP math
+    expect(base.reviewStatus).toBe('ok') // 150 = 100 pay + 50 surcharge
+    expect(summary.totalCleanerPay).toBe(150) // 100 + 50
+    expect(summary.totalClientCharge).toBe(200) // 150 + 50
+    expect(summary.netDiscrepancy).toBe(0)
+  })
+
+  it('flags an onboarding line whose vendor amount is not Cleaner Pay + $50', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
+    )
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    expect(base.flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(base.reviewStatus).toBe('needs_review')
+    expect(base.cleanerPayAmount).toBe(100) // rate-based, never the odd raw amount
+  })
+
+  it('generated drafts state Cleaner Pay + $50 for onboarding tasks (no self-flag on reconcile)', () => {
+    const tasks: TaskRow[] = [
+      { externalId: 'ob1', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const drafts = generateDraftLines(tasks, new Map(PROPS.map(p => [p.id, p])))
+    expect(drafts).toHaveLength(1)
+    expect(drafts[0].rawAmount).toBe(150) // 100 cleaner_pay + 50
+    const { lines } = reconcile(input(drafts, { tasks }))
+    expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
   })
 
   it('splits "regular clean plus onboarding" into base @ Client Charged + an Onboarding Clean extra', () => {
