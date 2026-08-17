@@ -26,6 +26,7 @@ export interface ExportLine {
   serviceType: string | null
   serviceDate: string | null // yyyy-mm-dd
   propertyName: string | null
+  propertyId?: number | null // needed for manual QBO class links
   clientName: string | null
   billingChannel: BillingChannel | null
   cleanerPayAmount: number | null
@@ -107,22 +108,37 @@ function lineDescription(l: ExportLine): string {
 // exists in QBO — an unknown value fails or auto-creates classes on import.
 // Nina's own sheets leave Class blank for unmapped properties and sometimes
 // use a shorter class name ("Brian Albaum" for property "Brian Albaum 442").
-// Resolution: exact case-insensitive match → unique word-boundary prefix
-// match → blank. With no class list at all (the nightly qbo-classes-sync has
-// never populated qbo_classes), fall back to the property name as before.
-export function qboClassFor(propertyName: string | null, knownClasses?: ReadonlyArray<string>): string {
+// Resolution: MANUAL link (qbo_classes.matched_property_id, set on the API
+// Sync → QuickBooks tab) → exact case-insensitive match → unique word-boundary
+// prefix match → blank. With no class list at all (the nightly
+// qbo-classes-sync has never populated qbo_classes), fall back to the
+// property name as before.
+export interface QboClassRef {
+  name: string
+  matchedPropertyId?: number | null
+}
+
+export function qboClassFor(
+  propertyName: string | null,
+  propertyId: number | null,
+  knownClasses?: ReadonlyArray<QboClassRef>,
+): string {
   const prop = propertyName ?? ''
   if (!knownClasses) return prop
+  if (propertyId != null) {
+    const manual = knownClasses.find(k => k.matchedPropertyId === propertyId)
+    if (manual) return manual.name
+  }
   if (!prop) return ''
   const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim()
   const p = norm(prop)
-  const exact = knownClasses.find(k => norm(k) === p)
-  if (exact) return exact
+  const exact = knownClasses.find(k => norm(k.name) === p)
+  if (exact) return exact.name
   const prefixes = knownClasses.filter(k => {
-    const n = norm(k)
+    const n = norm(k.name)
     return n.length > 0 && p.startsWith(`${n} `)
   })
-  return prefixes.length === 1 ? prefixes[0] : '' // ambiguous/unknown → never guess
+  return prefixes.length === 1 ? prefixes[0].name : '' // ambiguous/unknown → never guess
 }
 
 const s = sanitizeCell
@@ -150,7 +166,7 @@ const RAMP_HEADERS = [
   'Payment method (optional)',
 ]
 
-export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<string>): string {
+export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<QboClassRef>): string {
   const rows = lines.filter(isApLine).map(l => ({
     'Vendor name': s(run.vendorName),
     'Description (optional)': `Cleaning services${run.periodEnd ? ` — week ending ${run.periodEnd}` : ''}`,
@@ -162,7 +178,7 @@ export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: Re
     'Line item amount': (l.cleanerPayAmount ?? 0).toFixed(2),
     'QuickBooks Category (optional)': '',
     'QuickBooks Billable (optional)': '',
-    'QuickBooks Class (optional)': s(qboClassFor(l.propertyName, knownClasses)),
+    'QuickBooks Class (optional)': s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
     'QuickBooks Customer/Job (optional)': '',
     'Line item description': lineDescription(l),
     'Inventory line item quantity': '',
@@ -187,7 +203,7 @@ const QBO_FLAT_HEADERS = [
   'Due Date',
 ]
 
-export function toQboFlatCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<string>): string {
+export function toQboFlatCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<QboClassRef>): string {
   const invoiceDate = fmtUsDate(run.invoiceDate)
   const dueDate = fmtUsDate(run.dueDate ?? run.invoiceDate)
   const rows = lines.filter(l => isArLine(l, 'qbo_haven')).map(l => [
@@ -195,7 +211,7 @@ export function toQboFlatCsv(run: ExportRun, lines: ExportLine[], knownClasses?:
     fmtUsDate(l.serviceDate),
     s(l.propertyName ?? ''),
     fmtUsd(l.clientChargeAmount ?? 0),
-    s(qboClassFor(l.propertyName, knownClasses)),
+    s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
     run.qboInvoiceNo != null ? String(run.qboInvoiceNo) : '',
     'Haven',
     invoiceDate,
