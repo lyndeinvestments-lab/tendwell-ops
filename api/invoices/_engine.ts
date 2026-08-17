@@ -105,6 +105,7 @@ export const FLAGS = {
   RATE_STALE: 'rate_stale',
   DEEP_MISMATCH: 'deep_mismatch',
   CREDIT_LINE: 'credit_line',
+  REASON_REQUIRED: 'reason_required',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -224,6 +225,37 @@ export function extraTitleFromNote(note: string | null): string | null {
     if (rule.re.test(note)) return rule.title
   }
   return null
+}
+
+// Extras whose invoice title must carry the vendor's stated reason (Finance
+// requirement, 2026-08-17) — e.g. "Pet Fee (excess dog hair)" on Nina's real
+// QBO sheet. A line with one of these titles and no derivable reason goes to
+// the review queue so a human supplies one (review_note).
+export const REASON_REQUIRED_EXTRAS: ReadonlySet<string> = new Set([
+  'Double Clean',
+  'Extra Cleaning',
+  'Reimbursement',
+  'Trip Fee',
+  'Pet Fee',
+])
+
+// The vendor note minus the service keyword itself is the vendor's own stated
+// reason ("pet fee — excess dog hair" → "excess dog hair"). Dollar amounts are
+// stripped (they're already the line amount); bare counts ("2 boxes") are kept.
+// Returns null when nothing meaningful remains — never fabricates a reason.
+export function extraReasonFromNote(note: string | null, title: string): string | null {
+  if (!note) return null
+  let rest = note
+  for (const rule of [...EXTRA_RULES, ...TITLE_RULES]) {
+    // Consume the whole surrounding word(s), not just the matched stem —
+    // /reimburse/ must strip "reimbursement", not leave "ment" behind.
+    if (rule.title === title) rest = rest.replace(new RegExp(`\\w*(?:${rule.re.source})\\w*`, 'gi'), ' ')
+  }
+  rest = rest
+    .replace(/\$\s*\d+(?:,\d{3})*(?:\.\d{1,2})?/g, ' ')
+    .replace(/[\s\-–—:;,.()]+/g, ' ')
+    .trim()
+  return rest.length >= 3 ? rest : null
 }
 
 // ─── Property resolution ─────────────────────────────────────────────────────
@@ -395,6 +427,19 @@ function flag(line: EngineLine, f: string): EngineLine {
   return { ...line, flags: line.flags.includes(f) ? line.flags : [...line.flags, f] }
 }
 
+// Reason-required extras with no derivable reason go to review so a human
+// supplies one (review_note is appended to the exported service title).
+function requireReason(line: EngineLine, note: string | null): EngineLine {
+  if (
+    line.serviceType != null &&
+    REASON_REQUIRED_EXTRAS.has(line.serviceType) &&
+    extraReasonFromNote(note, line.serviceType) == null
+  ) {
+    return needsReview(line, FLAGS.REASON_REQUIRED)
+  }
+  return line
+}
+
 function baseLine(raw: RawLine): EngineLine {
   return {
     ...raw,
@@ -447,7 +492,7 @@ export function classifyLine(
     line.serviceType = 'Reimbursement'
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = null
-    return [withChannel(needsReview(line, FLAGS.CREDIT_LINE), property)]
+    return [withChannel(requireReason(needsReview(line, FLAGS.CREDIT_LINE), raw.rawNoteText), property)]
   }
 
   // Unresolved property: bulk/ops-expense text → operating expense list;
@@ -519,14 +564,49 @@ export function classifyLine(
       if (!matchedTask) line = needsReview(line, FLAGS.UNMATCHED_TASK)
     } else if (isOnboarding) {
       // Onboarding Clean bills the client at Client Charged + $50 (confirmed
-      // by Jordan 2026-08-14; matches real QBO invoices, e.g. #1083 line 54).
-      line.clientChargeAmount = ceCharged != null ? round2(ceCharged + 50) : null
-      if (ceCharged == null) line = needsReview(line, FLAGS.MISSING_RATE)
+      // by Jordan 2026-08-14). Rendered as TWO rows — base at Client Charged
+      // plus a $50 surcharge line, both titled "Onboarding Clean" — because
+      // Finance requires extras broken out from the clean fee (2026-08-17)
+      // and Nina's real QBO sheet (invoice #1085) shows exactly this shape.
+      if (ceCharged == null) {
+        line.clientChargeAmount = null
+        line = needsReview(line, FLAGS.MISSING_RATE)
+        return [withChannel(line, property)]
+      }
+      const group = splitSeq()
+      const base: EngineLine = {
+        ...line,
+        splitGroup: group,
+        lineKind: 'combined_split',
+        cleanerPayAmount: round2(raw.rawAmount),
+        clientChargeAmount: round2(ceCharged),
+        flags: [...line.flags, FLAGS.COMBINED_SPLIT],
+      }
+      // The surcharge is client-only: the vendor is owed nothing extra
+      // (cleanerPay null) and it's not part of the vendor's stated subtotal
+      // (rawAmount 0; split extras are excluded from the subtotal sum anyway).
+      const surcharge: EngineLine = {
+        ...baseLine(raw),
+        splitGroup: group,
+        propertyId: line.propertyId,
+        aliasConfidence: line.aliasConfidence,
+        matchedTaskId: line.matchedTaskId,
+        lineKind: 'extra',
+        serviceType: 'Onboarding Clean',
+        rawAmount: 0,
+        rawNoteText: 'Onboarding surcharge',
+        cleanerPayAmount: null,
+        clientChargeAmount: 50,
+        flags: [FLAGS.COMBINED_SPLIT],
+        reviewStatus: 'ok',
+      }
+      return [withChannel(base, property), withChannel(surcharge, property)]
     } else {
       // Double Clean client rate still unconfirmed — bill whole at the
-      // invoiced amount and mark it so the review UI shows it.
+      // invoiced amount and mark it so the review UI shows it. Finance also
+      // requires a stated reason on Double Clean lines.
       line.clientChargeAmount = round2(raw.rawAmount)
-      line = flag(line, FLAGS.BILLED_WHOLE)
+      line = requireReason(flag(line, FLAGS.BILLED_WHOLE), raw.rawNoteText)
     }
     return [withChannel(line, property)]
   }
@@ -540,7 +620,7 @@ export function classifyLine(
     line.serviceType = noteExtra ?? std?.title ?? 'Extra Cleaning'
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = round2(raw.rawAmount)
-    return [withChannel(line, property)]
+    return [withChannel(requireReason(line, raw.rawNoteText), property)]
   }
 
   // Base clean path.
@@ -590,7 +670,7 @@ export function classifyLine(
       flags: [FLAGS.COMBINED_SPLIT],
       reviewStatus: 'ok',
     }
-    return [withChannel(base, property), withChannel(extra, property)]
+    return [withChannel(base, property), withChannel(requireReason(extra, raw.rawNoteText), property)]
   }
 
   // Underage WITH an explaining extra-note → the base clean was billed
@@ -602,7 +682,7 @@ export function classifyLine(
     line.serviceType = noteExtra
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = round2(raw.rawAmount)
-    return [withChannel(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), property)]
+    return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), raw.rawNoteText), property)]
   }
 
   // Amount differs from Cleaner Pay with NO explaining note → discrepancy.

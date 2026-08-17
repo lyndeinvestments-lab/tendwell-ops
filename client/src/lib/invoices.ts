@@ -82,6 +82,9 @@ export const FLAG_LABELS: Record<string, string> = {
   deep_rate_assumed: 'Deep-clean rate assumed',
   operating_expense: 'Operating expense',
   rate_stale: 'Rate may be stale',
+  deep_mismatch: 'Deep-clean note/task mismatch',
+  credit_line: 'Credit line',
+  reason_required: 'Reason required',
 }
 
 export function flagLabel(flag: string): string {
