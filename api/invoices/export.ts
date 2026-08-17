@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
-import { getServiceClient, requireAdminBearer } from './_lib.js'
+import { getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
 //
@@ -25,8 +25,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
-  const admin = await requireAdminBearer(req, res)
-  if (!admin) return
+  const actor = await requireInvoicingBearer(req, res)
+  if (!actor) return
 
   const runId = typeof req.query.run_id === 'string' ? req.query.run_id : null
   const format = typeof req.query.format === 'string' ? (req.query.format as Format) : null

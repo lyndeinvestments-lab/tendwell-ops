@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getServiceClient, requireAdminBearer } from './_lib.js'
+import { getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // POST /api/invoices/approve  Body: { run_id }
 //
@@ -12,8 +12,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(405).json({ error: 'Method not allowed' })
     return
   }
-  const admin = await requireAdminBearer(req, res)
-  if (!admin) return
+  const actor = await requireInvoicingBearer(req, res)
+  if (!actor) return
 
   const runId = typeof (req.body as any)?.run_id === 'string' ? (req.body as any).run_id : null
   if (!runId) {
@@ -114,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { error: updErr } = await supabase
     .from('invoice_runs')
-    .update({ status: 'approved', approved_by: admin.email, approved_at: new Date().toISOString() })
+    .update({ status: 'approved', approved_by: actor.email, approved_at: new Date().toISOString() })
     .eq('id', runId)
   if (updErr) {
     res.status(500).json({ error: 'Failed to approve', detail: updErr.message })
