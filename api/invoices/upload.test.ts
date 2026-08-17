@@ -71,4 +71,45 @@ describe('parseVendorCsv', () => {
     const { lines } = parseVendorCsv(csv)
     expect(lines[0].rawDateMentioned).toBe('2026-08-05')
   })
+
+  // Busy Bee's FULL export (real file: I260810797, 2026-08-17) repeats
+  // invoice-level metadata on every row and names the note column
+  // "description". The original parser picked invoice_date as the service
+  // date and collapsed all 217 lines onto one day.
+  describe('Busy Bee full-export format (I260810797)', () => {
+    const HDR = 'invoice_number,invoice_date,payment_terms,invoice_due_date,invoice_amount,created_by,bill_to,ship_to,page_number,item_number,item_name,description,quantity,unit_price,taxable,total'
+    const meta = 'I260810797,08/10/2026,Due On Receipt,08/10/2026 (Past Due),695.00,Oniel Portillo,"Tendwell, Pigeon Forge","Tendwell, Pigeon Forge",1'
+    const csv = [
+      HDR,
+      `${meta},3488,8/10/26,,1.00,0.00,,0.00`,
+      `${meta},2930,Ashley May 1619,,1.00,130.00,,130.00`,
+      `${meta},2978,Lucy Mccandles 1125,Hot tub refresh,1.00,30.00,,30.00`,
+      `${meta},3489,8/11/26,,1.00,0.00,,0.00`,
+      `${meta},3048,Travis Anders 1437,,1.00,170.00,,170.00`,
+      `${meta},3490,5/12/26,,1.00,0.00,,0.00`,
+      `${meta},3491,Glen Paterson 233,,1.00,365.00,,365.00`,
+    ].join('\n')
+
+    it('takes service dates from the day-header rows, NOT the invoice_date column', () => {
+      const { lines } = parseVendorCsv(csv)
+      expect(lines.map(l => l.rawDateMentioned)).toEqual([
+        '2026-08-10', '2026-08-10', '2026-08-11', '2026-05-12',
+      ])
+    })
+    it('reads the note from the description column (item_name stays the property)', () => {
+      const { lines } = parseVendorCsv(csv)
+      const lucy = lines.find(l => l.rawPropertyText === 'Lucy Mccandles 1125')!
+      expect(lucy.rawNoteText).toBe('Hot tub refresh')
+    })
+    it('detects invoice number, date, and stated subtotal from the uniform columns', () => {
+      const { detectedInvoiceNumber, detectedInvoiceDate, detectedSubtotal } = parseVendorCsv(csv)
+      expect(detectedInvoiceNumber).toBe('I260810797')
+      expect(detectedInvoiceDate).toBe('2026-08-10')
+      expect(detectedSubtotal).toBe(695)
+    })
+    it('never uses invoice_amount as the line amount', () => {
+      const { lines } = parseVendorCsv(csv)
+      expect(lines.find(l => l.rawPropertyText === 'Ashley May 1619')!.rawAmount).toBe(130)
+    })
+  })
 })
