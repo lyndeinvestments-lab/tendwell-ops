@@ -91,6 +91,27 @@ export function flagLabel(flag: string): string {
   return FLAG_LABELS[flag] ?? flag.replace(/_/g, ' ')
 }
 
+// Task title → approved service title. Display-side mirror of the engine's
+// TITLE_RULES in api/invoices/_engine.ts (same order — first match wins);
+// keep the two in sync. Used by the review dialog to auto-fill the service
+// from the matched task when a property is picked.
+export function serviceTypeFromTaskTitle(title: string | null): string | null {
+  if (!title) return null
+  const t = title.toLowerCase()
+  if (/double\s*clean/.test(t)) return 'Double Clean'
+  if (/deep\s*clean/.test(t)) return 'Deep Clean'
+  if (/onboarding\s*clean/.test(t)) return 'Onboarding Clean'
+  if (/last\s*clean\s*(&|and)\s*linen\s*pull/.test(t)) return 'Last Clean & Linen Pull'
+  if (/linen\s*pull/.test(t)) return 'Linen Pull'
+  if (/last\s*clean/.test(t)) return 'Last Clean'
+  if (/pre.?owner\s*stay/.test(t)) return 'Pre-Owner Stay Inspection'
+  if (/cleaning\s*inspection/.test(t)) return 'Cleaning Inspection'
+  if (/departure\s*clean/.test(t)) return 'Departure Clean'
+  if (/turn\s*clean|same\s*day\s*turn|arrival\s*clean/.test(t)) return 'Turn Clean'
+  if (/vacancy\s*clean|touch\s*up/.test(t)) return 'Vacancy Clean / Touch Up Clean'
+  return null
+}
+
 // ─── Domain types ────────────────────────────────────────────────────────────
 
 export interface Vendor {

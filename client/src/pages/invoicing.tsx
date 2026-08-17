@@ -32,7 +32,7 @@ import {
 } from 'lucide-react'
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
-  downloadExport, flagLabel, invoicesApi, propertyOf, vendorNameOf,
+  downloadExport, flagLabel, invoicesApi, propertyOf, serviceTypeFromTaskTitle, vendorNameOf,
   type BillingChannel, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
@@ -50,6 +50,16 @@ function fmtDate(d: string | null | undefined): string {
   if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return d
   const [y, m, day] = parts
   return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Table cells drop the year — the run header already states the period, and
+// the lines table must fit a laptop screen without horizontal scrolling.
+function fmtDateShort(d: string | null | undefined): string {
+  if (!d) return '—'
+  const parts = d.slice(0, 10).split('-').map(Number)
+  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return d
+  const [y, m, day] = parts
+  return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 function fmtDateTime(d: string | null | undefined): string {
@@ -782,17 +792,16 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                   <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">#</th>
-                    <th className="px-3 py-2 font-medium">Property</th>
-                    <th className="px-3 py-2 font-medium">Service</th>
-                    <th className="px-3 py-2 font-medium">Date</th>
-                    <th className="px-3 py-2 font-medium text-right">Invoiced</th>
-                    <th className="px-3 py-2 font-medium text-right">Cleaner pay</th>
-                    <th className="px-3 py-2 font-medium text-right">Client charge</th>
-                    <th className="px-3 py-2 font-medium">Channel</th>
-                    <th className="px-3 py-2 font-medium">Flags</th>
-                    <th className="px-3 py-2 font-medium">Review</th>
-                    <th className="px-3 py-2 font-medium w-20" />
+                    <th className="px-2 py-2 font-medium">#</th>
+                    <th className="px-2 py-2 font-medium">Property</th>
+                    <th className="px-2 py-2 font-medium">Service</th>
+                    <th className="px-2 py-2 font-medium">Date</th>
+                    <th className="px-2 py-2 font-medium text-right">Invoiced</th>
+                    <th className="px-2 py-2 font-medium text-right" title="Cleaner pay (Ramp)">Pay</th>
+                    <th className="px-2 py-2 font-medium text-right" title="Client charge (QBO / bill.com)">Charge</th>
+                    <th className="px-2 py-2 font-medium">Channel</th>
+                    <th className="px-2 py-2 font-medium">Flags / review</th>
+                    <th className="px-2 py-2 font-medium w-16" />
                   </tr>
                 </thead>
                 <tbody>
@@ -810,37 +819,38 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         )}
                         data-testid={`row-line-${line.id}`}
                       >
-                        <td className="px-3 py-2 tabular-nums text-muted-foreground">
+                        <td className="px-2 py-2 tabular-nums text-muted-foreground">
                           {line.line_no}
                           {line.split_group != null && <span className="ml-1 text-2xs">split</span>}
                         </td>
-                        <td className="px-3 py-2 max-w-56">
+                        <td className="px-2 py-2 max-w-48">
                           <p className="truncate">{prop?.name ?? '—'}</p>
                           {line.raw_property_text && line.raw_property_text !== prop?.name && (
                             <p className="text-2xs text-muted-foreground truncate">raw: {line.raw_property_text}</p>
                           )}
                         </td>
-                        <td className="px-3 py-2 max-w-40 truncate">{line.service_type ?? '—'}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{fmtDate(line.raw_date_mentioned)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(line.raw_amount)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(line.cleaner_pay_amount)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(line.client_charge_amount)}</td>
-                        <td className="px-3 py-2">
+                        <td className="px-2 py-2 max-w-36 truncate">{line.service_type ?? '—'}</td>
+                        <td className="px-2 py-2 whitespace-nowrap text-muted-foreground" title={fmtDate(line.raw_date_mentioned)}>{fmtDateShort(line.raw_date_mentioned)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.raw_amount)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.cleaner_pay_amount)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.client_charge_amount)}</td>
+                        <td className="px-2 py-2">
                           <StatusBadge tone={channelTone(line.billing_channel)}>
                             {BILLING_CHANNELS.find(c => c.id === line.billing_channel)?.label ?? '—'}
                           </StatusBadge>
                         </td>
-                        <td className="px-3 py-2">
-                          <div className="flex flex-wrap gap-1 max-w-48">
+                        <td className="px-2 py-2">
+                          <div className="flex flex-wrap gap-1 max-w-52">
+                            {/* 'ok' is the quiet default — only non-ok review states earn a badge */}
+                            {line.review_status !== 'ok' && (
+                              <StatusBadge tone={reviewStatusTone(line.review_status)}>{line.review_status.replace(/_/g, ' ')}</StatusBadge>
+                            )}
                             {line.flags.map(f => (
                               <StatusBadge key={f} tone="warning" className="text-2xs">{flagLabel(f)}</StatusBadge>
                             ))}
                           </div>
                         </td>
-                        <td className="px-3 py-2">
-                          <StatusBadge tone={reviewStatusTone(line.review_status)}>{line.review_status.replace(/_/g, ' ')}</StatusBadge>
-                        </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-2 py-2 text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onReview(line)} title="Review" data-testid={`button-review-${line.id}`}>
                               <Pencil className="w-3.5 h-3.5" />
@@ -931,16 +941,16 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 }) {
   const { toast } = useToast()
 
-  const propertiesQuery = useQuery<Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null }>>({
+  const propertiesQuery = useQuery<Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null; trellis_id: string | null }>>({
     queryKey: ['invoicing-properties-rates'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name, cleaner_pay, ce_charged, deep_clean_3x_ce')
+        .select('id, name, cleaner_pay, ce_charged, deep_clean_3x_ce, trellis_id')
         .is('deleted_at', null)
         .order('name')
       if (error) throw error
-      return (data ?? []) as Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null }>
+      return (data ?? []) as Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null; trellis_id: string | null }>
     },
     staleTime: 60_000,
   })
@@ -955,26 +965,75 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 
   const propertyOptions = (propertiesQuery.data ?? []).map(p => ({ value: String(p.id), label: p.name ?? `Property #${p.id}` }))
 
-  // Picking a property fills its rates the way the engine would price the
-  // line (still editable afterwards): cleans → Cleaner Pay + Client Charged;
-  // deep cleans → the 3× client rate (pay stays the vendor's whole amount);
-  // Onboarding Clean → Client Charged + $50. Extras / operating expenses are
-  // billed at the vendor amount, so their fields are left alone.
-  function onSelectProperty(value: string) {
+  // What was actually done at this property on (±3 days of) the line's date —
+  // Breezeway first, Trellis fallback — mapped to an approved service title.
+  // Mirrors the engine's matchToTask window; the closest-dated task wins.
+  async function lookupServiceForProperty(p: { id: number; trellis_id: string | null }): Promise<string | null> {
+    const date = line.raw_date_mentioned
+    const dayMs = 86_400_000
+    const from = date ? new Date(Date.parse(date) - 3 * dayMs).toISOString().slice(0, 10) : null
+    const to = date ? new Date(Date.parse(date) + 3 * dayMs).toISOString().slice(0, 10) : null
+    const gap = (d: string | null) => (date && d ? Math.abs(Date.parse(d) - Date.parse(date)) : 0)
+
+    let bw = supabase
+      .from('breezeway_tasks')
+      .select('task_title, due_date')
+      .eq('property_id', p.id)
+      .or('is_clean.eq.true,is_deep_clean.eq.true')
+      .limit(50)
+    if (from && to) bw = bw.gte('due_date', from).lte('due_date', to)
+    const { data: bwRows } = await bw
+    const bwHit = (bwRows ?? [])
+      .map(t => ({ title: serviceTypeFromTaskTitle(t.task_title), gap: gap(t.due_date) }))
+      .filter(t => t.title != null)
+      .sort((a, b) => a.gap - b.gap)[0]
+    if (bwHit) return bwHit.title
+
+    if (!p.trellis_id) return null
+    let tr = (supabase as any)
+      .from('trellis_task_snapshot')
+      .select('title, scheduled_date')
+      .eq('trellis_property_id', p.trellis_id)
+      .limit(50)
+    if (from && to) tr = tr.gte('scheduled_date', from).lte('scheduled_date', to)
+    const { data: trRows } = await tr
+    const trHit = ((trRows ?? []) as Array<{ title: string | null; scheduled_date: string | null }>)
+      .map(t => ({ title: serviceTypeFromTaskTitle(t.title), gap: gap(t.scheduled_date) }))
+      .filter(t => t.title != null)
+      .sort((a, b) => a.gap - b.gap)[0]
+    return trHit?.title ?? null
+  }
+
+  // Picking a property fills the service (from the task that was actually
+  // completed there on that date) and its rates the way the engine would
+  // price the line (all still editable): cleans → Cleaner Pay + Client
+  // Charged; deep cleans → the 3× client rate (pay stays the vendor's whole
+  // amount); Onboarding Clean → Client Charged + $50. Extras / operating
+  // expenses are billed at the vendor amount, so their amounts are left alone.
+  async function onSelectProperty(value: string) {
     const id = value ? Number(value) : null
     setPropertyId(id)
     if (id == null) return
     const p = (propertiesQuery.data ?? []).find(x => x.id === id)
     if (!p) return
+
+    let effectiveService = serviceType
+    const found = await lookupServiceForProperty(p).catch(() => null)
+    if (found) {
+      effectiveService = found
+      setServiceType(found)
+      if (found === 'Deep Clean') setLineKind('deep_clean')
+    }
+
     if (lineKind === 'extra' || lineKind === 'operating_expense' || lineKind === 'excluded') return
-    if (lineKind !== 'deep_clean' && p.cleaner_pay != null) setCleanerPay(String(p.cleaner_pay))
+    const isDeep = lineKind === 'deep_clean' || effectiveService === 'Deep Clean'
+    if (!isDeep && p.cleaner_pay != null) setCleanerPay(String(p.cleaner_pay))
     const ce = p.ce_charged
-    const charge =
-      lineKind === 'deep_clean'
-        ? p.deep_clean_3x_ce ?? (ce != null ? Math.round(ce * 300) / 100 : null)
-        : serviceType === 'Onboarding Clean'
-          ? (ce != null ? Math.round((ce + 50) * 100) / 100 : null)
-          : ce
+    const charge = isDeep
+      ? p.deep_clean_3x_ce ?? (ce != null ? Math.round(ce * 300) / 100 : null)
+      : effectiveService === 'Onboarding Clean'
+        ? (ce != null ? Math.round((ce + 50) * 100) / 100 : null)
+        : ce
     if (charge != null) setClientCharge(String(charge))
   }
 
