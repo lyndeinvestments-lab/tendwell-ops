@@ -215,6 +215,22 @@ export function buildDefaultRolePermissions(): RolePermissionsStore {
   }
 }
 
+/** Merges an edited role store onto the live one so a save can only ever
+ *  change the roles it actually touched. Roles present in `live` but absent
+ *  from `edited` are kept — the Settings matrix used to write its whole local
+ *  copy, so a stale or defaults-seeded copy silently deleted every custom role
+ *  (e.g. `supervisor`) and every customization the copy didn't include.
+ *  Removals must therefore be named explicitly in `deleted`. */
+export function mergeRolePermissions(
+  live: RolePermissionsStore | null,
+  edited: RolePermissionsStore,
+  deleted: string[] = []
+): RolePermissionsStore {
+  const merged: RolePermissionsStore = { ...(live ?? {}), ...edited }
+  for (const roleId of deleted) delete merged[roleId]
+  return merged
+}
+
 export function sanitizeRolePermissions(raw: unknown): RolePermissionsStore {
   if (!raw || typeof raw !== 'object') return buildDefaultRolePermissions()
   const result: RolePermissionsStore = {}
@@ -271,11 +287,20 @@ async function resolveUserFromEmail(email: string): Promise<AuthUser | null> {
       : derivePermissionsFromViews(resolvedViews, role === 'admin')
   } else {
     try {
-      const { data: settingsData } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'role_permissions')
-        .single()
+      // Retried once: a transient failure here silently downgrades the user to
+      // the hardcoded ROLE_VIEWS defaults (wrong permissions for a customized
+      // system role, and NO views at all for a custom role like `supervisor`,
+      // which has no hardcoded entry). Worth one retry before falling back.
+      let settingsData: { value: string | null } | null = null
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { data, error: readError } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'role_permissions')
+          .maybeSingle()
+        if (!readError) { settingsData = data; break }
+        if (attempt === 0) await new Promise(r => setTimeout(r, 250))
+      }
       if (settingsData?.value) {
         const parsed = typeof settingsData.value === 'string'
           ? JSON.parse(settingsData.value)

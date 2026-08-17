@@ -38,6 +38,8 @@ export const settingsPageEs: typeof settingsPageEn = {
     colEdit: 'Editar',
     resetTitle: 'Restablecer valores predeterminados',
     deleteTitle: 'Eliminar rol',
+    loadFailedTitle: 'No se pudieron cargar los roles y permisos',
+    loadFailedDesc: 'No se pudo leer la configuración de roles guardada, por lo que la matriz está oculta: editarla ahora sobrescribiría la configuración real. Vuelve a intentarlo o recarga la aplicación si el error persiste.',
     createRoleTitle: 'Crear Rol Personalizado',
     roleNameLabel: 'Nombre del Rol',
     roleNamePlaceholder: 'ej. Gerente',

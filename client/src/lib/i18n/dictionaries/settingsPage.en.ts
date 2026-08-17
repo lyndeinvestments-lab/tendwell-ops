@@ -60,6 +60,8 @@ export const settingsPageEn = {
     colEdit: 'Edit',
     resetTitle: 'Reset to defaults',
     deleteTitle: 'Delete role',
+    loadFailedTitle: 'Could not load roles & permissions',
+    loadFailedDesc: "The saved role configuration couldn't be read, so the matrix is hidden — editing it now would overwrite the real settings. Retry, or reload the app if it keeps failing.",
     createRoleTitle: 'Create Custom Role',
     roleNameLabel: 'Role Name',
     roleNamePlaceholder: 'e.g. Manager',
