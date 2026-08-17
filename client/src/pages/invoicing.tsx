@@ -1164,6 +1164,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 
   const currentProperty = propertyOf(line)
   const [propertyId, setPropertyId] = useState<number | null>(currentProperty?.id ?? null)
+  const [matchedTaskId, setMatchedTaskId] = useState<string | null>(line.matched_task_id)
   const [serviceType, setServiceType] = useState<string>(line.service_type ?? '')
   const [lineKind, setLineKind] = useState<LineKind>(line.line_kind)
   const [reviewNote, setReviewNote] = useState<string>(line.review_note ?? '')
@@ -1172,6 +1173,73 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   const [clientCharge, setClientCharge] = useState<string>(line.client_charge_amount != null ? String(line.client_charge_amount) : '')
 
   const propertyOptions = (propertiesQuery.data ?? []).map(p => ({ value: String(p.id), label: p.name ?? `Property #${p.id}` }))
+
+  // Every task in the system for the selected property — ALL statuses (tasks
+  // aren't always closed out in Breezeway/Trellis even when the work was
+  // done), minus tasks already matched to OTHER lines in this run. Shown as
+  // "title · date · status" so an explicit match can be picked by hand.
+  const selectedProp = (propertiesQuery.data ?? []).find(x => x.id === propertyId)
+  const tasksQuery = useQuery({
+    queryKey: ['invoicing-property-tasks', propertyId, runId],
+    enabled: propertyId != null,
+    queryFn: async () => {
+      const [bwRes, trRes, usedRes] = await Promise.all([
+        supabase
+          .from('breezeway_tasks')
+          .select('external_id, task_title, due_date, status')
+          .eq('property_id', propertyId!)
+          .order('due_date', { ascending: false })
+          .limit(60),
+        selectedProp?.trellis_id
+          ? (supabase as any)
+              .from('trellis_task_snapshot')
+              .select('trellis_task_id, title, scheduled_date, status')
+              .eq('trellis_property_id', selectedProp.trellis_id)
+              .ilike('department_name', '%clean%')
+              .order('scheduled_date', { ascending: false })
+              .limit(60)
+          : Promise.resolve({ data: [] }),
+        supabase
+          .from('invoice_lines')
+          .select('matched_task_id')
+          .eq('run_id', runId)
+          .neq('id', line.id)
+          .not('matched_task_id', 'is', null),
+      ])
+      const used = new Set(((usedRes.data ?? []) as Array<{ matched_task_id: string }>).map(r => r.matched_task_id))
+      const bw = ((bwRes.data ?? []) as Array<{ external_id: string; task_title: string; due_date: string | null; status: string | null }>)
+        .map(t => ({ id: t.external_id, title: t.task_title, date: t.due_date, status: t.status ?? '—', source: 'Breezeway' }))
+      const tr = (((trRes as any).data ?? []) as Array<{ trellis_task_id: string; title: string | null; scheduled_date: string | null; status: string | null }>)
+        .map(t => ({ id: `trellis:${t.trellis_task_id}`, title: t.title ?? '—', date: t.scheduled_date, status: t.status ?? '—', source: 'Trellis' }))
+      return [...bw, ...tr]
+        .filter(t => !used.has(t.id))
+        .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? ''))
+    },
+  })
+
+  const taskOptions = (() => {
+    const opts = (tasksQuery.data ?? []).map(t => ({
+      value: t.id,
+      label: `${t.title} · ${fmtDateShort(t.date)} · ${t.status} (${t.source})`,
+    }))
+    // The line's existing match must stay selectable even if it fell outside
+    // the fetch window.
+    if (matchedTaskId && !opts.some(o => o.value === matchedTaskId)) {
+      opts.unshift({ value: matchedTaskId, label: `Current match (${matchedTaskId})` })
+    }
+    return opts
+  })()
+
+  function onSelectTask(value: string) {
+    setMatchedTaskId(value || null)
+    if (!value) return
+    const t = (tasksQuery.data ?? []).find(x => x.id === value)
+    const mapped = serviceTypeFromTaskTitle(t?.title ?? null)
+    if (mapped) {
+      setServiceType(mapped)
+      if (mapped === 'Deep Clean') setLineKind('deep_clean')
+    }
+  }
 
   // What was actually done at this property on (±3 days of) the line's date —
   // Breezeway first, Trellis fallback — mapped to an approved service title.
@@ -1221,6 +1289,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   async function onSelectProperty(value: string) {
     const id = value ? Number(value) : null
     setPropertyId(id)
+    if (id !== (currentProperty?.id ?? null)) setMatchedTaskId(null) // old match belongs to the old property
     if (id == null) return
     const p = (propertiesQuery.data ?? []).find(x => x.id === id)
     if (!p) return
@@ -1304,6 +1373,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
         .from('invoice_lines')
         .update({
           property_id: propertyId,
+          matched_task_id: matchedTaskId,
           billing_channel: billingChannel,
           service_type: serviceType || null,
           line_kind: lineKind,
@@ -1384,6 +1454,19 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
               emptyText="No matching properties"
             />
           </div>
+          {propertyId != null && (
+            <div className="space-y-1.5">
+              <Label>Matched task <span className="text-muted-foreground font-normal">(all statuses — unmatched tasks at this property)</span></Label>
+              <SearchSelect
+                value={matchedTaskId ?? ''}
+                onSelect={onSelectTask}
+                options={taskOptions}
+                placeholder={tasksQuery.isLoading ? 'Loading tasks…' : 'Link a task (optional)'}
+                searchPlaceholder="Search tasks…"
+                emptyText="No unmatched tasks at this property"
+              />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Service type</Label>
