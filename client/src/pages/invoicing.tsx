@@ -931,12 +931,16 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 }) {
   const { toast } = useToast()
 
-  const propertiesQuery = useQuery<Array<{ id: number; name: string | null }>>({
-    queryKey: ['invoicing-properties'],
+  const propertiesQuery = useQuery<Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null }>>({
+    queryKey: ['invoicing-properties-rates'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('properties').select('id, name').is('deleted_at', null).order('name')
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id, name, cleaner_pay, ce_charged, deep_clean_3x_ce')
+        .is('deleted_at', null)
+        .order('name')
       if (error) throw error
-      return (data ?? []) as Array<{ id: number; name: string | null }>
+      return (data ?? []) as Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null }>
     },
     staleTime: 60_000,
   })
@@ -950,6 +954,29 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   const [clientCharge, setClientCharge] = useState<string>(line.client_charge_amount != null ? String(line.client_charge_amount) : '')
 
   const propertyOptions = (propertiesQuery.data ?? []).map(p => ({ value: String(p.id), label: p.name ?? `Property #${p.id}` }))
+
+  // Picking a property fills its rates the way the engine would price the
+  // line (still editable afterwards): cleans → Cleaner Pay + Client Charged;
+  // deep cleans → the 3× client rate (pay stays the vendor's whole amount);
+  // Onboarding Clean → Client Charged + $50. Extras / operating expenses are
+  // billed at the vendor amount, so their fields are left alone.
+  function onSelectProperty(value: string) {
+    const id = value ? Number(value) : null
+    setPropertyId(id)
+    if (id == null) return
+    const p = (propertiesQuery.data ?? []).find(x => x.id === id)
+    if (!p) return
+    if (lineKind === 'extra' || lineKind === 'operating_expense' || lineKind === 'excluded') return
+    if (lineKind !== 'deep_clean' && p.cleaner_pay != null) setCleanerPay(String(p.cleaner_pay))
+    const ce = p.ce_charged
+    const charge =
+      lineKind === 'deep_clean'
+        ? p.deep_clean_3x_ce ?? (ce != null ? Math.round(ce * 300) / 100 : null)
+        : serviceType === 'Onboarding Clean'
+          ? (ce != null ? Math.round((ce + 50) * 100) / 100 : null)
+          : ce
+    if (charge != null) setClientCharge(String(charge))
+  }
 
   // Property changes need the run's vendor_id (not carried by the line) to
   // upsert a confirmed alias — looked up once inside the mutation rather than
@@ -1054,7 +1081,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
             <Label>Property</Label>
             <SearchSelect
               value={propertyId != null ? String(propertyId) : ''}
-              onSelect={(value) => setPropertyId(value ? Number(value) : null)}
+              onSelect={onSelectProperty}
               options={propertyOptions}
               placeholder="Select property"
               searchPlaceholder="Search properties…"
