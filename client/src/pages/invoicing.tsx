@@ -664,6 +664,60 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   const activeLines = useMemo(() => lines.filter(l => l.review_status !== 'excluded'), [lines])
   const hasNeedsReview = lines.some(l => l.review_status === 'needs_review')
 
+  // ── Review fast path ────────────────────────────────────────────────────────
+  // The dialog is for lines that need CHANGES. A line whose engine result is
+  // already right (or that a human has eyeballed) just needs "yes, reviewed" —
+  // one click per row, or one confirmed click for everything left.
+  const [lineFilter, setLineFilter] = useState<'all' | 'needs_review' | 'resolved' | 'ok'>('all')
+  const [confirmAcceptAll, setConfirmAcceptAll] = useState(false)
+  const counts = useMemo(() => ({
+    all: lines.length,
+    needs_review: lines.filter(l => l.review_status === 'needs_review').length,
+    resolved: lines.filter(l => l.review_status === 'resolved').length,
+    ok: lines.filter(l => l.review_status === 'ok').length,
+  }), [lines])
+  const filteredLines = useMemo(
+    () => (lineFilter === 'all' ? lines : lines.filter(l => l.review_status === lineFilter)),
+    [lines, lineFilter],
+  )
+
+  const acceptMutation = useGuardedMutation<void, Error, InvoiceLine>('invoicing', {
+    mutationFn: async (line: InvoiceLine) => {
+      const { error } = await supabase
+        .from('invoice_lines')
+        .update({ review_status: 'resolved', resolved_by: userLabel, resolved_at: new Date().toISOString() })
+        .eq('id', line.id)
+        .eq('review_status', 'needs_review')
+      if (error) throw error
+    },
+    onSuccess: () => invalidate(),
+    onError: (e: Error) => {
+      if (e.message === 'edit_blocked') return
+      toast({ title: 'Accept failed', description: e.message, variant: 'destructive' })
+    },
+  })
+
+  const acceptAllMutation = useGuardedMutation<number, Error, void>('invoicing', {
+    mutationFn: async () => {
+      const { data, error } = await supabase
+        .from('invoice_lines')
+        .update({ review_status: 'resolved', resolved_by: userLabel, resolved_at: new Date().toISOString() })
+        .eq('run_id', runId)
+        .eq('review_status', 'needs_review')
+        .select('id')
+      if (error) throw error
+      return (data ?? []).length
+    },
+    onSuccess: (n) => {
+      toast({ title: `Accepted ${n} line${n === 1 ? '' : 's'} as-is`, description: 'Review queue cleared — Approve is unlocked.' })
+      invalidate()
+    },
+    onError: (e: Error) => {
+      if (e.message === 'edit_blocked') return
+      toast({ title: 'Accept all failed', description: e.message, variant: 'destructive' })
+    },
+  })
+
   const totals = useMemo(() => ({
     invoiced: sum(activeLines.map(l => l.raw_amount)),
     cleanerPay: sum(activeLines.map(l => l.cleaner_pay_amount)),
@@ -845,6 +899,48 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         <EmptyState icon={Receipt} title="No lines" description="This run has no invoice lines." />
       ) : (
         <>
+          {/* Review fast path: filter to the queue, accept per-row or all at once */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
+              {([['all', 'All'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK']] as const).map(([id, label]) => (
+                <Button
+                  key={id}
+                  size="sm"
+                  variant={lineFilter === id ? 'secondary' : 'ghost'}
+                  className="h-7 px-2.5"
+                  onClick={() => setLineFilter(id)}
+                  data-testid={`filter-lines-${id}`}
+                >
+                  {label}
+                  <span className={cn('ml-1.5 text-2xs tabular-nums', id === 'needs_review' && counts.needs_review > 0 ? 'text-warning font-semibold' : 'text-muted-foreground')}>
+                    {counts[id]}
+                  </span>
+                </Button>
+              ))}
+            </div>
+            {counts.needs_review > 0 && canApprove && (
+              <Button
+                size="sm"
+                variant={confirmAcceptAll ? 'default' : 'outline'}
+                disabled={acceptAllMutation.isPending}
+                onClick={() => {
+                  if (confirmAcceptAll) {
+                    setConfirmAcceptAll(false)
+                    acceptAllMutation.mutate()
+                  } else {
+                    setConfirmAcceptAll(true)
+                    setTimeout(() => setConfirmAcceptAll(false), 4000)
+                  }
+                }}
+                title="Marks every remaining needs-review line as reviewed, keeping its current property, service, and amounts. Use after you've eyeballed the highlighted mismatches."
+                data-testid="button-accept-all"
+              >
+                {acceptAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
+                {confirmAcceptAll ? `Confirm — accept ${counts.needs_review} as-is` : `Accept remaining (${counts.needs_review})`}
+              </Button>
+            )}
+          </div>
+
           {/* Desktop table */}
           <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden md:flex-1 md:min-h-0">
             <div className="overflow-auto md:h-full">
@@ -864,7 +960,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map(line => {
+                  {filteredLines.map(line => {
                     const prop = propertyOf(line)
                     const accent = line.split_group != null ? splitAccent.get(line.split_group) : undefined
                     // Invoiced ≠ cleaner pay is always worth an eyeball — except on
@@ -927,6 +1023,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         </td>
                         <td className="px-2 py-2 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            {line.review_status === 'needs_review' && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-success hover:text-success"
+                                onClick={() => acceptMutation.mutate(line)}
+                                disabled={acceptMutation.isPending}
+                                title="Accept as-is (mark reviewed, keep current values)"
+                                data-testid={`button-accept-${line.id}`}
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              </Button>
+                            )}
                             <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => onReview(line)} title="Review" data-testid={`button-review-${line.id}`}>
                               <Pencil className="w-3.5 h-3.5" />
                             </Button>
@@ -954,7 +1063,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
 
           {/* Mobile cards */}
           <div className="md:hidden space-y-2">
-            {lines.map(line => {
+            {filteredLines.map(line => {
               const prop = propertyOf(line)
               return (
                 <Card
