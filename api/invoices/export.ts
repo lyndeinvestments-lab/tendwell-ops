@@ -56,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: lineRows, error: linesErr } = await supabase
     .from('invoice_lines')
-    .select('line_kind, service_type, raw_date_mentioned, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, properties(name, contacts:contact_id(full_name, company))')
+    .select('line_kind, service_type, raw_date_mentioned, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, properties(name, contacts:contact_id(full_name, company))')
     .eq('run_id', runId)
     .order('line_no')
   if (linesErr) {
@@ -96,6 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       serviceType: r.service_type,
       serviceDate: r.raw_date_mentioned,
       propertyName: prop?.name ?? null,
+      propertyId: r.property_id != null ? Number(r.property_id) : null,
       clientName: contact?.full_name ?? contact?.company ?? null,
       billingChannel: r.billing_channel as BillingChannel | null,
       cleanerPayAmount: r.cleaner_pay_amount != null ? Number(r.cleaner_pay_amount) : null,
@@ -106,12 +107,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   })
 
-  // Known QBO classes (nightly qbo-classes-sync snapshot). Empty/absent →
+  // Known QBO classes (nightly qbo-classes-sync snapshot) with any manual
+  // property links from the API Sync → QuickBooks tab. Empty/absent →
   // undefined, which keeps the legacy behavior (property name as Class).
-  let knownClasses: string[] | undefined
+  let knownClasses: Array<{ name: string; matchedPropertyId: number | null }> | undefined
   if (format === 'ramp' || format === 'qbo_flat') {
-    const { data: classRows } = await supabase.from('qbo_classes').select('name').eq('active', true)
-    if (classRows && classRows.length > 0) knownClasses = classRows.map(r => r.name as string)
+    const { data: classRows } = await supabase.from('qbo_classes').select('name, matched_property_id').eq('active', true)
+    if (classRows && classRows.length > 0) {
+      knownClasses = classRows.map(r => ({
+        name: r.name as string,
+        matchedPropertyId: r.matched_property_id != null ? Number(r.matched_property_id) : null,
+      }))
+    }
   }
 
   const csv =

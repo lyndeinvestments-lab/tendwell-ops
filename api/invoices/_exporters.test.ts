@@ -206,30 +206,42 @@ describe('serviceTitle — reason-required extras carry their reason', () => {
 })
 
 describe('qboClassFor — Class column only names classes that exist in QBO', () => {
-  const CLASSES = ['Michael Rohwer 2455', 'Brian Albaum', 'Adam Pike 1071', 'Stephanie Keegan 1260-5307']
+  const cls = (name: string, matchedPropertyId: number | null = null) => ({ name, matchedPropertyId })
+  const CLASSES = [cls('Michael Rohwer 2455'), cls('Brian Albaum'), cls('Adam Pike 1071'), cls('Stephanie Keegan 1260-5307')]
 
   it('exact match (case-insensitive), returning the class’s own spelling', () => {
-    expect(qboClassFor('Michael Rohwer 2455', CLASSES)).toBe('Michael Rohwer 2455')
-    expect(qboClassFor('michael rohwer 2455', CLASSES)).toBe('Michael Rohwer 2455')
+    expect(qboClassFor('Michael Rohwer 2455', 1, CLASSES)).toBe('Michael Rohwer 2455')
+    expect(qboClassFor('michael rohwer 2455', 1, CLASSES)).toBe('Michael Rohwer 2455')
   })
   it('unique word-boundary prefix match (Nina’s "Brian Albaum" for property "Brian Albaum 442")', () => {
-    expect(qboClassFor('Brian Albaum 442', CLASSES)).toBe('Brian Albaum')
+    expect(qboClassFor('Brian Albaum 442', 2, CLASSES)).toBe('Brian Albaum')
   })
   it('unknown property → blank, exactly like Nina’s sheet', () => {
-    expect(qboClassFor('Kevin Parrish 3836', CLASSES)).toBe('')
+    expect(qboClassFor('Kevin Parrish 3836', 3, CLASSES)).toBe('')
+  })
+  it('MANUAL link wins over everything, even a would-be exact match elsewhere', () => {
+    const withLink = [cls('Totally Different Class', 3), ...CLASSES]
+    expect(qboClassFor('Kevin Parrish 3836', 3, withLink)).toBe('Totally Different Class')
+    // manual link beats name matching for the linked property…
+    expect(qboClassFor('Michael Rohwer 2455', 1, [cls('Override Class', 1), ...CLASSES])).toBe('Override Class')
+    // …but other properties are unaffected
+    expect(qboClassFor('Michael Rohwer 2455', 1, withLink)).toBe('Michael Rohwer 2455')
+  })
+  it('manual link needs a property id — id-less lines fall through to name matching', () => {
+    expect(qboClassFor('Kevin Parrish 3836', null, [cls('Linked Class', 3), ...CLASSES])).toBe('')
   })
   it('ambiguous prefix → blank, never a guess', () => {
-    const ambiguous = ['Brian Albaum', 'Brian Albaum 442']
-    expect(qboClassFor('Brian Albaum 442 Unit B', ambiguous)).toBe('')
+    const ambiguous = [cls('Brian Albaum'), cls('Brian Albaum 442')]
+    expect(qboClassFor('Brian Albaum 442 Unit B', 2, ambiguous)).toBe('')
   })
   it('prefix must end at a word boundary ("Brian Albaum 4" is not a prefix of "...442")', () => {
-    expect(qboClassFor('Brian Albaum 442', ['Brian Albaum 4'])).toBe('')
+    expect(qboClassFor('Brian Albaum 442', 2, [cls('Brian Albaum 4')])).toBe('')
   })
   it('no class list (sync never ran) → legacy behavior, property name passthrough', () => {
-    expect(qboClassFor('Kevin Parrish 3836')).toBe('Kevin Parrish 3836')
+    expect(qboClassFor('Kevin Parrish 3836', 3)).toBe('Kevin Parrish 3836')
   })
   it('drives the QBO flat Class column and the Ramp QuickBooks Class column', () => {
-    const line: ExportLine = { ...LINES[0], propertyName: 'Kevin Parrish 3836' }
+    const line: ExportLine = { ...LINES[0], propertyName: 'Kevin Parrish 3836', propertyId: 3 }
     const flatRow = Papa.parse<string[]>(toQboFlatCsv(RUN, [line], CLASSES).trim()).data[1]
     // Description (col 3) keeps the property name; Class (col 5) goes blank.
     expect(flatRow[2]).toBe('Kevin Parrish 3836')
@@ -238,6 +250,10 @@ describe('qboClassFor — Class column only names classes that exist in QBO', ()
     expect(rampRow[10]).toBe('') // QuickBooks Class column
     const legacyRow = Papa.parse<string[]>(toRampCsv(RUN, [line]).trim()).data[1]
     expect(legacyRow[10]).toBe('Kevin Parrish 3836') // no class list → passthrough
+    // a manual link fills the Class cell that name matching couldn't
+    const linked = [cls('Parrish Cabin Class', 3), ...CLASSES]
+    const linkedRow = Papa.parse<string[]>(toQboFlatCsv(RUN, [line], linked).trim()).data[1]
+    expect(linkedRow[4]).toBe('Parrish Cabin Class')
   })
 })
 

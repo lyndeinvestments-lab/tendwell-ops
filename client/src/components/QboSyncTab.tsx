@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCw, Loader2, Search } from 'lucide-react'
+import { RefreshCw, Loader2, Search, Unlink } from 'lucide-react'
+import { SearchSelect } from '@/components/issues/SearchSelect'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ interface QboClassRow {
   fully_qualified_name: string
   active: boolean
   synced_at: string | null
+  matched_property_id: number | null // manual link — wins over name matching
 }
 
 interface HavenProperty {
@@ -48,7 +50,7 @@ function norm(v: string): string {
   return v.toLowerCase().replace(/\s+/g, ' ').trim()
 }
 
-function matchClass(propertyName: string, classes: QboClassRow[]): { kind: 'exact' | 'prefix' | 'none'; className: string | null } {
+function matchClass(propertyName: string, classes: QboClassRow[]): { kind: 'manual' | 'exact' | 'prefix' | 'none'; className: string | null } {
   const p = norm(propertyName)
   if (!p) return { kind: 'none', className: null }
   const exact = classes.find(c => norm(c.name) === p)
@@ -74,7 +76,7 @@ export function QboSyncTab() {
       // for new tables — see issue_comments call sites).
       const { data, error } = await (supabase as any)
         .from('qbo_classes')
-        .select('qbo_id, name, fully_qualified_name, active, synced_at')
+        .select('qbo_id, name, fully_qualified_name, active, synced_at, matched_property_id')
         .order('name')
       if (error) throw error
       return (data ?? []) as QboClassRow[]
@@ -106,15 +108,33 @@ export function QboSyncTab() {
     return stamps.length ? stamps.reduce((a, b) => (a > b ? a : b)) : null
   }, [classesQuery.data])
 
+  // Manual links win over name matching (mirrors qboClassFor server-side).
+  const manualByProperty = useMemo(() => {
+    const m = new Map<number, QboClassRow>()
+    for (const c of activeClasses) if (c.matched_property_id != null) m.set(c.matched_property_id, c)
+    return m
+  }, [activeClasses])
+
   // Match every operational Haven property against the class list.
   const matches = useMemo(() => {
     const props = (propertiesQuery.data ?? []).filter(p => OPERATIONAL_STAGES.has(stageOf(p)))
-    return props.map(p => ({ property: p, ...matchClass(p.name ?? '', activeClasses) }))
-  }, [propertiesQuery.data, activeClasses])
+    return props.map(p => {
+      const manual = manualByProperty.get(p.id)
+      if (manual) return { property: p, kind: 'manual' as const, className: manual.name }
+      return { property: p, ...matchClass(p.name ?? '', activeClasses) }
+    })
+  }, [propertiesQuery.data, activeClasses, manualByProperty])
 
   const exactCount = matches.filter(m => m.kind === 'exact').length
+  const manualMatches = matches.filter(m => m.kind === 'manual')
   const prefixMatches = matches.filter(m => m.kind === 'prefix')
   const unmatched = matches.filter(m => m.kind === 'none')
+
+  // Only unlinked classes are offered for manual linking (one property per class).
+  const linkableOptions = useMemo(
+    () => activeClasses.filter(c => c.matched_property_id == null).map(c => ({ value: c.qbo_id, label: c.name })),
+    [activeClasses],
+  )
 
   const usedClassNames = useMemo(
     () => new Set(matches.filter(m => m.className).map(m => norm(m.className!))),
@@ -150,6 +170,19 @@ export function QboSyncTab() {
     }
   }
 
+  async function setLink(classId: string, propertyId: number | null) {
+    const { error } = await (supabase as any)
+      .from('qbo_classes')
+      .update({ matched_property_id: propertyId })
+      .eq('qbo_id', classId)
+    if (error) {
+      toast({ title: 'Link update failed', description: error.message, variant: 'destructive' })
+      return
+    }
+    toast({ title: propertyId != null ? 'Class linked' : 'Class unlinked' })
+    qc.invalidateQueries({ queryKey: ['/supabase/qbo-classes'] })
+  }
+
   if (classesQuery.isError) {
     return <ErrorState onRetry={() => classesQuery.refetch()} title="Couldn't load QuickBooks classes" description="The qbo_classes table failed to load. Has the migration been applied?" />
   }
@@ -171,7 +204,7 @@ export function QboSyncTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard title="Active QBO classes" value={String(activeClasses.length)} icon={Landmark} loading={classesQuery.isLoading} />
         <StatCard title="Haven properties" value={String(matches.length)} icon={Landmark} tone="info" loading={propertiesQuery.isLoading} />
-        <StatCard title="Matched" value={String(exactCount + prefixMatches.length)} icon={Landmark} tone="success" loading={classesQuery.isLoading || propertiesQuery.isLoading} />
+        <StatCard title="Matched" value={String(exactCount + prefixMatches.length + manualMatches.length)} icon={Landmark} tone="success" loading={classesQuery.isLoading || propertiesQuery.isLoading} />
         <StatCard title="No QBO class" value={String(unmatched.length)} icon={Landmark} tone={unmatched.length ? 'destructive' : 'success'} loading={classesQuery.isLoading || propertiesQuery.isLoading} />
       </div>
 
@@ -182,15 +215,57 @@ export function QboSyncTab() {
               Haven properties with no QBO class ({unmatched.length})
             </CardTitle>
             <p className="text-2xs text-muted-foreground">
-              Invoice exports leave the Class cell blank for these until a matching Class is created in QuickBooks.
+              Invoice exports leave the Class cell blank for these. Link the right class here (persists, wins over
+              name matching) or create a matching Class in QuickBooks and refresh.
             </p>
           </CardHeader>
           <CardContent className="pt-0">
-            <div className="flex flex-wrap gap-1.5">
+            <div className="grid gap-1.5 sm:grid-cols-2">
               {unmatched.map(m => (
-                <StatusBadge key={m.property.id} tone="destructive">{m.property.name}</StatusBadge>
+                <div key={m.property.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
+                  <span className="text-sm font-medium truncate">{m.property.name}</span>
+                  <div className="w-52 shrink-0">
+                    <SearchSelect
+                      value=""
+                      onSelect={(classId) => { if (classId) setLink(classId, m.property.id) }}
+                      options={linkableOptions}
+                      placeholder="Link QBO class…"
+                      searchPlaceholder="Search classes…"
+                      emptyText="No unlinked classes"
+                    />
+                  </div>
+                </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {manualMatches.length > 0 && (
+        <Card className="rounded-2xl border-card-border shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Manual links ({manualMatches.length})</CardTitle>
+            <p className="text-2xs text-muted-foreground">
+              Admin-set property ↔ class links. These win over name matching in every export and survive nightly syncs.
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-1">
+            {manualMatches.map(m => {
+              const linked = manualByProperty.get(m.property.id)
+              return (
+                <div key={m.property.id} className="flex items-center justify-between gap-2">
+                  <p className="text-sm truncate">
+                    <span className="font-medium">{m.property.name}</span>
+                    <span className="text-muted-foreground"> → {m.className}</span>
+                  </p>
+                  {linked && (
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-muted-foreground" onClick={() => setLink(linked.qbo_id, null)} title="Remove this manual link" data-testid={`qbo-unlink-${m.property.id}`}>
+                      <Unlink className="w-3.5 h-3.5 mr-1" /> Unlink
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       )}
