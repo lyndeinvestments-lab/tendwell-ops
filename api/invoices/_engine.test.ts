@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   extractDateFromText,
+  extraReasonFromNote,
   extraTitleFromNote,
   FLAGS,
   generateDraftLines,
@@ -297,15 +298,38 @@ describe('reconcile — money rules', () => {
     expect(lines[0].clientChargeAmount).toBe(600) // no deep_clean_3x_ce → ce 200 × 3
   })
 
-  it('bills Onboarding Clean at Client Charged + $50, paid whole to the vendor', () => {
-    const { lines } = reconcile(
+  it('bills Onboarding Clean as TWO rows: base at Client Charged + a $50 surcharge line', () => {
+    // Finance requires extras broken out from the clean fee; Nina's real QBO
+    // sheet (invoice #1085) renders onboarding as base + $50, both titled
+    // "Onboarding Clean". Total client charge stays Client Charged + 50.
+    const { lines, summary } = reconcile(
       input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
     )
+    expect(lines).toHaveLength(2)
+    const [base, surcharge] = lines
+    expect(base.serviceType).toBe('Onboarding Clean')
+    expect(base.lineKind).toBe('combined_split')
+    expect(base.cleanerPayAmount).toBe(253.52) // vendor paid what they billed, whole
+    expect(base.clientChargeAmount).toBe(150) // ce_charged
+    expect(surcharge.serviceType).toBe('Onboarding Clean')
+    expect(surcharge.lineKind).toBe('extra')
+    expect(surcharge.cleanerPayAmount).toBeNull() // client-only surcharge
+    expect(surcharge.clientChargeAmount).toBe(50)
+    expect(surcharge.rawAmount).toBe(0) // not part of the vendor's stated subtotal
+    expect(surcharge.splitGroup).toBe(base.splitGroup)
+    expect(base.flags).not.toContain(FLAGS.BILLED_WHOLE)
+    expect(summary.totalClientCharge).toBe(200) // 150 + 50, unchanged in total
+    expect(summary.netDiscrepancy).toBe(0) // surcharge must not skew AP math
+  })
+
+  it('keeps Onboarding Clean single-line + review when the property has no Client Charged rate', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Rateless Retreat', rawAmount: 253.52, rawNoteText: 'Onboarding clean', rawDateMentioned: null })]),
+    )
     expect(lines).toHaveLength(1)
-    expect(lines[0].serviceType).toBe('Onboarding Clean')
-    expect(lines[0].cleanerPayAmount).toBe(253.52) // vendor paid what they billed
-    expect(lines[0].clientChargeAmount).toBe(200) // ce_charged 150 + 50
-    expect(lines[0].flags).not.toContain(FLAGS.BILLED_WHOLE)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].flags).toContain(FLAGS.MISSING_RATE)
+    expect(lines[0].clientChargeAmount).toBeNull()
   })
 
   it('excludes Cleaner Self-Inspection lines', () => {
@@ -385,6 +409,53 @@ describe('reconcile — money rules', () => {
 // Two lines, $884.00 total, rates/channels copied from the live DB at build
 // time. Until Nina's hand-built golden fixture arrives, this is the canonical
 // end-to-end regression for a real vendor invoice.
+
+// ─── Reason-required extras (Finance requirement 2026-08-17) ─────────────────
+
+describe('reason-required extras', () => {
+  it('extracts the vendor-stated reason from the note (keyword + $amounts stripped)', () => {
+    expect(extraReasonFromNote('Pet fee — excess dog hair', 'Pet Fee')).toBe('excess dog hair')
+    expect(extraReasonFromNote('$50 pet fee', 'Pet Fee')).toBeNull()
+    expect(extraReasonFromNote('reimbursement for lightbulbs $12.50', 'Reimbursement')).toBe('for lightbulbs')
+    expect(extraReasonFromNote(null, 'Pet Fee')).toBeNull()
+  })
+
+  it('keeps a Pet Fee with a stated reason out of the review queue', () => {
+    // date outside any task window → standalone extra, not an underage split
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 50, rawNoteText: 'Pet fee — excess dog hair', rawDateMentioned: '2026-08-20' })]),
+    )
+    expect(lines).toHaveLength(1)
+    expect(lines[0].serviceType).toBe('Pet Fee')
+    expect(lines[0].flags).not.toContain(FLAGS.REASON_REQUIRED)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('flags a reason-required extra with no derivable reason for review', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 50, rawNoteText: 'pet fee', rawDateMentioned: null })]),
+    )
+    expect(lines).toHaveLength(1)
+    expect(lines[0].serviceType).toBe('Pet Fee')
+    expect(lines[0].flags).toContain(FLAGS.REASON_REQUIRED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('does not demand a reason for extras outside the reason-required set', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 50, rawNoteText: 'hot tub', rawDateMentioned: null })]),
+    )
+    expect(lines[0].serviceType).toBe('Hot Tub Refresh Requested by Guest')
+    expect(lines[0].flags).not.toContain(FLAGS.REASON_REQUIRED)
+  })
+
+  it('flags a vendor credit (auto-Reimbursement) with no reason', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: -40, rawNoteText: null })]))
+    expect(lines[0].serviceType).toBe('Reimbursement')
+    expect(lines[0].flags).toContain(FLAGS.CREDIT_LINE)
+    expect(lines[0].flags).toContain(FLAGS.REASON_REQUIRED)
+  })
+})
 
 describe('real Busy Bee invoice I260810795', () => {
   const REAL_PROPS: PropertyRates[] = [

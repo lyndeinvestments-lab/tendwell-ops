@@ -9,6 +9,7 @@
 //              lines are never silently dropped.
 
 import Papa from 'papaparse'
+import { extraReasonFromNote, REASON_REQUIRED_EXTRAS } from './_engine.js'
 import type { BillingChannel, LineKind } from './_engine.js'
 
 export interface ExportRun {
@@ -30,7 +31,20 @@ export interface ExportLine {
   cleanerPayAmount: number | null
   clientChargeAmount: number | null
   note: string | null
+  reviewNote?: string | null // human review note — doubles as the stated reason
   reviewStatus: string
+}
+
+// Finance requires certain extras to carry their reason IN the title —
+// "Pet Fee (excess dog hair)" — exactly as Nina's real QBO sheet (#1085) does.
+// Precedence: the human review note, else the reason derived from the vendor
+// note. A missing reason was already flagged for review upstream, so a bare
+// title here means a human explicitly approved it without one.
+export function serviceTitle(l: ExportLine): string {
+  const title = l.serviceType ?? ''
+  if (!title || !REASON_REQUIRED_EXTRAS.has(title)) return title
+  const reason = l.reviewNote?.trim() || extraReasonFromNote(l.note, title)
+  return reason ? `${title} (${reason})` : title
 }
 
 // CSV formula-injection guard: vendor-authored free text (notes, invoice
@@ -155,7 +169,7 @@ export function toQboFlatCsv(run: ExportRun, lines: ExportLine[]): string {
   const invoiceDate = fmtUsDate(run.invoiceDate)
   const dueDate = fmtUsDate(run.dueDate ?? run.invoiceDate)
   const rows = lines.filter(l => isArLine(l, 'qbo_haven')).map(l => [
-    s(l.serviceType ?? ''),
+    s(serviceTitle(l)),
     fmtUsDate(l.serviceDate),
     s(l.propertyName ?? ''),
     fmtUsd(l.clientChargeAmount ?? 0),
@@ -232,7 +246,7 @@ export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
       s(l.clientName ?? ''),
       fmtUsDate(run.invoiceDate),
       fmtUsDate(run.dueDate ?? run.invoiceDate),
-      s(l.serviceType ?? ''),
+      s(serviceTitle(l)),
       fmtUsDate(l.serviceDate),
       s(l.propertyName ?? ''),
       lineDescription(l),

@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { fmtUsd, fmtUsDate, sanitizeCell, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
+import Papa from 'papaparse'
+import { fmtUsd, fmtUsDate, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 
 const RUN: ExportRun = {
   vendorName: 'Busy Bee Cleaning',
@@ -162,6 +165,87 @@ describe('toQboFlatCsv', () => {
   it('uses the sequential QBO invoice number, not the vendor invoice number', () => {
     expect(rows[1]).toContain('1001')
     expect(rows[1]).not.toContain('I260810795')
+  })
+})
+
+describe('serviceTitle — reason-required extras carry their reason', () => {
+  const petFee: ExportLine = {
+    ...LINES[0],
+    lineKind: 'extra',
+    serviceType: 'Pet Fee',
+    clientChargeAmount: 50,
+    note: 'Pet fee — excess dog hair',
+  }
+
+  it('appends the vendor-stated reason in parentheses', () => {
+    expect(serviceTitle(petFee)).toBe('Pet Fee (excess dog hair)')
+  })
+  it('prefers the human review note over the derived reason', () => {
+    expect(serviceTitle({ ...petFee, reviewNote: 'dog hair on all furniture' })).toBe('Pet Fee (dog hair on all furniture)')
+  })
+  it('leaves non-reason-required titles untouched', () => {
+    expect(serviceTitle({ ...petFee, serviceType: 'Excessive Trash Pickup', note: 'so much trash' })).toBe('Excessive Trash Pickup')
+  })
+  it('falls back to the bare title when no reason exists (already human-approved upstream)', () => {
+    expect(serviceTitle({ ...petFee, note: null })).toBe('Pet Fee')
+  })
+  it('lands in the QBO flat Service column like Nina’s real sheet', () => {
+    const csv = toQboFlatCsv(RUN, [petFee])
+    expect(csv.split('\r\n')[1].startsWith('Pet Fee (excess dog hair),')).toBe(true)
+  })
+  it('lands in the bill.com worksheet Service column', () => {
+    const csv = toBillComCsv(RUN, [{ ...petFee, billingChannel: 'bill_com' }])
+    expect(csv).toContain('Pet Fee (excess dog hair)')
+  })
+  it('keeps the QBO multiline Item column canonical (reason goes to ItemDescription)', () => {
+    const csv = toQboMultilineCsv(RUN, [petFee])
+    const row = csv.split('\r\n')[1]
+    expect(row).toContain(',Pet Fee,')
+    expect(row).toContain('excess dog hair')
+  })
+})
+
+// Nina's real QBO import sheet for invoice #1085 (2026-08-10) — the golden
+// format reference. Guards that our flat exporter's conventions (headers,
+// currency/date formats, Customer name, reason-in-title, onboarding split)
+// match what QBO actually accepted in production.
+describe('golden format fixture — Nina’s QBO sheet #1085', () => {
+  const raw = readFileSync(join(__dirname, '__fixtures__', 'qbo-flat-1085-nina.csv'), 'utf8')
+  const parsed = Papa.parse<string[]>(raw.trim(), { skipEmptyLines: true })
+  const [header, ...rows] = parsed.data
+
+  it('our flat exporter emits exactly Nina’s header', () => {
+    const ours = toQboFlatCsv(RUN, LINES).split('\r\n')[0]
+    expect(header.join(',')).toBe(ours)
+  })
+  it('every row bills Customer=Haven with $-formatted amounts and MM/DD/YYYY dates', () => {
+    for (const r of rows) {
+      expect(r[6]).toBe('Haven')
+      expect(r[3]).toMatch(/^\$\d{1,3}(,\d{3})*\.\d{2}$/)
+      expect(r[1]).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
+    }
+  })
+  it('reasons ride inside the Service column (Pet Fee)', () => {
+    expect(rows.some(r => r[0] === 'Pet Fee (excess dog hair)')).toBe(true)
+  })
+  it('onboarding cleans appear as base + $50 surcharge rows, same title', () => {
+    const onboarding = rows.filter(r => r[0] === 'Onboarding Clean')
+    expect(onboarding.length).toBeGreaterThanOrEqual(2)
+    // every onboarding property has exactly one $50 companion row
+    const byProp = new Map<string, string[]>()
+    for (const r of onboarding) {
+      byProp.set(r[2], [...(byProp.get(r[2]) ?? []), r[3]])
+    }
+    for (const amounts of byProp.values()) {
+      expect(amounts.filter(a => a === '$50.00').length).toBeGreaterThanOrEqual(1)
+    }
+  })
+  it('extras are separate rows, never merged into the clean fee (spot check: Adam Pike 08/03)', () => {
+    const pike = rows.filter(r => r[2] === 'Adam Pike 1071' && r[1] === '08/03/2026')
+    expect(pike.map(r => [r[0], r[3]])).toEqual([
+      ['Turn Clean', '$390.00'],
+      ['Excessive Trash Pickup', '$50.00'],
+    ])
   })
 })
 
