@@ -858,8 +858,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                           {line.split_group != null && <span className="ml-1 text-2xs">split</span>}
                         </td>
                         <td className="px-2 py-2 max-w-48">
-                          <p className="truncate">{prop?.name ?? '—'}</p>
-                          {line.raw_property_text && line.raw_property_text !== prop?.name && (
+                          {/* No property record (labor / expense lines): the vendor's
+                              own text IS the identifier — show it as the name. */}
+                          <p className={cn('truncate', !prop && line.raw_property_text && 'text-muted-foreground italic')}>
+                            {prop?.name ?? line.raw_property_text ?? '—'}
+                          </p>
+                          {prop && line.raw_property_text && line.raw_property_text !== prop.name && (
                             <p className="text-2xs text-muted-foreground truncate">raw: {line.raw_property_text}</p>
                           )}
                         </td>
@@ -1283,6 +1287,19 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
         }
       }
 
+      // Drop the flags this resolution just addressed — a resolved Tendwell
+      // expense showing "Unresolved property / No billing channel" reads as
+      // still-broken. Expense/excluded kinds don't need property or channel
+      // at all; other kinds shed those flags once a property/channel exists.
+      const isExpenseKind = lineKind === 'operating_expense' || lineKind === 'excluded'
+      const newFlags = line.flags.filter(f => {
+        if (f === 'unresolved_property') return !isExpenseKind && propertyId == null
+        if (f === 'no_billing_channel') return !isExpenseKind && (billingChannel == null || billingChannel === 'none')
+        if (f === 'low_confidence_alias' || f === 'unmatched_task') return !isExpenseKind
+        return true
+      })
+      if (lineKind === 'operating_expense' && !newFlags.includes('operating_expense')) newFlags.push('operating_expense')
+
       const { error } = await supabase
         .from('invoice_lines')
         .update({
@@ -1290,6 +1307,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
           billing_channel: billingChannel,
           service_type: serviceType || null,
           line_kind: lineKind,
+          flags: newFlags,
           review_note: reviewNote || null,
           ...(invoicedNum != null && Number.isFinite(invoicedNum) ? { raw_amount: invoicedNum } : {}),
           cleaner_pay_amount: cleanerPayNum != null && Number.isFinite(cleanerPayNum) ? cleanerPayNum : null,
@@ -1378,7 +1396,19 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
             </div>
             <div className="space-y-1.5">
               <Label>Line kind</Label>
-              <Select value={lineKind} onValueChange={v => setLineKind(v as LineKind)}>
+              <Select
+                value={lineKind}
+                onValueChange={v => {
+                  const kind = v as LineKind
+                  setLineKind(kind)
+                  // Tendwell expenses owe the vendor the full invoiced amount
+                  // and never bill a client — prefill/clear accordingly.
+                  if (kind === 'operating_expense') {
+                    if (cleanerPay.trim() === '' && invoiced.trim() !== '') setCleanerPay(invoiced)
+                    setClientCharge('')
+                  }
+                }}
+              >
                 <SelectTrigger data-testid="select-line-kind"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {LINE_KINDS.map(k => <SelectItem key={k.id} value={k.id}>{k.label}</SelectItem>)}
