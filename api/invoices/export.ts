@@ -106,9 +106,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   })
 
+  // Known QBO classes (nightly qbo-classes-sync snapshot). Empty/absent →
+  // undefined, which keeps the legacy behavior (property name as Class).
+  let knownClasses: string[] | undefined
+  if (format === 'ramp' || format === 'qbo_flat') {
+    const { data: classRows } = await supabase.from('qbo_classes').select('name').eq('active', true)
+    if (classRows && classRows.length > 0) knownClasses = classRows.map(r => r.name as string)
+  }
+
   const csv =
-    format === 'ramp' ? toRampCsv(exportRun, lines)
-    : format === 'qbo_flat' ? toQboFlatCsv(exportRun, lines)
+    format === 'ramp' ? toRampCsv(exportRun, lines, knownClasses)
+    : format === 'qbo_flat' ? toQboFlatCsv(exportRun, lines, knownClasses)
     : format === 'qbo_multiline' ? toQboMultilineCsv(exportRun, lines)
     : toBillComCsv(exportRun, lines)
 

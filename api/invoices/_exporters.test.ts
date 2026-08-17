@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import Papa from 'papaparse'
-import { fmtUsd, fmtUsDate, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
+import { fmtUsd, fmtUsDate, qboClassFor, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 
 const RUN: ExportRun = {
   vendorName: 'Busy Bee Cleaning',
@@ -202,6 +202,42 @@ describe('serviceTitle — reason-required extras carry their reason', () => {
     const row = csv.split('\r\n')[1]
     expect(row).toContain(',Pet Fee,')
     expect(row).toContain('excess dog hair')
+  })
+})
+
+describe('qboClassFor — Class column only names classes that exist in QBO', () => {
+  const CLASSES = ['Michael Rohwer 2455', 'Brian Albaum', 'Adam Pike 1071', 'Stephanie Keegan 1260-5307']
+
+  it('exact match (case-insensitive), returning the class’s own spelling', () => {
+    expect(qboClassFor('Michael Rohwer 2455', CLASSES)).toBe('Michael Rohwer 2455')
+    expect(qboClassFor('michael rohwer 2455', CLASSES)).toBe('Michael Rohwer 2455')
+  })
+  it('unique word-boundary prefix match (Nina’s "Brian Albaum" for property "Brian Albaum 442")', () => {
+    expect(qboClassFor('Brian Albaum 442', CLASSES)).toBe('Brian Albaum')
+  })
+  it('unknown property → blank, exactly like Nina’s sheet', () => {
+    expect(qboClassFor('Kevin Parrish 3836', CLASSES)).toBe('')
+  })
+  it('ambiguous prefix → blank, never a guess', () => {
+    const ambiguous = ['Brian Albaum', 'Brian Albaum 442']
+    expect(qboClassFor('Brian Albaum 442 Unit B', ambiguous)).toBe('')
+  })
+  it('prefix must end at a word boundary ("Brian Albaum 4" is not a prefix of "...442")', () => {
+    expect(qboClassFor('Brian Albaum 442', ['Brian Albaum 4'])).toBe('')
+  })
+  it('no class list (sync never ran) → legacy behavior, property name passthrough', () => {
+    expect(qboClassFor('Kevin Parrish 3836')).toBe('Kevin Parrish 3836')
+  })
+  it('drives the QBO flat Class column and the Ramp QuickBooks Class column', () => {
+    const line: ExportLine = { ...LINES[0], propertyName: 'Kevin Parrish 3836' }
+    const flatRow = Papa.parse<string[]>(toQboFlatCsv(RUN, [line], CLASSES).trim()).data[1]
+    // Description (col 3) keeps the property name; Class (col 5) goes blank.
+    expect(flatRow[2]).toBe('Kevin Parrish 3836')
+    expect(flatRow[4]).toBe('')
+    const rampRow = Papa.parse<string[]>(toRampCsv(RUN, [line], CLASSES).trim()).data[1]
+    expect(rampRow[10]).toBe('') // QuickBooks Class column
+    const legacyRow = Papa.parse<string[]>(toRampCsv(RUN, [line]).trim()).data[1]
+    expect(legacyRow[10]).toBe('Kevin Parrish 3836') // no class list → passthrough
   })
 })
 
