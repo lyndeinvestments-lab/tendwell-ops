@@ -5,7 +5,7 @@ import {
   useAuth, type UserRole, type AuthUser, type RolePermissionsStore, type ViewId,
   type PagePermission,
   VIEW_DEFINITIONS, ROLE_VIEWS, buildDefaultRolePermissions, sanitizeRolePermissions, sanitizeViews,
-  derivePermissionsFromViews, sanitizePagePermissions,
+  derivePermissionsFromViews, sanitizePagePermissions, mergeRolePermissions,
 } from '@/lib/auth'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { SearchSelect } from '@/components/issues/SearchSelect'
@@ -77,38 +77,65 @@ function RoleBadge({ role }: { role: string }) {
 
 // ─── Hook: load role permissions from app_settings ───────────────────────────
 
+/** Reads the live RBAC store. Returns `null` only when the key genuinely does
+ *  not exist yet (fresh install). THROWS on any read/parse failure — callers
+ *  must never mistake "we couldn't read it" for "this is the saved config".
+ *  Silently falling back to buildDefaultRolePermissions() here is what made
+ *  the matrix render hardcoded defaults (no supervisor role, no Operations
+ *  edit rights) while the DB held the real, richer config — and a Save in
+ *  that state would have written those defaults over it. */
+async function fetchRolePermissions(): Promise<RolePermissionsStore | null> {
+  const { data: row, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'role_permissions')
+    .maybeSingle()
+  if (error) throw error
+  if (!row?.value) return null
+  const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
+  return sanitizeRolePermissions(parsed)
+}
+
 function useRolePermissions() {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['/supabase/role-permissions'],
     // Role permissions only change when an admin edits this very page —
     // skip redundant fetches for 10 min. Mutations call invalidateQueries.
     staleTime: 10 * 60 * 1000,
-    queryFn: async () => {
-      const { data: row } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'role_permissions')
-        .single()
-      if (!row?.value) return buildDefaultRolePermissions()
-      const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value
-      return sanitizeRolePermissions(parsed)
-    },
+    queryFn: fetchRolePermissions,
   })
 
   const { mutateAsync: savePermissions } = useMutation({
-    mutationFn: async (perms: RolePermissionsStore) => {
-      const { error } = await supabase
+    // Merge into a freshly-read copy of the live store instead of overwriting
+    // it wholesale: roles this tab never loaded (a custom role added by
+    // someone else, or one missing because the load failed) survive the write.
+    mutationFn: async ({ perms, deleted = [] }: { perms: RolePermissionsStore; deleted?: string[] }) => {
+      const merged = mergeRolePermissions(await fetchRolePermissions(), perms, deleted)
+      const { error: saveError } = await supabase
         .from('app_settings')
-        .upsert({ key: 'role_permissions', value: JSON.stringify(perms) })
-      if (error) throw error
+        .upsert({ key: 'role_permissions', value: JSON.stringify(merged) })
+      if (saveError) throw saveError
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['/supabase/role-permissions'] })
     },
   })
 
-  return { rolePermissions: data ?? buildDefaultRolePermissions(), isLoading, savePermissions }
+  return {
+    /** The saved store, or null when the key is absent / the read failed.
+     *  Anything that WRITES the store must use this (plus isError) so it can
+     *  never save on top of a config it never actually read. */
+    savedRolePermissions: data ?? null,
+    /** Read-only convenience view for pickers/labels, where showing the
+     *  hardcoded defaults on a failed read is cosmetic, not destructive. */
+    rolePermissions: data ?? buildDefaultRolePermissions(),
+    isLoading,
+    isError,
+    error,
+    refetch,
+    savePermissions,
+  }
 }
 
 // ─── Permissions Section (Role Matrix) ───────────────────────────────────────
@@ -117,17 +144,20 @@ function PermissionsSection() {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const { user } = useAuth()
-  const { rolePermissions, isLoading, savePermissions } = useRolePermissions()
+  const { savedRolePermissions, isLoading, isError, refetch, savePermissions } = useRolePermissions()
   const [localPerms, setLocalPerms] = useState<RolePermissionsStore | null>(null)
   const [newRoleOpen, setNewRoleOpen] = useState(false)
   const [newRoleName, setNewRoleName] = useState('')
   const [deleteRoleId, setDeleteRoleId] = useState<string | null>(null)
+  const [deletedRoleIds, setDeletedRoleIds] = useState<string[]>([])
 
-  // Use local state if editing, otherwise DB state
-  const perms = localPerms ?? rolePermissions
+  // `rolePermissions` is null when the key doesn't exist yet (fresh install) —
+  // only then is seeding from the hardcoded defaults correct. A failed read is
+  // handled by the ErrorState below, never by silently showing defaults.
+  const savedPerms = savedRolePermissions ?? buildDefaultRolePermissions()
 
   // Keep local in sync when DB loads
-  const effectivePerms = useMemo(() => localPerms ?? rolePermissions, [localPerms, rolePermissions])
+  const effectivePerms = useMemo(() => localPerms ?? savedPerms, [localPerms, savedPerms])
 
   const roleIds = useMemo(() => Object.keys(effectivePerms), [effectivePerms])
 
@@ -169,7 +199,7 @@ function PermissionsSection() {
   async function handleSaveMatrix() {
     if (!localPerms) return
     try {
-      await savePermissions(localPerms)
+      await savePermissions({ perms: localPerms, deleted: deletedRoleIds })
       logActivity({
         entity_type: 'other',
         action: 'update',
@@ -177,6 +207,7 @@ function PermissionsSection() {
         changed_by: user?.label ?? null,
       })
       setLocalPerms(null)
+      setDeletedRoleIds([])
       toast({ title: t('toasts.permissionsSaved') })
     } catch (e: any) {
       toast({ title: t('toasts.permissionsSaveFailed'), description: e?.message, variant: 'destructive' })
@@ -208,7 +239,7 @@ function PermissionsSection() {
     const next = { ...effectivePerms }
     next[newRoleSlug] = { label: newRoleName.trim(), views: [], permissions: derivePermissionsFromViews([], false) }
     try {
-      await savePermissions(next)
+      await savePermissions({ perms: next, deleted: deletedRoleIds })
       logActivity({
         entity_type: 'other',
         action: 'create',
@@ -247,6 +278,9 @@ function PermissionsSection() {
     const current = { ...effectivePerms }
     delete current[deleteRoleId]
     setLocalPerms(current)
+    // Recorded so the merge-on-save actually drops it (a plain merge with the
+    // live store would resurrect the role).
+    setDeletedRoleIds(prev => prev.includes(deleteRoleId) ? prev : [...prev, deleteRoleId])
     logActivity({
       entity_type: 'other',
       action: 'delete',
@@ -264,6 +298,20 @@ function PermissionsSection() {
         <Skeleton className="h-6 w-48" />
         <Skeleton className="h-64 w-full" />
       </div>
+    )
+  }
+
+  // Never render the matrix off a failed read: the checkboxes would show the
+  // hardcoded defaults rather than the saved config (missing custom roles,
+  // missing edit grants), and saving from that state would overwrite the real
+  // config with them.
+  if (isError) {
+    return (
+      <ErrorState
+        title={t('permissions.loadFailedTitle')}
+        description={t('permissions.loadFailedDesc')}
+        onRetry={() => refetch()}
+      />
     )
   }
 
@@ -1421,15 +1469,11 @@ function NotificationsSection() {
   // role permissions to compute allowed views per user
   const { data: rolePerms } = useQuery({
     queryKey: ['/supabase/role-permissions'],
-    // Same key as the role-perms query at line 56 — React Query will
-    // dedupe; staleTime must match so they share the same freshness
-    // window (10 min).
+    // Shares the key (and therefore the cache entry) with useRolePermissions,
+    // so it must share the queryFn and staleTime too — two different readers
+    // on one key would otherwise resolve to whichever ran first.
     staleTime: 10 * 60 * 1000,
-    queryFn: async () => {
-      const { data: row } = await supabase.from('app_settings').select('value').eq('key', 'role_permissions').single()
-      if (!row?.value) return buildDefaultRolePermissions()
-      return sanitizeRolePermissions(typeof row.value === 'string' ? JSON.parse(row.value) : row.value)
-    },
+    queryFn: fetchRolePermissions,
   })
 
   const { data: prefsRows } = useQuery({
