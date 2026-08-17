@@ -17,6 +17,7 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
 import { HostawaySyncTab } from '@/components/HostawaySyncTab'
+import { QboSyncTab } from '@/components/QboSyncTab'
 
 function formatEta(seconds: number): string {
   if (seconds <= 0) return ''
@@ -876,6 +877,7 @@ export default function TrellisSyncPage() {
           <TabsTrigger value="trellis" data-testid="tab-reconciliation">Trellis</TabsTrigger>
           <TabsTrigger value="breezeway" data-testid="tab-breezeway">Breezeway</TabsTrigger>
           <TabsTrigger value="hostaway" data-testid="tab-hostaway">Hostaway</TabsTrigger>
+          <TabsTrigger value="quickbooks" data-testid="tab-quickbooks">QuickBooks</TabsTrigger>
           <TabsTrigger value="workflows" data-testid="tab-workflows">Trellis Workflows</TabsTrigger>
           <TabsTrigger value="roster" data-testid="tab-roster">Tendwell Roster</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">History</TabsTrigger>
@@ -950,6 +952,9 @@ export default function TrellisSyncPage() {
         </TabsContent>
         <TabsContent value="hostaway">
           <HostawaySyncTab />
+        </TabsContent>
+        <TabsContent value="quickbooks">
+          <QboSyncTab />
         </TabsContent>
         <TabsContent value="workflows">
           <WorkflowsTab />
