@@ -320,6 +320,31 @@ export async function reconcileRun(
     }
   }
 
+  // Preserved (human-resolved / manual) rows never enter the engine, so the
+  // engine's summary omits them — the stored computed_subtotal and totals
+  // must include them or the penny gate drifts as soon as a human edits an
+  // invoiced amount or adds a line. Split rows share a line_no: only the base
+  // row (no split_group, or non-extra kind) carries the vendor's raw amount.
+  const preservedBaseByLineNo = new Map<number, Record<string, any>>()
+  for (const r of preserved) {
+    const isBase = r.split_group == null || r.line_kind !== 'extra'
+    if (isBase) preservedBaseByLineNo.set(r.line_no, r)
+  }
+  const preservedInvoiced = round2(
+    [...preservedBaseByLineNo.values()].reduce((a, r) => a + Number(r.raw_amount ?? 0), 0),
+  )
+  summary.totalInvoiced = round2(summary.totalInvoiced + preservedInvoiced)
+  summary.totalCleanerPay = round2(
+    summary.totalCleanerPay +
+      preserved.filter(r => r.line_kind !== 'excluded').reduce((a, r) => a + Number(r.cleaner_pay_amount ?? 0), 0),
+  )
+  summary.totalClientCharge = round2(
+    summary.totalClientCharge +
+      preserved
+        .filter(r => r.line_kind !== 'excluded' && r.line_kind !== 'operating_expense')
+        .reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0),
+  )
+
   const stated = run.stated_subtotal != null ? Number(run.stated_subtotal) : null
   const subtotalOk = stated == null || Math.abs(summary.totalInvoiced - stated) <= 0.005
   const needsReview = summary.needsReviewCount > 0 || !subtotalOk

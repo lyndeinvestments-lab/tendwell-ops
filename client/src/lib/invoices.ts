@@ -33,7 +33,9 @@ export const LINE_KINDS: Array<{ id: LineKind; label: string }> = [
   { id: 'deep_clean', label: 'Deep Clean' },
   { id: 'extra', label: 'Extra' },
   { id: 'combined_split', label: 'Combined Split' },
-  { id: 'operating_expense', label: 'Operating Expense' },
+  // Tendwell's own cost (labor, supplies…): paid to the vendor via Ramp,
+  // never invoiced to Haven or bill.com, and needs no property.
+  { id: 'operating_expense', label: 'Tendwell Expense (labor / supplies)' },
   { id: 'excluded', label: 'Excluded' },
 ]
 
