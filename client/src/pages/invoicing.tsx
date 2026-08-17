@@ -629,6 +629,25 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
 
   const [downloadingFormat, setDownloadingFormat] = useState<ExportFormat | null>(null)
   const [addOpen, setAddOpen] = useState(false)
+
+  // Breezeway task data arrives via a manual CSV import — when it goes stale
+  // (last import June 27 vs an August run, real case), completed cleans are
+  // invisible to task matching and the review queue floods with
+  // unmatched_task. Surface it loudly instead of letting it look like the
+  // cleans never happened.
+  const bwFreshnessQuery = useQuery<string | null>({
+    queryKey: ['breezeway-freshness'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('breezeway_tasks')
+        .select('last_updated_date')
+        .order('last_updated_date', { ascending: false })
+        .limit(1)
+      if (error) throw error
+      return (data?.[0]?.last_updated_date as string | null) ?? null
+    },
+    staleTime: 300_000,
+  })
   async function handleDownload(format: ExportFormat) {
     setDownloadingFormat(format)
     try {
@@ -725,6 +744,20 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
           </div>
         }
       />
+
+      {run?.period_end && bwFreshnessQuery.data != null && bwFreshnessQuery.data.slice(0, 10) < run.period_end && (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm flex items-start gap-2.5" data-testid="breezeway-stale-banner">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warning" />
+          <div>
+            <p className="font-medium">Breezeway data is stale — task matching will be incomplete.</p>
+            <p className="text-muted-foreground">
+              The Breezeway archive last reflects {fmtDate(bwFreshnessQuery.data)}, but this run covers through {fmtDate(run.period_end)}.
+              Cleans completed in Breezeway since then are invisible here (they'll flag as "Unmatched task").
+              Import the latest Breezeway task export, then Re-run reconcile.
+            </p>
+          </div>
+        </div>
+      )}
 
       {addOpen && (
         <AddLineDialog
