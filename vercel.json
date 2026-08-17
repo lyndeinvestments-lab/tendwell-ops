@@ -25,6 +25,10 @@
       "includeFiles": "api/hostaway/_sync-core.ts",
       "maxDuration": 120
     },
+    "api/cron/qbo-classes-sync.ts": {
+      "includeFiles": "api/qbo/_lib.ts",
+      "maxDuration": 60
+    },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts,api/issues/_translate-core.ts,api/notify/_lib.ts"
     },
@@ -53,6 +57,7 @@
     { "path": "/api/cron/trellis-sync", "schedule": "0 3 * * *" },
     { "path": "/api/cron/trellis-tasks-refresh", "schedule": "0 0-2,12-23 * * *" },
     { "path": "/api/cron/hostaway-sync", "schedule": "30 3 * * *" },
+    { "path": "/api/cron/qbo-classes-sync", "schedule": "15 4 * * *" },
     { "path": "/api/cron/purge-properties", "schedule": "0 3 * * *" },
     { "path": "/api/cron/purge-laundry-photos", "schedule": "0 4 * * *" },
     { "path": "/api/cron/reconcile-snapshots", "schedule": "0 6 * * *" },

@@ -102,6 +102,63 @@ export function readStateCookie(req: VercelRequest): string | null {
   return null
 }
 
+// ─── QBO API token helpers (shared by financials.ts + the classes cron) ─────
+// Tokens live in app_settings.qbo_tokens (written by callback.ts) and are
+// refreshed against Intuit's OAuth endpoint when within 5 min of expiry.
+
+export const qboApiBase = (env: string): string =>
+  env === 'sandbox' ? 'https://sandbox-quickbooks.api.intuit.com' : 'https://quickbooks.api.intuit.com'
+
+export interface QboTokens {
+  access_token: string
+  refresh_token: string
+  realm_id: string
+  expires_at: number
+}
+
+export async function getQboTokens(supabase: any): Promise<QboTokens | null> {
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'qbo_tokens').single()
+  if (!data?.value) return null
+  return typeof data.value === 'string' ? JSON.parse(data.value) : data.value
+}
+
+export async function refreshQboTokens(supabase: any, tokens: QboTokens): Promise<QboTokens> {
+  const clientId = process.env.QBO_CLIENT_ID
+  const clientSecret = process.env.QBO_CLIENT_SECRET
+  if (!clientId || !clientSecret) throw new Error('QBO credentials missing')
+
+  const res = await fetch('https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: tokens.refresh_token,
+    }),
+  })
+  if (!res.ok) throw new Error('Token refresh failed — reconnect QuickBooks')
+  const newTokens = await res.json() as { access_token: string; refresh_token: string; expires_in?: number }
+
+  const updated: QboTokens = {
+    access_token: newTokens.access_token,
+    refresh_token: newTokens.refresh_token,
+    expires_at: Date.now() + (newTokens.expires_in || 3600) * 1000,
+    realm_id: tokens.realm_id,
+  }
+  await supabase.from('app_settings').upsert({ key: 'qbo_tokens', value: JSON.stringify(updated) }, { onConflict: 'key' })
+  return updated
+}
+
+// Get tokens, refreshing if they expire within 5 minutes. Null = not connected.
+export async function getFreshQboTokens(supabase: any): Promise<QboTokens | null> {
+  let tokens = await getQboTokens(supabase)
+  if (!tokens) return null
+  if (Date.now() > tokens.expires_at - 300_000) tokens = await refreshQboTokens(supabase, tokens)
+  return tokens
+}
+
 // Constant-time compare so a millisecond-timing attacker can't peel back
 // the cookie value byte-by-byte. We hash both sides to handle length mismatch.
 export function safeEqualHex(a: string, b: string): boolean {
