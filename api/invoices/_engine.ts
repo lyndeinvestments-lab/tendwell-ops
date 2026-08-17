@@ -197,6 +197,11 @@ const EXTRA_RULES: TitleRule[] = [
   { re: /trip\s*fee/i, title: 'Trip Fee' },
   { re: /reimburse/i, title: 'Reimbursement' },
   { re: /\b(left\s*items?|mailed)\b/i, title: 'Mailed Left Items by the Guest' },
+  // "Regular clean plus onboarding" (real Busy Bee note, I260810797 Luning
+  // Wang) — the onboarding surcharge splits off the base clean like any other
+  // note-explained overage. A note that is ENTIRELY an onboarding clean hits
+  // the TITLE_RULES whole-line branch first (CE + $50, two rows).
+  { re: /\bonboarding\b/i, title: 'Onboarding Clean' },
   { re: /touch\s*up/i, title: 'Vacancy Clean / Touch Up Clean' },
   { re: /\bextra\b/i, title: 'Extra Cleaning' },
 ]
@@ -620,6 +625,12 @@ export function classifyLine(
     line.serviceType = noteExtra ?? std?.title ?? 'Extra Cleaning'
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = round2(raw.rawAmount)
+    // A bare "onboarding" note with no matched task is ambiguous: a WHOLE
+    // onboarding clean should bill at Client Charged + $50 (two rows), not at
+    // the vendor amount. Never guess between the two — review decides.
+    if (line.serviceType === 'Onboarding Clean') {
+      return [withChannel(needsReview(line, FLAGS.UNMATCHED_TASK), property)]
+    }
     return [withChannel(requireReason(line, raw.rawNoteText), property)]
   }
 

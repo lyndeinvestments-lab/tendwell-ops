@@ -322,6 +322,35 @@ describe('reconcile — money rules', () => {
     expect(summary.netDiscrepancy).toBe(0) // surcharge must not skew AP math
   })
 
+  it('splits "regular clean plus onboarding" into base @ Client Charged + an Onboarding Clean extra', () => {
+    // Real Busy Bee note (I260810797, Luning Wang) — previously fell through
+    // to discrepancy_unexplained because EXTRA_RULES had no onboarding entry.
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 160, rawNoteText: 'Regular clean plus onboarding', rawDateMentioned: '2026-08-05' })]),
+    )
+    expect(lines).toHaveLength(2)
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    const extra = lines.find(l => l.lineKind === 'extra')!
+    expect(base.cleanerPayAmount).toBe(100)
+    expect(base.clientChargeAmount).toBe(150)
+    expect(extra.serviceType).toBe('Onboarding Clean')
+    expect(extra.cleanerPayAmount).toBe(60) // 160 − 100
+    expect(extra.clientChargeAmount).toBe(60)
+    expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
+  })
+
+  it('a bare "onboarding" note with NO matched task goes to review, never priced as a plain extra', () => {
+    // Whole onboarding cleans bill at Client Charged + $50 — without a task
+    // the engine can't tell "whole onboarding" from "clean + onboarding", so
+    // it must not guess.
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 330, rawNoteText: 'onboarding', rawDateMentioned: '2026-08-20' })]),
+    )
+    expect(lines).toHaveLength(1)
+    expect(lines[0].serviceType).toBe('Onboarding Clean')
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
   it('keeps Onboarding Clean single-line + review when the property has no Client Charged rate', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawPropertyText: 'Rateless Retreat', rawAmount: 253.52, rawNoteText: 'Onboarding clean', rawDateMentioned: null })]),
