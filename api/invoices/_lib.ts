@@ -302,6 +302,16 @@ export async function reconcileRun(
     periodEnd,
   })
 
+  // Preserved rows keep their original split_group numbers while the engine
+  // restarts its counter at 1 each run — without an offset, a rebuilt split
+  // collides with a preserved one and unrelated rows read as one group (real
+  // case: Luning Wang + Samyuktha Ravi both landed in group 1 on I260810797,
+  // which corrupted a downstream group-sum repair by $210).
+  const maxPreservedGroup = preserved.reduce((m, r) => Math.max(m, Number(r.split_group ?? 0)), 0)
+  const offsetLines = maxPreservedGroup > 0
+    ? lines.map(l => (l.splitGroup != null ? { ...l, splitGroup: l.splitGroup + maxPreservedGroup } : l))
+    : lines
+
   // Replace rebuilt rows atomically-ish: delete then insert (staff-only table,
   // single-writer workflow — a lost race here just means re-running reconcile).
   if (rebuild.length > 0) {
@@ -313,7 +323,7 @@ export async function reconcileRun(
     if (delErr) throw new Error(`Failed to clear lines: ${delErr.message}`)
   }
   if (lines.length > 0) {
-    const inserts = toLineInserts(runId, lines.filter(l => !preservedLineNos.has(l.lineNo)))
+    const inserts = toLineInserts(runId, offsetLines.filter(l => !preservedLineNos.has(l.lineNo)))
     if (inserts.length > 0) {
       const { error: insErr } = await supabase.from('invoice_lines').insert(inserts)
       if (insErr) throw new Error(`Failed to insert lines: ${insErr.message}`)
