@@ -98,10 +98,14 @@ function isArLine(l: ExportLine, channel: BillingChannel): boolean {
   )
 }
 
-function lineDescription(l: ExportLine): string {
-  const parts = [l.serviceType, l.propertyName].filter(Boolean)
-  const base = parts.join(' — ')
-  return sanitizeCell(l.note ? (base ? `${base} (${l.note})` : l.note) : base)
+// Description cells never repeat what another column already carries
+// (Jordan 2026-08-18: Ramp descriptions showed "Turn Clean — Property (note)"
+// while the property was already in the Class column). Each format composes
+// its own: Ramp = service, QBO multiline = property (Nina's flat-sheet
+// Description convention), bill.com = just the note. The vendor note rides
+// along in parentheses where present.
+function withNote(base: string, note: string | null): string {
+  return sanitizeCell(note ? (base ? `${base} (${note})` : note) : base)
 }
 
 // QBO Class resolution: the Class column must name a class that actually
@@ -180,7 +184,7 @@ export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: Re
     'QuickBooks Billable (optional)': '',
     'QuickBooks Class (optional)': s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
     'QuickBooks Customer/Job (optional)': '',
-    'Line item description': lineDescription(l),
+    'Line item description': withNote(l.serviceType ?? '', l.note),
     'Inventory line item quantity': '',
     'Inventory line item rate': '',
     'QuickBooks Inventory Item (optional)': '',
@@ -251,7 +255,7 @@ export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
     '',
     i === 0 ? s(`${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim()) : '',
     s(l.serviceType ?? ''),
-    lineDescription(l),
+    withNote(l.propertyName ?? '', l.note),
     '1',
     (l.clientChargeAmount ?? 0).toFixed(2),
     (l.clientChargeAmount ?? 0).toFixed(2),
@@ -287,7 +291,7 @@ export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
       s(serviceTitle(l)),
       fmtUsDate(l.serviceDate),
       s(l.propertyName ?? ''),
-      lineDescription(l),
+      withNote('', l.note),
       (l.clientChargeAmount ?? 0).toFixed(2),
     ])
   return Papa.unparse({ fields: BILLCOM_HEADERS, data: rows }, { newline: '\r\n' })
