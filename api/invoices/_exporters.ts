@@ -34,6 +34,34 @@ export interface ExportLine {
   note: string | null
   reviewNote?: string | null // human review note — doubles as the stated reason
   reviewStatus: string
+  splitGroup?: number | null // links base+extra rows split from one vendor line
+}
+
+// Line-item splits exist for QBO only (Jordan 2026-08-18): the vendor billed
+// ONE line, so Ramp pays one line and the bill.com worksheet shows one line.
+// Collapses each split group back onto its base row (the non-'extra' member),
+// summing the given amount field across the group. Order is preserved.
+function collapseSplits(
+  lines: ExportLine[],
+  pick: (l: ExportLine) => number | null,
+  assign: (l: ExportLine, total: number) => ExportLine,
+): ExportLine[] {
+  const groupTotals = new Map<number, number>()
+  for (const l of lines) {
+    if (l.splitGroup == null) continue
+    groupTotals.set(l.splitGroup, (groupTotals.get(l.splitGroup) ?? 0) + (pick(l) ?? 0))
+  }
+  const emitted = new Set<number>()
+  const out: ExportLine[] = []
+  for (const l of lines) {
+    if (l.splitGroup == null) { out.push(l); continue }
+    if (emitted.has(l.splitGroup)) continue
+    const members = lines.filter(m => m.splitGroup === l.splitGroup)
+    const base = members.find(m => m.lineKind !== 'extra') ?? members[0]
+    emitted.add(l.splitGroup)
+    out.push(assign(base, Math.round(groupTotals.get(l.splitGroup)! * 100) / 100))
+  }
+  return out
 }
 
 // Finance requires certain extras to carry their reason IN the title —
@@ -171,7 +199,8 @@ const RAMP_HEADERS = [
 ]
 
 export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<QboClassRef>): string {
-  const rows = lines.filter(isApLine).map(l => ({
+  const collapsed = collapseSplits(lines, l => l.cleanerPayAmount, (l, total) => ({ ...l, cleanerPayAmount: total }))
+  const rows = collapsed.filter(isApLine).map(l => ({
     'Vendor name': s(run.vendorName),
     'Description (optional)': `Cleaning services${run.periodEnd ? ` — week ending ${run.periodEnd}` : ''}`,
     'Invoice number': s(run.vendorInvoiceNumber ?? ''),
@@ -255,7 +284,16 @@ export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
     '',
     i === 0 ? s(`${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim()) : '',
     s(l.serviceType ?? ''),
-    withNote(l.propertyName ?? '', l.note),
+    // Client-facing description: property only. Vendor notes are internal
+    // pricing chatter ("Regular clean plus 205") — the ONLY note that belongs
+    // on the client invoice is a reason-required extra's reason. Note-only
+    // lines (no property/service) still surface the note.
+    withNote(
+      l.propertyName ?? '',
+      l.serviceType && REASON_REQUIRED_EXTRAS.has(l.serviceType)
+        ? l.reviewNote?.trim() || extraReasonFromNote(l.note, l.serviceType)
+        : (!l.propertyName && !l.serviceType ? l.note : null),
+    ),
     '1',
     (l.clientChargeAmount ?? 0).toFixed(2),
     (l.clientChargeAmount ?? 0).toFixed(2),
@@ -281,7 +319,8 @@ const BILLCOM_HEADERS = [
 ]
 
 export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
-  const rows = lines
+  const collapsed = collapseSplits(lines, l => l.clientChargeAmount, (l, total) => ({ ...l, clientChargeAmount: total }))
+  const rows = collapsed
     .filter(l => isArLine(l, 'bill_com'))
     .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') || (a.serviceDate ?? '').localeCompare(b.serviceDate ?? ''))
     .map(l => [

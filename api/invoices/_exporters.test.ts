@@ -205,6 +205,41 @@ describe('serviceTitle — reason-required extras carry their reason', () => {
   })
 })
 
+describe('splits are QBO-only; descriptions never repeat other columns', () => {
+  const base: ExportLine = {
+    ...LINES[0], lineKind: 'combined_split', serviceType: 'Onboarding Clean',
+    cleanerPayAmount: 155, clientChargeAmount: 260, note: 'Regular clean plus 205', splitGroup: 7,
+  }
+  const surcharge: ExportLine = {
+    ...LINES[0], lineKind: 'extra', serviceType: 'Onboarding Clean',
+    cleanerPayAmount: 50, clientChargeAmount: 50, note: 'Onboarding surcharge', splitGroup: 7,
+  }
+
+  it('Ramp collapses a split group to ONE line paying the combined amount', () => {
+    const rows = Papa.parse<string[]>(toRampCsv(RUN, [base, surcharge]).trim()).data
+    expect(rows).toHaveLength(2) // header + 1 merged line
+    expect(rows[1][7]).toBe('205.00') // 155 + 50
+  })
+  it('bill.com collapses a split group to ONE line billing the combined amount', () => {
+    const bc = [{ ...base, billingChannel: 'bill_com' as const }, { ...surcharge, billingChannel: 'bill_com' as const }]
+    const rows = Papa.parse<string[]>(toBillComCsv(RUN, bc).trim()).data
+    expect(rows).toHaveLength(2)
+    expect(rows[1][7]).toBe('310.00') // 260 + 50
+  })
+  it('QBO multiline keeps BOTH split rows and hides vendor pricing notes from descriptions', () => {
+    const rows = Papa.parse<string[]>(toQboMultilineCsv(RUN, [base, surcharge]).trim()).data
+    expect(rows).toHaveLength(3) // header + base + surcharge
+    const descs = [rows[1][8], rows[2][8]]
+    expect(descs.every(d => d === 'Michael Rohwer 2455')).toBe(true) // property only
+    expect(rows.flat().join(',')).not.toContain('Regular clean plus 205')
+  })
+  it('QBO multiline still shows the reason for reason-required extras', () => {
+    const pet: ExportLine = { ...LINES[0], lineKind: 'extra', serviceType: 'Pet Fee', note: 'Pet fee — excess dog hair' }
+    const row = Papa.parse<string[]>(toQboMultilineCsv(RUN, [pet]).trim()).data[1]
+    expect(row[8]).toBe('Michael Rohwer 2455 (excess dog hair)')
+  })
+})
+
 describe('qboClassFor — Class column only names classes that exist in QBO', () => {
   const cls = (name: string, matchedPropertyId: number | null = null) => ({ name, matchedPropertyId })
   const CLASSES = [cls('Michael Rohwer 2455'), cls('Brian Albaum'), cls('Adam Pike 1071'), cls('Stephanie Keegan 1260-5307')]

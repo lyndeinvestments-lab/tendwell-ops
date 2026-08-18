@@ -138,6 +138,8 @@ export interface InvoiceRun {
   approved_at: string | null
   created_by: string | null
   created_at: string | null
+  /** Soft-archive: non-null hides the run from the default list. */
+  archived_at?: string | null
   /** Joined via `vendors(name)` — may be an object or array depending on the query. */
   vendors?: { name: string } | { name: string }[] | null
 }
