@@ -330,7 +330,19 @@ describe('reconcile — money rules', () => {
     const base = lines.find(l => l.lineKind === 'combined_split')!
     expect(base.flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
     expect(base.reviewStatus).toBe('needs_review')
-    expect(base.cleanerPayAmount).toBe(100) // rate-based, never the odd raw amount
+    // AP pays what the vendor billed: base + surcharge sums to the raw amount.
+    expect(base.cleanerPayAmount).toBe(203.52) // 253.52 − 50 surcharge
+    const surcharge = lines.find(l => l.lineKind === 'extra')!
+    expect((base.cleanerPayAmount ?? 0) + (surcharge.cleanerPayAmount ?? 0)).toBe(253.52)
+  })
+
+  it('unexplained discrepancies pay what the vendor billed, never the rate', () => {
+    // Real case: Amit Chowdhary billed $30 with no note; paying the $260 rate
+    // made the Ramp export overpay. The gap is the review question.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 30 })]))
+    expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(lines[0].cleanerPayAmount).toBe(30) // billed, not the 100 rate
+    expect(lines[0].clientChargeAmount).toBe(150) // AR still at Client Charged
   })
 
   it('generated drafts state Cleaner Pay + $50 for onboarding tasks (no self-flag on reconcile)', () => {

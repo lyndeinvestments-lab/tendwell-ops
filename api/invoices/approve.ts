@@ -112,6 +112,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // A billed line with no cleaner pay silently VANISHES from the Ramp export
+  // (the AP filter drops null/zero pay) — the vendor's invoice total then
+  // never reconciles. Real case: "Irma Work" $1,054 resolved with null pay
+  // made the Ramp file $1,054 short. Zero-raw lines (e.g. split surcharges)
+  // are fine.
+  const { data: unpaidRows, error: unpaidErr } = await supabase
+    .from('invoice_lines')
+    .select('id, raw_amount, cleaner_pay_amount, line_kind, review_status')
+    .eq('run_id', runId)
+    .neq('line_kind', 'excluded')
+    .neq('review_status', 'excluded')
+    .neq('raw_amount', 0)
+  if (unpaidErr) {
+    res.status(500).json({ error: 'Failed to check cleaner pay coverage', detail: unpaidErr.message })
+    return
+  }
+  const unpaid = (unpaidRows ?? []).filter(r => !(Number(r.cleaner_pay_amount ?? 0) !== 0))
+  if (unpaid.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${unpaid.length} billed line(s) have no cleaner pay — they would be silently missing from the Ramp export. Set the pay (usually the invoiced amount) or exclude the line.`,
+    })
+    return
+  }
+
   const { error: updErr } = await supabase
     .from('invoice_runs')
     .update({ status: 'approved', approved_by: actor.email, approved_at: new Date().toISOString() })

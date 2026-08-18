@@ -581,17 +581,24 @@ export function classifyLine(
         line = needsReview(line, FLAGS.MISSING_RATE)
         return [withChannel(line, property)]
       }
+      // A vendor amount at or under the $50 surcharge can't be split sanely.
+      if (raw.rawAmount <= 50) {
+        line.clientChargeAmount = round2(ceCharged + 50)
+        line.cleanerPayAmount = round2(raw.rawAmount)
+        return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
+      }
       const group = splitSeq()
+      // AP pays what the vendor billed: the group's pay must sum to the raw
+      // amount (base = raw − 50, surcharge = 50). When that base differs from
+      // the Cleaner Pay rate, it's a review question — flagged, never absorbed.
       let base: EngineLine = {
         ...line,
         splitGroup: group,
         lineKind: 'combined_split',
-        cleanerPayAmount: round2(cleanerPay),
+        cleanerPayAmount: round2(raw.rawAmount - 50),
         clientChargeAmount: round2(ceCharged),
         flags: [...line.flags, FLAGS.COMBINED_SPLIT],
       }
-      // Vendor should have billed Cleaner Pay + $50 — anything else is a real
-      // money question, never silently absorbed.
       if (Math.abs(raw.rawAmount - (cleanerPay + 50)) > PENNY) {
         base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
       }
@@ -705,8 +712,13 @@ export function classifyLine(
   }
 
   // Amount differs from Cleaner Pay with NO explaining note → discrepancy.
+  // AP pays what the vendor BILLED (the Ramp file must sum to the vendor's
+  // invoice — paying the rate instead silently under/overpays; real case:
+  // I260810797 exported $623.70 off). The rate-vs-billed gap is the review
+  // question and stays visible via the flag + table highlight; the client
+  // side still bills at Client Charged.
   line.lineKind = 'clean'
-  line.cleanerPayAmount = round2(cleanerPay)
+  line.cleanerPayAmount = round2(raw.rawAmount)
   line.clientChargeAmount = round2(ceCharged)
   return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
 }
