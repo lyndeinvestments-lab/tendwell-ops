@@ -28,7 +28,7 @@ import { cn } from '@/lib/utils'
 import { StatusTone } from '@/lib/status-colors'
 import {
   Receipt, Plus, Upload, Download, RefreshCw, CheckCircle2, AlertTriangle,
-  ArrowLeft, Pencil, Ban, Loader2, FileText,
+  ArrowLeft, Pencil, Ban, Loader2, FileText, Archive, ArchiveRestore,
 } from 'lucide-react'
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
@@ -125,7 +125,7 @@ export default function InvoicingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoice_runs')
-        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, vendors(name)')
+        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, vendors(name)')
         .order('created_at', { ascending: false })
         .limit(200)
       if (error) throw error
@@ -143,8 +143,32 @@ export default function InvoicingPage() {
   const openRun = (runId: string) => setSelectedRunId(runId)
   const backToList = () => setSelectedRunId(null)
 
+  // ── Archive (soft-hide finished runs from the default list) ────────────────
+  const [showArchived, setShowArchived] = useState(false)
+  const allRuns = runsQuery.data ?? []
+  const archivedCount = useMemo(() => allRuns.filter(r => r.archived_at).length, [allRuns])
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, archive }: { id: string; archive: boolean }) => {
+      // archived_at isn't in the generated Database types yet (repo convention
+      // for new columns — see issue_comments call sites).
+      const { error } = await (supabase as any)
+        .from('invoice_runs')
+        .update({ archived_at: archive ? new Date().toISOString() : null })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: (_d, v) => {
+      toast({ title: v.archive ? 'Run archived' : 'Run restored' })
+      invalidateRuns()
+    },
+    onError: (e: unknown) => toast({ title: 'Archive failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
+  })
+
   // ── List KPIs ────────────────────────────────────────────────────────────────
-  const runs = runsQuery.data ?? []
+  const runs = useMemo(
+    () => (showArchived ? allRuns : allRuns.filter(r => !r.archived_at)),
+    [allRuns, showArchived],
+  )
   const listStats = useMemo(() => {
     const needsReview = runs.filter(r => r.status === 'review_needed').length
     const now = new Date()
@@ -266,6 +290,15 @@ export default function InvoicingPage() {
             />
           </div>
 
+          {(archivedCount > 0 || showArchived) && (
+            <div className="flex justify-end">
+              <Button size="sm" variant="ghost" className="h-7 px-2.5 text-muted-foreground" onClick={() => setShowArchived(v => !v)} data-testid="button-toggle-archived">
+                <Archive className="w-3.5 h-3.5 mr-1.5" />
+                {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
+              </Button>
+            </div>
+          )}
+
           {runsQuery.error ? (
             <ErrorState title="Couldn't load invoice runs" onRetry={() => runsQuery.refetch()} />
           ) : runsQuery.isLoading ? (
@@ -292,13 +325,14 @@ export default function InvoicingPage() {
                         <th className="px-3 py-2 font-medium text-right">Stated</th>
                         <th className="px-3 py-2 font-medium text-right">Computed</th>
                         <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="px-3 py-2 font-medium w-12" />
                       </tr>
                     </thead>
                     <tbody>
                       {runs.map(run => (
                         <tr
                           key={run.id}
-                          className="border-t border-border/60 hover:bg-muted/30 cursor-pointer"
+                          className={cn('border-t border-border/60 hover:bg-muted/30 cursor-pointer', run.archived_at && 'opacity-50')}
                           onClick={() => openRun(run.id)}
                           data-testid={`row-run-${run.id}`}
                         >
@@ -316,6 +350,18 @@ export default function InvoicingPage() {
                           <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(run.computed_subtotal)}</td>
                           <td className="px-3 py-2">
                             <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-muted-foreground"
+                              onClick={(e) => { e.stopPropagation(); archiveMutation.mutate({ id: run.id, archive: !run.archived_at }) }}
+                              title={run.archived_at ? 'Restore run' : 'Archive run (hides from this list)'}
+                              data-testid={`button-archive-${run.id}`}
+                            >
+                              {run.archived_at ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                            </Button>
                           </td>
                         </tr>
                       ))}
@@ -341,7 +387,17 @@ export default function InvoicingPage() {
                             {fmtDate(run.period_start)} – {fmtDate(run.period_end)}
                           </p>
                         </div>
-                        <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
+                        <div className="flex items-center gap-1">
+                          <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 px-1.5 text-muted-foreground"
+                            onClick={(e) => { e.stopPropagation(); archiveMutation.mutate({ id: run.id, archive: !run.archived_at }) }}
+                          >
+                            {run.archived_at ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+                          </Button>
+                        </div>
                       </div>
                       <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground tabular-nums">
                         <span>Stated {fmtMoney(run.stated_subtotal)}</span>

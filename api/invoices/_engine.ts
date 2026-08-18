@@ -164,13 +164,20 @@ const OPERATING_EXPENSE_PATTERNS = [
   /bulk/i,
   // Labor lines are a Tendwell expense: paid to the vendor via Ramp, never
   // invoiced to Haven or bill.com, and need no property (Jordan 2026-08-17).
+  // Busy Bee phrases them "<name> Work" ("Irma Work", "Joshua Work") — safe
+  // to match broadly because this list only applies to lines whose property
+  // could NOT be resolved.
   /\blabou?r\b/i,
+  /\bwork\b/i,
 ]
 
 interface TitleRule {
   re: RegExp
   title: string
   extra?: boolean
+  // The matched phrase IS the evidence ("dog hair") — keep it in the
+  // extracted reason instead of stripping it as a service keyword.
+  keepInReason?: boolean
 }
 
 // Order matters — first match wins. Deep/double checked before generic clean.
@@ -197,6 +204,9 @@ const EXTRA_RULES: TitleRule[] = [
   { re: /trash/i, title: 'Excessive Trash Pickup' },
   { re: /hot\s*tub/i, title: 'Hot Tub Refresh Requested by Guest' },
   { re: /\bpet\s*(fee|charge)\b/i, title: 'Pet Fee' },
+  // "Regular clean plus dog hair charge" (real Busy Bee note) — pet evidence
+  // without the word "pet"; must split as a Pet Fee line for QBO.
+  { re: /\bdog\s*hair\b/i, title: 'Pet Fee', keepInReason: true },
   { re: /trip\s*fee/i, title: 'Trip Fee' },
   { re: /reimburse/i, title: 'Reimbursement' },
   { re: /\b(left\s*items?|mailed)\b/i, title: 'Mailed Left Items by the Guest' },
@@ -257,7 +267,7 @@ export function extraReasonFromNote(note: string | null, title: string): string 
   for (const rule of [...EXTRA_RULES, ...TITLE_RULES]) {
     // Consume the whole surrounding word(s), not just the matched stem —
     // /reimburse/ must strip "reimbursement", not leave "ment" behind.
-    if (rule.title === title) rest = rest.replace(new RegExp(`\\w*(?:${rule.re.source})\\w*`, 'gi'), ' ')
+    if (rule.title === title && !rule.keepInReason) rest = rest.replace(new RegExp(`\\w*(?:${rule.re.source})\\w*`, 'gi'), ' ')
   }
   rest = rest
     .replace(/\$\s*\d+(?:,\d{3})*(?:\.\d{1,2})?/g, ' ')

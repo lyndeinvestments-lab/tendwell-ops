@@ -504,6 +504,18 @@ describe('reason-required extras', () => {
     expect(lines[0].reviewStatus).toBe('needs_review')
   })
 
+  it('"dog hair" notes split as a Pet Fee (pet evidence without the word pet)', () => {
+    // Real Busy Bee note (I260810797 Jay Hwang): "Regular clean plus dog hair charge"
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 130, rawNoteText: 'Regular clean plus dog hair charge', rawDateMentioned: '2026-08-05' })]),
+    )
+    expect(lines).toHaveLength(2)
+    const extra = lines.find(l => l.lineKind === 'extra')!
+    expect(extra.serviceType).toBe('Pet Fee')
+    expect(extra.cleanerPayAmount).toBe(30) // 130 − 100
+    expect(extraReasonFromNote('Regular clean plus dog hair charge', 'Pet Fee')).toContain('dog hair')
+  })
+
   it('does not demand a reason for extras outside the reason-required set', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawAmount: 50, rawNoteText: 'hot tub', rawDateMentioned: null })]),
