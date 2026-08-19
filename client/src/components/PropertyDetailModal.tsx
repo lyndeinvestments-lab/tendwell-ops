@@ -23,7 +23,8 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore, MapPin } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore, MapPin, Link2 } from 'lucide-react'
+import { propertyDeepLink } from '@/hooks/use-property-modal'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
@@ -1427,6 +1428,26 @@ export function PropertyDetailModal() {
                   data-testid="modal-copy-details"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+              )}
+              {!isLoading && property && !isEditing && (
+                <button
+                  onClick={async () => {
+                    try {
+                      // Deep link: opens this property's modal directly for
+                      // any signed-in teammate (?property= param, see
+                      // use-property-modal.tsx).
+                      await navigator.clipboard.writeText(propertyDeepLink(String(property.id)))
+                      toast({ title: 'Property link copied' })
+                    } catch {
+                      toast({ title: t('toasts.copyFailed'), variant: 'destructive' })
+                    }
+                  }}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                  title="Copy link to this property"
+                  data-testid="modal-copy-link"
+                >
+                  <Link2 className="w-4 h-4" />
                 </button>
               )}
               {canEdit && !isLoading && (
