@@ -1,0 +1,4 @@
+# Deps for scripts/breezeway_import.py (GitHub Actions only — not part of the app).
+google-api-python-client==2.177.0
+google-auth==2.40.3
+requests==2.32.4

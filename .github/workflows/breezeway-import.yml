@@ -1,0 +1,73 @@
+name: Breezeway Daily Import
+
+# Pulls the Breezeway CSV exports the "Breezeway Export to Drive" Apps Script
+# drops into Drive each morning (~11:33 UTC) and POSTs them to
+# /api/tasks/breezeway-import, which upserts them into breezeway_tasks.
+#
+# Until this workflow existed the import ran by hand — the live
+# breezeway_import_log had 3 imports between 2026-05-01 and 2026-08-17, so the
+# clean archive behind the financial views, the API Sync Breezeway tab, and
+# invoicing's task context went weeks between refreshes.
+#
+# The endpoint is idempotent (identity = sha256(created|property|title|due)),
+# so re-running this workflow is always safe.
+
+on:
+  schedule:
+    # 13:00 UTC = 9am ET, ~90 min after the Apps Script writes the day's files.
+    # Times are UTC year-round, so this drifts to 8am ET in winter — still well
+    # clear of the ~11:33 UTC drop either way.
+    - cron: '0 13 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Backfill one export day (YYYY-MM-DD, matches the filename prefix)'
+        required: false
+      lookback_hours:
+        description: 'Import files created in the last N hours (default 24)'
+        required: false
+      dry_run:
+        description: 'Classify only, do not POST'
+        type: boolean
+        default: false
+
+# Two runs importing the same files would race on the same upsert rows.
+concurrency:
+  group: breezeway-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements-breezeway.txt
+
+      - run: pip install -r scripts/requirements-breezeway.txt
+
+      # Pure-logic guard (no network, no secrets): label detection, column
+      # validation, file selection. Cheap, and it fails the run before we
+      # POST anything mislabelled.
+      - name: Self-test
+        working-directory: scripts
+        run: python breezeway_import_test.py
+
+      - name: Run import
+        env:
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          BREEZEWAY_IMPORT_KEY: ${{ secrets.BREEZEWAY_IMPORT_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DRIVE_FOLDER_ID: 1XkEs242mTVZjulZiPW4zse9oa6y-sR0W
+          TENDWELL_BASE_URL: https://app.tendwellcleaningco.com
+        run: |
+          args=()
+          if [ -n "${{ inputs.date }}" ]; then args+=(--date "${{ inputs.date }}"); fi
+          if [ -n "${{ inputs.lookback_hours }}" ]; then args+=(--lookback-hours "${{ inputs.lookback_hours }}"); fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then args+=(--dry-run); fi
+          python scripts/breezeway_import.py "${args[@]}"

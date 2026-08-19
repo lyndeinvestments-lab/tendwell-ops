@@ -1,39 +1,35 @@
-# Breezeway Daily CSV Import — Cloud Agent Runbook
+# Breezeway Daily CSV Import — Runbook
 
-This is the prompt/runbook to feed to your cloud agent (Replit Scheduler,
-n8n, GitHub Actions cron, Cloudflare Worker, etc.) so it can pull the two
-daily Breezeway exports out of Google Drive and POST them to Tendwell.
+Breezeway has no API we consume. Its task data reaches Tendwell as a CSV
+export that gets pushed into `POST /api/tasks/breezeway-import`. The whole
+chain is now automated:
 
-> **Why not Claude Code on web?**
-> The Claude Code on-web agent runs inside a sandboxed environment whose
-> outbound traffic is proxied through an allowlist that cannot be modified
-> at runtime. Even with `dangerouslyDisableSandbox` set, the proxy rejects
-> connections to hosts outside that allowlist (you'll see `Host not in
-> allowlist` / HTTP 403). This job **must run from an environment with
-> unrestricted outbound internet** — GitHub Actions, n8n, a Replit
-> Scheduler, a Cloudflare Worker, or a self-hosted cron. Claude Code is
-> fine for one-off tasks and code changes, but not for scheduled HTTP egress.
+```
+Breezeway scheduled email export (2 exports/day)
+  └─> Apps Script "Breezeway Export to Drive"  (daily ~7:33 AM ET)
+        writes 2 CSVs to Drive folder 1XkEs242mTVZjulZiPW4zse9oa6y-sR0W (~11:33 UTC)
+        └─> .github/workflows/breezeway-import.yml  (daily 13:00 UTC)
+              runs scripts/breezeway_import.py
+              └─> POST /api/tasks/breezeway-import?source=current_month|next_month
+                    └─> breezeway_tasks (upsert) + breezeway_import_log
+```
+
+Everything downstream reads `breezeway_tasks`: the `financial_monthly_cleans`
+/ `financial_task_load` views (Financial Overview, Forecaster, Pro Forma), the
+Breezeway coverage + orphans panel on **API Sync → Breezeway**, and
+invoicing's `loadEngineContext`. They are only as fresh as the last import,
+which is why this runs unattended.
+
+> **History:** the GitHub Actions half of this chain did not exist until
+> 2026-08-19. Between 2026-05-01 and 2026-08-17 `breezeway_import_log` recorded
+> exactly **three** imports (build-day tests, the June history backfill, and one
+> manual bulk POST), so the clean archive went weeks at a time without a
+> refresh. Anything that looked like undercounted cleans before that date was
+> probably stale data, not a query bug.
 
 ---
 
-## What changed (vs. the old Gmail-based flow)
-
-| | Old | New |
-|---|---|---|
-| **CSV source** | Gmail attachment (subject-line match) | Google Drive folder |
-| **Folder** | — | `1XkEs242mTVZjulZiPW4zse9oa6y-sR0W` |
-| **File naming** | Per email subject | `YYYY-MM-DD_<time>_<id>_breezeway-task-custom-export.csv` |
-| **Label detection** | Email subject ("Current Month" / "Next Month") | First data row's `Due date` column — if the month matches the current calendar month → `current_month`, otherwise → `next_month` |
-
----
-
-## What Tendwell expects
-
-Tendwell exposes a single endpoint that swallows a Breezeway CSV and
-upserts the rows into the `breezeway_tasks` table. It is idempotent — a
-row's stable identity is `sha256(created_date | property | task_title | due_date)`,
-so re-imports are safe and the two daily exports deduplicate naturally
-where their date windows overlap.
+## The endpoint
 
 ```
 POST https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=<LABEL>
@@ -44,93 +40,156 @@ Body:
   <raw CSV bytes>
 ```
 
-`<LABEL>` is one of `current_month` or `next_month`.
+`<LABEL>` is `current_month` or `next_month` (optional; it only sets
+`source_label` for reporting).
 
-`<BREEZEWAY_IMPORT_KEY>` is a long random string. Generate one
-(`openssl rand -hex 32`), set it on Vercel under
-`Project → Settings → Environment Variables → BREEZEWAY_IMPORT_KEY`
-(Production + Preview), and store the same value in your agent's secret
-manager.
+**Idempotent.** A row's identity is
+`sha256(created_date | property | task_title | due_date)`, so re-posting the
+same file overwrites the same rows and the two daily exports deduplicate
+naturally where their windows overlap. Re-running the workflow is always safe.
 
-A successful response looks like:
+Successful response:
 
 ```json
 {
-  "ok": true,
-  "batch": "ad21…",
-  "source": "current_month",
-  "rows_seen": 312,
-  "rows_upserted": 311,
-  "rows_skipped": 1,
-  "cleans_in_batch": 184,
-  "unmatched_addresses_count": 2,
-  "sample_unmatched_addresses": ["…", "…"]
+  "ok": true, "batch": "ad21…", "source": "current_month",
+  "rows_seen": 312, "rows_upserted": 311, "rows_skipped": 1,
+  "cleans_in_batch": 184, "deep_cleans_in_batch": 3,
+  "unmatched_addresses_count": 2, "sample_unmatched_addresses": ["…", "…"]
 }
 ```
 
-`unmatched_addresses_count > 0` means the row landed in `breezeway_tasks`
-but couldn't be linked to a `properties` row (the address fragment after
-` - ` in Breezeway's `Property` column didn't match any stored
-`properties.address`). Worth a quick look — usually a typo on either side.
+`unmatched_addresses_count > 0` means those rows landed in `breezeway_tasks`
+but couldn't be linked to a `properties` row. Resolve them on **API Sync →
+Breezeway** (writes `breezeway_property_resolutions`, which the importer
+honors on every subsequent run — a match made once is never asked again).
 
 ---
 
-## Agent prompt (copy/paste into your agent)
+## The importer
 
-> You run once per day. Your job:
->
-> 1. Search Google Drive folder `1XkEs242mTVZjulZiPW4zse9oa6y-sR0W` for
->    CSV files whose name starts with today's date in `YYYY-MM-DD` format
->    (e.g. `2026-05-01_…csv`). There should be exactly two.
->
-> 2. For each matching CSV:
->    1. Download the raw CSV content.
->    2. Read the **first data row** (row 2, after the header) and look at
->       the `Due date` column.
->    3. Determine the source label:
->       - If the `Due date` month matches **the current calendar month** → `current_month`
->       - Otherwise → `next_month`
->    4. POST the raw CSV bytes to:
->       ```
->       https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=<LABEL>
->       ```
->       with these headers:
->       ```
->       Content-Type: text/csv
->       x-tendwell-import-key: <secret from your secret store>
->       ```
->    5. Verify the response is HTTP 200 with `"ok": true`.
->
-> 3. If fewer than two CSVs are found for today, OR a POST returns non-200,
->    OR `ok` is not `true`, send an alert (Slack / email) with the failure
->    reason. Do not retry more than 3 times per file.
->
-> 4. Log a one-line summary, e.g.:
->    `[2026-05-01] current_month: 311 upserted, 184 cleans (2026-05-01_13-48-09_…csv); next_month: 220 upserted, 142 cleans (2026-05-01_14-15-41_…csv)`
+`scripts/breezeway_import.py`, driven by
+`.github/workflows/breezeway-import.yml` (daily `0 13 * * *` +
+`workflow_dispatch`).
+
+**File selection is by Drive `createdTime`, not the date in the filename.**
+The two usually agree, but a manual Apps Script run produces a file whose name
+carries the Breezeway export date while landing in Drive later — observed
+live: `2026-08-18_16-35-24_…csv` created `2026-08-19T01:29Z`. A name-prefix
+filter drops those silently; a createdTime window picks them up.
+
+Default window is **30 hours** (`LOOKBACK_HOURS`). The drop is at ~11:33 UTC
+and the run is at 13:00 UTC, so 24h would leave only ~90 minutes of margin and
+nothing to fall back on if a scheduled run is skipped — GitHub does drop
+scheduled runs under load. 30h reaches back past the previous day's drop too,
+so **a missed day self-heals on the next run**. Files are posted oldest-first,
+so when windows overlap the freshest export always writes last.
+
+**Label detection** uses the modal `Due date` month across every row, compared
+against the file's own export month (from the filename date, falling back to
+today in `BUSINESS_TZ`). The original runbook read only row 2's `Due date`;
+that lets a single rescheduled task flip a whole file's label, and it labels
+backfills against the wrong month. Both cases are covered in the self-test.
+
+**Pre-flight checks that abort before POSTing:** a missing/renamed required
+column (`Task title`, `Property`, `Due date`, `Created date`, `Status`) and a
+header-only file. Both would otherwise return HTTP 200 while writing rows with
+null titles and dates.
+
+**Retries:** 3 attempts with 2s/4s/8s backoff on network errors, 429, and 5xx.
+Other 4xx fails immediately — a retry would send identical bytes with an
+identical key and fail identically.
+
+**Failure reporting:** non-zero exit (red run in Actions), a run summary table
+on the workflow page, and a Slack message if `SLACK_WEBHOOK_URL` is set.
+Zero files found is a failure, since the Apps Script runs every day.
+
+### Manual runs
+
+From **Actions → Breezeway Daily Import → Run workflow**:
+
+| Input | Effect |
+|---|---|
+| *(none)* | Import everything created in the last 30h |
+| `date=2026-08-14` | Backfill that export day by filename prefix |
+| `lookback_hours=168` | Widen the window to a week |
+| `dry_run=true` | Download + classify + report, never POST |
+
+Locally (same behavior, needs both secrets in your shell):
+
+```bash
+pip install -r scripts/requirements-breezeway.txt
+export GOOGLE_SERVICE_ACCOUNT_JSON="$(cat sa.json)"
+export BREEZEWAY_IMPORT_KEY=…
+export DRIVE_FOLDER_ID=1XkEs242mTVZjulZiPW4zse9oa6y-sR0W
+python scripts/breezeway_import.py --dry-run
+```
+
+Single file, bypassing the window: `--file-id <drive-file-id>` (repeatable).
+
+Raw curl, if you have the CSV on disk:
+
+```bash
+curl -X POST 'https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=current_month' \
+  -H 'Content-Type: text/csv' \
+  -H "x-tendwell-import-key: $BREEZEWAY_IMPORT_KEY" \
+  --data-binary @breezeway_export.csv
+```
+
+### Self-test
+
+`scripts/breezeway_import_test.py` covers date parsing, label detection
+(including the stray-row and backfill cases), column validation, BOM handling,
+and file selection. No network or credentials. It runs as a step in the
+workflow ahead of the import, and standalone:
+
+```bash
+cd scripts && python breezeway_import_test.py
+```
 
 ---
 
-## Label detection — detailed logic
+## One-time setup
 
-```python
-import csv, io, datetime
+1. **`BREEZEWAY_IMPORT_KEY`** — `openssl rand -hex 32`. Set it in Vercel
+   (Project → Settings → Environment Variables, Production + Preview) **and**
+   as a GitHub Actions repo secret with the same value.
+2. **`GOOGLE_SERVICE_ACCOUNT_JSON`** — create a service account in GCP with a
+   JSON key, enable the **Google Drive API** on its project, then share Drive
+   folder `1XkEs242mTVZjulZiPW4zse9oa6y-sR0W` with the service account's
+   email as **Viewer**. Store the JSON (raw or base64) as a GitHub Actions
+   repo secret. The script only requests `drive.readonly`.
+3. **`SLACK_WEBHOOK_URL`** *(optional)* — repo secret; failure alerts.
+4. Verify with a `dry_run=true` dispatch, then a real one.
 
-def detect_label(csv_bytes: bytes) -> str:
-    reader = csv.DictReader(io.StringIO(csv_bytes.decode("utf-8-sig")))
-    first_row = next(reader)
-    due_date = datetime.date.fromisoformat(first_row["Due date"])
-    today = datetime.date.today()
-    if due_date.year == today.year and due_date.month == today.month:
-        return "current_month"
-    return "next_month"
+The Apps Script side ("Breezeway Export to Drive", daily trigger ~7:33 AM ET,
+dedupes threads via its `bz_processed_` properties) is already running and is
+maintained outside this repo.
+
+---
+
+## Verifying a run
+
+```sql
+-- Recent imports (workflow runs land here, one row per file).
+SELECT imported_at, source_label, rows_inserted, rows_failed,
+       cleans_in_batch, deep_cleans_in_batch, notes
+FROM breezeway_import_log
+ORDER BY imported_at DESC
+LIMIT 10;
+
+-- Cleans by month, and how fresh each month is.
+SELECT to_char(due_date, 'YYYY-MM') AS month,
+       COUNT(*) AS total_tasks,
+       COUNT(*) FILTER (WHERE is_clean) AS cleans,
+       MAX(imported_at) AS last_import
+FROM breezeway_tasks
+GROUP BY 1 ORDER BY 1 DESC LIMIT 6;
 ```
 
-The CSV header row is:
-```
-Task title,Property,Department,Assignees,Due date,Issues,Comments,Status,Priority,Total cost,Currency (Total cost),Estimated time,Created date,Created by,Completed date,Completed by,Last updated date,Property Time Zone
-```
-
-Note the UTF-8 BOM (`﻿`) — strip it with `utf-8-sig` encoding.
+A healthy day shows two `breezeway_import_log` rows with a `current_month` and
+a `next_month` label. Two rows sharing a label is a warning in the run log —
+rows still land correctly, only the reporting split is off.
 
 ---
 
@@ -173,109 +232,29 @@ should filter `WHERE is_deep_clean = true` separately from regular
 Non-counted rows are still imported for completeness so the audit trail
 stays full; downstream revenue rollups just filter them out.
 
-If Breezeway adds new clean variants in the future, append a regex to
-`api/tasks/breezeway-import.ts:CLEAN_TITLE_PATTERNS` (regular) or
-`DEEP_CLEAN_TITLE_PATTERNS` (deep) and re-deploy. Re-POSTing today's
-CSVs is safe — the upsert overwrites `is_clean` / `is_deep_clean` from
-the new pattern set without duplicating rows.
-
----
-
-## Manual test (one-off)
-
-```bash
-curl -X POST 'https://app.tendwellcleaningco.com/api/tasks/breezeway-import?source=current_month' \
-  -H 'Content-Type: text/csv' \
-  -H "x-tendwell-import-key: $BREEZEWAY_IMPORT_KEY" \
-  --data-binary @breezeway_export.csv
-```
-
-Expected: HTTP 200 + JSON summary.
-
-To inspect what landed:
-
-```sql
--- Run from the Supabase SQL editor.
-SELECT date_trunc('month', due_date) AS month,
-       COUNT(*) FILTER (WHERE is_clean) AS cleans,
-       COUNT(*) AS total_tasks
-FROM breezeway_tasks
-GROUP BY 1
-ORDER BY 1 DESC
-LIMIT 6;
-
-SELECT imported_at, source_label, rows_inserted, cleans_in_batch, notes
-FROM breezeway_import_log
-ORDER BY imported_at DESC
-LIMIT 10;
-```
-
 ---
 
 ## Troubleshooting
 
-| Response | Likely cause | Fix |
+Start at the failed workflow run: the step summary table names the file, its
+label, and the failure. Then:
+
+| Symptom | Likely cause | Fix |
 |---|---|---|
-| `401 Invalid or missing x-tendwell-import-key` | Secret mismatch | Re-check the env var in Vercel + your agent's secret store |
-| `503 BREEZEWAY_IMPORT_KEY not configured on server` | Env var not set on Vercel | Set it under Project → Settings → Environment Variables, redeploy |
-| `400 CSV header parse error` | Breezeway changed column names | Check `BreezewayRow` interface in `api/tasks/breezeway-import.ts` |
-| `400 No valid rows parsed from CSV` | Empty / malformed export | Investigate Breezeway-side; agent should alert |
-| `500 Failed to upsert breezeway_tasks` | DB constraint violation or RLS | Check `breezeway_import_log.notes` and Vercel runtime logs |
-| `200 ok` but `unmatched_addresses_count > 0` | Address typo or property not yet in Tendwell | Compare `sample_unmatched_addresses` against `properties.address` |
-| No CSVs found for today in Drive | Breezeway didn't export / wrong folder | Verify folder ID and that the export ran in Breezeway |
-| Both files detected as same label | First data row has unexpected date | Log both filenames + their first `Due date` values and alert |
+| `No Breezeway CSVs matched …` | Apps Script didn't write today, or the folder id changed | Check the Apps Script trigger's execution history; the log line prints the newest file in the folder for comparison |
+| `Drive list failed … 404` | Folder not shared with the service account, or Drive API not enabled on its GCP project | Share the folder as Viewer; enable the Drive API |
+| `GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON` | Secret truncated or newline-mangled | Re-paste, or store it base64-encoded (the script accepts either) |
+| `missing expected column(s): …` | Breezeway renamed an export column | Update `REQUIRED_COLUMNS` here and `BreezewayRow` in `api/tasks/breezeway-import.ts` together |
+| `HTTP 401 Invalid or missing x-tendwell-import-key` | Secret mismatch | The GitHub secret and the Vercel env var must hold the same value |
+| `HTTP 503 BREEZEWAY_IMPORT_KEY not configured` | Env var missing on Vercel | Set it (Production + Preview) and redeploy |
+| `HTTP 400 No valid rows parsed from CSV` | Empty/malformed export | Breezeway-side problem; re-run the Apps Script |
+| `HTTP 500 Failed to upsert breezeway_tasks` | DB constraint or RLS | Check `breezeway_import_log.notes` and the Vercel runtime logs |
+| Run is green, `unmatched_addresses_count` high | New property, or a name/address mismatch | Resolve on **API Sync → Breezeway**; the resolution persists for all future imports |
+| `duplicate source label(s)` warning | Both exports covered the same month | Cosmetic — rows are correct, only the `source_label` split in `breezeway_import_log` is off |
+| Missed a day entirely | Skipped scheduled run | The next run's 30h window usually covers it; otherwise dispatch with `date=YYYY-MM-DD` |
 
----
-
-## Recommended GitHub Actions setup
-
-```yaml
-# .github/workflows/breezeway-import.yml
-name: Breezeway Daily Import
-on:
-  schedule:
-    - cron: '30 12 * * *'   # 7:30 AM Eastern (UTC-5 standard / UTC-4 DST — adjust as needed)
-  workflow_dispatch:          # allow manual trigger
-
-jobs:
-  import:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install google-api-python-client google-auth requests
-      - name: Run import
-        env:
-          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-          BREEZEWAY_IMPORT_KEY: ${{ secrets.BREEZEWAY_IMPORT_KEY }}
-          DRIVE_FOLDER_ID: 1XkEs242mTVZjulZiPW4zse9oa6y-sR0W
-        run: python scripts/breezeway_import.py
-```
-
-The Python script (`scripts/breezeway_import.py`) should implement the
-agent prompt logic above using the Google Drive API v3 with a service
-account. Grant the service account **Viewer** access to the Drive folder.
-
----
-
-## What this enables (downstream, separate PR)
-
-Once the import is running, the Live Pro Forma can be wired to read from
-`breezeway_tasks` instead of the Tendwell-internal `tasks` table:
-
-```sql
--- Cleans completed in a given month, per property
-SELECT property_id, COUNT(*) AS cleans
-FROM breezeway_tasks
-WHERE is_clean = true
-  AND status = 'Finished'
-  AND completed_date >= '2026-04-01'
-  AND completed_date <  '2026-05-01'
-GROUP BY property_id;
-```
-
-That wiring is intentionally NOT in this PR — first confirm the import
-pipeline runs cleanly end-to-end for a few days before swapping the
-forecaster's data source.
+If Breezeway adds new clean variants, append a regex to
+`CLEAN_TITLE_PATTERNS` (regular) or `DEEP_CLEAN_TITLE_PATTERNS` (deep) in
+`api/tasks/breezeway-import.ts` and redeploy, then re-run this workflow with a
+wide `lookback_hours` — the upsert rewrites `is_clean` / `is_deep_clean` on the
+existing rows without duplicating them.
