@@ -66,5 +66,6 @@ export const alertsEn = {
     onboarding: 'Onboarding',
     crm: 'CRM',
     issues: 'Issues',
+    data_sync: 'Data Sync',
   },
 }

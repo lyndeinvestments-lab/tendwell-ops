@@ -17,6 +17,7 @@ import { StatusTone, TONE_TEXT } from '@/lib/status-colors'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
+import { breezewayFreshness, breezewayFreshnessDescription } from '@/lib/data-freshness'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -111,6 +112,27 @@ export function useAlerts() {
       return data || []
     },
     staleTime: 60_000,
+  })
+
+  // Freshness of the Breezeway CSV feed. It's the one data source with no
+  // in-app refresh path (no API client, no Vercel cron — a GitHub Actions
+  // workflow POSTs the daily export), so a broken import is invisible: the
+  // financial views keep serving the last import as current. `imported_at`
+  // is indexed DESC, so this is a single-row index read.
+  const { data: lastBreezewayImport } = useQuery({
+    queryKey: ['/supabase/alerts-breezeway-freshness'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('breezeway_import_log')
+        .select('imported_at')
+        .order('imported_at', { ascending: false })
+        .limit(1)
+      if (error) throw error
+      return { lastImportedAt: data?.[0]?.imported_at ?? null }
+    },
+    // Alert is admin-gated below; skip the round-trip for everyone else.
+    enabled: canAccessView('trellis-sync', effectiveUser),
+    staleTime: 300_000,
   })
 
   const { data: dismissals } = useQuery({
@@ -253,6 +275,31 @@ export function useAlerts() {
       })
     }
 
+    // Warning/Critical: Breezeway import has gone stale.
+    // Only evaluated once the query has resolved — the wrapper object means
+    // `undefined` (still loading) is distinguishable from `null` (loaded, log
+    // empty), so a slow load can't flash a bogus "never imported" critical.
+    if (lastBreezewayImport) {
+      const stale = breezewayFreshness(lastBreezewayImport.lastImportedAt)
+      if (stale) {
+        result.push({
+          // Dated key: dismissing one stall must not mute the next one once a
+          // fresh import has landed in between.
+          id: `breezeway_import_stale_${stale.lastImportKey}`,
+          severity: stale.severity,
+          category: 'Data Sync',
+          title: stale.daysStale == null
+            ? 'Breezeway import has never run'
+            : `Breezeway import stale: ${stale.daysStale} days`,
+          description: breezewayFreshnessDescription(stale),
+          actionRoute: '/api-sync',
+          // Admin-only: the remedy (GitHub Actions secrets / re-run) and the
+          // Breezeway tab both are. `trellis-sync` is the API Sync view id.
+          requiredView: 'trellis-sync',
+        })
+      }
+    }
+
     // Info: New Contact Unlinked
     if (contacts) {
       for (const c of contacts) {
@@ -275,7 +322,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()
