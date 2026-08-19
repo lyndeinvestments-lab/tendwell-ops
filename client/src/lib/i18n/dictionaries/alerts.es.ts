@@ -48,5 +48,6 @@ export const alertsEs: typeof alertsEn = {
     onboarding: 'Incorporación',
     crm: 'CRM',
     issues: 'Incidencias',
+    data_sync: 'Sincronización de Datos',
   },
 }
