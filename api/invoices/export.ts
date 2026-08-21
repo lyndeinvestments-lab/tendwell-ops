@@ -4,10 +4,22 @@ import { toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLi
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
+//                          [&preview=1]
 //
 // Only approved (or already-exported) runs can export — the review gate is
 // enforced by approve.ts. First QBO export assigns the run its sequential AR
 // invoice number from app_settings.invoicing_qbo_next_number.
+//
+// `preview=1` returns the same CSV as JSON (`{ csv, ... }`) with NO side
+// effects, so a run can be inspected mid-reconciliation:
+//   * any status is previewable — the point is seeing the file BEFORE approving
+//   * no invoice number is allocated (next_qbo_invoice_no is never called);
+//     an unassigned number renders as a blank cell and is reported as
+//     `invoice_number_pending`
+//   * the run's status is not advanced to 'exported'
+// It deliberately runs the identical line-load + exporter path as the real
+// download, so preview bytes are the download bytes — a preview that could
+// drift from the file it predicts would be worse than none.
 
 const FORMATS = ['ramp', 'qbo_flat', 'qbo_multiline', 'billcom'] as const
 type Format = (typeof FORMATS)[number]
@@ -30,6 +42,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const runId = typeof req.query.run_id === 'string' ? req.query.run_id : null
   const format = typeof req.query.format === 'string' ? (req.query.format as Format) : null
+  const previewRaw = typeof req.query.preview === 'string' ? req.query.preview.toLowerCase() : ''
+  const preview = previewRaw === '1' || previewRaw === 'true'
   if (!runId || !format || !FORMATS.includes(format)) {
     res.status(400).json({ error: `run_id and format (${FORMATS.join('|')}) are required` })
     return
@@ -49,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(404).json({ error: 'Run not found' })
     return
   }
-  if (run.status !== 'approved' && run.status !== 'exported') {
+  if (!preview && run.status !== 'approved' && run.status !== 'exported') {
     res.status(400).json({ error: `Run must be approved before export (status: ${run.status})` })
     return
   }
@@ -75,7 +89,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Assign our sequential QBO invoice number on first QBO export.
   let qboInvoiceNo = run.qbo_invoice_no as number | null
-  if ((format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null) {
+  // Never allocate on preview: the counter is shared with live QBO (Nina's
+  // real numbering), so peeking at the file would burn AR invoice numbers and
+  // leave gaps in the sequence.
+  if (!preview && (format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null) {
     try {
       qboInvoiceNo = await nextQboInvoiceNo(supabase)
     } catch (e) {
@@ -136,6 +153,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     : format === 'qbo_flat' ? toQboFlatCsv(exportRun, lines, knownClasses)
     : format === 'qbo_multiline' ? toQboMultilineCsv(exportRun, lines)
     : toBillComCsv(exportRun, lines)
+
+  if (preview) {
+    res.status(200).json({
+      ok: true,
+      format,
+      run_status: run.status,
+      csv,
+      line_count: lines.length,
+      qbo_invoice_no: qboInvoiceNo,
+      // True when this format prints an invoice number and the run hasn't been
+      // assigned one yet — the real export will fill that blank cell in.
+      invoice_number_pending:
+        (format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null,
+    })
+    return
+  }
 
   if (run.status !== 'exported') {
     await supabase.from('invoice_runs').update({ status: 'exported' }).eq('id', runId)

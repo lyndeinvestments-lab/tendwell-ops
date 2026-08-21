@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
+import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -684,6 +685,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   })
 
   const [downloadingFormat, setDownloadingFormat] = useState<ExportFormat | null>(null)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
 
   // Breezeway task data arrives via a manual CSV import — when it goes stale
@@ -839,6 +841,16 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
               {reconcileMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
               Re-run reconcile
             </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPreviewOpen(true)}
+              title="See what the Ramp / QBO / bill.com files will contain. Nothing is saved or exported."
+              data-testid="button-preview-export"
+            >
+              <FileText className="w-4 h-4 mr-1.5" />
+              Preview export
+            </Button>
             {canApprove && (
               <Button
                 size="sm"
@@ -923,6 +935,17 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
           loading={linesQuery.isLoading}
         />
       </div>
+
+      {run && (
+        <ExportPreviewDialog
+          runId={run.id}
+          runStatus={run.status}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          onDownload={handleDownload}
+          downloadingFormat={downloadingFormat}
+        />
+      )}
 
       {showDownloads && (
         <Card className="border-card-border shadow-sm">

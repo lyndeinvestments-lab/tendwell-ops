@@ -212,6 +212,32 @@ export async function invoicesApi<T = any>(
   return json as T
 }
 
+export interface ExportPreview {
+  format: ExportFormat
+  /** The run's status at preview time — 'review_needed', 'approved', etc. */
+  run_status: string
+  /** Rendered by the same exporter the download uses, so this is what the
+   *  file will contain (bar the invoice number, see below). */
+  csv: string
+  line_count: number
+  qbo_invoice_no: number | null
+  /** This format prints an AR invoice number and the run has not been assigned
+   *  one yet — the blank cell gets filled at real export time. Previewing
+   *  never allocates a number, since the counter is shared with live QBO. */
+  invoice_number_pending: boolean
+}
+
+/**
+ * Renders an export without any of its side effects: no invoice number is
+ * allocated, the run is not advanced to 'exported', and any status may be
+ * previewed (the whole point is looking before you approve).
+ */
+export async function previewExport(runId: string, format: ExportFormat): Promise<ExportPreview> {
+  return invoicesApi<ExportPreview>(
+    `export?run_id=${encodeURIComponent(runId)}&format=${encodeURIComponent(format)}&preview=1`,
+  )
+}
+
 /**
  * Fetches an export CSV as a blob and triggers a browser download. Filename
  * is taken from the Content-Disposition header, falling back to a synthesized
