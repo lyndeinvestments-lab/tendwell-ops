@@ -865,15 +865,31 @@ export function PropertyDetailModal() {
   // submitted (and can't clobber fresher writes from other paths/tabs/users).
   const formBaselineRef = useRef<Record<string, any> | null>(null)
 
-  // Reset form when property changes
+  // Rebuild the form whenever the underlying row DATA changes — not just the
+  // id. Keying on id alone meant an inline save, a teammate's write, or a
+  // refetch updated the query cache while every form-fed display kept the
+  // stale open-time snapshot (real case: Amy Christopher 3303 financials,
+  // 2026-08-21). Never clobber an in-progress edit session.
   useEffect(() => {
-    if (property) {
-      const built = buildFormFromProperty(property)
-      setForm(built)
-      formBaselineRef.current = built
-      setIsEditing(false)
-    }
+    if (!property || isEditing) return
+    const built = buildFormFromProperty(property)
+    setForm(built)
+    formBaselineRef.current = built
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property])
+
+  // Leaving edit mode is only forced by switching properties.
+  useEffect(() => {
+    setIsEditing(false)
   }, [property?.id])
+
+  // Fresh read on every modal OPEN: the modal component stays mounted across
+  // open/close (and an iOS home-screen app resume is not a page load), so
+  // without this a reopened modal can render a row fetched long ago.
+  useEffect(() => {
+    if (propertyId) qc.invalidateQueries({ queryKey: ['/supabase/property-detail', propertyId] })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [propertyId])
 
   // Reset to Overview each time the modal opens (or switches property), so a
   // reopened modal doesn't resume on a stale tab.

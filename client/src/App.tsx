@@ -3,6 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Toaster } from "@/components/ui/toaster";
+import { toast } from "@/hooks/use-toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AuthProvider, useAuth, canAccessView } from "@/lib/auth";
@@ -323,7 +324,19 @@ function AppLayout() {
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await qc.invalidateQueries();
+      // invalidateQueries only refetches ACTIVE queries and resolves before
+      // those refetches settle — awaiting an explicit refetch makes the
+      // spinner honest, and the toast makes "did it do anything?" visible
+      // (the button was reported as "does nothing").
+      qc.invalidateQueries();
+      await qc.refetchQueries({ type: 'active' });
+      toast({ title: 'Data refreshed' });
+      // Also check for a newer app bundle while we're at it (stale
+      // home-screen bundles are the usual cause of "refresh does nothing").
+      try {
+        const reg = await navigator.serviceWorker?.getRegistration();
+        await reg?.update();
+      } catch { /* best-effort */ }
     } finally {
       setRefreshing(false);
     }
