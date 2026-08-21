@@ -284,11 +284,20 @@ export function extraReasonFromNote(note: string | null, title: string): string 
 // ─── Property resolution ─────────────────────────────────────────────────────
 
 export function normalizeText(s: string): string {
-  return s
+  const base = s
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+  // WTN → CTN. The whole CTN group was renamed from WTN (Jordan 2026-08-21):
+  // "Wtn-Mountain View 1615" is now "CTN-Mountain View". Vendor invoices and
+  // Breezeway exports still say WTN, which was sinking those lines below the
+  // fuzzy threshold and into the unresolved-property queue. Ops has zero WTN
+  // properties, so rewriting a LEADING wtn token is lossless — and only
+  // leading, so a name that happens to contain "wtn" elsewhere is untouched.
+  // Every caller of normalizeText is a property-name comparison, which is why
+  // this belongs here rather than at each call site.
+  return base.replace(/^wtn\b/, 'ctn')
 }
 
 // Small in-repo Levenshtein — the alias list plus ~300 property names don't

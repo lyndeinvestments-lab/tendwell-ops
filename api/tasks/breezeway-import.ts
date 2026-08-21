@@ -222,6 +222,27 @@ function normalizeAddress(input: string | null): string {
   return tokens.join(' ')
 }
 
+// Property-name normalization for the byName index. Mirrors `normalizeText`
+// (plus its WTN→CTN rule) in api/invoices/_engine.ts — the two matchers are
+// deliberately separate files (this endpoint is self-contained), so keep them
+// in sync.
+//
+// Punctuation is collapsed to spaces because Breezeway and Ops disagree on
+// separators: Ops has "CTN Engle Town 3030" where Breezeway writes
+// "WTN-Engle Town 3030". Before this, that row imported with property_id NULL.
+// Verified against the live table: normalizing introduces no new name
+// collisions (the only collisions are rows that are already exact duplicates).
+export function normalizePropertyName(s: string): string {
+  const base = s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  // The CTN group was renamed from WTN; Ops has zero WTN properties, so
+  // rewriting a leading wtn token is lossless.
+  return base.replace(/^wtn\b/, 'ctn')
+}
+
 interface PropertyMatcher {
   byName: (nickname: string | null) => number | null
   byAddress: (addr: string | null) => number | null
@@ -234,7 +255,7 @@ async function buildPropertyMatcher(supabase: SupabaseClient): Promise<PropertyM
   const byAddrIdx = new Map<string, number>()
   for (const p of data as Array<{ id: number; name: string | null; address: string | null }>) {
     if (p.name) {
-      const k = p.name.trim().toLowerCase()
+      const k = normalizePropertyName(p.name)
       if (k && !byNameIdx.has(k)) byNameIdx.set(k, p.id)
     }
     if (p.address) {
@@ -245,7 +266,7 @@ async function buildPropertyMatcher(supabase: SupabaseClient): Promise<PropertyM
   return {
     byName: (nickname) => {
       if (!nickname) return null
-      const k = nickname.trim().toLowerCase()
+      const k = normalizePropertyName(nickname)
       return byNameIdx.get(k) ?? null
     },
     byAddress: (addr) => {
