@@ -106,6 +106,11 @@ export const FLAGS = {
   DEEP_MISMATCH: 'deep_mismatch',
   CREDIT_LINE: 'credit_line',
   REASON_REQUIRED: 'reason_required',
+  // The vendor billed LESS than the property's Cleaner Pay rate, so AP pays
+  // the rate instead. Distinct from discrepancy_unexplained because it is the
+  // reason the Ramp total exceeds the vendor's invoice total — without it that
+  // gap looks like a parsing error.
+  PAID_AT_RATE: 'paid_at_rate',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -419,6 +424,32 @@ export function matchToTask(
   return scored[0]?.t ?? null
 }
 
+// ─── AP amount ────────────────────────────────────────────────────────────────
+
+/**
+ * What we actually pay the cleaner for a line that HAS a Cleaner Pay rate.
+ *
+ * The rate in Tendwell Ops is the contract, so it is the floor: a vendor who
+ * under-bills still gets paid the full rate (`paid_at_rate`). When the vendor
+ * bills ABOVE the rate we pay what they billed rather than unilaterally cutting
+ * their invoice — the gap stays flagged for a human instead.
+ *
+ * Net effect: AP = max(rate, invoiced). This intentionally breaks the older
+ * "the Ramp file must sum to the vendor's invoice" rule (see I260810797) in the
+ * under-billed direction only, so any Ramp-vs-invoice gap is always a top-up to
+ * contract and is always flagged.
+ *
+ * Lines with no rate to compare against — extras, deep cleans, Double Cleans,
+ * labor/operating expense, credits — are NOT routed through here; there is no
+ * contract amount for them, so they keep paying the invoiced figure.
+ */
+export function apPayForRatedLine(rawAmount: number, cleanerPay: number): { amount: number; toppedUp: boolean } {
+  if (round2(cleanerPay - rawAmount) > PENNY) {
+    return { amount: round2(cleanerPay), toppedUp: true }
+  }
+  return { amount: round2(rawAmount), toppedUp: false }
+}
+
 // ─── Subtotal gate ────────────────────────────────────────────────────────────
 
 export function validateSubtotal(
@@ -598,16 +629,18 @@ export function classifyLine(
         return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
       }
       const group = splitSeq()
-      // AP pays what the vendor billed: the group's pay must sum to the raw
-      // amount (base = raw − 50, surcharge = 50). When that base differs from
-      // the Cleaner Pay rate, it's a review question — flagged, never absorbed.
+      // The $50 surcharge rides its own row, so the base row is an ordinary
+      // rated clean: pay max(rate, invoiced − 50), same floor as above. The
+      // group therefore sums to the vendor's amount only when they billed at
+      // or above rate + 50; a top-up is flagged rather than absorbed.
+      const baseAp = apPayForRatedLine(round2(raw.rawAmount - 50), cleanerPay)
       let base: EngineLine = {
         ...line,
         splitGroup: group,
         lineKind: 'combined_split',
-        cleanerPayAmount: round2(raw.rawAmount - 50),
+        cleanerPayAmount: baseAp.amount,
         clientChargeAmount: round2(ceCharged),
-        flags: [...line.flags, FLAGS.COMBINED_SPLIT],
+        flags: [...line.flags, FLAGS.COMBINED_SPLIT, ...(baseAp.toppedUp ? [FLAGS.PAID_AT_RATE] : [])],
       }
       if (Math.abs(raw.rawAmount - (cleanerPay + 50)) > PENNY) {
         base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
@@ -665,7 +698,12 @@ export function classifyLine(
 
   if (cleanerPay == null || ceCharged == null || cleanerPay <= 0 || ceCharged <= 0) {
     line.lineKind = 'clean'
-    line.cleanerPayAmount = round2(raw.rawAmount)
+    // The rate is the authority for AP, so with no rate on file there is no
+    // authoritative amount — leave pay blank rather than copying the invoice.
+    // approve.ts already refuses to approve a billed line with no pay, so this
+    // must be resolved by hand (set the property's rate, or set the pay on the
+    // line) before it can export.
+    line.cleanerPayAmount = null
     line.clientChargeAmount = ceCharged != null && ceCharged > 0 ? round2(ceCharged) : null
     return [withChannel(needsReview(line, FLAGS.MISSING_RATE), property)]
   }
@@ -722,14 +760,17 @@ export function classifyLine(
   }
 
   // Amount differs from Cleaner Pay with NO explaining note → discrepancy.
-  // AP pays what the vendor BILLED (the Ramp file must sum to the vendor's
-  // invoice — paying the rate instead silently under/overpays; real case:
-  // I260810797 exported $623.70 off). The rate-vs-billed gap is the review
-  // question and stays visible via the flag + table highlight; the client
-  // side still bills at Client Charged.
+  // AP pays max(rate, invoiced) via apPayForRatedLine: the Ops rate is the
+  // contract and acts as a floor, so an under-billing vendor is still paid in
+  // full (flagged `paid_at_rate`), while an over-billing one is paid what they
+  // asked rather than having their invoice silently cut. Either way the gap is
+  // the review question and stays visible; the client side bills at Client
+  // Charged regardless.
   line.lineKind = 'clean'
-  line.cleanerPayAmount = round2(raw.rawAmount)
+  const ap = apPayForRatedLine(raw.rawAmount, cleanerPay)
+  line.cleanerPayAmount = ap.amount
   line.clientChargeAmount = round2(ceCharged)
+  if (ap.toppedUp) line = flag(line, FLAGS.PAID_AT_RATE)
   return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
 }
 

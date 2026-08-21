@@ -87,6 +87,7 @@ export const FLAG_LABELS: Record<string, string> = {
   deep_mismatch: 'Deep-clean note/task mismatch',
   credit_line: 'Credit line',
   reason_required: 'Reason required',
+  paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
 }
 
 export function flagLabel(flag: string): string {
