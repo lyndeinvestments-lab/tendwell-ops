@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
-import { getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
 //
@@ -54,13 +54,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  const { data: lineRows, error: linesErr } = await supabase
-    .from('invoice_lines')
-    .select('line_kind, service_type, raw_date_mentioned, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
-    .eq('run_id', runId)
-    .order('line_no')
-  if (linesErr) {
-    res.status(500).json({ error: 'Failed to load lines', detail: linesErr.message })
+  // Paged: PostgREST caps a response at 1000 rows, and a silently truncated
+  // export is the worst failure here — a CSV that looks complete while
+  // under-billing the client and under-paying the cleaner.
+  let lineRows: Array<Record<string, any>>
+  try {
+    lineRows = await fetchAllRows<Record<string, any>>(
+      'invoice_lines',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_kind, service_type, raw_date_mentioned, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
+        .eq('run_id', runId)
+        .order('line_no'),
+      'line_no',
+    )
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to load lines', detail: e instanceof Error ? e.message : String(e) })
     return
   }
 
