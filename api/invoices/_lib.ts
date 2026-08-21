@@ -55,51 +55,133 @@ function shiftDate(iso: string, days: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+/** PostgREST caps every response at `db-max-rows` (1000 on Supabase) and
+ *  reports the truncation only in the Content-Range header — the JSON body
+ *  looks like a complete, successful result. An unpaginated context load is
+ *  therefore silently lossy the moment a table crosses that line, and the
+ *  engine can only conclude "no task exists" for the rows it never received.
+ *
+ *  Real case: invoice run "Test 1" (2026-06-06 → 2026-07-05). With the ±14d
+ *  pad its task window held 2,254 breezeway_tasks, so the engine saw the first
+ *  1,000 — everything due after ~2026-06-24 was invisible. 103 of its 112
+ *  `unmatched_task` lines had a matching clean sitting in the table on a
+ *  resolved property, within the engine's own ±3-day rule. Weekly invoices
+ *  (~1,460 rows in window) stayed under the cap for their own period, which is
+ *  why this only showed up on a month-long run.
+ *
+ *  Pages until a short page arrives, so it is correct for any table size.
+ *  The explicit order is required: without a stable sort, two pages can
+ *  overlap or skip rows. */
+const PAGE_SIZE = 1000
+
+export async function fetchAllRows<T>(
+  label: string,
+  build: () => { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+  orderedBy: string,
+): Promise<T[]> {
+  const out: T[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await build().range(from, from + PAGE_SIZE - 1)
+    if (error) throw new Error(`Failed to load ${label}: ${error.message}`)
+    const page = data ?? []
+    out.push(...page)
+    if (page.length < PAGE_SIZE) return out
+    // Guard against an unbounded loop if a table ever grows pathologically:
+    // 100k rows is far beyond any plausible context load here.
+    if (out.length >= 100 * PAGE_SIZE) {
+      throw new Error(`Refusing to page past ${out.length} rows of ${label} (ordered by ${orderedBy})`)
+    }
+  }
+}
+
 export async function loadEngineContext(
   supabase: SupabaseClient,
   periodStart: string,
   periodEnd: string,
 ): Promise<EngineContext> {
-  const [propsRes, contactsRes, aliasesRes, tasksRes, trellisRes] = await Promise.all([
-    supabase
-      .from('properties')
-      .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id')
-      .is('deleted_at', null),
-    supabase.from('contacts').select('id, billing_channel'),
-    supabase.from('vendor_property_aliases').select('vendor_id, alias_raw, property_id'),
-    supabase
-      .from('breezeway_tasks')
-      .select('external_id, property_id, due_date, task_title, is_clean, is_deep_clean, raw')
-      .gte('due_date', shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS))
-      .lte('due_date', shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)),
+  const taskWindowStart = shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS)
+  const taskWindowEnd = shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)
+
+  // Every one of these is paged: a truncated context makes the engine flag
+  // real cleans as `unmatched_task`, and it does so silently. See fetchAllRows.
+  const [propRowsRaw, contactRows, aliasRows, taskRows, trellisRows] = await Promise.all([
+    fetchAllRows<{
+      id: number
+      name: string
+      ce_charged: number | null
+      cleaner_pay: number | null
+      deep_clean_3x_ce: number | null
+      contact_id: string | null
+      trellis_id: string | null
+    }>(
+      'properties',
+      () => supabase
+        .from('properties')
+        .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id')
+        .is('deleted_at', null)
+        .order('id'),
+      'id',
+    ),
+    fetchAllRows<{ id: string; billing_channel: BillingChannel }>(
+      'contacts',
+      () => supabase.from('contacts').select('id, billing_channel').order('id'),
+      'id',
+    ),
+    fetchAllRows<{ vendor_id: string | null; alias_raw: string; property_id: number }>(
+      'vendor_property_aliases',
+      () => supabase
+        .from('vendor_property_aliases')
+        .select('vendor_id, alias_raw, property_id')
+        .order('alias_raw'),
+      'alias_raw',
+    ),
+    fetchAllRows<{
+      external_id: string
+      property_id: number | null
+      due_date: string | null
+      task_title: string
+      is_clean: boolean
+      is_deep_clean: boolean
+      raw: Record<string, unknown> | null
+    }>(
+      'breezeway_tasks',
+      () => supabase
+        .from('breezeway_tasks')
+        .select('external_id, property_id, due_date, task_title, is_clean, is_deep_clean, raw')
+        .gte('due_date', taskWindowStart)
+        .lte('due_date', taskWindowEnd)
+        .order('external_id'),
+      'external_id',
+    ),
     // Trellis cleans too: Breezeway alone missed ~half the 8/10–8/16 week
     // (88 of 172 property-day cleans; 84 existed only in Trellis). Task-level
     // union with Breezeway winning per (property, day) — the property-level
     // rule from financial_monthly_cleans undercounts for invoicing.
-    supabase
-      .from('trellis_task_snapshot')
-      .select('trellis_task_id, trellis_property_id, title, status, scheduled_date')
-      .ilike('department_name', '%clean%')
-      .gte('scheduled_date', shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS))
-      .lte('scheduled_date', shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)),
+    fetchAllRows<{
+      trellis_task_id: string
+      trellis_property_id: string | null
+      title: string | null
+      status: string | null
+      scheduled_date: string | null
+    }>(
+      'trellis_task_snapshot',
+      () => supabase
+        .from('trellis_task_snapshot')
+        .select('trellis_task_id, trellis_property_id, title, status, scheduled_date')
+        .ilike('department_name', '%clean%')
+        .gte('scheduled_date', taskWindowStart)
+        .lte('scheduled_date', taskWindowEnd)
+        .order('trellis_task_id'),
+      'trellis_task_id',
+    ),
   ])
-  const firstError = propsRes.error ?? contactsRes.error ?? aliasesRes.error ?? tasksRes.error ?? trellisRes.error
-  if (firstError) throw new Error(`Failed to load engine context: ${firstError.message}`)
 
   const channelByContact = new Map<string, BillingChannel>()
-  for (const c of (contactsRes.data ?? []) as Array<{ id: string; billing_channel: BillingChannel }>) {
+  for (const c of contactRows) {
     channelByContact.set(c.id, c.billing_channel)
   }
 
-  const propRows = (propsRes.data ?? []) as Array<{
-    id: number
-    name: string
-    ce_charged: number | null
-    cleaner_pay: number | null
-    deep_clean_3x_ce: number | null
-    contact_id: string | null
-    trellis_id: string | null
-  }>
+  const propRows = propRowsRaw
   const properties: PropertyRates[] = propRows.map(p => ({
     id: p.id,
     name: p.name,
@@ -111,21 +193,13 @@ export async function loadEngineContext(
   const propertyByTrellisId = new Map<string, number>()
   for (const p of propRows) if (p.trellis_id) propertyByTrellisId.set(p.trellis_id, p.id)
 
-  const aliases: AliasRow[] = ((aliasesRes.data ?? []) as Array<{
-    vendor_id: string | null
-    alias_raw: string
-    property_id: number
-  }>).map(a => ({ vendorId: a.vendor_id, aliasRaw: a.alias_raw, propertyId: a.property_id }))
+  const aliases: AliasRow[] = aliasRows.map(a => ({
+    vendorId: a.vendor_id,
+    aliasRaw: a.alias_raw,
+    propertyId: a.property_id,
+  }))
 
-  const tasks: TaskRow[] = ((tasksRes.data ?? []) as Array<{
-    external_id: string
-    property_id: number | null
-    due_date: string | null
-    task_title: string
-    is_clean: boolean
-    is_deep_clean: boolean
-    raw: Record<string, unknown> | null
-  }>).map(t => {
+  const tasks: TaskRow[] = taskRows.map(t => {
     const costRaw = t.raw?.['Total cost']
     const cost = typeof costRaw === 'string' ? Number(costRaw.replace(/[^0-9.-]/g, '')) : typeof costRaw === 'number' ? costRaw : NaN
     return {
@@ -150,13 +224,7 @@ export async function loadEngineContext(
     tasks.filter(t => (t.isClean || t.isDeepClean) && t.propertyId != null && t.dueDate != null)
       .map(t => `${t.propertyId}|${t.dueDate}`),
   )
-  const trellisTasks: TaskRow[] = ((trellisRes.data ?? []) as Array<{
-    trellis_task_id: string
-    trellis_property_id: string | null
-    title: string | null
-    status: string | null
-    scheduled_date: string | null
-  }>)
+  const trellisTasks: TaskRow[] = trellisRows
     .map(t => {
       const propertyId = t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null
       const title = t.title ?? ''
@@ -254,14 +322,18 @@ export async function reconcileRun(
     throw new Error('Run is approved/exported — void it before re-reconciling')
   }
 
-  const { data: lineRows, error: linesErr } = await supabase
-    .from('invoice_lines')
-    .select('*')
-    .eq('run_id', runId)
-    .order('line_no')
-  if (linesErr) throw new Error(`Failed to load lines: ${linesErr.message}`)
-
-  const rows = (lineRows ?? []) as Array<Record<string, any>>
+  // Paged: a month-long run can carry >1000 lines once splits are added, and
+  // a truncated read here would silently drop preserved (resolved/manual)
+  // rows and skew computed_subtotal.
+  const rows = await fetchAllRows<Record<string, any>>(
+    'invoice_lines',
+    () => supabase
+      .from('invoice_lines')
+      .select('*')
+      .eq('run_id', runId)
+      .order('line_no'),
+    'line_no',
+  )
   const preserved = rows.filter(r => r.review_status === 'resolved' || r.source === 'manual')
   const preservedLineNos = new Set(preserved.map(r => r.line_no))
   const rebuild = rows.filter(r => !preservedLineNos.has(r.line_no))

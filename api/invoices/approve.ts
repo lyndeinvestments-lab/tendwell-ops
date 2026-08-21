@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // POST /api/invoices/approve  Body: { run_id }
 //
@@ -117,18 +117,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // never reconciles. Real case: "Irma Work" $1,054 resolved with null pay
   // made the Ramp file $1,054 short. Zero-raw lines (e.g. split surcharges)
   // are fine.
-  const { data: unpaidRows, error: unpaidErr } = await supabase
-    .from('invoice_lines')
-    .select('id, raw_amount, cleaner_pay_amount, line_kind, review_status')
-    .eq('run_id', runId)
-    .neq('line_kind', 'excluded')
-    .neq('review_status', 'excluded')
-    .neq('raw_amount', 0)
-  if (unpaidErr) {
-    res.status(500).json({ error: 'Failed to check cleaner pay coverage', detail: unpaidErr.message })
+  // Paged: a truncated read would let this guard pass a run whose unpaid
+  // lines happened to sit past the 1000-row cap.
+  let unpaidRows: Array<Record<string, any>>
+  try {
+    unpaidRows = await fetchAllRows<Record<string, any>>(
+      'invoice_lines',
+      () => supabase
+        .from('invoice_lines')
+        .select('id, raw_amount, cleaner_pay_amount, line_kind, review_status')
+        .eq('run_id', runId)
+        .neq('line_kind', 'excluded')
+        .neq('review_status', 'excluded')
+        .neq('raw_amount', 0)
+        .order('line_no'),
+      'line_no',
+    )
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check cleaner pay coverage', detail: e instanceof Error ? e.message : String(e) })
     return
   }
-  const unpaid = (unpaidRows ?? []).filter(r => !(Number(r.cleaner_pay_amount ?? 0) !== 0))
+  const unpaid = unpaidRows.filter(r => !(Number(r.cleaner_pay_amount ?? 0) !== 0))
   if (unpaid.length > 0) {
     res.status(400).json({
       error: `Cannot approve: ${unpaid.length} billed line(s) have no cleaner pay — they would be silently missing from the Ramp export. Set the pay (usually the invoiced amount) or exclude the line.`,
