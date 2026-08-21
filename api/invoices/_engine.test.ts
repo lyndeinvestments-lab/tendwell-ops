@@ -686,3 +686,48 @@ describe('apPayForRatedLine', () => {
     expect(apPayForRatedLine(10.005, 33.333).amount).toBe(33.33)
   })
 })
+
+// ─── WTN → CTN rename ────────────────────────────────────────────────────────
+
+describe('resolveProperty across the WTN → CTN rename', () => {
+  // Ops renamed the whole CTN group from WTN, but vendor invoices and Breezeway
+  // exports still say WTN — which was dropping those lines into the
+  // unresolved-property queue. All names below are real.
+  const CTN: PropertyRates[] = [
+    'CTN Engle Town 3030', 'CTN-Black Bear Cub', 'CTN-Mountain View', 'CTN-Pine Top 820',
+    'CTN-Rebel Hill 1644', 'CTN - Tunnel Ridge 208',
+  ].map((name, i) => ({ id: 100 + i, name, ceCharged: 150, cleanerPay: 100, deepClean3xCe: null, billingChannel: 'qbo_haven' as const }))
+
+  const idOf = (name: string) => CTN.find(p => p.name === name)!.id
+
+  it('resolves WTN-prefixed vendor text to the renamed property exactly', () => {
+    for (const [raw, expected] of [
+      ['WTN-Pine Top 820', 'CTN-Pine Top 820'],
+      ['Wtn Pine Top 820', 'CTN-Pine Top 820'],
+      ['WTN-Mountain View', 'CTN-Mountain View'],
+      ['WTN-Rebel Hill 1644', 'CTN-Rebel Hill 1644'],
+      // Separator styles differ between the two systems.
+      ['WTN-Engle Town 3030', 'CTN Engle Town 3030'],
+    ] as const) {
+      const r = resolveProperty(raw, [], CTN, 'busybee')
+      expect({ raw, id: r.propertyId, via: r.via }).toEqual({ raw, id: idOf(expected), via: 'exact' })
+    }
+  })
+
+  it('still refuses the genuinely ambiguous ones instead of guessing', () => {
+    // "Black Bear 1012" vs "Black Bear Cub" is a real difference — a wrong
+    // auto-match here would bill the wrong owner. The review queue (which
+    // persists a vendor alias once a human confirms) is the right place.
+    expect(resolveProperty('Wtn Black Bear 1012', [], CTN, 'busybee').propertyId).toBeNull()
+    // Note text glued into the property cell.
+    expect(resolveProperty('Wtn Pine Top 820 - Hot tub refresh', [], CTN, 'busybee').propertyId).toBeNull()
+  })
+
+  it('does not rewrite wtn inside a name', () => {
+    const props: PropertyRates[] = [
+      { id: 1, name: 'Newtn Ridge', ceCharged: 100, cleanerPay: 70, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    ]
+    expect(resolveProperty('Newtn Ridge', [], props, 'v').via).toBe('exact')
+    expect(similarity('Newtn Ridge', 'Cewtn Ridge')).toBeLessThan(1)
+  })
+})
