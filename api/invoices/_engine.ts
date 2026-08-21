@@ -154,7 +154,9 @@ export const APPROVED_EXTRA_SERVICES = [
 
 // Task titles that are never owner-billable (unless mislabeled — see
 // RELABEL_TOLERANCE above).
-const EXCLUDED_TITLE_PATTERNS = [/cleaner\s*self.?inspection/i, /air\s*filter\s*change/i]
+// Busy Bee misspells it "Ispection" (no first n) about as often as not, so
+// every inspection pattern in this file has to accept `in?spection`.
+const EXCLUDED_TITLE_PATTERNS = [/cleaner\s*self.?in?spection/i, /air\s*filter\s*change/i]
 
 // Bulk / non-property line detector — routed to the operating-expense flag
 // list, never onto a client invoice.
@@ -165,7 +167,14 @@ const OPERATING_EXPENSE_PATTERNS = [
   /facilit/i,
   /office/i,
   /warehouse/i,
-  /inspection\s*work/i,
+  /in?spection\s*work/i,
+  // Inspection labor billed as a block ("Irma Ispection - 51.52x20=1,030.4",
+  // 20 inspections at a rate). Line 202 of run "Test 1" said "Joshua Ispection
+  // Work" and was paid correctly via /\bwork\b/, while line 203 said "Irma
+  // Ispection" — same charge, no "Work" — and fell through to the clean path,
+  // landing unresolved with $0 pay on a $1,030 line we owe the vendor.
+  // Self-inspections stay EXCLUDED (guarded in isOperatingExpenseText).
+  /\bin?spection\b/i,
   /bulk/i,
   // Labor lines are a Tendwell expense: paid to the vendor via Ramp, never
   // invoiced to Haven or bill.com, and need no property (Jordan 2026-08-17).
@@ -231,6 +240,10 @@ export function isExcludedTitle(text: string | null): boolean {
 
 export function isOperatingExpenseText(text: string | null): boolean {
   if (!text) return false
+  // A cleaner self-inspection is a non-revenue task we do NOT pay for; the
+  // broad /in?spection/ pattern above must not turn one into a payable
+  // Tendwell expense just because its property failed to resolve.
+  if (/self.?in?spection/i.test(text)) return false
   return OPERATING_EXPENSE_PATTERNS.some(re => re.test(text))
 }
 
@@ -344,12 +357,54 @@ export interface PropertyResolution {
   via: 'alias' | 'exact' | 'fuzzy' | null
 }
 
+/** Vendors write the note into the property cell: "Ashley May 1619 - Deep
+ *  clean", "Kaley Eversgerd 933 - Trash pick up", "Wtn Pine Top 820 - Hot tub
+ *  refresh". Resolution then compares the note text too and the line lands in
+ *  the unresolved-property queue — 8 of the 15 unresolved lines on run
+ *  "Test 1" were this, not misspellings.
+ *
+ *  Drops the trailing " - …" segment. Only used as a FALLBACK, after the full
+ *  string has already failed, because real property names contain the same
+ *  separator ("CTN - 887 Sourwood") and must keep matching on the full text.
+ *  Stripping is bounded so "A - B - C" can peel at most twice. */
+function stripNoteSuffix(text: string): string | null {
+  const idx = text.lastIndexOf(' - ')
+  if (idx <= 0) return null
+  const head = text.slice(0, idx).trim()
+  return head.length > 0 ? head : null
+}
+
+const NOTE_SUFFIX_STRIPS = 2
+
 export function resolveProperty(
   rawText: string | null,
   aliases: AliasRow[],
   properties: PropertyRates[],
   vendorId: string | null,
   threshold: number = FUZZY_CONFIRM_THRESHOLD,
+): PropertyResolution {
+  const direct = resolvePropertyText(rawText, aliases, properties, vendorId, threshold)
+  if (direct.propertyId != null || !rawText) return direct
+
+  // Retry against the text with the note peeled off. Classification is
+  // unaffected: classifyLine still reads the original rawPropertyText, so a
+  // "- Touch up" suffix keeps driving extra/exclusion detection.
+  let candidate: string | null = rawText
+  for (let i = 0; i < NOTE_SUFFIX_STRIPS; i++) {
+    candidate = stripNoteSuffix(candidate)
+    if (!candidate) break
+    const retry = resolvePropertyText(candidate, aliases, properties, vendorId, threshold)
+    if (retry.propertyId != null) return retry
+  }
+  return direct
+}
+
+function resolvePropertyText(
+  rawText: string | null,
+  aliases: AliasRow[],
+  properties: PropertyRates[],
+  vendorId: string | null,
+  threshold: number,
 ): PropertyResolution {
   if (!rawText || !normalizeText(rawText)) return { propertyId: null, confidence: null, via: null }
   const needle = normalizeText(rawText)

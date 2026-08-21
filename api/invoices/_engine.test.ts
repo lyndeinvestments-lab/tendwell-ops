@@ -6,6 +6,8 @@ import {
   extraTitleFromNote,
   FLAGS,
   generateDraftLines,
+  isExcludedTitle,
+  isOperatingExpenseText,
   matchToTask,
   reconcile,
   resolveProperty,
@@ -719,8 +721,13 @@ describe('resolveProperty across the WTN → CTN rename', () => {
     // auto-match here would bill the wrong owner. The review queue (which
     // persists a vendor alias once a human confirms) is the right place.
     expect(resolveProperty('Wtn Black Bear 1012', [], CTN, 'busybee').propertyId).toBeNull()
-    // Note text glued into the property cell.
-    expect(resolveProperty('Wtn Pine Top 820 - Hot tub refresh', [], CTN, 'busybee').propertyId).toBeNull()
+  })
+
+  it('resolves through a note glued onto the property cell', () => {
+    // Both fixes have to compose: peel the " - Hot tub refresh" note AND apply
+    // the WTN → CTN rename to land on the right cabin.
+    const r = resolveProperty('Wtn Pine Top 820 - Hot tub refresh', [], CTN, 'busybee')
+    expect(r.propertyId).toBe(idOf('CTN-Pine Top 820'))
   })
 
   it('does not rewrite wtn inside a name', () => {
@@ -729,5 +736,81 @@ describe('resolveProperty across the WTN → CTN rename', () => {
     ]
     expect(resolveProperty('Newtn Ridge', [], props, 'v').via).toBe('exact')
     expect(similarity('Newtn Ridge', 'Cewtn Ridge')).toBeLessThan(1)
+  })
+})
+
+// ─── Note text glued into the property cell ──────────────────────────────────
+
+describe('resolveProperty with a note suffix in the property cell', () => {
+  // Busy Bee writes "Property - note". 8 of the 15 unresolved lines on run
+  // "Test 1" were this rather than misspellings.
+  const PROPS2: PropertyRates[] = [
+    'Ashley May 1619', 'Kaley Eversgerd 933', 'CTN - 887 Sourwood', 'CTN-Pine Top 820',
+  ].map((name, i) => ({ id: 200 + i, name, ceCharged: 150, cleanerPay: 100, deepClean3xCe: null, billingChannel: 'qbo_haven' as const }))
+  const id = (name: string) => PROPS2.find(p => p.name === name)!.id
+
+  it('peels the note and resolves the property', () => {
+    for (const [raw, want] of [
+      ['Ashley May 1619 - Deep clean', 'Ashley May 1619'],
+      ['Kaley Eversgerd 933 - Trash pick up', 'Kaley Eversgerd 933'],
+      ['Wtn Pine Top 820 - Hot tub refresh', 'CTN-Pine Top 820'],
+    ] as const) {
+      expect(resolveProperty(raw, [], PROPS2, 'busybee').propertyId).toBe(id(want))
+    }
+  })
+
+  it('never breaks a property whose real name contains the separator', () => {
+    // The full string is tried first, so "CTN - 887 Sourwood" matches whole and
+    // is never peeled down to "CTN".
+    expect(resolveProperty('CTN - 887 Sourwood', [], PROPS2, 'busybee').propertyId).toBe(id('CTN - 887 Sourwood'))
+    expect(resolveProperty('CTN - 887 Sourwood', [], PROPS2, 'busybee').via).toBe('exact')
+    // ...and it still resolves when a note is appended to such a name.
+    expect(resolveProperty('CTN - 887 Sourwood - Touch up', [], PROPS2, 'busybee').propertyId)
+      .toBe(id('CTN - 887 Sourwood'))
+  })
+
+  it('does not invent a match when the property is absent from Ops', () => {
+    // Real cases: these cabins are not in the properties table at all, so
+    // peeling the note must still leave them for a human.
+    for (const raw of ['1214 Sky View - Touch up', 'Angela Mcville - Trash pick up request by guest',
+                       'Irma Ispection - 51.52x20=1,030.4']) {
+      expect(resolveProperty(raw, [], PROPS2, 'busybee').propertyId).toBeNull()
+    }
+  })
+
+  it('leaves a bare separator or empty head alone', () => {
+    expect(resolveProperty(' - Touch up', [], PROPS2, 'busybee').propertyId).toBeNull()
+    expect(resolveProperty('-', [], PROPS2, 'busybee').propertyId).toBeNull()
+  })
+})
+
+// ─── Inspection labor ────────────────────────────────────────────────────────
+
+describe('inspection labor lines', () => {
+  // Real pair from run "Test 1": the same block charge, one worded with "Work"
+  // and one without. Only the first was being paid.
+  it('treats a bare inspection block as a payable Tendwell expense', () => {
+    expect(isOperatingExpenseText('Irma Ispection - 51.52x20=1,030.4')).toBe(true)
+    expect(isOperatingExpenseText('Joshua Ispection Work - 59.35x20=1,187')).toBe(true)
+    expect(isOperatingExpenseText('Irma Inspection')).toBe(true)
+  })
+
+  it('still excludes cleaner self-inspections, spelled either way', () => {
+    // These are non-revenue tasks we do not pay for — the broad inspection
+    // pattern must not flip them into a payable expense.
+    expect(isOperatingExpenseText('Cleaner Self-Inspection')).toBe(false)
+    expect(isOperatingExpenseText('Cleaner Self Ispection')).toBe(false)
+    expect(isExcludedTitle('Cleaner Self-Ispection')).toBe(true)
+    expect(isExcludedTitle('Cleaner Self-Inspection')).toBe(true)
+  })
+
+  it('pays the vendor the full amount on such a line', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Irma Ispection - 51.52x20=1,030.4', rawAmount: 1030.4,
+    })]))
+    expect(lines[0].lineKind).toBe('operating_expense')
+    expect(lines[0].cleanerPayAmount).toBe(1030.4)
+    // Never billed onward to a client.
+    expect(lines[0].clientChargeAmount).toBeNull()
   })
 })
