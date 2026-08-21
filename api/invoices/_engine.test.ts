@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  apPayForRatedLine,
   extractDateFromText,
   extraReasonFromNote,
   extraTitleFromNote,
@@ -330,19 +331,53 @@ describe('reconcile — money rules', () => {
     const base = lines.find(l => l.lineKind === 'combined_split')!
     expect(base.flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
     expect(base.reviewStatus).toBe('needs_review')
-    // AP pays what the vendor billed: base + surcharge sums to the raw amount.
-    expect(base.cleanerPayAmount).toBe(203.52) // 253.52 − 50 surcharge
+    // 253.52 − 50 = 203.52 base, which is above this property's rate, so no
+    // top-up applies and the group still sums to the vendor's amount.
+    expect(base.cleanerPayAmount).toBe(203.52)
+    expect(base.flags).not.toContain(FLAGS.PAID_AT_RATE)
     const surcharge = lines.find(l => l.lineKind === 'extra')!
     expect((base.cleanerPayAmount ?? 0) + (surcharge.cleanerPayAmount ?? 0)).toBe(253.52)
   })
 
-  it('unexplained discrepancies pay what the vendor billed, never the rate', () => {
-    // Real case: Amit Chowdhary billed $30 with no note; paying the $260 rate
-    // made the Ramp export overpay. The gap is the review question.
+  // AP rule (Jordan 2026-08-21): the Cleaner Pay rate in Ops is the contract,
+  // so it is a FLOOR on what we pay — an under-billing vendor is topped up to
+  // rate. Above the rate we pay what was billed rather than cutting their
+  // invoice. Net: AP = max(rate, invoiced), gap always flagged.
+  it('under-billed lines are topped up to the Cleaner Pay rate', () => {
     const { lines } = reconcile(input([vendorLine({ rawAmount: 30 })]))
     expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
-    expect(lines[0].cleanerPayAmount).toBe(30) // billed, not the 100 rate
+    expect(lines[0].flags).toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].cleanerPayAmount).toBe(100) // the rate, not the $30 billed
     expect(lines[0].clientChargeAmount).toBe(150) // AR still at Client Charged
+  })
+
+  it('over-billed lines pay what the vendor billed, and are not marked paid_at_rate', () => {
+    // We never unilaterally cut a vendor invoice — the overage is a review
+    // question, not something the engine silently trims to the rate.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 175 })]))
+    expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].cleanerPayAmount).toBe(175)
+    expect(lines[0].clientChargeAmount).toBe(150)
+  })
+
+  it('leaves pay blank when the property has no Cleaner Pay rate', () => {
+    // With the rate as the authority, no rate means no authoritative amount —
+    // copying the invoiced figure is exactly what this rule removes. approve
+    // blocks a billed line with no pay, so a human must resolve it.
+    const { lines } = reconcile(input([
+      vendorLine({ rawPropertyText: 'Rateless Retreat', rawAmount: 88 }),
+    ]))
+    expect(lines[0].flags).toContain(FLAGS.MISSING_RATE)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].cleanerPayAmount).toBeNull()
+  })
+
+  it('pays the exact rate without flagging a top-up when amounts agree', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 100 })]))
+    expect(lines[0].cleanerPayAmount).toBe(100)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
   })
 
   it('generated drafts state Cleaner Pay + $50 for onboarding tasks (no self-flag on reconcile)', () => {
@@ -625,5 +660,29 @@ describe('generateDraftLines', () => {
     const { lines, summary } = reconcile(input(drafts.map(d => ({ ...d }))))
     expect(summary.needsReviewCount).toBe(0)
     expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
+  })
+})
+
+// ─── AP amount rule ──────────────────────────────────────────────────────────
+
+describe('apPayForRatedLine', () => {
+  it('tops up to the rate when the vendor under-billed', () => {
+    expect(apPayForRatedLine(30, 100)).toEqual({ amount: 100, toppedUp: true })
+  })
+
+  it('pays the billed amount when it meets or beats the rate', () => {
+    expect(apPayForRatedLine(175, 100)).toEqual({ amount: 175, toppedUp: false })
+    expect(apPayForRatedLine(100, 100)).toEqual({ amount: 100, toppedUp: false })
+  })
+
+  it('does not treat a sub-penny gap as a top-up', () => {
+    // Float noise must not produce a "vendor under-billed" flag on every line.
+    // (The amount is rounded to cents, so 99.999 pays out as 100.00 either way.)
+    expect(apPayForRatedLine(99.999, 100)).toEqual({ amount: 100, toppedUp: false })
+    expect(apPayForRatedLine(99.98, 100)).toEqual({ amount: 100, toppedUp: true })
+  })
+
+  it('rounds to cents', () => {
+    expect(apPayForRatedLine(10.005, 33.333).amount).toBe(33.33)
   })
 })
