@@ -350,6 +350,60 @@ describe('reconcile — money rules', () => {
     expect(summary.netDiscrepancy).toBe(0)
   })
 
+  it('pays the $50 surcharge when the vendor billed rate + 50 (every onboarding line on TEST 3–6)', () => {
+    // Philip Graves 194.04→244.04, Kumar Sanam 160→210, Jessee Cook 189→239,
+    // Danae Downing 302.40→352: Busy Bee bills the onboarding surcharge
+    // themselves. They charged it, so we pay it — and nothing queues.
+    const tasks: TaskRow[] = [
+      { externalId: 'ob', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines, summary } = reconcile(
+      input([vendorLine({ rawAmount: 150, rawNoteText: 'Regular clean plus onboarding' })], { tasks }),
+    )
+    expect(lines).toHaveLength(2)
+    const [base, surcharge] = lines
+    expect(base.cleanerPayAmount).toBe(100) // the rate
+    expect(base.clientChargeAmount).toBe(150)
+    expect(base.reviewStatus).toBe('ok')
+    expect(base.flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(surcharge.cleanerPayAmount).toBe(50) // billed → paid
+    expect(surcharge.clientChargeAmount).toBe(50)
+    expect(summary.totalCleanerPay).toBe(150) // sums to the vendor's amount
+    expect(summary.netDiscrepancy).toBe(0)
+  })
+
+  it('the rounding band applies to the +50 too', () => {
+    // Real line (Grant Chamberlain, TEST 5): rate 151.76, billed 202.76 —
+    // rate + $51, within $1 of the surcharge. Same treatment.
+    const tasks: TaskRow[] = [
+      { externalId: 'ob', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 151, rawNoteText: 'Onboarding clean' })], { tasks }),
+    )
+    const [base, surcharge] = lines
+    expect(base.cleanerPayAmount).toBe(100)
+    expect(base.reviewStatus).toBe('ok')
+    expect(surcharge.cleanerPayAmount).toBe(50)
+  })
+
+  it('an onboarding billed at rate + an odd surcharge still queues', () => {
+    // Real line (Manish Birla, TEST 6): rate 75, billed 100 — a $25 add-on is
+    // neither "didn't charge it" nor the $50 surcharge. A human decides.
+    const tasks: TaskRow[] = [
+      { externalId: 'ob', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 125, rawNoteText: 'Onboarding clean' })], { tasks }),
+    )
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    expect(base.reviewStatus).toBe('needs_review')
+    expect(base.flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(base.cleanerPayAmount).toBe(125) // over-billed: pay billed, never cut
+    const surcharge = lines.find(l => l.lineKind === 'extra')!
+    expect(surcharge.cleanerPayAmount).toBeNull()
+  })
+
   it('flags an onboarding line whose vendor amount is not the Cleaner Pay rate', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
@@ -1002,6 +1056,108 @@ describe('maintenance charges in the property cell', () => {
 })
 
 // ─── Standard extra pricing ──────────────────────────────────────────────────
+
+describe('TEST 3–6 review-queue fixes', () => {
+  it('"Cool tub refresh" is a hot-tub refresh, standard-priced review-free', () => {
+    // Real line (Wtn Pine Top 820, TEST 3): the variant spelling fell through
+    // to the clean path and billed the client the full $395 Client Charged on
+    // a $30 refresh.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Cool tub refresh', rawAmount: 30, rawDateMentioned: null })], { tasks: [] }),
+    )
+    expect(lines[0].serviceType).toBe('Hot Tub Refresh Requested by Guest')
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].cleanerPayAmount).toBe(30)
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('"Towell deliver" is a priced delivery, not an under-billed clean', () => {
+    // Real line (Janine Patterson, TEST 6): $20 towel delivery went down the
+    // clean path, queued, and would have billed the $269 clean rate.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Towell deliver', rawAmount: 20, rawDateMentioned: null })], { tasks: [] }),
+    )
+    expect(lines[0].serviceType).toBe('Reimbursement')
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].cleanerPayAmount).toBe(20)
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('"deliver extra supplies" routes to the priced delivery type, not generic Extra Cleaning', () => {
+    // Real line (Jerry Pegram, TEST 4): /\bextra\b/ used to win, landing it on
+    // the unpriced pass-through-and-review path.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Deliver extra supplies requested by the guest', rawAmount: 25, rawDateMentioned: null })], { tasks: [] }),
+    )
+    expect(lines[0].serviceType).toBe('Reimbursement')
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('"doh hair" splits a Pet Fee off the clean', () => {
+    // Real line (Michael Hooper, TEST 5): Busy Bee's misspelling of "dog
+    // hair" — without the rule the $20 overage queued as an unexplained
+    // discrepancy.
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 120, rawNoteText: 'Regular clean plus doh hair' })]),
+    )
+    expect(lines).toHaveLength(2)
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    const extra = lines.find(l => l.lineKind === 'extra')!
+    expect(base.cleanerPayAmount).toBe(100)
+    expect(extra.serviceType).toBe('Pet Fee')
+    expect(extra.cleanerPayAmount).toBe(20)
+    expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
+  })
+
+  it('a bare "Linen pull" billed under half the rate is the standalone service', () => {
+    // Real lines (Ken Brown $40 vs $150 rate, Brad Spurgin $40 vs $84.70):
+    // TITLE_RULES made these base cleans, so they queued below-half-rate and
+    // billed the client the full Client Charged for a $40 pull.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Linen pull', rawAmount: 40 })]),
+    )
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Linen Pull')
+    expect(lines[0].cleanerPayAmount).toBe(40)
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('"Vacancy clean" billed under half the rate is the touch-up service', () => {
+    // Real line (Glen Peterson, TEST 5): $25 against a $96.60 rate.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Vacancy clean', rawAmount: 25 })]),
+    )
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Vacancy Clean / Touch Up Clean')
+    expect(lines[0].cleanerPayAmount).toBe(25)
+    expect(lines[0].clientChargeAmount).toBe(55)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('a linen pull billed at the clean rate stays on the clean path', () => {
+    // The half-rate guard: billed at rate means the vendor did the full
+    // last-clean work, whatever the note says.
+    const { lines } = reconcile(
+      input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Linen pull', rawAmount: 100 })]),
+    )
+    expect(lines[0].lineKind).toBe('clean')
+    expect(lines[0].cleanerPayAmount).toBe(100)
+    expect(lines[0].clientChargeAmount).toBe(150)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('"last clean & linen pull" never reroutes to the standalone extra', () => {
+    const { lines } = reconcile(
+      input([vendorLine({ rawNoteText: 'Last clean and linen pull', rawAmount: 100, rawDateMentioned: null })], { tasks: [] }),
+    )
+    expect(lines[0].lineKind).toBe('clean')
+    expect(lines[0].serviceType).toBe('Last Clean & Linen Pull')
+  })
+})
 
 describe('standardExtraCharge', () => {
   it('bills the standard charge for the normal case', () => {
