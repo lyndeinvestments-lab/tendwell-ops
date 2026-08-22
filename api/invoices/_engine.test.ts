@@ -6,9 +6,11 @@ import {
   extraTitleFromNote,
   FLAGS,
   generateDraftLines,
+  effectiveNoteText,
   isExcludedTitle,
   isOperatingExpenseText,
   matchToTask,
+  noteFromPropertyCell,
   reconcile,
   resolveProperty,
   round2,
@@ -812,5 +814,104 @@ describe('inspection labor lines', () => {
     expect(lines[0].cleanerPayAmount).toBe(1030.4)
     // Never billed onward to a client.
     expect(lines[0].clientChargeAmount).toBeNull()
+  })
+})
+
+// ─── Notes crammed into the property cell ────────────────────────────────────
+
+describe('noteFromPropertyCell', () => {
+  it('returns the segment after the separator', () => {
+    expect(noteFromPropertyCell('Angela Mcville - Trash pick up request by guest'))
+      .toBe('Trash pick up request by guest')
+    expect(noteFromPropertyCell('Wtn Pine Top 820 - Hot tub refresh')).toBe('Hot tub refresh')
+  })
+
+  it('returns null when there is no separator or no tail', () => {
+    expect(noteFromPropertyCell('Kaley Eversgerd 933')).toBeNull()
+    expect(noteFromPropertyCell('Kaley Eversgerd 933 - ')).toBeNull()
+    expect(noteFromPropertyCell(null)).toBeNull()
+  })
+
+  it('never reads a property NAME as a service note', () => {
+    // Only the tail is returned, so "CTN - 887 Sourwood" yields the address
+    // half, not a keyword hit on the name.
+    expect(noteFromPropertyCell('CTN - 887 Sourwood')).toBe('887 Sourwood')
+  })
+
+  it('prefers the real note column when the vendor filled it in', () => {
+    expect(effectiveNoteText({ rawNoteText: 'Pet fee', rawPropertyText: 'X - Trash' })).toBe('Pet fee')
+    expect(effectiveNoteText({ rawNoteText: null, rawPropertyText: 'X - Trash' })).toBe('Trash')
+  })
+})
+
+describe('extras the vendor wrote into the property cell', () => {
+  // Regression: these resolved to a property (via the note-peel fallback or a
+  // human-confirmed alias), no extra was detected because rawNoteText is NULL,
+  // so they became base cleans and the Cleaner Pay floor inflated them. On run
+  // "Test 1" five such lines turned $130 invoiced into $957 of pay.
+  const TASKS2: TaskRow[] = [
+    { externalId: 't1', propertyId: 1, dueDate: '2026-08-05', title: 'Turn Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+  ]
+
+  it('bills a $30 trash pickup as a $30 extra, not a full clean', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Michael Rohwer 2455 - Trash pick up request by guest',
+      rawNoteText: null,
+      rawAmount: 30,
+    })], { tasks: TASKS2 }))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Excessive Trash Pickup')
+    // Pay and charge stay at the invoiced $30 — NOT the property's $100 rate
+    // and $150 client charge.
+    expect(lines[0].cleanerPayAmount).toBe(30)
+    expect(lines[0].clientChargeAmount).toBe(30)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('bills a hot tub refresh as an extra', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Michael Rohwer 2455 - Hot tub refresh', rawNoteText: null, rawAmount: 30,
+    })], { tasks: TASKS2 }))
+    expect(lines[0].serviceType).toBe('Hot Tub Refresh Requested by Guest')
+    expect(lines[0].cleanerPayAmount).toBe(30)
+  })
+
+  it('bills a touch up as an extra', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Michael Rohwer 2455 - Touch up', rawNoteText: null, rawAmount: 20,
+    })], { tasks: TASKS2 }))
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].cleanerPayAmount).toBe(20)
+  })
+
+  it('leaves a plain clean line alone', () => {
+    // No separator, no note: still an ordinary rated clean.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 100 })], { tasks: TASKS2 }))
+    expect(lines[0].lineKind).toBe('clean')
+    expect(lines[0].cleanerPayAmount).toBe(100)
+  })
+})
+
+describe('the rate floor requires an evidenced clean', () => {
+  it('does not top up a line with no matched task', () => {
+    // Real case: line 71 billed $87 on a day whose only Breezeway task was a
+    // Mid-Stay Trash Pickup. Topping up to the $100 rate would manufacture pay
+    // for a clean we have no record of.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 87, rawDateMentioned: '2026-08-05' })], { tasks: [] }))
+    expect(lines[0].flags).toContain(FLAGS.UNMATCHED_TASK)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].cleanerPayAmount).toBe(87)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('still tops up when the clean is evidenced', () => {
+    const tasks: TaskRow[] = [
+      { externalId: 't', propertyId: 1, dueDate: '2026-08-05', title: 'Turn Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 87, rawDateMentioned: '2026-08-05' })], { tasks }))
+    expect(lines[0].flags).toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].cleanerPayAmount).toBe(100)
   })
 })

@@ -376,6 +376,34 @@ function stripNoteSuffix(text: string): string | null {
 
 const NOTE_SUFFIX_STRIPS = 2
 
+/** The note the vendor typed into the PROPERTY cell — the tail of
+ *  "Angela Mcville - Trash pick up request by guest". These lines arrive with
+ *  `rawNoteText` NULL, so every note-driven rule (extra detection, reason
+ *  extraction, deep detection, date extraction) saw nothing and the line fell
+ *  through to the base-clean path.
+ *
+ *  That was benign while such lines stayed unresolved. Once the property
+ *  resolved (via the note-peel fallback or a human-confirmed alias) they became
+ *  base cleans and the Cleaner Pay floor inflated them to a full clean: a $30
+ *  trash pickup paid $400 and billed the client $675. Five lines on run
+ *  "Test 1" turned $130 of invoiced extras into $957 of pay.
+ *
+ *  Only the segment AFTER the separator is returned, so a property name that
+ *  merely contains a keyword can never be read as a service note. */
+export function noteFromPropertyCell(text: string | null | undefined): string | null {
+  if (!text) return null
+  const idx = text.lastIndexOf(' - ')
+  if (idx < 0) return null
+  const tail = text.slice(idx + 3).trim()
+  return tail.length > 0 ? tail : null
+}
+
+/** The note text every note-driven rule should read: the note column when the
+ *  vendor filled it in, else whatever they crammed into the property cell. */
+export function effectiveNoteText(raw: { rawNoteText?: string | null; rawPropertyText?: string | null }): string | null {
+  return raw.rawNoteText ?? noteFromPropertyCell(raw.rawPropertyText)
+}
+
 export function resolveProperty(
   rawText: string | null,
   aliases: AliasRow[],
@@ -596,6 +624,9 @@ export function classifyLine(
   }
 
   const text = `${raw.rawPropertyText ?? ''} ${raw.rawNoteText ?? ''}`
+  // Reads the note column when present, else the note glued into the property
+  // cell — see noteFromPropertyCell.
+  const noteText = effectiveNoteText(raw)
 
   // Credits/refunds (negative amounts) — the spec doesn't define how a vendor
   // credit maps to AR, so never guess: pass the amount through to the AP side
@@ -605,7 +636,7 @@ export function classifyLine(
     line.serviceType = 'Reimbursement'
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = null
-    return [withChannel(requireReason(needsReview(line, FLAGS.CREDIT_LINE), raw.rawNoteText), property)]
+    return [withChannel(requireReason(needsReview(line, FLAGS.CREDIT_LINE), noteText), property)]
   }
 
   // Unresolved property: bulk/ops-expense text → operating expense list;
@@ -647,7 +678,7 @@ export function classifyLine(
     (matchedTask ? standardizeTitle(matchedTask.title) : null) ??
     standardizeTitle(raw.rawNoteText) ??
     standardizeTitle(raw.rawPropertyText)
-  const noteExtra = extraTitleFromNote(raw.rawNoteText)
+  const noteExtra = extraTitleFromNote(noteText)
   if (!matchedTask && line.lineKind !== 'operating_expense') {
     line = flag(line, FLAGS.UNMATCHED_TASK)
   }
@@ -733,7 +764,7 @@ export function classifyLine(
       // invoiced amount and mark it so the review UI shows it. Finance also
       // requires a stated reason on Double Clean lines.
       line.clientChargeAmount = round2(raw.rawAmount)
-      line = requireReason(flag(line, FLAGS.BILLED_WHOLE), raw.rawNoteText)
+      line = requireReason(flag(line, FLAGS.BILLED_WHOLE), noteText)
     }
     return [withChannel(line, property)]
   }
@@ -753,7 +784,7 @@ export function classifyLine(
     if (line.serviceType === 'Onboarding Clean') {
       return [withChannel(needsReview(line, FLAGS.UNMATCHED_TASK), property)]
     }
-    return [withChannel(requireReason(line, raw.rawNoteText), property)]
+    return [withChannel(requireReason(line, noteText), property)]
   }
 
   // Base clean path.
@@ -808,7 +839,7 @@ export function classifyLine(
       flags: [FLAGS.COMBINED_SPLIT],
       reviewStatus: 'ok',
     }
-    return [withChannel(base, property), withChannel(requireReason(extra, raw.rawNoteText), property)]
+    return [withChannel(base, property), withChannel(requireReason(extra, noteText), property)]
   }
 
   // Underage WITH an explaining extra-note → the base clean was billed
@@ -820,7 +851,7 @@ export function classifyLine(
     line.serviceType = noteExtra
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = round2(raw.rawAmount)
-    return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), raw.rawNoteText), property)]
+    return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), noteText), property)]
   }
 
   // Amount differs from Cleaner Pay with NO explaining note → discrepancy.
@@ -831,7 +862,15 @@ export function classifyLine(
   // the review question and stays visible; the client side bills at Client
   // Charged regardless.
   line.lineKind = 'clean'
-  const ap = apPayForRatedLine(raw.rawAmount, cleanerPay)
+  // The rate is the contract price for a clean, so the floor only applies when
+  // a clean is actually evidenced. With no matched task, topping up would
+  // manufacture pay for work we have no record of — real case: line 71 of run
+  // "Test 1" billed $87 on a day whose only Breezeway task was a Mid-Stay
+  // Trash Pickup, and the floor turned it into $100 pay on a $175 client
+  // charge. Unmatched lines pay what was billed and stay in review.
+  const ap = matchedTask != null
+    ? apPayForRatedLine(raw.rawAmount, cleanerPay)
+    : { amount: round2(raw.rawAmount), toppedUp: false }
   line.cleanerPayAmount = ap.amount
   line.clientChargeAmount = round2(ceCharged)
   if (ap.toppedUp) line = flag(line, FLAGS.PAID_AT_RATE)
@@ -898,8 +937,9 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
       threshold,
     )
     const property = resolution.propertyId != null ? propsById.get(resolution.propertyId) ?? null : null
-    const noteDate = raw.rawDateMentioned ?? extractDateFromText(raw.rawNoteText)
-    const preferDeep = /deep\s*clean/i.test(`${raw.rawNoteText ?? ''}`)
+    const noteText = effectiveNoteText(raw)
+    const noteDate = raw.rawDateMentioned ?? extractDateFromText(noteText)
+    const preferDeep = /deep\s*clean/i.test(noteText ?? '')
     const task = matchToTask(resolution.propertyId, noteDate ?? null, input.tasks, preferDeep)
     let classified = classifyLine({ ...raw, rawDateMentioned: noteDate }, resolution, property, task, splitSeq)
     if (raw.source === 'generated') {
