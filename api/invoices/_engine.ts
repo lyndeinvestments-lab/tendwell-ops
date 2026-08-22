@@ -111,6 +111,9 @@ export const FLAGS = {
   // reason the Ramp total exceeds the vendor's invoice total — without it that
   // gap looks like a parsing error.
   PAID_AT_RATE: 'paid_at_rate',
+  // The client charge on this extra came from STANDARD_EXTRA_PRICING rather
+  // than the vendor's invoiced amount. Informational — explains charge ≠ raw.
+  STANDARD_PRICED: 'standard_priced',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -258,6 +261,55 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
     if (rule.re.test(text)) return { title: rule.title, isExtra: rule.extra ?? false }
   }
   return null
+}
+
+// ─── Standard extra pricing ──────────────────────────────────────────────────
+//
+// Jordan 2026-08-22: "we should be profitable on all tasks" — a pass-through
+// extra that bills the client exactly the vendor's cost has zero margin, so
+// standalone extras now bill a STANDARD client charge instead of the invoiced
+// amount. Rates derive from the NonStandard_Charge_Trends workbook (6 Busy Bee
+// invoices vs 11 Tendwell→Haven invoices): the historical "Avg We Bill"
+// rounded UP to the nearest $5, per Jordan's rule ("higher if revenue").
+// costRef is the historical "Avg Cost (to us)" rounded to the NEAREST $5
+// ("normal rounding if cost") — reference only; pay stays what the vendor
+// billed (cost genuinely tiers, e.g. light vs heavy trash, so a fixed pay
+// would be wrong).
+//
+//   type                        avg bill → charge   avg cost → costRef
+//   Hot Tub Refresh                50.00 → 50        32.31 → 30
+//   Excessive Trash Pickup        46.11 → 50        30.31 light / 44.72 heavy → 30/45
+//   Touch-up Clean                52.60 → 55        26.82 → 25
+//   Linen Pull                    50.00 → 50        40.00 → 40
+//   Delivery/Supplies/Reimburse   47.93 → 50        27.00 → 25
+//   Pet / Dog-hair Fee            44.44 → 45        23.50 → 25
+//
+// Types with no history (Trip Fee, Mailed Left Items, Extra Cleaning /
+// maintenance, Double Clean) are deliberately absent: they keep the old
+// pass-through-and-review behavior rather than getting an invented price.
+export const STANDARD_EXTRA_PRICING: Readonly<Record<string, { charge: number; costRef: number }>> = {
+  'Hot Tub Refresh Requested by Guest': { charge: 50, costRef: 30 },
+  'Excessive Trash Pickup': { charge: 50, costRef: 30 },
+  'Vacancy Clean / Touch Up Clean': { charge: 55, costRef: 25 },
+  'Linen Pull': { charge: 50, costRef: 40 },
+  'Reimbursement': { charge: 50, costRef: 25 },
+  'Pet Fee': { charge: 45, costRef: 25 },
+}
+
+/** Client charge for a standalone extra. Normal case: the standard price, no
+ *  review needed — that's the point of standardizing. When the vendor's cost
+ *  meets or exceeds the standard charge, the standard price would be
+ *  unprofitable, so the charge floors at the next $5 above cost and the line
+ *  goes to review for a human to set a real price. Unpriced types return null
+ *  and keep their old behavior. */
+export function standardExtraCharge(
+  serviceType: string | null,
+  rawAmount: number,
+): { charge: number; review: boolean } | null {
+  const std = serviceType != null ? STANDARD_EXTRA_PRICING[serviceType] : undefined
+  if (!std) return null
+  if (rawAmount < std.charge - PENNY) return { charge: std.charge, review: false }
+  return { charge: Math.ceil(rawAmount / 5) * 5, review: true }
 }
 
 export function extraTitleFromNote(note: string | null): string | null {
@@ -780,7 +832,14 @@ export function classifyLine(
     line.lineKind = 'extra'
     line.serviceType = noteExtra ?? std?.title ?? 'Extra Cleaning'
     line.cleanerPayAmount = round2(raw.rawAmount)
-    line.clientChargeAmount = round2(raw.rawAmount)
+    // Standard-priced types bill the standard client charge; everything else
+    // passes the invoiced amount through as before.
+    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
+    line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
+    if (priced) {
+      line = flag(line, FLAGS.STANDARD_PRICED)
+      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+    }
     // A bare "onboarding" note with no matched task is ambiguous: a WHOLE
     // onboarding clean should bill at Client Charged + $50 (two rows), not at
     // the vendor amount. Never guess between the two — review decides.
@@ -846,13 +905,22 @@ export function classifyLine(
   }
 
   // Underage WITH an explaining extra-note → the base clean was billed
-  // elsewhere; treat this line as a standalone extra (never a negative
-  // split). Still a review case: a spurious keyword hit here would otherwise
-  // silently underpay the vendor and bill the client a fabricated extra.
+  // elsewhere; treat this line as a standalone extra (never a negative split).
+  // Standard-priced types (Jordan 2026-08-22) bill the standard charge and
+  // need no review — a routine $30 hot-tub refresh is exactly what the price
+  // list is for. Unpriced types keep the review: a spurious keyword hit would
+  // otherwise silently underpay the vendor and bill a fabricated extra.
   if (diff < 0 && noteExtra != null) {
     line.lineKind = 'extra'
     line.serviceType = noteExtra
     line.cleanerPayAmount = round2(raw.rawAmount)
+    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
+    if (priced) {
+      line.clientChargeAmount = round2(priced.charge)
+      line = flag(line, FLAGS.STANDARD_PRICED)
+      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+      return [withChannel(requireReason(line, noteText), property)]
+    }
     line.clientChargeAmount = round2(raw.rawAmount)
     return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), noteText), property)]
   }
