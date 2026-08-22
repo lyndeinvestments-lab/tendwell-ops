@@ -10,6 +10,7 @@ import {
   isExcludedTitle,
   isOperatingExpenseText,
   matchToTask,
+  standardExtraCharge,
   noteFromPropertyCell,
   reconcile,
   resolveProperty,
@@ -219,16 +220,32 @@ describe('reconcile — money rules', () => {
     expect(base.splitGroup).toBe(extra.splitGroup)
   })
 
-  it('negative split → whole line becomes a standalone extra (flagged for review), never a negative row', () => {
+  it('negative split → whole line becomes a standalone extra, never a negative row', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawAmount: 40, rawNoteText: 'extra trash pickup only' })]),
     )
     expect(lines).toHaveLength(1)
     expect(lines[0].lineKind).toBe('extra')
     expect(lines[0].cleanerPayAmount).toBe(40)
+    // Standard-priced type (Jordan 2026-08-22): bills the $50 standard charge
+    // and needs no review — the price list exists so routine extras flow.
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].flags).toContain(FLAGS.STANDARD_PRICED)
+    expect(lines[0].reviewStatus).toBe('ok')
+    expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+  })
+
+  it('negative split on an UNPRICED extra type still goes to review', () => {
+    // No standard price for generic Extra Cleaning → the old guard stands: a
+    // spurious keyword hit would silently underpay the vendor.
+    const { lines } = reconcile(
+      input([vendorLine({ rawAmount: 40, rawNoteText: 'extra work only' })]),
+    )
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Extra Cleaning')
+    expect(lines[0].clientChargeAmount).toBe(40)
     expect(lines[0].flags).toContain(FLAGS.NEGATIVE_SPLIT_STANDALONE)
     expect(lines[0].reviewStatus).toBe('needs_review')
-    expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
   })
 
   it('does NOT relabel an underpayment as an extra on a spurious keyword ("no pets seen")', () => {
@@ -532,11 +549,13 @@ describe('reason-required extras', () => {
   it('keeps a Pet Fee with a stated reason out of the review queue', () => {
     // date outside any task window → standalone extra, not an underage split
     const { lines } = reconcile(
-      input([vendorLine({ rawAmount: 50, rawNoteText: 'Pet fee — excess dog hair', rawDateMentioned: '2026-08-20' })]),
+      input([vendorLine({ rawAmount: 30, rawNoteText: 'Pet fee — excess dog hair', rawDateMentioned: '2026-08-20' })]),
     )
     expect(lines).toHaveLength(1)
     expect(lines[0].serviceType).toBe('Pet Fee')
     expect(lines[0].flags).not.toContain(FLAGS.REASON_REQUIRED)
+    // $30 cost bills the $45 standard Pet Fee charge.
+    expect(lines[0].clientChargeAmount).toBe(45)
     expect(lines[0].reviewStatus).toBe('ok')
   })
 
@@ -869,12 +888,12 @@ describe('extras the vendor wrote into the property cell', () => {
     expect(lines).toHaveLength(1)
     expect(lines[0].lineKind).toBe('extra')
     expect(lines[0].serviceType).toBe('Excessive Trash Pickup')
-    // Pay and charge stay at the invoiced $30 — NOT the property's $100 rate
-    // and $150 client charge.
+    // Pay stays at the invoiced $30 — NOT the property's $100 rate — and the
+    // client bills the $50 standard trash-pickup charge, review-free.
     expect(lines[0].cleanerPayAmount).toBe(30)
-    expect(lines[0].clientChargeAmount).toBe(30)
+    expect(lines[0].clientChargeAmount).toBe(50)
     expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
-    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].reviewStatus).toBe('ok')
   })
 
   it('bills a hot tub refresh as an extra', () => {
@@ -940,5 +959,37 @@ describe('maintenance charges in the property cell', () => {
     expect(lines[0].cleanerPayAmount).toBe(50)
     expect(lines[0].clientChargeAmount).toBe(50)
     expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+  })
+})
+
+// ─── Standard extra pricing ──────────────────────────────────────────────────
+
+describe('standardExtraCharge', () => {
+  it('bills the standard charge for the normal case', () => {
+    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)).toEqual({ charge: 50, review: false })
+    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 20)).toEqual({ charge: 55, review: false })
+    expect(standardExtraCharge('Pet Fee', 23.5)).toEqual({ charge: 45, review: false })
+    expect(standardExtraCharge('Excessive Trash Pickup', 44.72)).toEqual({ charge: 50, review: false })
+  })
+
+  it('floors at the next $5 above cost and asks for review when the standard would be unprofitable', () => {
+    // "We should be profitable on all tasks": a $62 hot-tub cost can't bill
+    // the $50 standard, so the system won't invent a price — a human sets one.
+    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 62)).toEqual({ charge: 65, review: true })
+    // At exactly the standard charge there is zero margin → same treatment.
+    expect(standardExtraCharge('Excessive Trash Pickup', 50)).toEqual({ charge: 50, review: true })
+  })
+
+  it('returns null for types with no price history', () => {
+    expect(standardExtraCharge('Extra Cleaning', 50)).toBeNull()
+    expect(standardExtraCharge('Trip Fee', 30)).toBeNull()
+    expect(standardExtraCharge(null, 30)).toBeNull()
+  })
+
+  it('prices the real lines 77/82/85 from run "Test 1"', () => {
+    // Hot tub $30 → bill 50; trash $30 → bill 50; touch-up $30 → bill 55.
+    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)!.charge).toBe(50)
+    expect(standardExtraCharge('Excessive Trash Pickup', 30)!.charge).toBe(50)
+    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 30)!.charge).toBe(55)
   })
 })

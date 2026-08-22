@@ -88,6 +88,7 @@ export const FLAG_LABELS: Record<string, string> = {
   credit_line: 'Credit line',
   reason_required: 'Reason required',
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
+  standard_priced: 'Standard price applied',
 }
 
 export function flagLabel(flag: string): string {
