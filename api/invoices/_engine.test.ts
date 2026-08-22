@@ -303,44 +303,49 @@ describe('reconcile — money rules', () => {
     expect(lines[0].clientChargeAmount).toBe(600) // no deep_clean_3x_ce → ce 200 × 3
   })
 
-  it('bills Onboarding Clean as TWO rows with the $50 on BOTH sides (pay + charge)', () => {
-    // Finance requires extras broken out from the clean fee (Nina's #1085
-    // shape) and the cleaner is paid $50 above Cleaner Pay for onboarding
-    // (Jordan 2026-08-17). Vendor billed pay + 50 → fully clean.
+  it('bills Onboarding Clean as TWO rows with the $50 on the CLIENT side only', () => {
+    // Jordan 2026-08-22: the $50 onboarding surcharge is client-only — if the
+    // vendor didn't bill it, we don't pay it. The split exists solely because
+    // the QBO invoice needs the surcharge broken out (Nina's #1085 shape);
+    // Ramp and bill.com collapse the group back to one line. Vendor billed the
+    // plain rate → fully clean, pay = rate.
+    const tasks: TaskRow[] = [
+      { externalId: 'ob', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
     const { lines, summary } = reconcile(
-      input([vendorLine({ rawAmount: 150, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
+      input([vendorLine({ rawAmount: 100, rawNoteText: 'Onboarding clean for new cabin' })], { tasks }),
     )
     expect(lines).toHaveLength(2)
     const [base, surcharge] = lines
     expect(base.serviceType).toBe('Onboarding Clean')
     expect(base.lineKind).toBe('combined_split')
-    expect(base.cleanerPayAmount).toBe(100) // cleaner_pay rate
+    expect(base.cleanerPayAmount).toBe(100) // the rate — exactly what was billed
     expect(base.clientChargeAmount).toBe(150) // ce_charged
+    expect(base.reviewStatus).toBe('ok')
     expect(surcharge.serviceType).toBe('Onboarding Clean')
     expect(surcharge.lineKind).toBe('extra')
-    expect(surcharge.cleanerPayAmount).toBe(50) // cleaner gets the surcharge too
+    expect(surcharge.cleanerPayAmount).toBeNull() // NOT paid to the vendor
     expect(surcharge.clientChargeAmount).toBe(50)
     expect(surcharge.rawAmount).toBe(0) // not part of the vendor's stated subtotal
     expect(surcharge.splitGroup).toBe(base.splitGroup)
-    expect(base.reviewStatus).toBe('ok') // 150 = 100 pay + 50 surcharge
-    expect(summary.totalCleanerPay).toBe(150) // 100 + 50
+    expect(summary.totalCleanerPay).toBe(100) // rate only, no +50
     expect(summary.totalClientCharge).toBe(200) // 150 + 50
     expect(summary.netDiscrepancy).toBe(0)
   })
 
-  it('flags an onboarding line whose vendor amount is not Cleaner Pay + $50', () => {
+  it('flags an onboarding line whose vendor amount is not the Cleaner Pay rate', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawAmount: 253.52, rawNoteText: 'Onboarding clean on 8/20/26 for new cabin', rawDateMentioned: null })]),
     )
     const base = lines.find(l => l.lineKind === 'combined_split')!
     expect(base.flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
     expect(base.reviewStatus).toBe('needs_review')
-    // 253.52 − 50 = 203.52 base, which is above this property's rate, so no
-    // top-up applies and the group still sums to the vendor's amount.
-    expect(base.cleanerPayAmount).toBe(203.52)
+    // Over-billed vs the $100 rate: pay what was billed, never cut the invoice.
+    expect(base.cleanerPayAmount).toBe(253.52)
     expect(base.flags).not.toContain(FLAGS.PAID_AT_RATE)
+    // The client-only surcharge never adds pay.
     const surcharge = lines.find(l => l.lineKind === 'extra')!
-    expect((base.cleanerPayAmount ?? 0) + (surcharge.cleanerPayAmount ?? 0)).toBe(253.52)
+    expect(surcharge.cleanerPayAmount).toBeNull()
   })
 
   // AP rule (Jordan 2026-08-21): the Cleaner Pay rate in Ops is the contract,
@@ -384,13 +389,15 @@ describe('reconcile — money rules', () => {
     expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
   })
 
-  it('generated drafts state Cleaner Pay + $50 for onboarding tasks (no self-flag on reconcile)', () => {
+  it('generated drafts state the plain Cleaner Pay for onboarding tasks (no self-flag on reconcile)', () => {
+    // The $50 surcharge is client-only, so the vendor's expected bill — and
+    // therefore the draft — is just the rate.
     const tasks: TaskRow[] = [
       { externalId: 'ob1', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
     ]
     const drafts = generateDraftLines(tasks, new Map(PROPS.map(p => [p.id, p])))
     expect(drafts).toHaveLength(1)
-    expect(drafts[0].rawAmount).toBe(150) // 100 cleaner_pay + 50
+    expect(drafts[0].rawAmount).toBe(100) // cleaner_pay, no +50
     const { lines } = reconcile(input(drafts, { tasks }))
     expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
   })
@@ -913,5 +920,25 @@ describe('the rate floor requires an evidenced clean', () => {
     const { lines } = reconcile(input([vendorLine({ rawAmount: 87, rawDateMentioned: '2026-08-05' })], { tasks }))
     expect(lines[0].flags).toContain(FLAGS.PAID_AT_RATE)
     expect(lines[0].cleanerPayAmount).toBe(100)
+  })
+})
+
+describe('maintenance charges in the property cell', () => {
+  it('passes a maintenance charge through at the invoiced amount, never the clean rate', () => {
+    // Real line 78: "Priya Dhawan 2534 - Maintenance work replace …", $50
+    // invoiced — the clean-rate floor paid $380 on it.
+    const tasks: TaskRow[] = [
+      { externalId: 't', propertyId: 1, dueDate: '2026-08-05', title: 'Turn Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Michael Rohwer 2455 - Maintenance work replace shower head',
+      rawNoteText: null,
+      rawAmount: 50,
+    })], { tasks }))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].cleanerPayAmount).toBe(50)
+    expect(lines[0].clientChargeAmount).toBe(50)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
   })
 })
