@@ -369,12 +369,51 @@ describe('reconcile — money rules', () => {
   // so it is a FLOOR on what we pay — an under-billing vendor is topped up to
   // rate. Above the rate we pay what was billed rather than cutting their
   // invoice. Net: AP = max(rate, invoiced), gap always flagged.
-  it('under-billed lines are topped up to the Cleaner Pay rate', () => {
-    const { lines } = reconcile(input([vendorLine({ rawAmount: 30 })]))
-    expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+  it('routine top-ups pay the rate with a flag and NO review', () => {
+    // Under-billed, task-matched, billed at least half the rate: Jordan's
+    // "pay is the bible" rule applying deterministically — flag for
+    // visibility, but ~30 such lines per month were pure review noise.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 60 })]))
     expect(lines[0].flags).toContain(FLAGS.PAID_AT_RATE)
-    expect(lines[0].cleanerPayAmount).toBe(100) // the rate, not the $30 billed
-    expect(lines[0].clientChargeAmount).toBe(150) // AR still at Client Charged
+    expect(lines[0].cleanerPayAmount).toBe(100) // the rate, not the $60 billed
+    expect(lines[0].clientChargeAmount).toBe(150)
+    expect(lines[0].reviewStatus).toBe('ok')
+    expect(lines[0].flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+  })
+
+  it('a line billed far below the rate is NOT topped up — it pays billed and asks a human', () => {
+    // Real case: $30 against a $140 rate is more likely a mislabeled extra
+    // with no note than a discounted clean; topping up would manufacture pay.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 30 })]))
+    expect(lines[0].cleanerPayAmount).toBe(30)
+    expect(lines[0].flags).not.toContain(FLAGS.PAID_AT_RATE)
+    expect(lines[0].flags).toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('treats a sub-dollar gap from the rate as an exact match, both directions', () => {
+    // Busy Bee bills whole dollars; Ops rates carry cents. Real queued pairs:
+    // $73.00 vs 73.08, $58.00 vs 58.52, $108.78 vs 108.00.
+    const cents: PropertyRates[] = [
+      { id: 1, name: 'Michael Rohwer 2455', ceCharged: 175, cleanerPay: 73.08, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    ]
+    const under = reconcile(input([vendorLine({ rawAmount: 73 })], { properties: cents })).lines[0]
+    expect(under.cleanerPayAmount).toBe(73.08) // pays the rate — the bible
+    expect(under.reviewStatus).toBe('ok')
+    expect(under.flags).not.toContain(FLAGS.DISCREPANCY_UNEXPLAINED)
+    const over = reconcile(input([vendorLine({ rawAmount: 73.99 })], { properties: cents })).lines[0]
+    expect(over.cleanerPayAmount).toBe(73.08)
+    expect(over.reviewStatus).toBe('ok')
+  })
+
+  it('a clean billed exactly at the contract rate passes with only the unmatched-task flag', () => {
+    // No task within the window, but the amount IS the contract — flag stays
+    // visible, review does not fire (11 such lines per run were noise).
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 100 })], { tasks: [] }))
+    expect(lines[0].flags).toContain(FLAGS.UNMATCHED_TASK)
+    expect(lines[0].cleanerPayAmount).toBe(100)
+    expect(lines[0].serviceType).toBe('Turn Clean')
+    expect(lines[0].reviewStatus).toBe('ok')
   })
 
   it('over-billed lines pay what the vendor billed, and are not marked paid_at_rate', () => {

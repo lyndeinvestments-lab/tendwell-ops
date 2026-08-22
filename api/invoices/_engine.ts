@@ -121,6 +121,13 @@ export const FUZZY_CONFIRM_THRESHOLD = 0.82
 // Amounts within this tolerance are "equal to the penny" (float guard).
 const PENNY = 0.005
 
+// Busy Bee bills whole dollars while Ops rates carry cents (58.52, 73.08,
+// 90.02, 115.08…), so a sub-dollar gap between invoiced and rate is rounding,
+// not a discrepancy — 11 lines across runs "Test 1"/"Test 2" were queued for
+// gaps of 2¢–78¢. Within this band the line is an exact match and pays the
+// rate (the bible amount), in both directions.
+const RATE_ROUNDING_TOLERANCE = 1.0
+
 // Self-inspection / air-filter lines are excluded UNLESS within this many
 // dollars of the property's clean rate (mislabeled real clean).
 const RELABEL_TOLERANCE = 5
@@ -167,7 +174,9 @@ const OPERATING_EXPENSE_PATTERNS = [
   /toilet\s*paper/i,
   /paper\s*towel/i,
   /suppl(y|ies)/i,
-  /facilit/i,
+  // Busy Bee writes "Facilty" (real line: 'Facilty Hour 720 - 40 hours',
+  // $720 of labor that sat unresolved with no pay) — accept the misspelling.
+  /\bfacil/i,
   /office/i,
   /warehouse/i,
   /in?spection\s*work/i,
@@ -232,6 +241,12 @@ const EXTRA_RULES: TitleRule[] = [
   // paid $380 on it. Pass through as a reason-required extra so the work
   // description rides in the exported title.
   { re: /\bmainten[ae]nce\b/i, title: 'Extra Cleaning', keepInReason: true },
+  // "Regular clean fees plus deep on the living room area all the glass"
+  // (real line 61, run "Test 2"): partial deep work bundled onto a clean.
+  // A note that is ENTIRELY a deep clean never reaches EXTRA_RULES — the
+  // deep-clean branch runs first on /deep\s*clean/ — so a bare "deep" here
+  // only ever prices the bundled overage.
+  { re: /\bdeep\b/i, title: 'Extra Cleaning', keepInReason: true },
   // "Regular clean plus onboarding" (real Busy Bee note, I260810797 Luning
   // Wang) — the onboarding surcharge splits off the base clean like any other
   // note-explained overage. A note that is ENTIRELY an onboarding clean hits
@@ -449,7 +464,11 @@ const NOTE_SUFFIX_STRIPS = 2
  *  merely contains a keyword can never be read as a service note. */
 export function noteFromPropertyCell(text: string | null | undefined): string | null {
   if (!text) return null
-  const idx = text.lastIndexOf(' - ')
+  // FIRST separator, not last: vendors write multi-dash notes ("Lou And Elva
+  // Romano - They leave to much dog hair and to much extra trash plus regular
+  // - clean") and the last-segment read returned just "clean", hiding every
+  // keyword. The tail may still contain dashes — keyword scans don't care.
+  const idx = text.indexOf(' - ')
   if (idx < 0) return null
   const tail = text.slice(idx + 3).trim()
   return tail.length > 0 ? tail : null
@@ -795,7 +814,7 @@ export function classifyLine(
         clientChargeAmount: round2(ceCharged),
         flags: [...line.flags, FLAGS.COMBINED_SPLIT, ...(obAp.toppedUp ? [FLAGS.PAID_AT_RATE] : [])],
       }
-      if (Math.abs(raw.rawAmount - cleanerPay) > PENNY) {
+      if (Math.abs(raw.rawAmount - cleanerPay) > RATE_ROUNDING_TOLERANCE) {
         base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
       }
       const surcharge: EngineLine = {
@@ -849,11 +868,13 @@ export function classifyLine(
     return [withChannel(requireReason(line, noteText), property)]
   }
 
-  // Base clean path.
+  // Base clean path. (The unmatched-task review is applied further down, so
+  // that a line billed exactly at the contract rate can pass with the flag
+  // only — see the tolerance branch.)
   line.serviceType = std?.title ?? (matchedTask ? 'Turn Clean' : null)
-  if (line.serviceType == null) line = needsReview(line, FLAGS.UNMATCHED_TASK)
 
   if (cleanerPay == null || ceCharged == null || cleanerPay <= 0 || ceCharged <= 0) {
+    if (line.serviceType == null) line = needsReview(line, FLAGS.UNMATCHED_TASK)
     line.lineKind = 'clean'
     // The rate is the authority for AP, so with no rate on file there is no
     // authoritative amount — leave pay blank rather than copying the invoice.
@@ -867,13 +888,20 @@ export function classifyLine(
 
   const diff = round2(raw.rawAmount - cleanerPay)
 
-  // Exact match: simple base clean at Client Charged.
-  if (Math.abs(diff) <= PENNY) {
+  // Exact match (within the rounding band): base clean at Client Charged,
+  // paying the rate. This holds even with NO task record — the vendor billing
+  // exactly the contract rate is the strongest signal the clean was real, so
+  // the unmatched_task flag stays visible but doesn't queue the line (Jordan
+  // 2026-08-22 — 11 such lines per run is review noise, not signal).
+  if (Math.abs(diff) <= RATE_ROUNDING_TOLERANCE) {
     line.lineKind = 'clean'
+    line.serviceType = line.serviceType ?? 'Turn Clean'
     line.cleanerPayAmount = round2(cleanerPay)
     line.clientChargeAmount = round2(ceCharged)
     return [withChannel(line, property)]
   }
+
+  if (line.serviceType == null) line = needsReview(line, FLAGS.UNMATCHED_TASK)
 
   // Overage WITH an explaining note → combined line: split into base @ Client
   // Charged + extra = invoiced − Cleaner Pay.
@@ -925,26 +953,33 @@ export function classifyLine(
     return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), noteText), property)]
   }
 
-  // Amount differs from Cleaner Pay with NO explaining note → discrepancy.
-  // AP pays max(rate, invoiced) via apPayForRatedLine: the Ops rate is the
-  // contract and acts as a floor, so an under-billing vendor is still paid in
-  // full (flagged `paid_at_rate`), while an over-billing one is paid what they
-  // asked rather than having their invoice silently cut. Either way the gap is
-  // the review question and stays visible; the client side bills at Client
-  // Charged regardless.
+  // Amount differs from Cleaner Pay with NO explaining note.
   line.lineKind = 'clean'
-  // The rate is the contract price for a clean, so the floor only applies when
-  // a clean is actually evidenced. With no matched task, topping up would
-  // manufacture pay for work we have no record of — real case: line 71 of run
-  // "Test 1" billed $87 on a day whose only Breezeway task was a Mid-Stay
-  // Trash Pickup, and the floor turned it into $100 pay on a $175 client
-  // charge. Unmatched lines pay what was billed and stay in review.
-  const ap = matchedTask != null
-    ? apPayForRatedLine(raw.rawAmount, cleanerPay)
-    : { amount: round2(raw.rawAmount), toppedUp: false }
-  line.cleanerPayAmount = ap.amount
   line.clientChargeAmount = round2(ceCharged)
-  if (ap.toppedUp) line = flag(line, FLAGS.PAID_AT_RATE)
+
+  // Routine top-up: under-billed with the clean evidenced by a task, and the
+  // billed amount is at least half the rate. Pay the rate (the bible), keep
+  // the paid_at_rate flag for visibility, and DON'T queue it — this is
+  // Jordan's rule applying deterministically; ~30 such lines per month were
+  // pure review noise. The half-rate guard exists because a line billed far
+  // below rate (real case: $30 against a $140 rate) is more likely a
+  // mislabeled extra with no note than a discounted clean — topping that up
+  // would manufacture $110, so it pays what was billed and asks a human.
+  if (matchedTask != null && diff < 0) {
+    if (raw.rawAmount >= cleanerPay / 2) {
+      line.cleanerPayAmount = round2(cleanerPay)
+      return [withChannel(flag(line, FLAGS.PAID_AT_RATE), property)]
+    }
+    line.cleanerPayAmount = round2(raw.rawAmount)
+    return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
+  }
+
+  // Everything else stays a review question, paying what was billed: an
+  // over-billed line (why more than contract?), or an odd amount with no task
+  // record (real case: line 71 billed $87 on a day whose only Breezeway task
+  // was a Mid-Stay Trash Pickup — topping up would manufacture pay for work
+  // we have no record of).
+  line.cleanerPayAmount = round2(raw.rawAmount)
   return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
 }
 
