@@ -228,14 +228,22 @@ const TITLE_RULES: TitleRule[] = [
 const EXTRA_RULES: TitleRule[] = [
   { re: /double\s*clean/i, title: 'Double Clean' },
   { re: /trash/i, title: 'Excessive Trash Pickup' },
-  { re: /hot\s*tub/i, title: 'Hot Tub Refresh Requested by Guest' },
+  // "Cool tub refresh" (real line, run TEST 3) is Busy Bee for a hot-tub
+  // refresh — accept the variant and the bare "tub refresh" phrasing.
+  { re: /\b(?:hot|cool)\s*tub\b|\btub\s*refresh/i, title: 'Hot Tub Refresh Requested by Guest' },
   { re: /\bpet\s*(fee|charge)\b/i, title: 'Pet Fee' },
   // "Regular clean plus dog hair charge" (real Busy Bee note) — pet evidence
-  // without the word "pet"; must split as a Pet Fee line for QBO.
-  { re: /\bdog\s*hair\b/i, title: 'Pet Fee', keepInReason: true },
+  // without the word "pet"; must split as a Pet Fee line for QBO. "doh hair"
+  // (real line, run TEST 5) is their misspelling of the same thing.
+  { re: /\bd(?:og|oh)\s*hair\b/i, title: 'Pet Fee', keepInReason: true },
   { re: /trip\s*fee/i, title: 'Trip Fee' },
   { re: /reimburse/i, title: 'Reimbursement' },
   { re: /\b(left\s*items?|mailed)\b/i, title: 'Mailed Left Items by the Guest' },
+  // Guest-requested deliveries ("Towell deliver", "Deliver extra supplies
+  // requested by the guest" — real lines, runs TEST 4–6) are the priced
+  // Delivery/Supplies/Reimbursement service, not a generic Extra Cleaning:
+  // routed there they bill the standard $50 review-free instead of queueing.
+  { re: /\bdeliver|\bsuppl(?:y|ies)\b/i, title: 'Reimbursement', keepInReason: true },
   // "Maintenance work replace …" (real line 78, run "Test 1"): a $50 repair
   // charge with no rule here fell through to the clean path and the rate floor
   // paid $380 on it. Pass through as a reason-required extra so the work
@@ -800,12 +808,26 @@ export function classifyLine(
         return [withChannel(line, property)]
       }
       const group = splitSeq()
-      // Same pay rule as an ordinary rated clean: floor at the rate when the
-      // clean is evidenced by a task, billed amount otherwise; exact match at
-      // the rate is clean with no flags.
-      const obAp = matchedTask != null
-        ? apPayForRatedLine(raw.rawAmount, cleanerPay)
-        : { amount: round2(raw.rawAmount), toppedUp: false }
+      const obDiff = round2(raw.rawAmount - cleanerPay)
+      // Busy Bee sometimes bills the $50 onboarding surcharge themselves:
+      // every onboarding line on runs TEST 3–6 billed exactly rate + $50
+      // (Philip Graves 194.04→244.04, Kumar Sanam 160→210, Jessee Cook
+      // 189→239, Danae Downing 302.40→352). When billed = rate + 50 (within
+      // the rounding band) the surcharge row carries the $50 pay — they
+      // charged it, so we pay it — and nothing queues. Billed ≈ plain rate
+      // means they didn't charge it, and the surcharge stays client-only
+      // (Jordan 2026-08-22: "if they didn't charge it, we're not going to
+      // add it"). Any other amount is a real discrepancy.
+      const surchargeBilled = Math.abs(obDiff - 50) <= RATE_ROUNDING_TOLERANCE
+      const obExact = Math.abs(obDiff) <= RATE_ROUNDING_TOLERANCE
+      // Same pay rule as an ordinary rated clean on the discrepancy path:
+      // floor at the rate when the clean is evidenced by a task, billed
+      // amount otherwise.
+      const obAp = surchargeBilled || obExact
+        ? { amount: round2(cleanerPay), toppedUp: false }
+        : matchedTask != null
+          ? apPayForRatedLine(raw.rawAmount, cleanerPay)
+          : { amount: round2(raw.rawAmount), toppedUp: false }
       let base: EngineLine = {
         ...line,
         splitGroup: group,
@@ -814,7 +836,7 @@ export function classifyLine(
         clientChargeAmount: round2(ceCharged),
         flags: [...line.flags, FLAGS.COMBINED_SPLIT, ...(obAp.toppedUp ? [FLAGS.PAID_AT_RATE] : [])],
       }
-      if (Math.abs(raw.rawAmount - cleanerPay) > RATE_ROUNDING_TOLERANCE) {
+      if (!surchargeBilled && !obExact) {
         base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
       }
       const surcharge: EngineLine = {
@@ -827,7 +849,7 @@ export function classifyLine(
         serviceType: 'Onboarding Clean',
         rawAmount: 0,
         rawNoteText: 'Onboarding surcharge',
-        cleanerPayAmount: null,
+        cleanerPayAmount: surchargeBilled ? 50 : null,
         clientChargeAmount: 50,
         flags: [FLAGS.COMBINED_SPLIT],
         reviewStatus: 'ok',
@@ -884,6 +906,29 @@ export function classifyLine(
     line.cleanerPayAmount = null
     line.clientChargeAmount = ceCharged != null && ceCharged > 0 ? round2(ceCharged) : null
     return [withChannel(needsReview(line, FLAGS.MISSING_RATE), property)]
+  }
+
+  // A bare "Linen pull" or "Vacancy clean" billed well below the clean rate
+  // is the standalone SERVICE from Jordan's price list, not an under-billed
+  // clean (real lines, runs TEST 4–6: Ken Brown's $40 "Linen pull" queued as
+  // a below-half-rate discrepancy against his $150 clean rate and billed the
+  // client the full $300 Client Charged; Glen Peterson's $25 "Vacancy clean"
+  // likewise). Gated on the vendor's own text — a task title alone doesn't
+  // reroute — and on the half-rate guard, so a full Last Clean & Linen Pull
+  // billed at the clean rate stays on the clean path.
+  const textSaysBarePull = /linen\s*pull/i.test(text) && !/last\s*clean/i.test(text)
+  const textSaysTouchUp = /(vacancy\s*clean|touch\s*up)/i.test(text)
+  if ((textSaysBarePull || textSaysTouchUp) && raw.rawAmount < cleanerPay / 2) {
+    line.lineKind = 'extra'
+    line.serviceType = textSaysBarePull ? 'Linen Pull' : 'Vacancy Clean / Touch Up Clean'
+    line.cleanerPayAmount = round2(raw.rawAmount)
+    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
+    line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
+    if (priced) {
+      line = flag(line, FLAGS.STANDARD_PRICED)
+      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+    }
+    return [withChannel(line, property)]
   }
 
   const diff = round2(raw.rawAmount - cleanerPay)
