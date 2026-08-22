@@ -64,6 +64,12 @@ export interface EngineLine extends RawLine {
   billingChannel: BillingChannel | null
   flags: string[]
   reviewStatus: 'ok' | 'needs_review' | 'excluded'
+  // Plain-English explanation of WHY the line is flagged ("Billed $240 — $35
+  // above the Ops Cleaner Pay rate of $205"), written at the site that raises
+  // the flag. The UI shows it next to the badges so a reviewer doesn't have to
+  // know every property's rate by heart. First writer wins — the most specific
+  // classification message beats the generic channel fallback.
+  engineNote: string | null
 }
 
 export interface RunSummary {
@@ -652,6 +658,16 @@ function flag(line: EngineLine, f: string): EngineLine {
   return { ...line, flags: line.flags.includes(f) ? line.flags : [...line.flags, f] }
 }
 
+// Attach the human-readable "what's wrong" explanation. First writer wins:
+// the specific classification message (set deep in a branch) beats the
+// generic fallbacks applied later (e.g. withChannel's).
+function withNote(line: EngineLine, text: string): EngineLine {
+  if (line.engineNote != null) return line
+  return { ...line, engineNote: text }
+}
+
+const usd = (n: number) => `$${round2(n).toFixed(2)}`
+
 // Reason-required extras with no derivable reason go to review so a human
 // supplies one (review_note is appended to the exported service title).
 function requireReason(line: EngineLine, note: string | null): EngineLine {
@@ -660,7 +676,10 @@ function requireReason(line: EngineLine, note: string | null): EngineLine {
     REASON_REQUIRED_EXTRAS.has(line.serviceType) &&
     extraReasonFromNote(note, line.serviceType) == null
   ) {
-    return needsReview(line, FLAGS.REASON_REQUIRED)
+    return withNote(
+      needsReview(line, FLAGS.REASON_REQUIRED),
+      `${line.serviceType} needs a stated reason on the client invoice and none is derivable from the vendor's note — add one in Review.`,
+    )
   }
   return line
 }
@@ -679,6 +698,7 @@ function baseLine(raw: RawLine): EngineLine {
     billingChannel: null,
     flags: [],
     reviewStatus: 'ok',
+    engineNote: null,
   }
 }
 
@@ -686,7 +706,14 @@ function withChannel(line: EngineLine, property: PropertyRates | null): EngineLi
   const channel = property?.billingChannel ?? null
   const out = { ...line, billingChannel: channel ?? 'none' as BillingChannel }
   if (line.lineKind === 'operating_expense' || line.lineKind === 'excluded') return out
-  if (!channel || channel === 'none') return needsReview(out, FLAGS.NO_BILLING_CHANNEL)
+  if (!channel || channel === 'none') {
+    return withNote(
+      needsReview(out, FLAGS.NO_BILLING_CHANNEL),
+      line.propertyId == null
+        ? 'No property means no client to bill — resolve the property first.'
+        : "This property's client has no billing channel (Haven QBO vs bill.com) set on their contact.",
+    )
+  }
   return out
 }
 
@@ -720,6 +747,7 @@ export function classifyLine(
     line.serviceType = 'Reimbursement'
     line.cleanerPayAmount = round2(raw.rawAmount)
     line.clientChargeAmount = null
+    line = withNote(line, `Vendor credit of ${usd(Math.abs(raw.rawAmount))} — how a credit maps to the client invoice is a human call.`)
     return [withChannel(requireReason(needsReview(line, FLAGS.CREDIT_LINE), noteText), property)]
   }
 
@@ -734,6 +762,7 @@ export function classifyLine(
       return [withChannel(flag(line, FLAGS.OPERATING_EXPENSE), null)]
     }
     line.lineKind = 'clean'
+    line = withNote(line, `"${(raw.rawPropertyText ?? '').trim()}" doesn't match any Ops property or saved alias — fixing it here saves the match forever.`)
     return [withChannel(needsReview(line, FLAGS.UNRESOLVED_PROPERTY), null)]
   }
 
@@ -787,9 +816,9 @@ export function classifyLine(
     if (asDeep) {
       const deepCe = property.deepClean3xCe ?? (ceCharged != null ? round2(ceCharged * 3) : null)
       line.clientChargeAmount = deepCe
-      if (deepCe == null) line = needsReview(line, FLAGS.MISSING_RATE)
-      if (deepConflict) line = needsReview(line, FLAGS.DEEP_MISMATCH)
-      if (!matchedTask) line = needsReview(line, FLAGS.UNMATCHED_TASK)
+      if (deepCe == null) line = withNote(needsReview(line, FLAGS.MISSING_RATE), 'No deep-clean rate on this property — set one (or the line amounts) before export.')
+      if (deepConflict) line = withNote(needsReview(line, FLAGS.DEEP_MISMATCH), `The note says deep clean but the matched task (${matchedTask?.title ?? 'clean'}) isn't one — deep billing would charge the client ${deepCe != null ? usd(deepCe) : '3× the clean rate'}, so confirm which it was.`)
+      if (!matchedTask) line = withNote(needsReview(line, FLAGS.UNMATCHED_TASK), `Deep clean billed ${usd(raw.rawAmount)} with no task record — confirm it happened before charging ${deepCe != null ? usd(deepCe) : 'the deep rate'}.`)
     } else if (isOnboarding) {
       // Onboarding Clean (Jordan 2026-08-22, revising 2026-08-17):
       //   PAY    — treated like a normal clean. The $50 onboarding surcharge is
@@ -804,7 +833,7 @@ export function classifyLine(
       //            so neither ever shows two items.
       if (ceCharged == null || cleanerPay == null) {
         line.clientChargeAmount = null
-        line = needsReview(line, FLAGS.MISSING_RATE)
+        line = withNote(needsReview(line, FLAGS.MISSING_RATE), 'Onboarding clean on a property with no Cleaner Pay / Client Charged rates — set them before export.')
         return [withChannel(line, property)]
       }
       const group = splitSeq()
@@ -837,7 +866,10 @@ export function classifyLine(
         flags: [...line.flags, FLAGS.COMBINED_SPLIT, ...(obAp.toppedUp ? [FLAGS.PAID_AT_RATE] : [])],
       }
       if (!surchargeBilled && !obExact) {
-        base = needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED)
+        base = withNote(
+          needsReview(base, FLAGS.DISCREPANCY_UNEXPLAINED),
+          `Onboarding billed ${usd(raw.rawAmount)}, but the rate is ${usd(cleanerPay)} and rate + the $50 surcharge would be ${usd(cleanerPay + 50)} — the ${usd(Math.abs(obDiff))} ${obDiff > 0 ? 'add-on' : 'shortfall'} is unexplained.`,
+        )
       }
       const surcharge: EngineLine = {
         ...baseLine(raw),
@@ -879,12 +911,18 @@ export function classifyLine(
     line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
     if (priced) {
       line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+      if (priced.review) {
+        line = withNote(
+          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
+          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(STANDARD_EXTRA_PRICING[line.serviceType!]?.charge ?? 0)} charge for ${line.serviceType} — the standard price would be unprofitable, so set a client price.`,
+        )
+      }
     }
     // A bare "onboarding" note with no matched task is ambiguous: a WHOLE
     // onboarding clean should bill at Client Charged + $50 (two rows), not at
     // the vendor amount. Never guess between the two — review decides.
     if (line.serviceType === 'Onboarding Clean') {
+      line = withNote(line, `"Onboarding" note with no task record — can't tell a whole onboarding clean (bills Client Charged + $50) from a clean-plus-surcharge, so confirm which this is.`)
       return [withChannel(needsReview(line, FLAGS.UNMATCHED_TASK), property)]
     }
     return [withChannel(requireReason(line, noteText), property)]
@@ -905,6 +943,7 @@ export function classifyLine(
     // line) before it can export.
     line.cleanerPayAmount = null
     line.clientChargeAmount = ceCharged != null && ceCharged > 0 ? round2(ceCharged) : null
+    line = withNote(line, `No ${cleanerPay == null || cleanerPay <= 0 ? 'Cleaner Pay' : 'Client Charged'} rate on this property — set the rate in Ops (or the pay on this line) before export.`)
     return [withChannel(needsReview(line, FLAGS.MISSING_RATE), property)]
   }
 
@@ -926,7 +965,12 @@ export function classifyLine(
     line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
     if (priced) {
       line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+      if (priced.review) {
+        line = withNote(
+          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
+          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(STANDARD_EXTRA_PRICING[line.serviceType!]?.charge ?? 0)} charge for ${line.serviceType} — set a client price.`,
+        )
+      }
     }
     return [withChannel(line, property)]
   }
@@ -991,10 +1035,16 @@ export function classifyLine(
     if (priced) {
       line.clientChargeAmount = round2(priced.charge)
       line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) line = needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED)
+      if (priced.review) {
+        line = withNote(
+          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
+          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(priced.charge)} charge for ${line.serviceType} — set a client price.`,
+        )
+      }
       return [withChannel(requireReason(line, noteText), property)]
     }
     line.clientChargeAmount = round2(raw.rawAmount)
+    line = withNote(line, `Billed ${usd(raw.rawAmount)} as ${line.serviceType}, which has no standard price — confirm the pay and client charge.`)
     return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), noteText), property)]
   }
 
@@ -1016,6 +1066,7 @@ export function classifyLine(
       return [withChannel(flag(line, FLAGS.PAID_AT_RATE), property)]
     }
     line.cleanerPayAmount = round2(raw.rawAmount)
+    line = withNote(line, `Billed ${usd(raw.rawAmount)} — under half the Ops Cleaner Pay rate of ${usd(cleanerPay)}, so this is likely not a full clean. Pay is left at the billed amount; confirm what the work was.`)
     return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
   }
 
@@ -1025,6 +1076,12 @@ export function classifyLine(
   // was a Mid-Stay Trash Pickup — topping up would manufacture pay for work
   // we have no record of).
   line.cleanerPayAmount = round2(raw.rawAmount)
+  line = withNote(
+    line,
+    diff > 0
+      ? `Billed ${usd(raw.rawAmount)} — ${usd(diff)} above the Ops Cleaner Pay rate of ${usd(cleanerPay)}. Accept the vendor's price by updating the property's Cleaner Pay, or dispute the line.`
+      : `Billed ${usd(raw.rawAmount)} vs the ${usd(cleanerPay)} rate, with no task record for that day — pay is left at the billed amount; confirm the work happened.`,
+  )
   return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]
 }
 

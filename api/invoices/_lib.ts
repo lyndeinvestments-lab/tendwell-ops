@@ -275,6 +275,7 @@ interface InvoiceLineInsert {
   billing_channel: string | null
   flags: string[]
   review_status: string
+  engine_note: string | null
 }
 
 export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineInsert[] {
@@ -297,6 +298,7 @@ export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineIn
     billing_channel: l.billingChannel,
     flags: l.flags,
     review_status: l.reviewStatus,
+    engine_note: l.engineNote,
   }))
 }
 

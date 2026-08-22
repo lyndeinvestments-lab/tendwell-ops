@@ -167,6 +167,8 @@ export interface InvoiceLine {
   flags: string[]
   review_status: ReviewStatus
   review_note: string | null
+  /** Engine-written plain-English explanation of why the line is flagged. */
+  engine_note: string | null
   resolved_by: string | null
   resolved_at: string | null
   created_at: string | null
