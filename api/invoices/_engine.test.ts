@@ -1159,6 +1159,52 @@ describe('TEST 3–6 review-queue fixes', () => {
   })
 })
 
+describe('engine notes explain the review reason', () => {
+  // Jordan 2026-08-22: "it's not very clear what is wrong?" — a badge alone
+  // ("Unexplained discrepancy") forces the reviewer to know every property's
+  // rate by heart. Every review site writes a plain-English explanation.
+  it('an over-billed clean says how far above the rate it is', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 175 })]))
+    expect(lines[0].engineNote).toBe(
+      "Billed $175.00 — $75.00 above the Ops Cleaner Pay rate of $100.00. Accept the vendor's price by updating the property's Cleaner Pay, or dispute the line.",
+    )
+  })
+
+  it('a below-half-rate line says it is likely not a full clean', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 30 })]))
+    expect(lines[0].engineNote).toMatch(/under half the Ops Cleaner Pay rate of \$100\.00/)
+  })
+
+  it('an odd onboarding add-on names both expected amounts', () => {
+    const tasks: TaskRow[] = [
+      { externalId: 'ob', propertyId: 1, dueDate: '2026-08-05', title: 'Onboarding Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 125, rawNoteText: 'Onboarding clean' })], { tasks }))
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    expect(base.engineNote).toMatch(/rate is \$100\.00 and rate \+ the \$50 surcharge would be \$150\.00/)
+  })
+
+  it('an unresolved property points at the alias fix', () => {
+    const { lines } = reconcile(input([vendorLine({ rawPropertyText: 'Totally Unknown Cabin 999' })]))
+    expect(lines[0].engineNote).toMatch(/doesn't match any Ops property or saved alias/)
+  })
+
+  it('an unpriced under-rate extra says a standard price is missing', () => {
+    // Matched clean task + trip-fee note billed under rate: the unpriced
+    // negative-split path, which passes through and queues.
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 50, rawNoteText: 'Trip fee for extra visit' })]))
+    const extra = lines.find(l => l.serviceType === 'Trip Fee')!
+    expect(extra.reviewStatus).toBe('needs_review')
+    expect(extra.engineNote).toMatch(/no standard price/)
+  })
+
+  it('clean lines carry no note', () => {
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 100 })]))
+    expect(lines[0].engineNote).toBeNull()
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+})
+
 describe('standardExtraCharge', () => {
   it('bills the standard charge for the normal case', () => {
     expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)).toEqual({ charge: 50, review: false })
