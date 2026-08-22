@@ -233,6 +233,28 @@ describe('splits are QBO-only; descriptions never repeat other columns', () => {
     expect(descs.every(d => d === 'Michael Rohwer 2455')).toBe(true) // property only
     expect(rows.flat().join(',')).not.toContain('Regular clean plus 205')
   })
+  it('onboarding: Ramp pays the rate only, bill.com bills CE + 50, QBO shows both rows', () => {
+    // The $50 onboarding surcharge is client-only (Jordan 2026-08-22): its row
+    // carries pay NULL, so collapsing must not add anything to the Ramp amount.
+    const obBase: ExportLine = {
+      ...LINES[0], lineKind: 'combined_split', serviceType: 'Onboarding Clean',
+      cleanerPayAmount: 145, clientChargeAmount: 330, note: null, splitGroup: 9,
+    }
+    const obSurcharge: ExportLine = {
+      ...LINES[0], lineKind: 'extra', serviceType: 'Onboarding Clean',
+      cleanerPayAmount: null, clientChargeAmount: 50, note: 'Onboarding surcharge', splitGroup: 9,
+    }
+    const ramp = Papa.parse<string[]>(toRampCsv(RUN, [obBase, obSurcharge]).trim()).data
+    expect(ramp).toHaveLength(2) // header + 1 line
+    expect(ramp[1][7]).toBe('145.00') // the rate — no +50 on the AP side
+    const bc = [{ ...obBase, billingChannel: 'bill_com' as const }, { ...obSurcharge, billingChannel: 'bill_com' as const }]
+    const bcRows = Papa.parse<string[]>(toBillComCsv(RUN, bc).trim()).data
+    expect(bcRows).toHaveLength(2) // header + 1 line
+    expect(bcRows[1][7]).toBe('380.00') // 330 + 50, together
+    const qbo = Papa.parse<string[]>(toQboMultilineCsv(RUN, [obBase, obSurcharge]).trim()).data
+    expect(qbo).toHaveLength(3) // header + base + surcharge — QBO alone keeps the split
+  })
+
   it('QBO multiline still shows the reason for reason-required extras', () => {
     const pet: ExportLine = { ...LINES[0], lineKind: 'extra', serviceType: 'Pet Fee', note: 'Pet fee — excess dog hair' }
     const row = Papa.parse<string[]>(toQboMultilineCsv(RUN, [pet]).trim()).data[1]
