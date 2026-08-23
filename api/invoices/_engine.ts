@@ -1079,7 +1079,7 @@ export function classifyLine(
   line = withNote(
     line,
     diff > 0
-      ? `Billed ${usd(raw.rawAmount)} — ${usd(diff)} above the Ops Cleaner Pay rate of ${usd(cleanerPay)}. Accept the vendor's price by updating the property's Cleaner Pay, or dispute the line.`
+      ? `Billed ${usd(raw.rawAmount)} — ${usd(diff)} above the Ops Cleaner Pay rate of ${usd(cleanerPay)}. Pay is left at the billed amount (we never shortpay a vendor invoice on our own): accept their price by updating the property's Cleaner Pay, or dispute the line and edit the pay here.`
       : `Billed ${usd(raw.rawAmount)} vs the ${usd(cleanerPay)} rate, with no task record for that day — pay is left at the billed amount; confirm the work happened.`,
   )
   return [withChannel(needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED), property)]

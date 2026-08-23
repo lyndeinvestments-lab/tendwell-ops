@@ -1166,7 +1166,7 @@ describe('engine notes explain the review reason', () => {
   it('an over-billed clean says how far above the rate it is', () => {
     const { lines } = reconcile(input([vendorLine({ rawAmount: 175 })]))
     expect(lines[0].engineNote).toBe(
-      "Billed $175.00 — $75.00 above the Ops Cleaner Pay rate of $100.00. Accept the vendor's price by updating the property's Cleaner Pay, or dispute the line.",
+      "Billed $175.00 — $75.00 above the Ops Cleaner Pay rate of $100.00. Pay is left at the billed amount (we never shortpay a vendor invoice on our own): accept their price by updating the property's Cleaner Pay, or dispute the line and edit the pay here.",
     )
   })
 
