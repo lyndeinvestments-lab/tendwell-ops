@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'invoice_lines',
       () => supabase
         .from('invoice_lines')
-        .select('line_kind, service_type, raw_date_mentioned, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
+        .select('line_kind, service_type, raw_date_mentioned, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
         .eq('run_id', runId)
         .order('line_no'),
       'line_no',
@@ -122,6 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       serviceType: r.service_type,
       serviceDate: r.raw_date_mentioned,
       propertyName: prop?.name ?? null,
+      rawPropertyText: r.raw_property_text ?? null,
       propertyId: r.property_id != null ? Number(r.property_id) : null,
       clientName: contact?.full_name ?? contact?.company ?? null,
       billingChannel: r.billing_channel as BillingChannel | null,
