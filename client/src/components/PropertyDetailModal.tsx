@@ -652,7 +652,7 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
     { label: t('financials.breakdown.profit'), value: fmt(profit), color: profit < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
     { label: t('financials.breakdown.profitPercent'), value: `${profitPct.toFixed(1)}%`, color: profitPct < 0 ? 'text-red-600 dark:text-red-400' : profitPct < 15 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400' },
     { label: t('financials.breakdown.dcCost'), value: property.estimated_deep_clean_cost != null ? fmt(Number(property.estimated_deep_clean_cost)) : '—' },
-    { label: t('financials.breakdown.dcIncome3x'), value: property.deep_clean_3x_ce != null ? fmt(Number(property.deep_clean_3x_ce)) : '—' },
+    { label: property.custom_deep_clean_income != null ? t('financials.breakdown.dcIncomeCustom') : t('financials.breakdown.dcIncome3x'), value: property.deep_clean_3x_ce != null ? fmt(Number(property.deep_clean_3x_ce)) : '—' },
     { label: t('financials.breakdown.dcProfit'), value: property.profit_deep_clean != null ? fmt(Number(property.profit_deep_clean)) : '—', color: Number(property.profit_deep_clean || 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' },
   ]
 
@@ -768,6 +768,7 @@ function buildFormFromProperty(property: any): Record<string, any> {
     check_out_time: property.check_out_time ?? '',
     ce_charged: property.ce_charged ?? '',
     cleaner_pay: property.cleaner_pay ?? '',
+    custom_deep_clean_income: property.custom_deep_clean_income ?? '',
   }
   for (const k of LINEN_FIELD_KEYS) form[k] = property[k] ?? ''
   for (const k of ACCESS_FIELD_KEYS) form[k] = property[k] || ''
@@ -918,6 +919,8 @@ export function PropertyDetailModal() {
         if (canEditFinancials) {
           out.ce_charged = src.ce_charged !== '' ? parseFloat(String(src.ce_charged)) : null
           out.cleaner_pay = src.cleaner_pay !== '' ? parseFloat(String(src.cleaner_pay)) : null
+          // NULL restores the trigger-derived 3x CE default for deep_clean_3x_ce.
+          out.custom_deep_clean_income = src.custom_deep_clean_income !== '' ? parseFloat(String(src.custom_deep_clean_income)) : null
         }
         if (canEditAccess) {
           for (const k of ACCESS_FIELD_KEYS) out[k] = src[k] || null
@@ -2069,10 +2072,35 @@ export function PropertyDetailModal() {
                     <span className="text-xs text-muted-foreground block">{t('financials.fields.dcCost')}</span>
                     <span className="text-sm font-medium">{property.estimated_deep_clean_cost != null ? `$${Number(property.estimated_deep_clean_cost).toFixed(2)}` : '—'}</span>
                   </div>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t('financials.fields.dcIncome3x')}</span>
-                    <span className="text-sm font-medium">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
-                  </div>
+                  {(() => {
+                    const hasCustom = property.custom_deep_clean_income != null
+                    if (isEditing && canEditFinancials) {
+                      // Live 3x default follows the in-progress CE edit.
+                      const liveCe = form.ce_charged !== '' && form.ce_charged != null ? Number(form.ce_charged) : Number(property.ce_charged || 0)
+                      const default3x = (Math.round(liveCe * 300) / 100).toFixed(2)
+                      return (
+                        <div>
+                          <span className="text-xs text-muted-foreground block">{t('financials.fields.dcIncome')}</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={form.custom_deep_clean_income ?? ''}
+                            onChange={e => setForm(f => ({ ...f, custom_deep_clean_income: e.target.value }))}
+                            placeholder={`$${default3x}`}
+                            className="mt-0.5 h-8"
+                            data-testid="modal-input-custom_deep_clean_income"
+                          />
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{t('financials.dcIncomeHint', { default: `$${default3x}` })}</p>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div>
+                        <span className="text-xs text-muted-foreground block">{hasCustom ? t('financials.fields.dcIncomeCustom') : t('financials.fields.dcIncome3x')}</span>
+                        <span className="text-sm font-medium">{property.deep_clean_3x_ce != null ? `$${Number(property.deep_clean_3x_ce).toFixed(2)}` : '—'}</span>
+                      </div>
+                    )
+                  })()}
                   <div>
                     <span className="text-xs text-muted-foreground block">{t('financials.fields.dcProfit')}</span>
                     <span className={`text-sm font-medium ${(property.profit_deep_clean || 0) < 0 ? 'text-destructive' : ''}`}>
