@@ -147,6 +147,35 @@ describe('toRampCsv', () => {
       expect(row).toContain('USD')
     }
   })
+
+  it('the line description carries the property name, so a class-less line is never anonymous', () => {
+    // Real case (invoice I260819800): 19 lines had no matching QBO class —
+    // Class is deliberately blank there, and the description was the ONLY
+    // remaining place identity could live. It read just "Departure Clean".
+    const parsed = Papa.parse<string[]>(csv.trim()).data
+    const header = parsed[0]
+    const descIdx = header.indexOf('Line item description')
+    const dataRows = parsed.slice(1)
+    const cleanRow = dataRows.find(r => r[descIdx].includes('Departure Clean'))!
+    expect(cleanRow[descIdx]).toContain(LINES[0].propertyName!)
+  })
+
+  it('labor/unresolved lines fall back to the vendor raw text for identity', () => {
+    const labor: ExportLine = {
+      ...LINES[0],
+      lineKind: 'operating_expense',
+      serviceType: null,
+      propertyName: null,
+      rawPropertyText: 'Irma Ispection 62.18x20',
+      note: '62.18',
+      cleanerPayAmount: 1243,
+      clientChargeAmount: null,
+    }
+    const row = Papa.parse<string[]>(toRampCsv(RUN, [labor]).trim()).data[1]
+    const descIdx = 12 // Line item description column
+    expect(row[descIdx]).toContain('Irma Ispection 62.18x20')
+    expect(row[descIdx]).toContain('62.18')
+  })
 })
 
 describe('toQboFlatCsv', () => {

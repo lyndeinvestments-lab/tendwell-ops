@@ -26,6 +26,9 @@ export interface ExportLine {
   serviceType: string | null
   serviceDate: string | null // yyyy-mm-dd
   propertyName: string | null
+  // The vendor's own property-cell text — the only identity a line has when
+  // no Ops property resolved (labor blocks, unresolved names).
+  rawPropertyText?: string | null
   propertyId?: number | null // needed for manual QBO class links
   clientName: string | null
   billingChannel: BillingChannel | null
@@ -213,7 +216,17 @@ export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: Re
     'QuickBooks Billable (optional)': '',
     'QuickBooks Class (optional)': s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
     'QuickBooks Customer/Job (optional)': '',
-    'Line item description': withNote(l.serviceType ?? '', l.note),
+    // The property name rides IN the description, not only in Class: Class is
+    // deliberately blank when no QBO class matches (an unknown value fails or
+    // auto-creates classes on import), and without the name here such a line
+    // is anonymous in Ramp (real case: invoice I260819800 had 19 class-less
+    // lines showing just "Departure Clean $100"). Labor/unresolved lines fall
+    // back to the vendor's own text ("Irma Ispection 62.18x20") for the same
+    // reason.
+    'Line item description': withNote(
+      [l.serviceType, l.propertyName ?? l.rawPropertyText].filter(Boolean).join(' — '),
+      l.note,
+    ),
     'Inventory line item quantity': '',
     'Inventory line item rate': '',
     'QuickBooks Inventory Item (optional)': '',
