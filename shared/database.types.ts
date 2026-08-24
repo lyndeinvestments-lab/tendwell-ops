@@ -3978,6 +3978,7 @@ export type Database = {
           cleaning_frequency: string | null
           contact_id: string | null
           created_at: string | null
+          custom_deep_clean_income: number | null
           deep_clean_3x_ce: number | null
           deleted_at: string | null
           door_code: string | null
@@ -4061,6 +4062,7 @@ export type Database = {
           cleaning_frequency?: string | null
           contact_id?: string | null
           created_at?: string | null
+          custom_deep_clean_income?: number | null
           deep_clean_3x_ce?: number | null
           deleted_at?: string | null
           door_code?: string | null
@@ -4144,6 +4146,7 @@ export type Database = {
           cleaning_frequency?: string | null
           contact_id?: string | null
           created_at?: string | null
+          custom_deep_clean_income?: number | null
           deep_clean_3x_ce?: number | null
           deleted_at?: string | null
           door_code?: string | null
