@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- maximum-scale=1 stops iOS Safari's automatic zoom-on-input-focus (the
+         "app looks shifted/cut off" bug). Since iOS 10, users can still
+         pinch-zoom manually — Safari deliberately ignores the cap for manual
+         gestures, so this does not hurt accessibility. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <meta name="description" content="Tendwell Ops — property management operations dashboard for tracking properties, costs, linens, access codes, and more." />
     <meta name="author" content="Tendwell" />
     <meta property="og:title" content="Tendwell Ops" />
