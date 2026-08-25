@@ -64,7 +64,11 @@ export function InlineEdit({ value, onSave, onDraftChange, type = 'text', placeh
         onBlur={commit}
         onKeyDown={handleKeyDown}
         data-testid={testId}
-        className={`h-7 text-xs px-1.5 w-full ${className}`}
+        // text-base below sm: iOS Safari auto-zooms the whole page when a
+        // focused input's font is under 16px — the zoom then sticks and the
+        // layout looks clipped/shifted (real report: property modal on
+        // mobile, 2026-08-24). Desktop keeps the dense 12px.
+        className={`h-7 text-base sm:text-xs px-1.5 w-full ${className}`}
         autoFocus
       />
     )
