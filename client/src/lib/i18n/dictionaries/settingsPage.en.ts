@@ -224,6 +224,8 @@ export const settingsPageEn = {
     editTitle: 'Edit name / phone / Trellis URL',
     sendResetTitle: 'Send password reset email',
     fieldPermissionsTitle: 'Field permissions',
+    viewPortalTitle: 'View portal as this owner (read-only)',
+    previewFailed: "Couldn't open owner preview",
     removeConfirm: 'Remove?',
     removing: 'Removing…',
     removeAria: 'Remove {{email}}',

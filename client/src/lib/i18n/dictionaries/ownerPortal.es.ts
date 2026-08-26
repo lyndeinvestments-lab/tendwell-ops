@@ -17,6 +17,11 @@ export const ownerPortalEs: typeof ownerPortalEn = {
     staffView: 'Vista de personal',
     signOut: 'Cerrar sesión',
   },
+  emulation: {
+    banner: 'Viendo como {{name}}',
+    readOnlyNote: 'Vista previa de solo lectura — los cambios están deshabilitados',
+    exit: 'Salir de la vista de propietario',
+  },
   properties: {
     heading: 'Tus propiedades',
     subtitle: 'Revisa y actualiza la información de tu propiedad y consulta las próximas tareas programadas.',
@@ -147,6 +152,8 @@ export const ownerPortalEs: typeof ownerPortalEn = {
     signedToast: '¡Contrato firmado! Gracias.',
     signFailedTitle: 'No se pudo firmar el contrato',
     signFailedDefault: 'Inténtalo de nuevo.',
+    previewSentTitle: 'Contrato de Servicio',
+    previewSentBody: 'Enviado — en espera de la firma del propietario.',
     loadFailedTitle: 'No se pudo cargar el contrato',
     loadFailedDescription: 'Inténtalo de nuevo.',
     signedTitle: 'Contrato de Servicio',

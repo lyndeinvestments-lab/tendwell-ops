@@ -21,6 +21,11 @@ export const ownerPortalEn = {
     staffView: 'Staff view',
     signOut: 'Sign out',
   },
+  emulation: {
+    banner: 'Viewing as {{name}}',
+    readOnlyNote: 'Read-only preview — changes are disabled',
+    exit: 'Exit owner view',
+  },
   properties: {
     heading: 'Your properties',
     subtitle: 'Review and update your property information and view upcoming scheduled tasks.',
@@ -150,6 +155,8 @@ export const ownerPortalEn = {
     signedToast: 'Agreement signed. Thank you!',
     signFailedTitle: 'Could not sign agreement',
     signFailedDefault: 'Please try again.',
+    previewSentTitle: 'Service Agreement',
+    previewSentBody: 'Sent — awaiting the owner’s signature.',
     loadFailedTitle: "Couldn't load agreement",
     loadFailedDescription: 'Please try again.',
     signedTitle: 'Service Agreement',

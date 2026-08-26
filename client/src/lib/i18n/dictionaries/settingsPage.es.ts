@@ -198,6 +198,8 @@ export const settingsPageEs: typeof settingsPageEn = {
     editTitle: 'Editar nombre / teléfono / URL de Trellis',
     sendResetTitle: 'Enviar correo de restablecimiento de contraseña',
     fieldPermissionsTitle: 'Permisos de campos',
+    viewPortalTitle: 'Ver el portal como este propietario (solo lectura)',
+    previewFailed: 'No se pudo abrir la vista previa del propietario',
     removeConfirm: '¿Eliminar?',
     removing: 'Eliminando…',
     removeAria: 'Eliminar a {{email}}',

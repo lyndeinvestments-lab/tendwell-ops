@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine, Plus, Image as ImageIcon } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine, Plus, Eye, Image as ImageIcon } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { thumbUrl } from '@/lib/image'
@@ -26,6 +26,13 @@ import { useDateFormat } from '@/lib/i18n/date'
 import { LanguageToggle } from '@/components/LanguageToggle'
 
 type DateFormatFn = (date: Date | number, pattern: string) => string
+
+// ─── Read-only preview (admin owner emulation) ────────────────────────────────
+// True while an admin is previewing this portal as a specific owner. Every
+// section reads it to hide/disable its write affordances; the DB refuses the
+// owner write RPCs while emulating regardless, so this is UX, not the guard.
+const PortalReadOnlyContext = createContext(false)
+const usePortalReadOnly = () => useContext(PortalReadOnlyContext)
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
 // field the owner can't see (visibility enforced in the DB), so every value
@@ -151,6 +158,7 @@ type OwnerNote = { id: string; content: string; created_at: string }
 function OwnerNotesSection({ propertyId }: { propertyId: number }) {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [text, setText] = useState('')
@@ -184,25 +192,27 @@ function OwnerNotesSection({ propertyId }: { propertyId: number }) {
   return (
     <section className="space-y-3">
       <h3 className="text-sm font-medium text-foreground">{t('notes.title')}</h3>
-      <div className="space-y-2">
-        <Textarea
-          rows={2}
-          placeholder={t('notes.placeholder')}
-          value={text}
-          onChange={e => setText(e.target.value)}
-          data-testid={`textarea-owner-note-${propertyId}`}
-        />
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            onClick={() => add.mutate()}
-            disabled={!text.trim() || add.isPending}
-            data-testid={`button-add-note-${propertyId}`}
-          >
-            {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('notes.addButton')}
-          </Button>
+      {!readOnly && (
+        <div className="space-y-2">
+          <Textarea
+            rows={2}
+            placeholder={t('notes.placeholder')}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            data-testid={`textarea-owner-note-${propertyId}`}
+          />
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => add.mutate()}
+              disabled={!text.trim() || add.isPending}
+              data-testid={`button-add-note-${propertyId}`}
+            >
+              {add.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('notes.addButton')}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
       {isLoading && (
         <div className="space-y-2">
           {[1, 2].map(i => <Skeleton key={i} className="h-9 rounded-md" />)}
@@ -341,8 +351,14 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const [form, setForm] = useState<FormState>(() => initialForm(property))
   const [open, setOpen] = useState(false)
 
+  const readOnly = usePortalReadOnly()
   const perms = property.permissions
-  const can = (key: keyof OwnerPermissions) => perms[key] ?? { visible: true, editable: true }
+  // In read-only preview every field renders through its existing "view only"
+  // path, so the admin still sees exactly what the owner sees.
+  const can = (key: keyof OwnerPermissions) => {
+    const p = perms[key] ?? { visible: true, editable: true }
+    return readOnly ? { ...p, editable: false } : p
+  }
 
   const dirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(initialForm(property)),
@@ -351,7 +367,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   // True when the owner can edit at least one field on this property.
   const anyEditable = useMemo(
     () => Object.keys(EDITABLE_COLUMNS).some(k => can(k as keyof OwnerPermissions).editable),
-    [perms],
+    [perms, readOnly],
   )
 
   const set = (key: keyof OwnerProperty, value: string | number | boolean | null) =>
@@ -741,6 +757,7 @@ const REFERRAL_STATUS_TONE: Record<string, string> = {
 function ReferralsSection({ ownerId }: { ownerId: string }) {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -789,9 +806,11 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
           <Gift className="w-4 h-4 text-muted-foreground" /> {t('referrals.title')}
         </h2>
-        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-referral-form">
-          {open ? t('common.actions.cancel') : t('referrals.referSomeone')}
-        </Button>
+        {!readOnly && (
+          <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-referral-form">
+            {open ? t('common.actions.cancel') : t('referrals.referSomeone')}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
         <p className="text-sm text-muted-foreground">{t('referrals.description')}</p>
@@ -866,6 +885,7 @@ const TESTIMONIAL_STATUS_TONE: Record<string, string> = {
 function TestimonialsSection({ ownerId }: { ownerId: string }) {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -911,9 +931,11 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
           <Quote className="w-4 h-4 text-muted-foreground" /> {t('testimonials.title')}
         </h2>
-        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-testimonial-form">
-          {open ? t('common.actions.cancel') : t('testimonials.writeButton')}
-        </Button>
+        {!readOnly && (
+          <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-testimonial-form">
+            {open ? t('common.actions.cancel') : t('testimonials.writeButton')}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
         <p className="text-sm text-muted-foreground">{t('testimonials.description')}</p>
@@ -1001,6 +1023,7 @@ const FEEDBACK_STATUS_TONE: Record<string, string> = {
 function FeedbackSection({ ownerId }: { ownerId: string }) {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
@@ -1044,9 +1067,11 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-muted-foreground" /> {t('feedback.title')}
         </h2>
-        <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-feedback-form">
-          {open ? t('common.actions.cancel') : t('feedback.sendButton')}
-        </Button>
+        {!readOnly && (
+          <Button size="sm" variant={open ? 'ghost' : 'default'} onClick={() => setOpen(o => !o)} data-testid="button-toggle-feedback-form">
+            {open ? t('common.actions.cancel') : t('feedback.sendButton')}
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="space-y-4 pb-5">
         <p className="text-sm text-muted-foreground">{t('feedback.description')}</p>
@@ -1156,6 +1181,7 @@ function formatMoney(n: number | null | undefined): string {
 function QuotesSection() {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -1229,10 +1255,10 @@ function QuotesSection() {
               </div>
               {pending ? (
                 <div className="flex gap-2 justify-end pt-1">
-                  <Button size="sm" variant="outline" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'declined' })} data-testid={`button-decline-quote-${q.id}`}>
+                  <Button size="sm" variant="outline" disabled={respond.isPending || readOnly} onClick={() => respond.mutate({ id: q.id, response: 'declined' })} data-testid={`button-decline-quote-${q.id}`}>
                     {t('quotes.decline')}
                   </Button>
-                  <Button size="sm" disabled={respond.isPending} onClick={() => respond.mutate({ id: q.id, response: 'approved' })} data-testid={`button-approve-quote-${q.id}`}>
+                  <Button size="sm" disabled={respond.isPending || readOnly} onClick={() => respond.mutate({ id: q.id, response: 'approved' })} data-testid={`button-approve-quote-${q.id}`}>
                     {respond.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('quotes.approve')}
                   </Button>
                 </div>
@@ -1263,6 +1289,7 @@ type OwnerAgreement = {
 function AgreementSection() {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -1344,6 +1371,24 @@ function AgreementSection() {
   }
 
   // status === 'sent'
+  // Read-only preview: an emulating admin sees THAT an agreement is pending,
+  // never the signing flow (signing must come from the owner's own session —
+  // the sign endpoint enforces this server-side too).
+  if (readOnly) {
+    return (
+      <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/40">
+        <CardHeader className="py-4">
+          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <FileText className="w-4 h-4 text-muted-foreground" /> {t('agreements.previewSentTitle')}
+          </h2>
+        </CardHeader>
+        <CardContent className="pb-5">
+          <p className="text-sm text-muted-foreground">{t('agreements.previewSentBody')}</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
   const today = format(new Date(), 'MMMM d, yyyy')
 
   async function handleSign() {
@@ -1594,6 +1639,7 @@ function TrellisPortalCard() {
 function ContactPaymentCard() {
   const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
+  const readOnly = usePortalReadOnly()
   const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -1668,18 +1714,19 @@ function ContactPaymentCard() {
       <CardContent className="space-y-4 pb-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label={t('contact.contactName')}>
-            <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-owner-name" />
+            <Input value={form.name} disabled={readOnly} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} data-testid="input-owner-name" />
           </Field>
           <Field label={t('contact.contactPhone')}>
-            <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} data-testid="input-owner-phone" />
+            <Input value={form.phone} disabled={readOnly} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} data-testid="input-owner-phone" />
           </Field>
           <Field label={t('contact.loginEmail')}>
-            <Input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
+            <Input type="email" value={form.email} disabled={readOnly} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} data-testid="input-owner-email" />
           </Field>
           <Field label={t('contact.preferredPaymentMethod')}>
             <select
-              className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background"
+              className="w-full border border-border rounded-md px-2 py-2 text-sm bg-background disabled:opacity-60"
               value={form.preferred_payment_method}
+              disabled={readOnly}
               onChange={e => setForm(f => ({ ...f, preferred_payment_method: e.target.value }))}
               data-testid="select-owner-payment"
             >
@@ -1692,11 +1739,13 @@ function ContactPaymentCard() {
         <p className="text-2xs text-muted-foreground">
           {t('contact.emailChangeNote')}
         </p>
-        <div className="flex justify-end">
-          <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="button-save-owner-contact">
-            {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('contact.saveChanges')}
-          </Button>
-        </div>
+        {!readOnly && (
+          <div className="flex justify-end">
+            <Button onClick={() => save.mutate()} disabled={!dirty || save.isPending} data-testid="button-save-owner-contact">
+              {save.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : t('contact.saveChanges')}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -1766,11 +1815,14 @@ function AccountSecurityCard() {
 export default function OwnerPortalPage() {
   const { t } = useLocale('ownerPortal')
   usePageTitle(t('header.pageTitle'))
-  const { user, logout, canActAsOwner, setActingAsOwner } = useAuth()
+  const { user, logout, canActAsOwner, setActingAsOwner, emulatedOwner, stopOwnerEmulation } = useAuth()
+  // Admin previewing a specific owner: the whole portal is read-only.
+  const readOnly = !!emulatedOwner
   // For a pure owner, user.id is the property_owners id; for a staff user acting
-  // as owner it's on ownerIdentity. Used as owner_id on owner-scoped inserts.
-  const ownerId = user?.ownerIdentity?.id ?? user?.id ?? ''
-  const firstName = user?.label?.trim().split(/\s+/)[0] ?? ''
+  // as owner it's on ownerIdentity; for an emulating admin it's the emulated
+  // owner. Used as owner_id on owner-scoped inserts (all disabled in preview).
+  const ownerId = emulatedOwner?.id ?? user?.ownerIdentity?.id ?? user?.id ?? ''
+  const firstName = (emulatedOwner?.name ?? user?.label ?? '').trim().split(/\s+/)[0] ?? ''
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['owner-properties'],
@@ -1810,11 +1862,15 @@ export default function OwnerPortalPage() {
               </span>
             )}
             <LanguageToggle />
-            {canActAsOwner && (
+            {readOnly ? (
+              <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => stopOwnerEmulation()} data-testid="button-exit-owner-emulation">
+                <ArrowLeft className="w-4 h-4" /> {t('emulation.exit')}
+              </Button>
+            ) : canActAsOwner ? (
               <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => setActingAsOwner(false)} data-testid="button-switch-staff-view">
                 <ArrowLeft className="w-4 h-4" /> {t('header.staffView')}
               </Button>
-            )}
+            ) : null}
             <Button variant="ghost" size="sm" className="gap-1.5" onClick={logout} data-testid="button-logout">
               <LogOut className="w-4 h-4" /> {t('header.signOut')}
             </Button>
@@ -1822,7 +1878,25 @@ export default function OwnerPortalPage() {
         </div>
       </header>
 
+      {emulatedOwner && (
+        <div className="bg-warning/15 border-b border-warning/30" data-testid="banner-owner-emulation">
+          <div className="w-full max-w-3xl mx-auto flex items-center justify-between gap-3 px-4 sm:px-7 py-2">
+            <p className="text-sm text-foreground flex items-center gap-2 min-w-0">
+              <Eye className="w-4 h-4 shrink-0 text-warning" />
+              <span className="truncate">
+                <span className="font-medium">{t('emulation.banner', { name: emulatedOwner.name })}</span>
+                <span className="text-muted-foreground"> · {t('emulation.readOnlyNote')}</span>
+              </span>
+            </p>
+            <Button size="sm" variant="outline" className="shrink-0 h-7 text-xs" onClick={() => stopOwnerEmulation()} data-testid="button-exit-owner-emulation-banner">
+              {t('emulation.exit')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
+       <PortalReadOnlyContext.Provider value={readOnly}>
         {ownerId && <QuotesSection />}
         {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         {ownerId && <ContactPaymentCard />}
@@ -1861,7 +1935,10 @@ export default function OwnerPortalPage() {
         {ownerId && <ReferralsSection ownerId={ownerId} />}
         {ownerId && <TestimonialsSection ownerId={ownerId} />}
         {ownerId && <FeedbackSection ownerId={ownerId} />}
-        <AccountSecurityCard />
+        {/* Hidden in preview: updatePassword changes the ADMIN's own login,
+            not the owner's — showing it while emulating invites a mistake. */}
+        {!readOnly && <AccountSecurityCard />}
+       </PortalReadOnlyContext.Provider>
       </main>
     </div>
   )
