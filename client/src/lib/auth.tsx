@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react'
 import { supabase, clearCachedIdentity } from '@/lib/supabase'
+import { queryClient } from '@/lib/queryClient'
 
 const SESSION_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000 // 7 days of inactivity
 
@@ -80,6 +81,14 @@ interface AuthContextType {
   /** When true, a dual staff+owner user is viewing the owner portal. */
   actingAsOwner: boolean
   setActingAsOwner: (v: boolean) => void
+  /** Admin-only "view portal as this owner" emulation. Non-null while an admin
+   *  is previewing a specific owner's portal. Backed by the owner_emulations
+   *  table — current_owner_id() resolves to this owner server-side, so every
+   *  owner-scoped RPC and RLS read shows exactly what that owner sees. The
+   *  preview is read-only (owner write RPCs refuse while emulating). */
+  emulatedOwner: { id: string; name: string; email: string } | null
+  startOwnerEmulation: (owner: { id: string; name: string | null; email: string }) => Promise<{ error: string | null }>
+  stopOwnerEmulation: () => Promise<void>
   loginWithGoogle: () => Promise<void>
   loginWithPassword: (email: string, password: string) => Promise<void>
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>
@@ -418,6 +427,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (actingAsOwner && !canActAsOwner) setActingAsOwner(false)
   }, [actingAsOwner, canActAsOwner, setActingAsOwner])
 
+  // ─── Admin owner-portal emulation ("view portal as this owner") ────────────
+  // The DB row is the source of truth so an in-progress preview survives a
+  // reload (and a stale row from a previous session is surfaced with the
+  // banner + exit button rather than silently redirecting reads).
+  const [emulatedOwner, setEmulatedOwner] = useState<{ id: string; name: string; email: string } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user || user.role !== 'admin') {
+      setEmulatedOwner(null)
+      return
+    }
+    ;(async () => {
+      try {
+        // RLS scopes owner_emulations to the calling admin's own row.
+        const { data } = await supabase
+          .from('owner_emulations')
+          .select('owner_id, property_owners(id, name, email)')
+          .maybeSingle()
+        if (cancelled) return
+        const po = (data as any)?.property_owners
+        setEmulatedOwner(po ? { id: po.id, name: po.name ?? po.email, email: po.email } : null)
+      } catch {
+        if (!cancelled) setEmulatedOwner(null)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [user])
+
+  const startOwnerEmulation = useCallback(async (owner: { id: string; name: string | null; email: string }): Promise<{ error: string | null }> => {
+    if (!user || user.role !== 'admin' || !sessionEmail) {
+      return { error: 'Only admins can preview the owner portal.' }
+    }
+    const { error } = await supabase
+      .from('owner_emulations')
+      .upsert({ admin_email: sessionEmail.toLowerCase(), owner_id: owner.id })
+    if (error) return { error: error.message }
+    setEmulatedOwner({ id: owner.id, name: owner.name ?? owner.email, email: owner.email })
+    // Every owner-scoped query now resolves to the emulated owner server-side;
+    // drop the whole cache so nothing from the staff (or previous) identity
+    // bleeds into the preview.
+    queryClient.clear()
+    return { error: null }
+  }, [user, sessionEmail])
+
+  const stopOwnerEmulation = useCallback(async () => {
+    setEmulatedOwner(null)
+    try {
+      if (sessionEmail) {
+        await supabase.from('owner_emulations').delete().eq('admin_email', sessionEmail.toLowerCase())
+      }
+    } catch { /* best-effort — the row is also cleaned up on the next start/stop */ }
+    queryClient.clear()
+  }, [sessionEmail])
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // A recovery link signs the user into a temporary session and fires this
@@ -523,13 +587,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setViewAsState(null)
     setIsPasswordRecovery(false)
     setActingAsOwnerState(false)
+    // End any owner-portal preview so the next sign-in starts in staff view.
+    setEmulatedOwner(null)
+    try {
+      if (sessionEmail) {
+        await supabase.from('owner_emulations').delete().eq('admin_email', sessionEmail.toLowerCase())
+      }
+    } catch { /* best-effort */ }
     try { localStorage.removeItem('tendwell-acting-as-owner') } catch { /* ignore */ }
     // Bust the cached identity so a subsequent login within the TTL isn't
     // attributed to the previous user in the audit log.
     clearCachedIdentity()
     await supabase.auth.signOut()
     setUser(null)
-  }, [])
+  }, [sessionEmail])
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -555,6 +626,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{
       user, viewAs, effectiveUser, isEmulating, setViewAs,
       canActAsOwner, actingAsOwner, setActingAsOwner,
+      emulatedOwner, startOwnerEmulation, stopOwnerEmulation,
       loginWithGoogle, loginWithPassword, requestPasswordReset, updatePassword,
       logout, isLoading, authError, isPasswordRecovery,
     }}>

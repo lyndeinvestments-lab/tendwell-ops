@@ -2938,7 +2938,7 @@ function OwnersSection() {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const qc = useQueryClient()
-  const { user, requestPasswordReset } = useAuth()
+  const { user, requestPasswordReset, startOwnerEmulation } = useAuth()
   const [search, setSearch] = useState('')
   const [emailOwner, setEmailOwner] = useState<OwnerRow | null>(null)
   // Deep link from the Clients page: /settings?tab=owners&portalFor=<contactId>
@@ -3054,6 +3054,13 @@ function OwnersSection() {
     setEditName(o.name || '')
     setEditPhone(o.phone || '')
     setEditTrellisUrl(o.trellis_portal_url || '')
+  }
+
+  // Read-only preview of this owner's portal (admin owner emulation). Setting
+  // the target flips the whole app into the portal shell; no navigation needed.
+  async function previewAsOwner(o: OwnerRow) {
+    const { error } = await startOwnerEmulation({ id: o.id, name: o.name, email: o.email })
+    if (error) toast({ title: t('owners.previewFailed'), description: error, variant: 'destructive' })
   }
 
   return (
@@ -3196,6 +3203,9 @@ function OwnersSection() {
                               </>
                             ) : (
                               <>
+                                <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" disabled={!o.active} onClick={() => previewAsOwner(o)} title={t('owners.viewPortalTitle')} data-testid={`button-view-portal-${o.id}`}>
+                                  <Eye className="w-3.5 h-3.5" />
+                                </Button>
                                 <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground" onClick={() => setAssignOwner(o)} title={t('owners.manageAccessTitle')}>
                                   <Home className="w-3.5 h-3.5" />
                                 </Button>

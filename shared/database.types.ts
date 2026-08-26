@@ -3038,6 +3038,32 @@ export type Database = {
           },
         ]
       }
+      owner_emulations: {
+        Row: {
+          admin_email: string
+          created_at: string
+          owner_id: string
+        }
+        Insert: {
+          admin_email: string
+          created_at?: string
+          owner_id: string
+        }
+        Update: {
+          admin_email?: string
+          created_at?: string
+          owner_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_emulations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       owner_properties: {
         Row: {
           created_at: string
