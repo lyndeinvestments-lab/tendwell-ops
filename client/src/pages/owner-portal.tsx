@@ -764,12 +764,15 @@ function ReferralsSection({ ownerId }: { ownerId: string }) {
   const [form, setForm] = useState({ referred_name: '', referred_email: '', referred_phone: '', note: '' })
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-referrals'],
+    queryKey: ['owner-referrals', ownerId],
     queryFn: async (): Promise<OwnerReferral[]> => {
-      // RLS scopes rows to the signed-in owner.
+      // RLS scopes rows to the signed-in owner — but a STAFF account viewing
+      // the portal (owner view / admin emulation) passes the staff-wide policy
+      // and would see EVERY owner's rows, so filter explicitly too.
       const { data, error } = await supabase
         .from('owner_referrals')
         .select('id, referred_name, referred_email, referred_phone, note, status, reward_status, reward_note, created_at')
+        .eq('owner_id', ownerId)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as OwnerReferral[]
@@ -892,11 +895,14 @@ function TestimonialsSection({ ownerId }: { ownerId: string }) {
   const [form, setForm] = useState({ rating: '5', body: '', display_preference: 'full_name', allow_photo: false })
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-testimonials'],
+    queryKey: ['owner-testimonials', ownerId],
     queryFn: async (): Promise<OwnerTestimonial[]> => {
+      // Explicit owner filter: staff accounts pass the staff-wide RLS policy
+      // and would otherwise see every owner's rows in portal view.
       const { data, error } = await supabase
         .from('owner_testimonials')
         .select('id, rating, body, display_preference, allow_photo, status, created_at')
+        .eq('owner_id', ownerId)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as OwnerTestimonial[]
@@ -1030,11 +1036,15 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
   const [form, setForm] = useState({ category: 'suggestion', body: '' })
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-feedback'],
+    queryKey: ['owner-feedback', ownerId],
     queryFn: async (): Promise<OwnerFeedback[]> => {
+      // Explicit owner filter: staff accounts pass the staff-wide RLS policy
+      // and would otherwise see every owner's rows in portal view (this is
+      // how Robin's feedback showed up in the admin's own portal view).
       const { data, error } = await supabase
         .from('owner_feedback')
         .select('id, category, body, status, created_at')
+        .eq('owner_id', ownerId)
         .order('created_at', { ascending: false })
       if (error) throw error
       return (data ?? []) as OwnerFeedback[]
