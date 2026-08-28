@@ -10,9 +10,14 @@ import { supabase } from '@/lib/supabase'
 //     dropdowns kept a stale list for up to 60s
 //   - Every page firing a fresh request for the same tiny table
 //
-// One shared queryKey + a 15-minute staleTime + a 4-hour gcTime means a
+// One shared queryKey + a short staleTime + a 4-hour gcTime means a
 // single fetch covers the whole app, and a single invalidate from the
 // Cleaners page's mutations refreshes every consumer at once.
+//
+// staleTime is 2 minutes (was 15) with window-focus refetch ON: cleaners are
+// edited from other devices/sessions too (real case: a cleaner provisioned by
+// an admin didn't appear in the inspector dropdown on another machine for up
+// to 15 minutes), and this table is ~15 rows — refetching it is cheap.
 
 export interface Cleaner {
   id: string
@@ -30,7 +35,7 @@ export interface Cleaner {
 
 export const CLEANERS_QUERY_KEY = ['cleaners'] as const
 
-const FIFTEEN_MIN_MS = 15 * 60 * 1000
+const TWO_MIN_MS = 2 * 60 * 1000
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000
 
 export function useCleaners(opts?: { activeOnly?: boolean; enabled?: boolean }) {
@@ -44,9 +49,8 @@ export function useCleaners(opts?: { activeOnly?: boolean; enabled?: boolean }) 
       if (error) throw error
       return (data ?? []) as Cleaner[]
     },
-    staleTime: FIFTEEN_MIN_MS,
+    staleTime: TWO_MIN_MS,
     gcTime: FOUR_HOURS_MS,
-    refetchOnWindowFocus: false,
     enabled: opts?.enabled ?? true,
   })
 

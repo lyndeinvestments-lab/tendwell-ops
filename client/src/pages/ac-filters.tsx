@@ -383,7 +383,119 @@ export default function AcFiltersPage() {
         <ErrorState onRetry={() => refetch()} />
       ) : (
         <>
-      <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
+      {/* Mobile cards — the 8-column table needs horizontal scrolling on a
+          phone, which buried the date + action cells (the ones field staff
+          actually use, per Oniel's 2026-08-28 video). Same data and handlers
+          as the desktop table, stacked one property per card. */}
+      <div className="md:hidden space-y-3">
+        {isLoading ? (
+          [...Array(6)].map((_, i) => (
+            <div key={i} className="rounded-2xl border border-border bg-card shadow-sm p-4 space-y-3">
+              <Skeleton className="h-5 w-2/3" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+          ))
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-card shadow-sm py-12">
+            <EmptyState icon={Wind} title={t('table.emptyTitle')} description={t('table.emptyDescription')} />
+          </div>
+        ) : (
+          paged.map((p: any) => {
+            const dueStatus = getDueStatus(p.next_filter_due, intervalDays)
+            const justSaved = justSavedId === p.id
+            const cardTone = dueStatus?.label === 'Overdue'
+              ? 'border-destructive/30 bg-destructive/5'
+              : dueStatus?.label === 'Due soon'
+              ? 'border-warning/30 bg-warning/5'
+              : 'border-border bg-card'
+            return (
+              <div key={p.id} data-testid={`card-filter-${p.id}`} className={`rounded-2xl border shadow-sm p-4 space-y-3 ${cardTone} ${justSaved ? 'animate-pulse bg-success/10' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {bulkMode && (
+                      <Checkbox checked={bulkSelected.has(p.id)} onCheckedChange={() => toggleBulkSelect(p.id)} />
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate" title={p.name}>{p.name}</p>
+                      <p className="text-2xs text-muted-foreground">{p.stage_name ? t(`common.stage.${slugify(p.stage_name)}`, undefined, p.stage_name) : '—'}</p>
+                    </div>
+                  </div>
+                  {dueStatus && (
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium shrink-0 ${dueStatus.color}`}>
+                      <dueStatus.icon className="w-4 h-4" />
+                      {t(`status.${slugify(dueStatus.label)}`, undefined, dueStatus.label)}
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                  <div>
+                    <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{t('table.filterSize')}</p>
+                    <InlineEdit
+                      value={p.filter_size}
+                      type="text"
+                      onSave={v => updateField({ id: p.id, field: 'filter_size', value: v, oldValue: p.filter_size, propName: p.name })}
+                      testId={`inline-filter-size-m-${p.id}`}
+                      placeholder={t('table.addSizePlaceholder')}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{t('table.lastChanged')}</p>
+                    <InlineEdit
+                      value={p.last_filter_changed ? p.last_filter_changed.slice(0, 10) : ''}
+                      type="date"
+                      onSave={v => {
+                        updateField({ id: p.id, field: 'last_filter_changed', value: v, oldValue: p.last_filter_changed, propName: p.name })
+                        if (v) {
+                          updateField({ id: p.id, field: 'next_filter_due', value: calcNextDue(v), oldValue: p.next_filter_due, propName: p.name })
+                        }
+                      }}
+                      testId={`inline-last-changed-m-${p.id}`}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{t('table.nextDue')}</p>
+                    <InlineEdit
+                      value={p.next_filter_due ? p.next_filter_due.slice(0, 10) : ''}
+                      type="date"
+                      onSave={v => updateField({ id: p.id, field: 'next_filter_due', value: v, oldValue: p.next_filter_due, propName: p.name })}
+                      testId={`inline-next-due-m-${p.id}`}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{t('common.labels.notes')}</p>
+                    <InlineEdit
+                      value={p.notes}
+                      type="text"
+                      onSave={v => updateField({ id: p.id, field: 'notes', value: v, oldValue: p.notes, propName: p.name })}
+                      testId={`inline-notes-m-${p.id}`}
+                      placeholder={t('table.addNotesPlaceholder')}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-9 text-sm gap-1.5"
+                  onClick={() => markChangedToday(p.id)}
+                  disabled={savingId === p.id}
+                  data-testid={`button-mark-changed-m-${p.id}`}
+                  title={t('table.markChangedTooltip')}
+                >
+                  <CalendarCheck className={`w-4 h-4 ${savingId === p.id ? 'animate-pulse' : ''}`} />
+                  {savingId === p.id ? t('table.savingButton') : t('table.todayButton')}
+                </Button>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      <div className="hidden md:block overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
