@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { EmulationBanner } from "@/components/EmulationBanner";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { PropertyModalProvider } from "@/hooks/use-property-modal";
+import { useRealtimeSync } from "@/hooks/use-realtime-sync";
 import { PropertyDetailModal } from "@/components/PropertyDetailModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useAlerts } from "@/pages/alerts";
@@ -316,6 +317,12 @@ function AppLayout() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Live cross-device sync: any write to the core tables (from another
+  // device, a teammate, the AI assistant, a server endpoint) invalidates the
+  // matching caches here within a second or two, so open screens update
+  // without a foreground transition or manual Refresh.
+  useRealtimeSync(!!user);
 
   // Manual escape hatch for stale data — writes made outside this tab (another
   // device, a teammate, the in-app AI assistant's server-side tool calls) never
