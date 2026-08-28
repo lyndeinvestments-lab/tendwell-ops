@@ -52,6 +52,9 @@ interface AggRow {
   cleaner_pay: number
   variable_costs: number
   allocated_overhead: number
+  est_revenue: number
+  /** revenue − expected (cleans×CE + deep×deep-rate); negative = possibly underbilled */
+  gap: number
   profit: number
   margin: number | null
   revenueSources: Set<string>
@@ -59,7 +62,11 @@ interface AggRow {
   overheadSources: Set<string>
 }
 
-type SortKey = 'property_name' | 'cleans' | 'revenue' | 'cleaner_pay' | 'variable_costs' | 'allocated_overhead' | 'profit' | 'margin'
+type SortKey = 'property_name' | 'cleans' | 'revenue' | 'gap' | 'cleaner_pay' | 'variable_costs' | 'allocated_overhead' | 'profit' | 'margin'
+
+// A shortfall smaller than this (or under 5% of expected) is rounding /
+// rate-drift noise, not a missed billing.
+const GAP_ALERT_DOLLARS = 50
 
 function SourceDot({ source, t }: { source: string; t: (k: string) => string }) {
   const cls = source === 'qbo' ? 'bg-success' : source === 'invoiced' ? 'bg-info' : source === 'actual' ? 'bg-success' : 'bg-muted-foreground/50'
@@ -108,7 +115,7 @@ export default function PropertyProfitabilityPage() {
       const acc = byProp.get(r.property_id) ?? {
         property_id: r.property_id, property_name: r.property_name, stage_name: r.stage_name,
         cleans: 0, deep_cleans: 0, revenue: 0, cleaner_pay: 0, variable_costs: 0, allocated_overhead: 0,
-        profit: 0, margin: null,
+        est_revenue: 0, gap: 0, profit: 0, margin: null,
         revenueSources: new Set<string>(), paySources: new Set<string>(), overheadSources: new Set<string>(),
       }
       acc.cleans += r.cleans
@@ -117,6 +124,7 @@ export default function PropertyProfitabilityPage() {
       acc.cleaner_pay += Number(r.cleaner_pay) || 0
       acc.variable_costs += Number(r.variable_costs) || 0
       acc.allocated_overhead += Number(r.allocated_overhead) || 0
+      acc.est_revenue += Number(r.est_revenue) || 0
       if (r.cleans > 0 || r.revenue !== 0) acc.revenueSources.add(r.revenue_source)
       if (r.cleans > 0 || r.cleaner_pay !== 0) acc.paySources.add(r.pay_source)
       acc.overheadSources.add(r.overhead_source)
@@ -124,6 +132,7 @@ export default function PropertyProfitabilityPage() {
     }
     const rows = Array.from(byProp.values()).filter(r => r.cleans > 0 || r.revenue !== 0 || r.cleaner_pay !== 0)
     for (const r of rows) {
+      r.gap = r.revenue - r.est_revenue
       r.profit = r.revenue - r.cleaner_pay - r.variable_costs - r.allocated_overhead
       r.margin = r.revenue > 0 ? (r.profit / r.revenue) * 100 : null
     }
@@ -146,15 +155,19 @@ export default function PropertyProfitabilityPage() {
     const s = filtered.reduce((acc, r) => ({
       cleans: acc.cleans + r.cleans,
       revenue: acc.revenue + r.revenue,
+      gap: acc.gap + r.gap,
       pay: acc.pay + r.cleaner_pay,
       variable: acc.variable + r.variable_costs,
       overhead: acc.overhead + r.allocated_overhead,
       profit: acc.profit + r.profit,
-    }), { cleans: 0, revenue: 0, pay: 0, variable: 0, overhead: 0, profit: 0 })
+    }), { cleans: 0, revenue: 0, gap: 0, pay: 0, variable: 0, overhead: 0, profit: 0 })
     return { ...s, margin: s.revenue > 0 ? (s.profit / s.revenue) * 100 : null }
   }, [filtered])
 
   const unprofitable = filtered.filter(r => r.profit < 0).length
+  const isUnderbilled = (r: AggRow) =>
+    r.cleans > 0 && r.gap < -GAP_ALERT_DOLLARS && r.est_revenue > 0 && r.gap / r.est_revenue < -0.05
+  const underbilled = filtered.filter(isUnderbilled).length
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -162,10 +175,10 @@ export default function PropertyProfitabilityPage() {
   }
 
   function exportCsv() {
-    const header = ['Property', 'Stage', 'Cleans', 'Deep Cleans', 'Revenue', 'Revenue Source', 'Cleaner Pay', 'Pay Source', 'Laundry+Consumables', 'Allocated Overhead', 'Profit', 'Margin %']
+    const header = ['Property', 'Stage', 'Cleans', 'Deep Cleans', 'Revenue', 'Revenue Source', 'Expected Revenue', 'Gap vs Expected', 'Cleaner Pay', 'Pay Source', 'Laundry+Consumables', 'Allocated Overhead', 'Profit', 'Margin %']
     const lines = filtered.map(r => [
       `"${(r.property_name ?? '').replace(/"/g, '""')}"`, r.stage_name ?? '', r.cleans, r.deep_cleans,
-      r.revenue.toFixed(2), Array.from(r.revenueSources).join('+'), r.cleaner_pay.toFixed(2), Array.from(r.paySources).join('+'),
+      r.revenue.toFixed(2), Array.from(r.revenueSources).join('+'), r.est_revenue.toFixed(2), r.gap.toFixed(2), r.cleaner_pay.toFixed(2), Array.from(r.paySources).join('+'),
       r.variable_costs.toFixed(2), r.allocated_overhead.toFixed(2), r.profit.toFixed(2), r.margin?.toFixed(1) ?? '',
     ].join(','))
     const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' })
@@ -225,11 +238,12 @@ export default function PropertyProfitabilityPage() {
       </div>
 
       {/* KPI strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard title={t('profit.kpi.properties')} value={filtered.length} subtitle={t('profit.kpi.cleans', { count: totals.cleans })} icon={Building2} loading={q.isLoading} />
         <StatCard title={t('profit.kpi.revenue')} value={fmtCurrency(totals.revenue)} icon={DollarSign} loading={q.isLoading} />
         <StatCard title={t('profit.kpi.profit')} value={fmtCurrency(totals.profit)} subtitle={totals.margin != null ? fmtPct(totals.margin) : undefined} icon={Percent} tone={totals.profit < 0 ? 'destructive' : 'primary'} loading={q.isLoading} />
         <StatCard title={t('profit.kpi.unprofitable')} value={unprofitable} icon={TrendingDown} tone={unprofitable > 0 ? 'destructive' : 'primary'} loading={q.isLoading} />
+        <StatCard title={t('profit.kpi.underbilled')} value={underbilled} subtitle={t('profit.kpi.underbilledSub')} icon={Search} tone={underbilled > 0 ? 'warning' : 'primary'} loading={q.isLoading} className="col-span-2 lg:col-span-1" />
       </div>
 
       {/* Source legend */}
@@ -247,6 +261,7 @@ export default function PropertyProfitabilityPage() {
               <HeaderCell column="property_name" label={t('profit.table.property')} />
               <HeaderCell column="cleans" label={t('profit.table.cleans')} />
               <HeaderCell column="revenue" label={t('profit.table.revenue')} />
+              <HeaderCell column="gap" label={t('profit.table.vsExpected')} />
               <HeaderCell column="cleaner_pay" label={t('profit.table.cleanerPay')} />
               <HeaderCell column="variable_costs" label={t('profit.table.variableCosts')} />
               <HeaderCell column="allocated_overhead" label={t('profit.table.overhead')} />
@@ -257,10 +272,10 @@ export default function PropertyProfitabilityPage() {
           <tbody>
             {q.isLoading ? (
               [...Array(10)].map((_, i) => (
-                <tr key={i} className="border-b border-border/50">{[...Array(8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>
+                <tr key={i} className="border-b border-border/50">{[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>
               ))
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="py-12"><EmptyState icon={Building2} title={t('profit.emptyTitle')} description={t('profit.emptyDescription')} /></td></tr>
+              <tr><td colSpan={9} className="py-12"><EmptyState icon={Building2} title={t('profit.emptyTitle')} description={t('profit.emptyDescription')} /></td></tr>
             ) : (
               <>
                 {filtered.map(r => (
@@ -279,6 +294,12 @@ export default function PropertyProfitabilityPage() {
                         {Array.from(r.revenueSources).map(s => <SourceDot key={s} source={s} t={t} />)}
                         {fmtCurrency(r.revenue)}
                       </span>
+                    </td>
+                    <td
+                      className={`py-2 px-3 text-right tabular-nums ${isUnderbilled(r) ? 'text-warning font-medium' : 'text-muted-foreground'}`}
+                      title={t('profit.table.vsExpectedTooltip', { expected: fmtCurrency(r.est_revenue) })}
+                    >
+                      {r.est_revenue > 0 ? `${r.gap >= 0 ? '+' : ''}${fmtCurrency(r.gap)}` : '—'}
                     </td>
                     <td className="py-2 px-3 text-right tabular-nums">
                       <span className="inline-flex items-center gap-1.5 justify-end">
@@ -301,6 +322,7 @@ export default function PropertyProfitabilityPage() {
                   <td className="py-2 px-3">{t('profit.table.totals')}</td>
                   <td className="py-2 px-3 text-right tabular-nums">{totals.cleans}</td>
                   <td className="py-2 px-3 text-right tabular-nums">{fmtCurrency(totals.revenue)}</td>
+                  <td className={`py-2 px-3 text-right tabular-nums ${totals.gap < 0 ? 'text-warning' : ''}`}>{`${totals.gap >= 0 ? '+' : ''}${fmtCurrency(totals.gap)}`}</td>
                   <td className="py-2 px-3 text-right tabular-nums">{fmtCurrency(totals.pay)}</td>
                   <td className="py-2 px-3 text-right tabular-nums">{fmtCurrency(totals.variable)}</td>
                   <td className="py-2 px-3 text-right tabular-nums">{fmtCurrency(totals.overhead)}</td>

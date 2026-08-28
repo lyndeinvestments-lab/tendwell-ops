@@ -140,6 +140,8 @@ export const financialsEn = {
       revenue: 'Revenue',
       profit: 'Net Profit',
       unprofitable: 'Unprofitable',
+      underbilled: 'Possibly Underbilled',
+      underbilledSub: 'revenue below cleans × rates',
     },
     sources: {
       qbo: 'QuickBooks actual',
@@ -152,6 +154,8 @@ export const financialsEn = {
       property: 'Property',
       cleans: 'Cleans',
       revenue: 'Revenue',
+      vsExpected: 'vs Expected',
+      vsExpectedTooltip: 'Expected from task counts at sheet rates (regular cleans × CE + deep cleans × deep rate): {{expected}}. A meaningful shortfall can mean a clean was never billed.',
       cleanerPay: 'Cleaner Pay',
       variableCosts: 'Laundry + Consumables',
       overhead: 'Overhead',
