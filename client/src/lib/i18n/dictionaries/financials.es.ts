@@ -136,6 +136,8 @@ export const financialsEs: typeof financialsEn = {
       revenue: 'Ingresos',
       profit: 'Ganancia Neta',
       unprofitable: 'No Rentables',
+      underbilled: 'Posible Subfacturación',
+      underbilledSub: 'ingresos por debajo de limpiezas × tarifas',
     },
     sources: {
       qbo: 'Real de QuickBooks',
@@ -148,6 +150,8 @@ export const financialsEs: typeof financialsEn = {
       property: 'Propiedad',
       cleans: 'Limpiezas',
       revenue: 'Ingresos',
+      vsExpected: 'vs Esperado',
+      vsExpectedTooltip: 'Esperado según el conteo de tareas a tarifas de la hoja (limpiezas regulares × CE + limpiezas profundas × tarifa profunda): {{expected}}. Un déficit significativo puede indicar una limpieza nunca facturada.',
       cleanerPay: 'Pago Limpieza',
       variableCosts: 'Lavandería + Consumibles',
       overhead: 'Gastos Generales',
