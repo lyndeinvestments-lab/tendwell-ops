@@ -6,8 +6,26 @@ import type { ApiKeyContext } from '../issues/_lib.js'
 import type { ApiArea } from '../../shared/api-areas.js'
 
 // Columns a client may never set on a write (in addition to the area's PK,
-// which is stripped separately). Keeps immutable/audit columns server-owned.
-const WRITE_DENYLIST = new Set(['created_at'])
+// which is stripped separately). Keeps immutable/audit and trigger-owned
+// columns server-owned — an API-key write must not be able to forge
+// timestamps/attribution that staff and other tables treat as trustworthy
+// audit trail (e.g. backdating `updated_at` to suppress the issues
+// catch-up feed's is_unread computation, or forging `acknowledged_by`).
+const WRITE_DENYLIST = new Set([
+  'created_at',
+  'updated_at',
+  'acknowledged_at',
+  'acknowledged_by',
+  'completed_at',
+  'share_token',
+  'resolved_at',
+  'resolved_by',
+  'approved_at',
+  'approved_by',
+  'last_used_at',
+  'revoked_at',
+  'source_file_sha256',
+])
 
 // Filter a write body: drop the PK and denylisted columns, coerce '' → null so
 // blank inputs don't poison a row. Unknown columns are left in and rejected by
