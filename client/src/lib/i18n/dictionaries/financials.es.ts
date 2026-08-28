@@ -61,24 +61,103 @@ export const financialsEs: typeof financialsEn = {
   wrapper: {
     pageTitle: 'Pro Forma',
     tabs: {
-      live: 'Pro Forma en Vivo',
+      pl: 'P&L',
+      live: 'Pronóstico',
       perProperty: 'Por Propiedad',
+      pricing: 'Precios',
       byClient: 'Por Cliente',
     },
     meta: {
+      pl: {
+        title: 'Estado de Resultados',
+        subtitle: 'El P&L de QuickBooks, sincronizado cada noche - ingresos, COGS, gastos e ingreso neto mensuales con desglose por cuenta.',
+      },
       live: {
-        title: 'Pro Forma en Vivo',
+        title: 'Pronóstico',
         subtitle: 'Datos reales de tareas completadas y QBO comparados con fórmulas de costo estimado - variación mes a mes y pronóstico de 12 meses.',
       },
       perProperty: {
-        title: 'Pro Forma por Propiedad',
-        subtitle: 'Ingresos, costo y ganancia mensuales estimados por propiedad - con importación de CSV.',
+        title: 'Rentabilidad por Propiedad',
+        subtitle: 'Ganancia mensual real por propiedad: ingresos y pago de limpieza reales, lavandería/consumibles por fórmula, y gastos generales reales asignados por tareas.',
+      },
+      pricing: {
+        title: 'Precios',
+        subtitle: 'Tarifas por propiedad y economía estimada - CE de punto de equilibrio, precios hipotéticos y supuestos de frecuencia.',
       },
       byClient: {
         title: 'Pro Forma por Cliente',
         subtitle: 'Resumen por cliente: ingresos totales, pago de limpieza y margen bruto agrupados por propietario, con filas de propiedades expandibles.',
       },
     },
+  },
+
+  // ─── owned by: pl-statement.tsx ─────────────────────────────────────────
+  pl: {
+    syncedAt: 'QuickBooks sincronizado {when}',
+    neverSynced: 'Nunca sincronizado desde QuickBooks - presiona Actualizar o espera la sincronización nocturna',
+    refreshFromQbo: 'Actualizar desde QuickBooks',
+    refreshing: 'Actualizando…',
+    refreshDone: 'P&L de QuickBooks actualizado',
+    refreshDoneDesc: '{months} meses actualizados',
+    refreshFailed: 'Error al actualizar',
+    chartTitle: 'Ingresos vs costos, últimos 13 meses',
+    chart: { income: 'Ingresos', costs: 'COGS + Gastos', margin: 'Margen neto' },
+    kpi: {
+      revenue: 'Ingresos',
+      netIncome: 'Ingreso Neto',
+      netMargin: 'Margen Neto',
+      revPerClean: 'Ingreso / Limpieza',
+      costPerClean: 'Costo / Limpieza',
+      cleansCount: '{count} limpiezas',
+    },
+    table: {
+      month: 'Mes',
+      income: 'Ingresos',
+      estRevenue: 'Ingresos Est.',
+      cogs: 'COGS',
+      grossProfit: 'Ganancia Bruta',
+      expenses: 'Gastos',
+      netIncome: 'Ingreso Neto',
+      margin: 'Margen',
+      cleans: 'Limpiezas',
+    },
+    breakdown: { income: 'Ingresos', cogs: 'Costo de Ventas', expenses: 'Gastos' },
+    emptyTitle: 'Aún no hay datos de QuickBooks',
+    emptyDescription: 'La sincronización nocturna llena esta tabla. Los administradores pueden presionar "Actualizar desde QuickBooks" para traerla ahora.',
+  },
+
+  // ─── owned by: property-profitability.tsx ───────────────────────────────
+  profit: {
+    searchPlaceholder: 'Buscar propiedades…',
+    range: { one: 'Un solo mes', three: 'Últimos 3 meses', twelve: 'Últimos 12 meses' },
+    kpi: {
+      properties: 'Propiedades',
+      cleans: '{count} limpiezas',
+      revenue: 'Ingresos',
+      profit: 'Ganancia Neta',
+      unprofitable: 'No Rentables',
+    },
+    sources: {
+      qbo: 'Real de QuickBooks',
+      invoiced: 'Real facturado',
+      estimate: 'Estimado de la hoja',
+      actual: 'Real (asignado)',
+      average: 'Promedio (hoja)',
+    },
+    table: {
+      property: 'Propiedad',
+      cleans: 'Limpiezas',
+      revenue: 'Ingresos',
+      cleanerPay: 'Pago Limpieza',
+      variableCosts: 'Lavandería + Consumibles',
+      overhead: 'Gastos Generales',
+      profit: 'Ganancia',
+      margin: 'Margen',
+      totals: 'Totales',
+    },
+    emptyTitle: 'Sin actividad en este período',
+    emptyDescription: 'No se encontraron limpiezas ni líneas de factura para el/los mes(es) seleccionado(s).',
+    methodology: 'Los ingresos y el pago de limpieza usan datos reales cuando existen (punto verde = ingreso por clase de QuickBooks, azul = facturación, gris = estimado de la hoja). Lavandería y consumibles usan la fórmula por limpieza de cada propiedad (camas, baños, cocina, jacuzzi). Los gastos generales son el fondo mensual real de QuickBooks (inspecciones, basura, liderazgo, gastos operativos) asignado entre propiedades según su proporción de limpiezas - o los promedios por limpieza de la hoja para meses que QuickBooks aún no sincroniza.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────

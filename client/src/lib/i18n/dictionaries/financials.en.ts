@@ -65,24 +65,103 @@ export const financialsEn = {
   wrapper: {
     pageTitle: 'Pro Forma',
     tabs: {
-      live: 'Live Pro Forma',
+      pl: 'P&L',
+      live: 'Forecast',
       perProperty: 'Per-Property',
+      pricing: 'Pricing',
       byClient: 'By Client',
     },
     meta: {
+      pl: {
+        title: 'Profit & Loss',
+        subtitle: 'The QuickBooks P&L, synced nightly - monthly income, COGS, expenses, and net income with account-level breakdowns.',
+      },
       live: {
-        title: 'Live Pro Forma',
+        title: 'Forecast',
         subtitle: 'Actuals from completed tasks & QBO compared to estimated cost formulas - month-by-month variance and 12-month forecast.',
       },
       perProperty: {
-        title: 'Per-Property Pro Forma',
-        subtitle: 'Estimated monthly revenue, cost, and profit per property - with CSV import.',
+        title: 'Per-Property Profitability',
+        subtitle: 'Real monthly profit per property: actual revenue and cleaner pay, formula laundry/consumables, and actual overhead allocated by task share.',
+      },
+      pricing: {
+        title: 'Pricing',
+        subtitle: 'Per-property rates and estimated economics - break-even CE, what-if pricing, and frequency assumptions.',
       },
       byClient: {
         title: 'Pro Forma by Client',
         subtitle: 'Client rollup: total revenue, cleaner pay, and gross margin grouped by owner, with expandable property rows.',
       },
     },
+  },
+
+  // ─── owned by: pl-statement.tsx ─────────────────────────────────────────
+  pl: {
+    syncedAt: 'QuickBooks synced {when}',
+    neverSynced: 'Never synced from QuickBooks - press Refresh or wait for tonight’s sync',
+    refreshFromQbo: 'Refresh from QuickBooks',
+    refreshing: 'Refreshing…',
+    refreshDone: 'QuickBooks P&L refreshed',
+    refreshDoneDesc: '{months} months updated',
+    refreshFailed: 'Refresh failed',
+    chartTitle: 'Income vs costs, trailing 13 months',
+    chart: { income: 'Income', costs: 'COGS + Expenses', margin: 'Net margin' },
+    kpi: {
+      revenue: 'Revenue',
+      netIncome: 'Net Income',
+      netMargin: 'Net Margin',
+      revPerClean: 'Revenue / Clean',
+      costPerClean: 'Cost / Clean',
+      cleansCount: '{count} cleans',
+    },
+    table: {
+      month: 'Month',
+      income: 'Income',
+      estRevenue: 'Est. Revenue',
+      cogs: 'COGS',
+      grossProfit: 'Gross Profit',
+      expenses: 'Expenses',
+      netIncome: 'Net Income',
+      margin: 'Margin',
+      cleans: 'Cleans',
+    },
+    breakdown: { income: 'Income', cogs: 'Cost of Goods Sold', expenses: 'Expenses' },
+    emptyTitle: 'No QuickBooks data yet',
+    emptyDescription: 'The nightly sync populates this table. Admins can press "Refresh from QuickBooks" to pull it now.',
+  },
+
+  // ─── owned by: property-profitability.tsx ───────────────────────────────
+  profit: {
+    searchPlaceholder: 'Search properties…',
+    range: { one: 'Single month', three: 'Last 3 months', twelve: 'Trailing 12 months' },
+    kpi: {
+      properties: 'Properties',
+      cleans: '{count} cleans',
+      revenue: 'Revenue',
+      profit: 'Net Profit',
+      unprofitable: 'Unprofitable',
+    },
+    sources: {
+      qbo: 'QuickBooks actual',
+      invoiced: 'Invoiced actual',
+      estimate: 'Sheet estimate',
+      actual: 'Actual (allocated)',
+      average: 'Average (sheet)',
+    },
+    table: {
+      property: 'Property',
+      cleans: 'Cleans',
+      revenue: 'Revenue',
+      cleanerPay: 'Cleaner Pay',
+      variableCosts: 'Laundry + Consumables',
+      overhead: 'Overhead',
+      profit: 'Profit',
+      margin: 'Margin',
+      totals: 'Totals',
+    },
+    emptyTitle: 'No activity in this period',
+    emptyDescription: 'No cleans or invoice lines found for the selected month(s).',
+    methodology: 'Revenue and cleaner pay use actuals when available (green dot = QuickBooks class income, blue = invoicing, gray = sheet estimate). Laundry and consumables use each property’s per-clean formula (beds, baths, kitchen, hot tub). Overhead is the month’s actual QuickBooks pool (inspections, trash, leadership, operating expenses) allocated across properties by share of cleans - or the sheet’s per-clean averages for months QuickBooks hasn’t synced.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────
