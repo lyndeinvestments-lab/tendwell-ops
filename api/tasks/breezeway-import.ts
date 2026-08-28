@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import Papa from 'papaparse'
+import { autoActivateProperties } from './_auto-stage'
 
 // POST /api/tasks/breezeway-import?source=current_month|next_month
 //
@@ -486,6 +487,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : null,
   })
 
+  // Auto-activate pre-Active properties that now have a turn/departure clean.
+  // Best-effort: an activation failure must never fail the import itself.
+  let autoActivated: Awaited<ReturnType<typeof autoActivateProperties>> = []
+  try {
+    autoActivated = await autoActivateProperties(supabase)
+  } catch (e) {
+    console.error('auto-activate failed (import succeeded):', e)
+  }
+
   res.status(200).json({
     ok: true,
     batch,
@@ -497,5 +507,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     deep_cleans_in_batch: deepCleansInBatch,
     unmatched_addresses_count: unmatchedAddrs.size,
     sample_unmatched_addresses: [...unmatchedAddrs].slice(0, 5),
+    auto_activated: autoActivated.map(a => a.name),
   })
 }

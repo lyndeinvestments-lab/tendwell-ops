@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { autoActivateProperties } from '../tasks/_auto-stage'
 
 export interface SyncProgress {
   phase: string
@@ -348,6 +349,17 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   await emit('pruning', processed, estimatedTotal, 'Pruning stale Workspace B tasks…')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any).from('trellis_task_snapshot').delete().eq('workspace', 'B').lt('synced_at', runStartIso)
+
+  // Auto-activate pre-Active properties that now have a turn/departure clean
+  // scheduled. Best-effort: never fail the sync over it.
+  try {
+    const activated = await autoActivateProperties(supabase)
+    if (activated.length > 0) {
+      await emit('auto_stage', processed, estimatedTotal, `Auto-activated ${activated.length} propert${activated.length === 1 ? 'y' : 'ies'}: ${activated.map(a => a.name).join(', ').slice(0, 300)}`)
+    }
+  } catch (e) {
+    console.error('auto-activate failed (sync succeeded):', e)
+  }
 
   const counts: SyncCounts = {
     roster: opts.tasksOnly ? 0 : rosterMap.size,
