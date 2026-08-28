@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { autoActivateProperties } from '../tasks/_auto-stage'
+import { autoActivateProperties } from '../tasks/_auto-stage.js'
 
 export interface SyncProgress {
   phase: string
