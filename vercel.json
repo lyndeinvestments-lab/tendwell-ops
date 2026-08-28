@@ -8,14 +8,14 @@
       "includeFiles": "api/notify/_lib.ts"
     },
     "api/trellis/*.ts": {
-      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/notify/_lib.ts"
+      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts,api/notify/_lib.ts"
     },
     "api/cron/trellis-sync.ts": {
-      "includeFiles": "api/trellis/_sync-core.ts",
+      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts",
       "maxDuration": 300
     },
     "api/cron/trellis-tasks-refresh.ts": {
-      "includeFiles": "api/trellis/_sync-core.ts",
+      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts",
       "maxDuration": 300
     },
     "api/hostaway/*.ts": {
@@ -46,6 +46,9 @@
     },
     "api/invoices/*.ts": {
       "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/qbo/_lib.ts"
+    },
+    "api/tasks/*.ts": {
+      "includeFiles": "api/tasks/_auto-stage.ts"
     }
   },
   "rewrites": [

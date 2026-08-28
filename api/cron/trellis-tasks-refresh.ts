@@ -29,10 +29,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const now = () => new Date().toISOString()
 
   // Skip if a full sync is already running/queued — the hourly refresh would
-  // race its upserts and pruning for no benefit.
+  // race its upserts and pruning for no benefit. Only a row started within
+  // the last 30 min counts as "running" (maxDuration is 5 min, so anything
+  // older is a crashed run that never updated its row). The original
+  // unbounded check let ONE zombie 'running' row (2026-07-22) silently skip
+  // every hourly refresh for over a month — mark stale rows as errored so
+  // the log self-heals instead of wedging this cron forever.
+  const staleCutoff = new Date(Date.now() - 30 * 60_000).toISOString()
   const { data: active } = await sb.from('trellis_sync_log')
-    .select('id').in('status', ['requested', 'running']).limit(1)
-  if (active && active.length > 0) {
+    .select('id, started_at, created_at').in('status', ['requested', 'running'])
+  type ActiveRow = { id: string; started_at: string | null; created_at: string | null }
+  // 'requested' rows haven't started yet — age them by created_at instead.
+  const ageOf = (r: ActiveRow) => r.started_at ?? r.created_at ?? ''
+  const fresh = ((active ?? []) as ActiveRow[]).filter(r => ageOf(r) >= staleCutoff)
+  const stale = ((active ?? []) as ActiveRow[]).filter(r => ageOf(r) < staleCutoff)
+  if (stale.length > 0) {
+    await sb.from('trellis_sync_log')
+      .update({ status: 'error', finished_at: now(), error: 'Marked stale by hourly refresh: run never finished (crashed or timed out)' })
+      .in('id', stale.map((r: { id: string }) => r.id))
+  }
+  if (fresh.length > 0) {
     return res.json({ ok: true, skipped: 'another sync is already running' })
   }
 

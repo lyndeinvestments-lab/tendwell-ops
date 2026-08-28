@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import Papa from 'papaparse'
-import { autoActivateProperties } from './_auto-stage'
+import { autoActivateProperties } from './_auto-stage.js'
 
 // POST /api/tasks/breezeway-import?source=current_month|next_month
 //
