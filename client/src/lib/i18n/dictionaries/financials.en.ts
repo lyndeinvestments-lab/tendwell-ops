@@ -97,12 +97,12 @@ export const financialsEn = {
 
   // ─── owned by: pl-statement.tsx ─────────────────────────────────────────
   pl: {
-    syncedAt: 'QuickBooks synced {when}',
+    syncedAt: 'QuickBooks synced {{when}}',
     neverSynced: 'Never synced from QuickBooks - press Refresh or wait for tonight’s sync',
     refreshFromQbo: 'Refresh from QuickBooks',
     refreshing: 'Refreshing…',
     refreshDone: 'QuickBooks P&L refreshed',
-    refreshDoneDesc: '{months} months updated',
+    refreshDoneDesc: '{{months}} months updated',
     refreshFailed: 'Refresh failed',
     chartTitle: 'Income vs costs, trailing 13 months',
     chart: { income: 'Income', costs: 'COGS + Expenses', margin: 'Net margin' },
@@ -112,7 +112,7 @@ export const financialsEn = {
       netMargin: 'Net Margin',
       revPerClean: 'Revenue / Clean',
       costPerClean: 'Cost / Clean',
-      cleansCount: '{count} cleans',
+      cleansCount: '{{count}} cleans',
     },
     table: {
       month: 'Month',
@@ -136,7 +136,7 @@ export const financialsEn = {
     range: { one: 'Single month', three: 'Last 3 months', twelve: 'Trailing 12 months' },
     kpi: {
       properties: 'Properties',
-      cleans: '{count} cleans',
+      cleans: '{{count}} cleans',
       revenue: 'Revenue',
       profit: 'Net Profit',
       unprofitable: 'Unprofitable',
@@ -161,11 +161,15 @@ export const financialsEn = {
     },
     emptyTitle: 'No activity in this period',
     emptyDescription: 'No cleans or invoice lines found for the selected month(s).',
-    methodology: 'Revenue and cleaner pay use actuals when available (green dot = QuickBooks class income, blue = invoicing, gray = sheet estimate). Laundry and consumables use each property’s per-clean formula (beds, baths, kitchen, hot tub). Overhead is the month’s actual QuickBooks pool (inspections, trash, leadership, operating expenses) allocated across properties by share of cleans - or the sheet’s per-clean averages for months QuickBooks hasn’t synced.',
+    methodology: 'Revenue and cleaner pay use actuals when available (green dot = QuickBooks class income, blue = invoicing, gray = sheet estimate). Laundry + Consumables uses each property’s per-clean formula (beds, baths, kitchen, hot tub) as the weights, scaled so the month’s total matches QuickBooks’ actual laundry + supplies spend. Overhead is the month’s actual QuickBooks pool (inspections, trash, leadership, operating expenses) allocated across properties by share of cleans - or the sheet’s per-clean averages for months QuickBooks hasn’t synced.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────
   proForma: {
+    auto: {
+      freqTooltip: 'Calculated automatically from the last 90 days of real cleans (stored manual value: {{manual}})',
+      firstCleanTooltip: 'Earliest real clean task on record (Breezeway/Trellis) - calculated automatically',
+    },
     freq: {
       weekly: 'Weekly',
       biweekly: 'Biweekly',

@@ -93,12 +93,12 @@ export const financialsEs: typeof financialsEn = {
 
   // ─── owned by: pl-statement.tsx ─────────────────────────────────────────
   pl: {
-    syncedAt: 'QuickBooks sincronizado {when}',
+    syncedAt: 'QuickBooks sincronizado {{when}}',
     neverSynced: 'Nunca sincronizado desde QuickBooks - presiona Actualizar o espera la sincronización nocturna',
     refreshFromQbo: 'Actualizar desde QuickBooks',
     refreshing: 'Actualizando…',
     refreshDone: 'P&L de QuickBooks actualizado',
-    refreshDoneDesc: '{months} meses actualizados',
+    refreshDoneDesc: '{{months}} meses actualizados',
     refreshFailed: 'Error al actualizar',
     chartTitle: 'Ingresos vs costos, últimos 13 meses',
     chart: { income: 'Ingresos', costs: 'COGS + Gastos', margin: 'Margen neto' },
@@ -108,7 +108,7 @@ export const financialsEs: typeof financialsEn = {
       netMargin: 'Margen Neto',
       revPerClean: 'Ingreso / Limpieza',
       costPerClean: 'Costo / Limpieza',
-      cleansCount: '{count} limpiezas',
+      cleansCount: '{{count}} limpiezas',
     },
     table: {
       month: 'Mes',
@@ -132,7 +132,7 @@ export const financialsEs: typeof financialsEn = {
     range: { one: 'Un solo mes', three: 'Últimos 3 meses', twelve: 'Últimos 12 meses' },
     kpi: {
       properties: 'Propiedades',
-      cleans: '{count} limpiezas',
+      cleans: '{{count}} limpiezas',
       revenue: 'Ingresos',
       profit: 'Ganancia Neta',
       unprofitable: 'No Rentables',
@@ -157,11 +157,15 @@ export const financialsEs: typeof financialsEn = {
     },
     emptyTitle: 'Sin actividad en este período',
     emptyDescription: 'No se encontraron limpiezas ni líneas de factura para el/los mes(es) seleccionado(s).',
-    methodology: 'Los ingresos y el pago de limpieza usan datos reales cuando existen (punto verde = ingreso por clase de QuickBooks, azul = facturación, gris = estimado de la hoja). Lavandería y consumibles usan la fórmula por limpieza de cada propiedad (camas, baños, cocina, jacuzzi). Los gastos generales son el fondo mensual real de QuickBooks (inspecciones, basura, liderazgo, gastos operativos) asignado entre propiedades según su proporción de limpiezas - o los promedios por limpieza de la hoja para meses que QuickBooks aún no sincroniza.',
+    methodology: 'Los ingresos y el pago de limpieza usan datos reales cuando existen (punto verde = ingreso por clase de QuickBooks, azul = facturación, gris = estimado de la hoja). Lavandería + Consumibles usa la fórmula por limpieza de cada propiedad (camas, baños, cocina, jacuzzi) como pesos, escalados para que el total del mes coincida con el gasto real de lavandería + insumos de QuickBooks. Los gastos generales son el fondo mensual real de QuickBooks (inspecciones, basura, liderazgo, gastos operativos) asignado entre propiedades según su proporción de limpiezas - o los promedios por limpieza de la hoja para meses que QuickBooks aún no sincroniza.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────
   proForma: {
+    auto: {
+      freqTooltip: 'Calculado automáticamente con las limpiezas reales de los últimos 90 días (valor manual guardado: {{manual}})',
+      firstCleanTooltip: 'Primera tarea de limpieza real registrada (Breezeway/Trellis) - calculado automáticamente',
+    },
     freq: {
       weekly: 'Semanal',
       biweekly: 'Quincenal',
