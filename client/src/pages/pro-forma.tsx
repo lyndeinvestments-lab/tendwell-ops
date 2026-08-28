@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { Search, AlertTriangle, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp } from 'lucide-react'
+import { Search, AlertTriangle, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp, Zap } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
@@ -333,11 +333,11 @@ export default function ProFormaPage() {
   // avg_cleans_per_month so the Per-Property sheet auto-updates as cleans
   // happen — operator no longer needs to re-import a CSV to refresh.
   const { data: breezewayStats } = useQuery({
-    queryKey: ['/supabase/property-breezeway-stats'],
+    queryKey: ['/supabase/property-clean-stats'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('property_breezeway_stats')
-        .select('property_id, total_cleans, months_with_data, avg_cleans_per_month, avg_deep_cleans_per_month, latest_task')
+      const { data, error } = await (supabase as any)
+        .from('property_clean_stats')
+        .select('property_id, total_cleans, months_with_data, avg_cleans_per_month, avg_deep_cleans_per_month, latest_task, first_clean_date, cleans_90d')
       if (error) throw error
       return data || []
     },
@@ -361,10 +361,20 @@ export default function ProFormaPage() {
       const revenue = cpm * ce
       const cost    = cpm * costPerClean
       const manualCpm = Number(p.avg_cleans_per_month) || null
+      // Auto-derived frequency + first clean date from real task cadence
+      // (recent 90-day rate; see property_clean_stats). The stored manual
+      // values are kept in _manual_* for tooltips, and properties with NO
+      // task history keep the editable manual fields entirely.
+      const autoFreq = cpm >= 3.5 ? 'weekly' : cpm >= 1.75 ? 'biweekly' : cpm >= 0.75 ? 'monthly' : 'as_needed'
       return {
         ...p,
         avg_cleans_per_month: cpm,
         _manual_avg_cleans: manualCpm,
+        cleaning_frequency: autoFreq,
+        _manual_freq: p.cleaning_frequency,
+        _freq_auto: true,
+        first_clean_date: s.first_clean_date ?? p.first_clean_date,
+        _first_clean_auto: s.first_clean_date != null,
         monthly_revenue_estimate: revenue,
         monthly_cost_estimate: cost,
         monthly_profit_estimate: revenue - cost,
@@ -972,8 +982,21 @@ export default function ProFormaPage() {
                     </td>
                     <td className={`py-2 px-3 text-xs tabular-nums font-medium ${(p.estimated_profit || 0) < 0 ? 'text-destructive' : ''}`}>{fmt(p.estimated_profit)}</td>
                     <td className="py-2 px-3">
-                      {/* Feature 1: Custom frequency with inline input */}
-                      <FrequencyCell id={p.id} value={p.cleaning_frequency} avgCleans={p.avg_cleans_per_month} />
+                      {p._freq_auto ? (
+                        // Auto-derived from the last 90 days of real cleans;
+                        // manual dropdown only remains for properties with no
+                        // task history.
+                        <span
+                          className={`inline-flex items-center gap-1 text-xs ${p.cleaning_frequency === 'as_needed' ? 'text-warning' : ''}`}
+                          title={t('proForma.auto.freqTooltip', { manual: p._manual_freq ? t(FREQ_LABEL_KEYS[p._manual_freq] ?? '', undefined, p._manual_freq) : '—' })}
+                          data-testid={`auto-freq-${p.id}`}
+                        >
+                          <Zap className="w-3 h-3 text-primary/70" />
+                          {t(FREQ_LABEL_KEYS[p.cleaning_frequency])}
+                        </span>
+                      ) : (
+                        <FrequencyCell id={p.id} value={p.cleaning_frequency} avgCleans={p.avg_cleans_per_month} />
+                      )}
                     </td>
                     <td
                       className={`py-2 px-3 text-xs tabular-nums ${(p.avg_cleans_per_month ?? 0) > 10 ? 'text-destructive font-medium' : ''}`}
@@ -988,12 +1011,23 @@ export default function ProFormaPage() {
                       {p.avg_cleans_per_month ?? '—'}
                     </td>
                     <td className="py-2 px-3">
-                      <InlineEdit
-                        value={p.first_clean_date ? p.first_clean_date.slice(0, 10) : ''}
-                        type="date"
-                        onSave={v => updateDate({ id: p.id, value: v })}
-                        testId={`inline-date-${p.id}`}
-                      />
+                      {p._first_clean_auto ? (
+                        <span
+                          className="inline-flex items-center gap-1 text-xs tabular-nums"
+                          title={t('proForma.auto.firstCleanTooltip')}
+                          data-testid={`auto-date-${p.id}`}
+                        >
+                          <Zap className="w-3 h-3 text-primary/70" />
+                          {p.first_clean_date.slice(0, 10)}
+                        </span>
+                      ) : (
+                        <InlineEdit
+                          value={p.first_clean_date ? p.first_clean_date.slice(0, 10) : ''}
+                          type="date"
+                          onSave={v => updateDate({ id: p.id, value: v })}
+                          testId={`inline-date-${p.id}`}
+                        />
+                      )}
                     </td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.monthly_revenue_estimate)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums">{fmt(p.monthly_cost_estimate)}</td>
