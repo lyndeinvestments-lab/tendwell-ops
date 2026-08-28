@@ -50,11 +50,22 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   const { request } = event
-  // Skip non-GET, Supabase API calls, and Vercel analytics
   if (request.method !== 'GET') return
-  if (request.url.includes('supabase.co')) return
-  if (request.url.includes('vercel-analytics')) return
-  if (request.url.includes('/api/')) return
+  // ONLY same-origin requests are ever cached. The Supabase API lives on the
+  // custom domain api.tendwellcleaningco.com, which the old
+  // `url.includes('supabase.co')` bypass did not match — so every database
+  // READ was served cache-first from this worker while writes (POST/PATCH,
+  // non-GET) went through and saved. Result: edits persisted in the DB but
+  // the screen kept showing the frozen cached JSON on every device, and even
+  // the in-app Refresh button "did nothing" (its refetch was answered from
+  // this cache). An origin check cannot rot the way a hostname substring
+  // list does: any cross-origin endpoint — Supabase, fonts, analytics,
+  // future APIs — goes straight to the network.
+  let url
+  try { url = new URL(request.url) } catch (_) { return }
+  if (url.origin !== self.location.origin) return
+  // Same-origin serverless API routes are dynamic — never cache.
+  if (url.pathname.startsWith('/api/')) return
 
   event.respondWith(
     caches.match(request).then(cached => {
