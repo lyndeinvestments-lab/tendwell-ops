@@ -52,6 +52,8 @@ const PROPERTY_QUERY_KEY_PREFIXES = [
   '/supabase/assignable-properties',   // ContactModal property picker
   '/supabase/hostaway-property-options',       // Hostaway link picker
   '/supabase/trellis-sync',            // API Sync page (opsProperties sub-query)
+  '/supabase/property-month-financials', // Pro Forma per-property profitability (view over properties + tasks + invoices)
+  '/supabase/pl-month-estimates',      // Pro Forma P&L estimate column (same view, aggregated)
   '/supabase/owner-assignable-properties',     // Settings → Owners property picker
   '/supabase/owner-assigned-props',    // Settings → Owners assigned list
   '/supabase/owner-props-for-agreements',      // Settings → Agreements picker
