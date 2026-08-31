@@ -123,16 +123,25 @@ export const MCP_SCOPE_DESCRIPTIONS: Record<McpScope, string> = {
 
 /**
  * Parse a space-separated scope string. Unknown scopes are dropped rather than
- * rejected (RFC 6749 §3.3 lets the server issue a narrower set than asked for);
- * an empty result falls back to read-only, never to write.
+ * rejected (RFC 6749 §3.3 lets the server issue a narrower set than asked for).
+ *
+ * When a client asks for nothing, we default to the FULL set rather than
+ * read-only. That looks like the less cautious choice and isn't, because the
+ * real gate is the consent screen: it renders the scopes out of the signed
+ * state, so whatever we default to is enumerated for the user before they press
+ * Allow — there is no silent escalation. Defaulting to read-only instead
+ * produced a connector that added successfully and then failed the first time
+ * it tried to log a meeting, with no scope field anywhere in Claude's UI for
+ * the user to correct it. A client that genuinely wants read-only can still ask
+ * for exactly `crm:read` and we honour it.
  */
 export function parseScopeParam(raw: string | null | undefined): McpScope[] {
-  if (!raw) return ['crm:read']
+  if (!raw) return [...MCP_SCOPES]
   const accepted = raw
     .split(/\s+/)
     .map(s => s.trim())
     .filter((s): s is McpScope => MCP_SCOPE_SET.has(s))
-  return accepted.length > 0 ? Array.from(new Set(accepted)) : ['crm:read']
+  return accepted.length > 0 ? Array.from(new Set(accepted)) : [...MCP_SCOPES]
 }
 
 // ─── Secrets: generation, hashing, PKCE ─────────────────────────────────────
