@@ -141,7 +141,7 @@ Key tables:
 - `pipeline_stages` — stage definitions (id, name, display_order)
 - `stage_transitions` — audit trail of stage changes
 - `property_edit_log` — field-level edit audit trail
-- `contacts` — CRM contacts (payment_method, created_at)
+- `contacts` — CRM contacts (payment_method, created_at). Also carries the **client lifecycle** (`20260831_crm_client_lifecycle.sql`): `client_stage` + `client_stage_since` + `next_action` + `next_action_date`.
 - `app_users` — login users (role, label, password_hash)
 - `api_keys` — in-app scoped API keys for external integrations (`20260814_api_keys.sql`). Stores only a SHA-256 `key_hash` (unique) + a display `key_prefix`; `scopes text[]` allow-list; `created_by`, `last_used_at`, `revoked_at`, `expires_at`. Admin-only RLS (`current_user_role()='admin'`); the service role verifies presented keys server-side. Managed in Settings → API Keys.
 - `app_settings` — KV config store (inspection cost, profit tiers, AC filter interval, etc.)
@@ -174,6 +174,26 @@ Private Supabase Storage bucket `agreements` — signed PDFs stored under `signe
 - Private storage bucket `vendor-invoices` — original uploaded vendor files at `<run_id>/source.csv`, staff-only policies.
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
+
+**CRM client lifecycle (migration `20260831_crm_client_lifecycle.sql`):**
+
+There are **two independent stage axes**, and nothing cascades between them — moving a client never moves their properties, and vice versa. The UI shows both side by side and a human decides.
+
+| Axis | Where | Stages |
+|---|---|---|
+| **Property** (operational, pre-existing) | `properties.stage_id` → `pipeline_stages` | Lead → Quote → Onboarding → Active → Offboarding → Offboarded |
+| **Client** (relationship, new) | `contacts.client_stage` | `new` → `prospect` → `quoted` → `won`, with `nurture` / `not_interested` / `churned` as exits |
+
+Why the second axis exists: a prospect from a first meeting has no address, so there is nothing to make a property row from, and "not interested" describes the relationship rather than one house. Before this, `Lead` had 0 rows, 109 properties sat in `Quote` untouched since 2026-06-25, and `contact_interactions` / `contact_notes` were both empty against ~20 external prospect meetings a month — the CRM only ever recorded winners.
+
+- `client_stage` = `new` is the **meeting-intake review queue**. `crm_log_meeting` creates contacts there; a human promotes or discards. Worst case is a discarded card.
+- `client_stage_transitions` — audit trail, mirrors `stage_transitions`. Written only by `crm_set_client_stage`.
+- `contact_interactions` gains `source` / `external_id` / `occurred_at`, with a **unique index on `external_id`** — that is the whole idempotency story, so the daily intake pass can re-read the last 7 days of Granola meetings and never double-log one. `occurred_at` is when you *met*; `created_at` is when the row was written.
+- **Write RPCs** (SECURITY DEFINER, guarded by `crm_caller_allowed()` = staff session ∪ service role ∪ direct Postgres connection): `crm_log_meeting`, `crm_log_interaction`, `crm_set_client_stage`, `crm_move_property_stage`. Stage moves go through the RPC so the audit row is written in the same statement — `client_stage` and `client_stage_since` are in the `api/data` **WRITE_DENYLIST** so a raw API-key PATCH can't bypass it. (Note: `properties.stage_id` is *not* denylisted — a raw PATCH there still skips `stage_transitions`. Pre-existing; unchanged here.)
+- **Read models** (`security_invoker = true` views, one build consumed by both the UI and the MCP server): `crm_client_360` (per-client rollups), `crm_attention` (one row per client+reason for anything gone quiet), `crm_stale_quote_properties` (the Quote graveyard).
+- Attention **thresholds live in `app_settings`** under `crm_new_lead_stale_days` (3), `crm_prospect_stale_days` (14), `crm_quote_response_days` (7), `crm_nurture_revisit_days` (90), `crm_property_quote_stale_days` (30) — tune without a migration. `crm_setting_int()` falls back to the default if a value is malformed.
+- Shared vocabulary: `shared/crm.ts` (stage defs, labels, tones, row types) — dependency-free, imported by the client bundle *and* the serverless functions. `shared/crm.test.ts` pins the stage ids against the DB CHECK constraint so a rename fails the build instead of failing at runtime.
+
 
 **Issues tracker (`cleaning_issues` + `issue_comments` + `issue_photos`, migrations `20260410_cleaning_issues.sql` onward through the 2026-07-17 "Issues overhaul" 5-PR series):**
 - `cleaning_issues` — `issue_type` (`needs_attention|guest_feedback`, NOT NULL), `status` (`Needs Attention|In Progress|Completed`, CHECK), `priority` (`low|normal|high|urgent`, CHECK), `due_date` (date; a BEFORE INSERT trigger auto-derives it from `report_date` + priority for `needs_attention` rows with no due date supplied), `acknowledged_at`/`acknowledged_by` (guest-feedback one-person ack — "Acknowledged by {name} · {timestamp}", no resolution step), `share_link_disabled` (staff kill-switch for the cleaner share link, default false), `share_token` (unique, backs `/issue/:token`), plus a `completed_at` trigger that derives it from `status` on every write path (UI dropdown, bot PATCH, share-link complete action) so no call site sets it manually. RLS re-scoped from blanket-authenticated to `public.is_staff()` on all three tables (owners no longer get rows).

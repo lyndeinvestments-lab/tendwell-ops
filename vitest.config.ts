@@ -4,7 +4,7 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(__dirname, 'client/src'), '@shared': path.resolve(__dirname, 'shared') } },
   test: {
     environment: 'node',
-    include: ['client/src/**/*.test.ts', 'api/**/*.test.ts'],
+    include: ['client/src/**/*.test.ts', 'api/**/*.test.ts', 'shared/**/*.test.ts'],
     // Dummy Supabase env so tests can import modules that transitively pull
     // client/src/lib/supabase.ts (createClient throws without a URL). No test
     // performs network I/O against these.

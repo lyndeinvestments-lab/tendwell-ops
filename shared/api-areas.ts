@@ -40,8 +40,9 @@ export interface ApiArea {
 
 export const API_AREAS: ApiArea[] = [
   // ─── Sales ────────────────────────────────────────────────────────────────
-  { key: 'clients',           label: 'Clients',              group: 'Sales',       table: 'contacts',               pk: 'id', access: 'rw' },
+  { key: 'clients',           label: 'Clients',              group: 'Sales',       table: 'contacts',               pk: 'id', access: 'rw', note: 'client_stage is write-denied here \u2014 move a client with the crm_set_client_stage RPC so the audit row is written.' },
   { key: 'client-notes',      label: 'Client Notes',         group: 'Sales',       table: 'contact_notes',          pk: 'id', access: 'rw' },
+  { key: 'client-interactions',label: 'Client Interactions',  group: 'Sales',       table: 'contact_interactions',    pk: 'id', access: 'rw', note: 'Calls, emails, and meetings. Set external_id to make a write idempotent.' },
 
   // ─── Operations ─────────────────────────────────────────────────────────────
   { key: 'properties',        label: 'Properties',           group: 'Operations',  table: 'properties',             pk: 'id', access: 'rw', note: 'Includes access codes, AC filter size, bed sizes, and Wi-Fi (all property columns).' },
@@ -65,6 +66,10 @@ export const API_AREAS: ApiArea[] = [
   { key: 'trellis-tasks',     label: 'Trellis Tasks',        group: 'Reports',     table: 'trellis_task_snapshot',  pk: 'id', access: 'read' },
   { key: 'pipeline-stages',   label: 'Pipeline Stages',      group: 'Reports',     table: 'pipeline_stages',        pk: 'id', access: 'read' },
   { key: 'stage-transitions', label: 'Stage Transitions',    group: 'Reports',     table: 'stage_transitions',      pk: 'id', access: 'read' },
+  { key: 'client-360',        label: 'CRM: Client 360',      group: 'Reports',     table: 'crm_client_360',         pk: 'id', access: 'read', note: 'One row per client with property, value, and interaction rollups.' },
+  { key: 'crm-attention',     label: 'CRM: Needs Attention', group: 'Reports',     table: 'crm_attention',          pk: 'contact_id', access: 'read', note: 'One row per (client, reason) for anything gone quiet. Thresholds in app_settings under crm_*_days.' },
+  { key: 'crm-stale-quotes',  label: 'CRM: Stale Quotes',    group: 'Reports',     table: 'crm_stale_quote_properties', pk: 'property_id', access: 'read' },
+  { key: 'client-stage-log',  label: 'CRM: Client Stage Log',group: 'Reports',     table: 'client_stage_transitions', pk: 'id', access: 'read' },
   { key: 'activity',          label: 'Activity Log',         group: 'Reports',     table: 'activity_log',           pk: 'id', access: 'read' },
   { key: 'fin-monthly-cleans',label: 'Financials: Monthly Cleans', group: 'Reports', table: 'financial_monthly_cleans', pk: 'id', access: 'read' },
   { key: 'fin-task-load',     label: 'Financials: Task Load',group: 'Reports',     table: 'financial_task_load',    pk: 'id', access: 'read' },
