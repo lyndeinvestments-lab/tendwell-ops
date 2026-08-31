@@ -41,19 +41,28 @@ afterEach(() => {
 })
 
 describe('parseScopeParam', () => {
-  it('falls back to read-only, never write, when nothing is asked for', () => {
-    expect(parseScopeParam(undefined)).toEqual(['crm:read'])
-    expect(parseScopeParam(null)).toEqual(['crm:read'])
-    expect(parseScopeParam('')).toEqual(['crm:read'])
+  // Defaults to the FULL set, not read-only. The consent screen renders these
+  // from the signed state, so the user always sees what they are approving —
+  // whereas a read-only default produced a connector that added fine and then
+  // failed the first time it tried to log a meeting, with no scope field in
+  // Claude's UI to fix it.
+  it('falls back to the full scope set when nothing is asked for', () => {
+    expect(parseScopeParam(undefined)).toEqual(['crm:read', 'crm:write'])
+    expect(parseScopeParam(null)).toEqual(['crm:read', 'crm:write'])
+    expect(parseScopeParam('')).toEqual(['crm:read', 'crm:write'])
   })
 
   it('drops unknown scopes rather than rejecting the request (RFC 6749 §3.3)', () => {
     expect(parseScopeParam('crm:read platform:full hr:read')).toEqual(['crm:read'])
   })
 
-  it('falls back to read-only when every requested scope is unknown', () => {
-    // The dangerous failure would be defaulting to write here.
-    expect(parseScopeParam('admin:everything')).toEqual(['crm:read'])
+  it('honours an explicit narrow request', () => {
+    // A client that genuinely wants read-only can still say so.
+    expect(parseScopeParam('crm:read')).toEqual(['crm:read'])
+  })
+
+  it('falls back to the full set when every requested scope is unknown', () => {
+    expect(parseScopeParam('admin:everything')).toEqual(['crm:read', 'crm:write'])
   })
 
   it('keeps write when asked for, and de-duplicates', () => {
