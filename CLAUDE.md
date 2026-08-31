@@ -98,7 +98,7 @@ tendwell-ops/
 | `/linen-tracker` | `linen-tracker.tsx` | admin, operations, cleaning |
 | `/access-codes` | `access-codes.tsx` | admin, operations |
 | `/ac-filters` | `ac-filters.tsx` | admin, operations, viewer |
-| `/contacts` | `contacts.tsx` | admin, viewer |
+| `/contacts` | `contacts.tsx` | admin, viewer. Two tabs over the same clients: **Pipeline** (`components/CrmWorkspace.tsx` — the CLIENT-stage board + attention queue + client-360 sheet, reading `crm_client_360` / `crm_attention` / `crm_stale_quote_properties`; stage moves go through `crm_set_client_stage` so the audit row is written) and **Directory** (the original searchable table, unchanged). Choice persists in `localStorage.contacts_view`, defaulting to Pipeline. Note this is the *client* axis — `/pipeline` is the *property* axis, and the two never cascade. |
 | `/quote-sheet` | `quote-sheet.tsx` | admin |
 | `/master-list` | `master-list.tsx` | admin, viewer |
 | `/pro-forma` | `pro-forma.tsx` | admin, viewer |

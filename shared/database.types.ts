@@ -6364,6 +6364,38 @@ export type Database = {
       }
     }
     Functions: {
+      crm_set_client_stage: {
+        Args: {
+          p_contact_id: string
+          p_to_stage: string
+          p_note?: string | null
+          p_actor?: string | null
+        }
+        Returns: Json
+      }
+      crm_move_property_stage: {
+        Args: {
+          p_property_id: number
+          p_to_stage: string
+          p_note?: string | null
+          p_actor?: string | null
+        }
+        Returns: Json
+      }
+      crm_log_interaction: {
+        Args: {
+          p_contact_id: string
+          p_summary: string
+          p_interaction_type?: string
+          p_occurred_at?: string | null
+          p_next_action?: string | null
+          p_next_action_date?: string | null
+          p_source?: string
+          p_external_id?: string | null
+          p_actor?: string | null
+        }
+        Returns: Json
+      }
       add_cleaner_app_user: {
         Args: { p_email: string; p_name: string; p_role: string }
         Returns: undefined

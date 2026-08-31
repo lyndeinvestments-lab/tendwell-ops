@@ -14,6 +14,7 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { EmptyState } from '@/components/EmptyState'
 import { ContactModal } from '@/components/ContactModal'
+import { CrmWorkspace } from '@/components/CrmWorkspace'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { TablePagination } from '@/components/TablePagination'
 import { PageContainer } from '@/components/PageContainer'
@@ -59,6 +60,15 @@ function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
 }
 
 export default function ContactsPage() {
+  // Pipeline is the default view: the board is the thing to look at, and
+  // the directory is where you go to look someone up.
+  const [view, setView] = useState<'pipeline' | 'directory'>(() => {
+    try {
+      return (localStorage.getItem('contacts_view') as 'pipeline' | 'directory') || 'pipeline'
+    } catch {
+      return 'pipeline'
+    }
+  })
   const { t } = useLocale('contacts')
   const { format: formatDate } = useDateFormat()
   const { toast } = useToast()
@@ -281,6 +291,34 @@ export default function ContactsPage() {
         </div>}
       />
 
+      {/* Two views over the same clients. Pipeline is the CLIENT-stage
+          board + attention queue (CrmWorkspace); Directory is the original
+          searchable table, unchanged. Kept as tabs rather than a second
+          page so there is one place called "Clients". */}
+      <div className="inline-flex rounded-lg border border-card-border p-0.5 mb-4">
+        <button
+          onClick={() => { setView('pipeline'); try { localStorage.setItem('contacts_view', 'pipeline') } catch {} }}
+          className={`px-3 py-1 text-xs rounded-md transition-colors ${
+            view === 'pipeline' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+          }`}
+          data-testid="contacts-view-pipeline"
+        >
+          Pipeline
+        </button>
+        <button
+          onClick={() => { setView('directory'); try { localStorage.setItem('contacts_view', 'directory') } catch {} }}
+          className={`px-3 py-1 text-xs rounded-md transition-colors ${
+            view === 'directory' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
+          }`}
+          data-testid="contacts-view-directory"
+        >
+          Directory
+        </button>
+      </div>
+
+      {view === 'pipeline' && <CrmWorkspace />}
+
+      {view === 'directory' && (<>
       {/* Redesign: summary strip — at-a-glance client stats */}
       {!isLoading && (contacts?.length ?? 0) > 0 && (() => {
         const list = contacts || []
@@ -418,6 +456,8 @@ export default function ContactsPage() {
       {!isLoading && filtered.length > 0 && (
         <TablePagination total={filtered.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
       )}
+
+      </>)}
 
       <ContactModal
         contactId={modalContactId}
