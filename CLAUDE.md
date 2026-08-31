@@ -187,6 +187,7 @@ Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 - Tables `mcp_oauth_clients` / `mcp_oauth_authorization_codes` / `mcp_oauth_tokens` are **service-role only** — RLS enabled with deliberately *no* policy, so `authenticated` and `anon` get nothing. Only sha256 hashes are stored, as with `api_keys`. Codes are single-use (the `consumed_at=is.null` filter on the UPDATE is the gate); refresh tokens rotate on use.
 - Identity is **re-resolved from `app_users` on every call** rather than trusted from the token, so removing someone in Settings → Users kills their connector immediately instead of at token expiry. Role must be `admin` or `viewer` (matching `contacts` view access).
 - Redirect URIs are matched **exact-string** against what was registered — no prefix or wildcard matching, and validated *before* any error redirect so the error path can't become an open redirect.
+- **Setup guide for connecting Cowork: `docs/cowork-crm-setup.md`.** The connector URL must be the custom domain `https://app.tendwellcleaningco.com/api/mcp` — project deployment protection is `all_except_custom_domains`, so any `*.vercel.app` URL 302s to Vercel SSO, which Claude cannot complete.
 - `mcp_oauth_purge()` drops expired codes and dead tokens. `MCP_PUBLIC_ORIGIN` optionally pins the advertised origin (defaults to `x-forwarded-host`, correct on Vercel).
 
 
