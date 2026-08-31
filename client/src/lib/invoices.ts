@@ -172,8 +172,20 @@ export interface InvoiceLine {
   resolved_by: string | null
   resolved_at: string | null
   created_at: string | null
-  /** Joined via `properties(id, name)`. */
-  properties?: { id: number; name: string } | { id: number; name: string }[] | null
+  /** Joined via `properties(id, name, cleaner_pay)`. */
+  properties?: JoinedProperty | JoinedProperty[] | null
+}
+
+/**
+ * The property columns the invoicing table joins in. `cleaner_pay` is the
+ * contracted Ops rate — the number every discrepancy flag is measured
+ * against ("$40 above the Ops Cleaner Pay rate of $160"), so the reviewer
+ * needs it on the row rather than having to know it by heart.
+ */
+export interface JoinedProperty {
+  id: number
+  name: string
+  cleaner_pay: number | null
 }
 
 export function vendorNameOf(run: Pick<InvoiceRun, 'vendors'>): string {
@@ -182,7 +194,7 @@ export function vendorNameOf(run: Pick<InvoiceRun, 'vendors'>): string {
   return Array.isArray(v) ? v[0]?.name ?? 'Unknown vendor' : v.name ?? 'Unknown vendor'
 }
 
-export function propertyOf(line: Pick<InvoiceLine, 'properties'>): { id: number; name: string } | null {
+export function propertyOf(line: Pick<InvoiceLine, 'properties'>): JoinedProperty | null {
   const p = line.properties
   if (!p) return null
   return Array.isArray(p) ? p[0] ?? null : p
