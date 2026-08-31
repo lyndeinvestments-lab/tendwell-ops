@@ -2,6 +2,12 @@ import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ACCESS_PREFIX,
+  JSON_RPC_ERRORS,
+  MCP_DEFAULT_PROTOCOL_VERSION,
+  MCP_SUPPORTED_PROTOCOL_VERSIONS,
+  META_PROTOCOL_VERSION_KEY,
+  isSupportedProtocolVersion,
+  protocolVersionFromParams,
   CLIENT_PREFIX,
   CODE_PREFIX,
   MCP_SCOPES,
@@ -211,5 +217,63 @@ describe('consent state signing', () => {
 
     vi.setSystemTime(new Date('2026-08-31T12:10:30Z'))
     expect(verifyConsentState(token)).toBeNull()
+  })
+})
+
+// Regression: a stale hardcoded version allowlist that hard-400'd anything
+// outside it broke Claude's connector entirely. The 400 landed before
+// authentication, so the probe never reached the 401 that advertises our OAuth
+// metadata — the connector reported "Connect to the server — 400" and skipped
+// discovery. Version handling must therefore be (a) permissive at the transport
+// layer and (b) answered with a negotiable error at the JSON-RPC layer.
+describe('protocol version negotiation', () => {
+  it('advertises only revisions we actually serve, newest first', () => {
+    expect([...MCP_SUPPORTED_PROTOCOL_VERSIONS]).toEqual([
+      '2025-11-25',
+      '2025-06-18',
+      '2025-03-26',
+    ])
+  })
+
+  it('defaults to a version that is itself in the supported list', () => {
+    // A default outside the list would make `initialize` answer with a revision
+    // we just told the client we do not support.
+    expect(isSupportedProtocolVersion(MCP_DEFAULT_PROTOCOL_VERSION)).toBe(true)
+  })
+
+  it('recognises supported revisions and rejects others without throwing', () => {
+    for (const v of MCP_SUPPORTED_PROTOCOL_VERSIONS) {
+      expect(isSupportedProtocolVersion(v), v).toBe(true)
+    }
+    // Modern-era and future revisions we do not implement.
+    for (const v of ['2026-07-28', '2026-01-01', '2025-11-05', 'nonsense', '']) {
+      expect(isSupportedProtocolVersion(v), v).toBe(false)
+    }
+    expect(isSupportedProtocolVersion(null)).toBe(false)
+    expect(isSupportedProtocolVersion(undefined)).toBe(false)
+  })
+
+  it('reads the per-request version out of _meta the way modern clients send it', () => {
+    expect(
+      protocolVersionFromParams({ _meta: { [META_PROTOCOL_VERSION_KEY]: '2026-07-28' } }),
+    ).toBe('2026-07-28')
+  })
+
+  it('returns undefined rather than throwing for every malformed shape', () => {
+    expect(protocolVersionFromParams(undefined)).toBeUndefined()
+    expect(protocolVersionFromParams(null)).toBeUndefined()
+    expect(protocolVersionFromParams('string')).toBeUndefined()
+    expect(protocolVersionFromParams({})).toBeUndefined()
+    expect(protocolVersionFromParams({ _meta: null })).toBeUndefined()
+    expect(protocolVersionFromParams({ _meta: 'nope' })).toBeUndefined()
+    expect(protocolVersionFromParams({ _meta: {} })).toBeUndefined()
+    // Non-string value must not be passed through as a version.
+    expect(protocolVersionFromParams({ _meta: { [META_PROTOCOL_VERSION_KEY]: 42 } })).toBeUndefined()
+  })
+
+  it('uses the spec-assigned error code for unsupported versions', () => {
+    // -32022 is UnsupportedProtocolVersionError. A generic -32600 gives the
+    // client nothing to negotiate with.
+    expect(JSON_RPC_ERRORS.unsupportedProtocolVersion).toBe(-32022)
   })
 })

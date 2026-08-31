@@ -17,6 +17,8 @@ import {
   MCP_SERVER_NAME,
   MCP_SERVER_VERSION,
   MCP_SUPPORTED_PROTOCOL_VERSIONS,
+  isSupportedProtocolVersion,
+  protocolVersionFromParams,
   type JsonRpcRequest,
   type JsonRpcResponse,
   type McpContext,
@@ -551,6 +553,33 @@ function err(
   return { jsonrpc: '2.0', id: id ?? null, error: { code, message, ...(data ? { data } : {}) } }
 }
 
+const SERVER_INSTRUCTIONS =
+  'Tendwell Ops CRM. Two independent stage axes: the CLIENT lifecycle on a contact ' +
+  '(new → prospect → quoted → won, exits nurture / not_interested / churned) and the ' +
+  'PROPERTY pipeline (Lead → Quote → Onboarding → Active → Offboarding → Offboarded). ' +
+  'Moving one never moves the other. Resolve people by name with crm_get_client before writing ' +
+  'against them. When logging meetings in bulk, always pass a stable external_id so re-runs are ' +
+  'no-ops rather than duplicates.'
+
+const SERVER_CAPABILITIES = { tools: { listChanged: false } } as const
+
+/**
+ * Spec-shaped UnsupportedProtocolVersionError. Listing what we DO support is
+ * the whole point — it lets a modern or dual-era client retry on a mutually
+ * supported revision instead of failing the connection.
+ */
+function unsupportedVersion(id: JsonRpcRequest['id'], requested: string): JsonRpcResponse {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? null,
+    error: {
+      code: JSON_RPC_ERRORS.unsupportedProtocolVersion,
+      message: 'Unsupported protocol version',
+      data: { supported: [...MCP_SUPPORTED_PROTOCOL_VERSIONS], requested },
+    },
+  }
+}
+
 /**
  * Returns null for notifications (no `id`), which per JSON-RPC must not get a
  * response body. Claude sends `notifications/initialized` as a bare POST and
@@ -562,7 +591,37 @@ export async function dispatch(
 ): Promise<JsonRpcResponse | null> {
   const isNotification = req.id === undefined || req.id === null
 
+  // A modern client versions every request via `_meta`. If it names a revision
+  // we don't serve, answer with the negotiation error rather than attempting the
+  // call — except for server/discover, whose entire job is to report what we
+  // support, so refusing it would be circular.
+  const declared = protocolVersionFromParams(req.params)
+  if (
+    declared &&
+    !isSupportedProtocolVersion(declared) &&
+    req.method !== 'server/discover' &&
+    !isNotification
+  ) {
+    return unsupportedVersion(req.id, declared)
+  }
+
   switch (req.method) {
+    // Mandatory in the modern era, and the cheapest way for any client to learn
+    // that this is a legacy-era server and which revisions it can negotiate to.
+    case 'server/discover':
+      return ok(req.id, {
+        resultType: 'complete',
+        supportedVersions: [...MCP_SUPPORTED_PROTOCOL_VERSIONS],
+        capabilities: SERVER_CAPABILITIES,
+        instructions: SERVER_INSTRUCTIONS,
+        _meta: {
+          'io.modelcontextprotocol/serverInfo': {
+            name: MCP_SERVER_NAME,
+            version: MCP_SERVER_VERSION,
+          },
+        },
+      })
+
     case 'initialize': {
       const asked = (req.params as { protocolVersion?: string } | undefined)?.protocolVersion
       const version =
@@ -571,15 +630,9 @@ export async function dispatch(
           : MCP_DEFAULT_PROTOCOL_VERSION
       return ok(req.id, {
         protocolVersion: version,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: SERVER_CAPABILITIES,
         serverInfo: { name: MCP_SERVER_NAME, version: MCP_SERVER_VERSION },
-        instructions:
-          'Tendwell Ops CRM. Two independent stage axes: the CLIENT lifecycle on a contact ' +
-          '(new → prospect → quoted → won, exits nurture / not_interested / churned) and the ' +
-          'PROPERTY pipeline (Lead → Quote → Onboarding → Active → Offboarding → Offboarded). ' +
-          'Moving one never moves the other. Resolve people by name with crm_get_client before writing ' +
-          'against them. When logging meetings in bulk, always pass a stable external_id so re-runs are ' +
-          'no-ops rather than duplicates.',
+        instructions: SERVER_INSTRUCTIONS,
       })
     }
 

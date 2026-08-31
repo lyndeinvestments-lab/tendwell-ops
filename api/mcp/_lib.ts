@@ -18,10 +18,51 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypt
 import { sbFetch } from '../issues/_lib.js'
 
 // ─── Protocol version ───────────────────────────────────────────────────────
-// Claude's connector sends MCP-Protocol-Version; we accept the versions we
-// actually implement and 400 on anything else per the transport spec.
-export const MCP_SUPPORTED_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26'] as const
-export const MCP_DEFAULT_PROTOCOL_VERSION = '2025-03-26'
+//
+// MCP has two eras (spec 2026-07-28 "Versioning and Compatibility"):
+//   • LEGACY  — a session established by an `initialize` handshake. Revisions
+//               2025-11-25 and earlier. This is what we implement.
+//   • MODERN  — stateless, with the version declared per request in `_meta`
+//               under `io.modelcontextprotocol/protocolVersion`. 2026-07-28+.
+//
+// We are a legacy-era server and say so honestly: `supportedVersions` lists
+// only revisions we actually serve, so a dual-era client negotiates DOWN to one
+// of them rather than being told we speak a modern revision we haven't built.
+//
+// Critically, an unrecognised version must NEVER fail the request on the header
+// alone. A blanket 400 here is what broke Claude's connector: the probe never
+// reached the 401 that advertises our OAuth metadata, so "Connect to the
+// server" failed and discovery was skipped entirely. A legacy server that
+// rejects a newer header also denies a dual-era client its documented fallback
+// path, which is to send `initialize` after a non-modern 4xx.
+export const MCP_SUPPORTED_PROTOCOL_VERSIONS = [
+  '2025-11-25',
+  '2025-06-18',
+  '2025-03-26',
+] as const
+
+/** Newest revision we serve — what `initialize` answers with when the client asks for something we don't know. */
+export const MCP_DEFAULT_PROTOCOL_VERSION = '2025-11-25'
+
+/** `_meta` key carrying the per-request protocol version in the modern era. */
+export const META_PROTOCOL_VERSION_KEY = 'io.modelcontextprotocol/protocolVersion'
+
+export function isSupportedProtocolVersion(v: string | undefined | null): boolean {
+  if (!v) return false
+  return (MCP_SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(v)
+}
+
+/**
+ * Pull the declared protocol version out of a request's `_meta`, which is how
+ * modern clients version each call.
+ */
+export function protocolVersionFromParams(params: unknown): string | undefined {
+  if (!params || typeof params !== 'object') return undefined
+  const meta = (params as { _meta?: unknown })._meta
+  if (!meta || typeof meta !== 'object') return undefined
+  const v = (meta as Record<string, unknown>)[META_PROTOCOL_VERSION_KEY]
+  return typeof v === 'string' ? v : undefined
+}
 
 export const MCP_SERVER_NAME = 'tendwell-ops-crm'
 export const MCP_SERVER_VERSION = '1.0.0'
@@ -55,6 +96,10 @@ export const JSON_RPC_ERRORS = {
   methodNotFound: -32601,
   invalidParams: -32602,
   internalError: -32603,
+  // Spec-defined: UnsupportedProtocolVersionError. Carries
+  // `data: { supported, requested }` so a client can retry on a mutually
+  // supported revision instead of giving up.
+  unsupportedProtocolVersion: -32022,
   // App-defined
   unauthorized: -32001,
   forbidden: -32002,
