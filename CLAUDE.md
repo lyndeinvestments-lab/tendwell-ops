@@ -175,6 +175,21 @@ Private Supabase Storage bucket `agreements` — signed PDFs stored under `signe
 
 Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
+**MCP server for Claude / Cowork (`api/mcp/*`, migration `20260831b_mcp_oauth.sql`):**
+
+`POST /api/mcp` speaks MCP over Streamable HTTP / JSON-RPC 2.0, so Claude Cowork, claude.ai, or Claude Code can drive the CRM as a **custom connector** with no local proxy. Seven tools: `crm_list_clients`, `crm_get_client`, `crm_attention_queue` (reads, `crm:read`) and `crm_log_meeting`, `crm_log_interaction`, `crm_set_client_stage`, `crm_move_property_stage` (writes, `crm:write`). Reads hit the `crm_*` views; writes go only through the `crm_*` RPCs, never raw tables.
+
+**Why OAuth and not `api_keys`:** the claude.ai / Cowork connector UI has no bearer-token field — the only credential it accepts is an OAuth Client ID/Secret, and it runs RFC 7591 Dynamic Client Registration against the server's discovery document when none is given. (The `authorization_token` shortcut in Anthropic's docs belongs to the *Messages API* MCP connector, a different surface.) So `api/mcp/oauth/[action].ts` is a real OAuth 2.1 authorization server: public clients only (`token_endpoint_auth_method: none`), **PKCE S256 mandatory**, `authorization_code` + `refresh_token` grants, RFC 7009 revocation. Note the direction — `api/qbo/callback.ts` is the opposite, Tendwell as a *client* of QuickBooks.
+
+- Discovery: `/.well-known/oauth-authorization-server` (RFC 8414) and `/.well-known/oauth-protected-resource` (RFC 9728), both served by `api/mcp/metadata.ts` via **explicit `vercel.json` rewrites** — the SPA catch-all `((?!api/|assets/|.*\..*).*)` excludes dotted paths, so `.well-known` would 404 otherwise.
+- A 401 from `/api/mcp` carries `WWW-Authenticate: … resource_metadata="…"`. That hint is what makes a connector discover the OAuth endpoints and start the flow instead of just failing.
+- Consent runs **in the app** at `/mcp/consent` (`client/src/pages/mcp-consent.tsx`), because it needs the browser's Supabase session to know who is granting. The authorization request crosses that hop inside an **HMAC-signed `state` blob** (10-min TTL, keyed on the service-role key) so client_id / redirect_uri / scopes / PKCE challenge can't be tampered with in between.
+- Tables `mcp_oauth_clients` / `mcp_oauth_authorization_codes` / `mcp_oauth_tokens` are **service-role only** — RLS enabled with deliberately *no* policy, so `authenticated` and `anon` get nothing. Only sha256 hashes are stored, as with `api_keys`. Codes are single-use (the `consumed_at=is.null` filter on the UPDATE is the gate); refresh tokens rotate on use.
+- Identity is **re-resolved from `app_users` on every call** rather than trusted from the token, so removing someone in Settings → Users kills their connector immediately instead of at token expiry. Role must be `admin` or `viewer` (matching `contacts` view access).
+- Redirect URIs are matched **exact-string** against what was registered — no prefix or wildcard matching, and validated *before* any error redirect so the error path can't become an open redirect.
+- `mcp_oauth_purge()` drops expired codes and dead tokens. `MCP_PUBLIC_ORIGIN` optionally pins the advertised origin (defaults to `x-forwarded-host`, correct on Vercel).
+
+
 **CRM client lifecycle (migration `20260831_crm_client_lifecycle.sql`):**
 
 There are **two independent stage axes**, and nothing cascades between them — moving a client never moves their properties, and vice versa. The UI shows both side by side and a human decides.

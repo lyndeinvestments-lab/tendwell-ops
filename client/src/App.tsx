@@ -90,6 +90,7 @@ const TrellisTasksPage = lazyRetry(() => import("@/pages/trellis-tasks"));
 const InvoicingPage = lazyRetry(() => import("@/pages/invoicing"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
 const ResetPasswordPage = lazyRetry(() => import("@/pages/reset-password"));
+const McpConsentPage = lazyRetry(() => import("@/pages/mcp-consent"));
 
 const sidebarStyle = {
   "--sidebar-width": "220px",
@@ -232,6 +233,12 @@ function AppRoutes() {
         <Route path="/dashboard">{() => <GuardedRoute viewId="dashboard" component={DashboardPage} />}</Route>
         <Route path="/pipeline">{() => <GuardedRoute viewId="pipeline" component={PipelinePage} />}</Route>
         <Route path="/contacts">{() => <GuardedRoute viewId="contacts" component={ContactsPage} />}</Route>
+        {/* OAuth consent screen for the Claude/Cowork MCP connector. Not a
+            sidebar page and not view-gated: any signed-in staff member may
+            grant a connector, and api/mcp/oauth/authorize redirects here.
+            The page itself refuses to render an Allow button without a
+            session, and the server re-checks role on the decision. */}
+        <Route path="/mcp/consent">{() => <McpConsentPage />}</Route>
         <Route path="/cost-tracking">{() => <GuardedRoute viewId={["cost-tracking", "master-list"]} component={CostTrackingPage} />}</Route>
         {/* Master List has been merged into the unified Cost Tracking page. The
             old /master-list route now renders the same component so old links
