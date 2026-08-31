@@ -11,6 +11,9 @@ export default defineConfig({
     env: {
       VITE_SUPABASE_URL: 'https://test.supabase.co',
       VITE_SUPABASE_ANON_KEY: 'test-anon-key',
+      // api/mcp/_lib.ts signs consent state with the service key and refuses to
+      // fall back to a constant, so the MCP tests need one present.
+      SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
     },
   },
 })
