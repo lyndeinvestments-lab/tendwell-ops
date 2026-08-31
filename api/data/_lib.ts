@@ -25,6 +25,12 @@ const WRITE_DENYLIST = new Set([
   'last_used_at',
   'revoked_at',
   'source_file_sha256',
+  // A client's stage must move through crm_set_client_stage(), which writes the
+  // client_stage_transitions row in the same statement. A raw PATCH here would
+  // change the stage and silently skip the audit trail, so the column is
+  // server-owned from this surface's point of view.
+  'client_stage',
+  'client_stage_since',
 ])
 
 // Filter a write body: drop the PK and denylisted columns, coerce '' → null so

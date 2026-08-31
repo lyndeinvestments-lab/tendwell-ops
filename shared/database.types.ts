@@ -1042,24 +1042,33 @@ export type Database = {
           contact_id: string
           created_at: string
           created_by: string | null
+          external_id: string | null
           id: string
           interaction_type: string
+          occurred_at: string | null
+          source: string | null
           summary: string | null
         }
         Insert: {
           contact_id: string
           created_at?: string
           created_by?: string | null
+          external_id?: string | null
           id?: string
           interaction_type: string
+          occurred_at?: string | null
+          source?: string | null
           summary?: string | null
         }
         Update: {
           contact_id?: string
           created_at?: string
           created_by?: string | null
+          external_id?: string | null
           id?: string
           interaction_type?: string
+          occurred_at?: string | null
+          source?: string | null
           summary?: string | null
         }
         Relationships: [
@@ -1104,12 +1113,53 @@ export type Database = {
           },
         ]
       }
+      client_stage_transitions: {
+        Row: {
+          changed_by: string | null
+          contact_id: string
+          created_at: string
+          from_stage: string | null
+          id: number
+          notes: string | null
+          to_stage: string
+        }
+        Insert: {
+          changed_by?: string | null
+          contact_id: string
+          created_at?: string
+          from_stage?: string | null
+          id?: number
+          notes?: string | null
+          to_stage: string
+        }
+        Update: {
+          changed_by?: string | null
+          contact_id?: string
+          created_at?: string
+          from_stage?: string | null
+          id?: number
+          notes?: string | null
+          to_stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_stage_transitions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
       contacts: {
         Row: {
           additional_properties_count: number | null
           additional_properties_notes: string | null
           billing_channel: string
           client_since: string | null
+          client_stage: string
+          client_stage_since: string
           company: string | null
           created_at: string | null
           email: string | null
@@ -1117,6 +1167,8 @@ export type Database = {
           id: string
           is_active: boolean | null
           mailing_address: string | null
+          next_action: string | null
+          next_action_date: string | null
           notes: string | null
           payment_method: string | null
           payment_notes: string | null
@@ -1132,6 +1184,8 @@ export type Database = {
           additional_properties_notes?: string | null
           billing_channel?: string
           client_since?: string | null
+          client_stage?: string
+          client_stage_since?: string
           company?: string | null
           created_at?: string | null
           email?: string | null
@@ -1139,6 +1193,8 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           mailing_address?: string | null
+          next_action?: string | null
+          next_action_date?: string | null
           notes?: string | null
           payment_method?: string | null
           payment_notes?: string | null
@@ -1154,6 +1210,8 @@ export type Database = {
           additional_properties_notes?: string | null
           billing_channel?: string
           client_since?: string | null
+          client_stage?: string
+          client_stage_since?: string
           company?: string | null
           created_at?: string | null
           email?: string | null
@@ -1161,6 +1219,8 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           mailing_address?: string | null
+          next_action?: string | null
+          next_action_date?: string | null
           notes?: string | null
           payment_method?: string | null
           payment_notes?: string | null
@@ -5698,6 +5758,67 @@ export type Database = {
       }
     }
     Views: {
+      crm_attention: {
+        Row: {
+          client_stage: string | null
+          company: string | null
+          contact_id: string | null
+          days_in_stage: number | null
+          detail: string | null
+          full_name: string | null
+          last_interaction_at: string | null
+          monthly_value: number | null
+          next_action: string | null
+          next_action_date: string | null
+          priority: number | null
+          reason: string | null
+        }
+        Relationships: []
+      }
+      crm_client_360: {
+        Row: {
+          active_count: number | null
+          billing_channel: string | null
+          client_since: string | null
+          client_stage: string | null
+          client_stage_since: string | null
+          company: string | null
+          days_in_stage: number | null
+          email: string | null
+          full_name: string | null
+          id: string | null
+          interaction_count: number | null
+          is_active: boolean | null
+          last_interaction_at: string | null
+          last_interaction_summary: string | null
+          last_touch_at: string | null
+          monthly_value: number | null
+          next_action: string | null
+          next_action_date: string | null
+          note_count: number | null
+          offboarded_count: number | null
+          onboarding_count: number | null
+          payment_method: string | null
+          phone: string | null
+          property_count: number | null
+          quote_count: number | null
+          source: string | null
+          tags: string[] | null
+        }
+        Relationships: []
+      }
+      crm_stale_quote_properties: {
+        Row: {
+          client_name: string | null
+          contact_id: string | null
+          days_stale: number | null
+          monthly_revenue_estimate: number | null
+          property_id: number | null
+          property_name: string | null
+          since: string | null
+        }
+        Relationships: []
+      }
       breezeway_exceptions: {
         Row: {
           clean_count: number | null
