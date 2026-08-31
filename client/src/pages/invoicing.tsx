@@ -630,7 +630,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoice_lines')
-        .select('*, properties(id, name)')
+        .select('*, properties(id, name, cleaner_pay)')
         .eq('run_id', runId)
         .order('line_no', { ascending: true })
       if (error) throw error
@@ -1030,8 +1030,9 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                     <th className="px-2 py-2 font-medium">Property</th>
                     <th className="px-2 py-2 font-medium">Service</th>
                     <th className="px-2 py-2 font-medium">Date</th>
-                    <th className="px-2 py-2 font-medium text-right">Invoiced</th>
-                    <th className="px-2 py-2 font-medium text-right" title="Cleaner pay (Ramp)">Pay</th>
+                    <th className="px-2 py-2 font-medium text-right" title="What the vendor billed on this line (their invoice, untouched)">Invoiced</th>
+                    <th className="px-2 py-2 font-medium text-right" title="The property's contracted Ops Cleaner Pay rate — what the flags compare against">Ops rate</th>
+                    <th className="px-2 py-2 font-medium text-right" title="Approved pay: what Ramp actually pays out, after top-ups, splits and review edits">Approved pay</th>
                     <th className="px-2 py-2 font-medium text-right" title="Client charge (QBO / bill.com)">Charge</th>
                     <th className="px-2 py-2 font-medium">Channel</th>
                     <th className="px-2 py-2 font-medium">Flags / review</th>
@@ -1050,6 +1051,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                       line.raw_amount != null &&
                       line.cleaner_pay_amount != null &&
                       Math.abs(Number(line.raw_amount) - Number(line.cleaner_pay_amount)) > 0.005
+                    // The contracted rate the engine's flag messages cite ("$40 above the
+                    // Ops Cleaner Pay rate of $160"). Null on labor / expense lines, which
+                    // never attach to a property.
+                    const opsRate = prop?.cleaner_pay ?? null
+                    // Vendor billed something other than contract — the exact gap those
+                    // notes are talking about. Split rows are excluded for the same reason
+                    // payMismatch excludes them: the base row deliberately carries the
+                    // whole vendor amount while the pay went partly to the extra row.
+                    const rateGap =
+                      line.split_group == null && opsRate != null && line.raw_amount != null
+                        ? Number(line.raw_amount) - Number(opsRate)
+                        : null
+                    const rateMismatch = rateGap != null && Math.abs(rateGap) > 0.005
                     return (
                       <tr
                         key={line.id}
@@ -1077,10 +1091,33 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         </td>
                         <td className="px-2 py-2 max-w-36 truncate">{line.service_type ?? '—'}</td>
                         <td className="px-2 py-2 whitespace-nowrap text-muted-foreground" title={fmtDate(line.raw_date_mentioned)}>{fmtDateShort(line.raw_date_mentioned)}</td>
-                        <td className={cn('px-2 py-2 text-right tabular-nums', payMismatch && 'text-warning font-medium')} title={payMismatch ? `Invoiced differs from cleaner pay by ${fmtMoney(Number(line.raw_amount) - Number(line.cleaner_pay_amount))}` : undefined}>
+                        {/* Invoiced flags the vendor-vs-contract gap; Approved pay flags
+                            what we changed off the billed amount. Two distinct signals in
+                            two distinct columns, with Ops rate as the quiet reference. */}
+                        <td
+                          className={cn('px-2 py-2 text-right tabular-nums', rateMismatch && 'text-warning font-medium')}
+                          title={
+                            rateMismatch
+                              ? `${fmtMoney(Math.abs(rateGap!))} ${rateGap! > 0 ? 'above' : 'below'} the ${fmtMoney(Number(opsRate))} Ops rate`
+                              : undefined
+                          }
+                        >
                           {fmtMoney(line.raw_amount)}
                         </td>
-                        <td className={cn('px-2 py-2 text-right tabular-nums', payMismatch && 'text-warning font-medium')} title={payMismatch ? `Invoiced differs from cleaner pay by ${fmtMoney(Number(line.raw_amount) - Number(line.cleaner_pay_amount))}` : undefined}>
+                        <td
+                          className="px-2 py-2 text-right tabular-nums text-muted-foreground"
+                          title={opsRate != null ? "The property's contracted Ops Cleaner Pay rate" : 'No property rate — labor or expense line'}
+                        >
+                          {fmtMoney(opsRate != null ? Number(opsRate) : null)}
+                        </td>
+                        <td
+                          className={cn('px-2 py-2 text-right tabular-nums', payMismatch && 'text-warning font-medium')}
+                          title={
+                            payMismatch
+                              ? `Approved pay is ${fmtMoney(Math.abs(Number(line.cleaner_pay_amount) - Number(line.raw_amount)))} ${Number(line.cleaner_pay_amount) > Number(line.raw_amount) ? 'above' : 'below'} the invoiced amount`
+                              : undefined
+                          }
+                        >
                           {fmtMoney(line.cleaner_pay_amount)}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.client_charge_amount)}</td>
@@ -1168,8 +1205,11 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                       </div>
                       <StatusBadge tone={reviewStatusTone(line.review_status)}>{line.review_status.replace(/_/g, ' ')}</StatusBadge>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs tabular-nums">
+                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-xs tabular-nums">
                       <span>Inv {fmtMoney(line.raw_amount)}</span>
+                      <span className="text-muted-foreground">
+                        Rate {fmtMoney(prop?.cleaner_pay != null ? Number(prop.cleaner_pay) : null)}
+                      </span>
                       <span>Pay {fmtMoney(line.cleaner_pay_amount)}</span>
                       <span>Chg {fmtMoney(line.client_charge_amount)}</span>
                     </div>
