@@ -67,24 +67,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // Validate the protocol version if the client declares one. A missing header
-  // means the 2025-03-26 default.
-  const clientProtocol = req.headers['mcp-protocol-version'] as string | undefined
-  if (
-    clientProtocol &&
-    !(MCP_SUPPORTED_PROTOCOL_VERSIONS as readonly string[]).includes(clientProtocol)
-  ) {
-    res.status(400).json({
-      jsonrpc: '2.0',
-      id: null,
-      error: {
-        code: JSON_RPC_ERRORS.invalidRequest,
-        message: `Unsupported MCP-Protocol-Version: ${clientProtocol}`,
-      },
-    })
-    return
-  }
-
+  // NOTE: the MCP-Protocol-Version header is deliberately NOT used to reject the
+  // request. This used to 400 on any version outside our list, which broke
+  // Claude's connector outright: the 400 landed before authentication, so the
+  // probe never saw the 401 that advertises our OAuth metadata and the connector
+  // reported "Connect to the server — 400" with discovery skipped.
+  //
+  // Version handling belongs at the JSON-RPC layer instead (see dispatch), where
+  // an unsupported revision returns a spec-shaped UnsupportedProtocolVersionError
+  // listing what we do support, so the client can retry on a mutually supported
+  // revision. Rejecting on the header alone also denies a dual-era client its
+  // documented fallback, which is to send `initialize` after a non-modern 4xx.
   const auth = await authenticate(req)
   if (!auth.ok) {
     unauthorized(req, res, auth.error, auth.description, auth.status)
