@@ -13,6 +13,19 @@
 
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canEditView } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
@@ -112,7 +125,8 @@ function useStaleQuotes() {
 
 // ─── client card ────────────────────────────────────────────────────────────
 
-function ClientCard({
+/** The visual card. Rendered both in a column and inside the DragOverlay. */
+function CardBody({
   client,
   canEdit,
   onOpen,
@@ -121,21 +135,22 @@ function ClientCard({
 }: {
   client: Client360
   canEdit: boolean
-  onOpen: () => void
-  onMove: (to: ClientStage) => void
-  moving: boolean
+  onOpen?: () => void
+  onMove?: (to: ClientStage) => void
+  moving?: boolean
 }) {
   const overdue =
     client.next_action_date != null &&
     client.next_action_date < new Date().toISOString().slice(0, 10)
 
   return (
-    <div
-      className="rounded-xl border border-card-border bg-card p-3 shadow-sm hover:border-primary/40 transition-colors"
-      data-testid={`crm-card-${client.id}`}
-    >
+    <>
       <div className="flex items-start justify-between gap-2">
-        <button onClick={onOpen} className="min-w-0 text-left group">
+        <button
+          onClick={onOpen}
+          onPointerDown={e => e.stopPropagation()}
+          className="min-w-0 text-left group"
+        >
           <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
             {client.full_name}
           </p>
@@ -143,13 +158,14 @@ function ClientCard({
             <p className="text-2xs text-muted-foreground truncate">{client.company}</p>
           )}
         </button>
-        {canEdit && (
+        {canEdit && onMove && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-6 w-6 p-0 shrink-0"
+                onPointerDown={e => e.stopPropagation()}
                 disabled={moving}
                 aria-label={`Move ${client.full_name}`}
                 data-testid={`crm-move-${client.id}`}
@@ -201,6 +217,47 @@ function ClientCard({
           </span>
         </p>
       )}
+    </>
+  )
+}
+
+function ClientCard({
+  client,
+  canEdit,
+  onOpen,
+  onMove,
+  moving,
+}: {
+  client: Client360
+  canEdit: boolean
+  onOpen: () => void
+  onMove: (to: ClientStage) => void
+  moving: boolean
+}) {
+  // Drag is an editor affordance. A viewer still gets the card, just not the
+  // grab handle — and the dropdown is likewise hidden for them.
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: client.id,
+    disabled: !canEdit || moving,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...(canEdit ? listeners : {})}
+      {...(canEdit ? attributes : {})}
+      className={`rounded-xl border border-card-border bg-card p-3 shadow-sm transition-colors ${
+        canEdit ? 'cursor-grab active:cursor-grabbing' : ''
+      } ${isDragging ? 'opacity-40' : 'hover:border-primary/40'}`}
+      data-testid={`crm-card-${client.id}`}
+    >
+      <CardBody
+        client={client}
+        canEdit={canEdit}
+        onOpen={onOpen}
+        onMove={onMove}
+        moving={moving}
+      />
     </div>
   )
 }
@@ -239,42 +296,73 @@ function Board({
   return (
     <div className="overflow-x-auto pb-2">
       <div className="flex gap-3 min-w-max">
-        {columns.map(stage => {
-          const list = byStage.get(stage.id) ?? []
-          const value = list.reduce((s, c) => s + (c.monthly_value || 0), 0)
-          return (
-            <div key={stage.id} className="w-64 shrink-0" data-testid={`crm-column-${stage.id}`}>
-              <div className="mb-2 px-1">
-                <div className="flex items-center justify-between gap-2">
-                  <StatusBadge tone={stage.tone}>{stage.label}</StatusBadge>
-                  <span className="text-2xs text-muted-foreground tabular-nums">
-                    {list.length}
-                    {value > 0 && ` · ${money(value)}`}
-                  </span>
-                </div>
-                <p className="mt-1 text-2xs text-muted-foreground leading-snug">{stage.blurb}</p>
-              </div>
-              <div className="space-y-2">
-                {list.length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-card-border p-3 text-2xs text-muted-foreground text-center">
-                    Empty
-                  </div>
-                ) : (
-                  list.map(c => (
-                    <ClientCard
-                      key={c.id}
-                      client={c}
-                      canEdit={canEdit}
-                      moving={movingId === c.id}
-                      onOpen={() => onOpen(c)}
-                      onMove={to => onMove(c, to)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          )
-        })}
+        {columns.map(stage => (
+          <BoardColumn
+            key={stage.id}
+            stage={stage}
+            list={byStage.get(stage.id) ?? []}
+            canEdit={canEdit}
+            movingId={movingId}
+            onOpen={onOpen}
+            onMove={onMove}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BoardColumn({
+  stage,
+  list,
+  canEdit,
+  movingId,
+  onOpen,
+  onMove,
+}: {
+  stage: (typeof CLIENT_STAGES)[number]
+  list: Client360[]
+  canEdit: boolean
+  movingId: string | null
+  onOpen: (c: Client360) => void
+  onMove: (c: Client360, to: ClientStage) => void
+}) {
+  const { isOver, setNodeRef } = useDroppable({ id: stage.id })
+  const value = list.reduce((s, c) => s + (c.monthly_value || 0), 0)
+  return (
+    <div className="w-64 shrink-0" data-testid={`crm-column-${stage.id}`}>
+      <div className="mb-2 px-1">
+        <div className="flex items-center justify-between gap-2">
+          <StatusBadge tone={stage.tone}>{stage.label}</StatusBadge>
+          <span className="text-2xs text-muted-foreground tabular-nums">
+            {list.length}
+            {value > 0 && ` · ${money(value)}`}
+          </span>
+        </div>
+        <p className="mt-1 text-2xs text-muted-foreground leading-snug">{stage.blurb}</p>
+      </div>
+      <div
+        ref={setNodeRef}
+        className={`space-y-2 rounded-xl p-1 -m-1 min-h-24 transition-colors ${
+          isOver ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+        }`}
+      >
+        {list.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-card-border p-3 text-2xs text-muted-foreground text-center">
+            {isOver ? 'Drop here' : 'Empty'}
+          </div>
+        ) : (
+          list.map(c => (
+            <ClientCard
+              key={c.id}
+              client={c}
+              canEdit={canEdit}
+              moving={movingId === c.id}
+              onOpen={() => onOpen(c)}
+              onMove={to => onMove(c, to)}
+            />
+          ))
+        )}
       </div>
     </div>
   )
@@ -667,6 +755,15 @@ export function CrmWorkspace() {
   const [showTerminal, setShowTerminal] = useState(false)
   const [openClient, setOpenClient] = useState<Client360 | null>(null)
   const [movingId, setMovingId] = useState<string | null>(null)
+  const [dragging, setDragging] = useState<Client360 | null>(null)
+
+  // 8px before a drag starts, so a plain click still opens the client rather
+  // than being swallowed as a micro-drag. Keyboard sensor keeps the board
+  // reachable without a pointer.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
 
   const clients = useClients()
   const attention = useAttention()
@@ -691,7 +788,20 @@ export function CrmWorkspace() {
       if (error) throw error
       return { client, to }
     },
-    onMutate: ({ client }) => setMovingId(client.id),
+    // Move the card in the cache immediately. Without this the card snaps back
+    // to its old column and then jumps again when the refetch lands, which
+    // reads as a failed drag.
+    onMutate: async ({ client, to }) => {
+      setMovingId(client.id)
+      await qc.cancelQueries({ queryKey: CLIENT_360_KEY })
+      const previous = qc.getQueryData<Client360[]>(CLIENT_360_KEY)
+      qc.setQueryData<Client360[]>(CLIENT_360_KEY, old =>
+        (old ?? []).map(c =>
+          c.id === client.id ? { ...c, client_stage: to, days_in_stage: 0 } : c,
+        ),
+      )
+      return { previous }
+    },
     onSettled: () => setMovingId(null),
     onSuccess: ({ client, to }) => {
       refetchAll()
@@ -699,13 +809,30 @@ export function CrmWorkspace() {
       setOpenClient(p => (p && p.id === client.id ? { ...p, client_stage: to } : p))
       toast({ title: `${client.full_name} → ${clientStageLabel(to)}` })
     },
-    onError: (e: unknown) =>
+    onError: (e: unknown, _vars, ctx) => {
+      // Put the card back where it came from.
+      if (ctx?.previous) qc.setQueryData(CLIENT_360_KEY, ctx.previous)
       toast({
         title: 'Could not move',
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
-      }),
+      })
+    },
   })
+
+  function handleDragStart(e: DragStartEvent) {
+    const c = (clients.data ?? []).find(x => x.id === String(e.active.id))
+    setDragging(c ?? null)
+  }
+
+  function handleDragEnd(e: DragEndEvent) {
+    setDragging(null)
+    const to = e.over?.id ? (String(e.over.id) as ClientStage) : null
+    if (!to) return
+    const client = (clients.data ?? []).find(x => x.id === String(e.active.id))
+    if (!client || client.client_stage === to) return
+    move.mutate({ client, to })
+  }
 
   const attentionCount = attention.data?.length ?? 0
   const terminalCount = (clients.data ?? []).filter(c =>
@@ -775,14 +902,28 @@ export function CrmWorkspace() {
       </div>
 
       {tab === 'board' ? (
-        <Board
-          clients={clients.data ?? []}
-          canEdit={canEdit}
-          showTerminal={showTerminal}
-          movingId={movingId}
-          onOpen={setOpenClient}
-          onMove={(client, to) => move.mutate({ client, to })}
-        />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+        >
+          <Board
+            clients={clients.data ?? []}
+            canEdit={canEdit}
+            showTerminal={showTerminal}
+            movingId={movingId}
+            onOpen={setOpenClient}
+            onMove={(client, to) => move.mutate({ client, to })}
+          />
+          <DragOverlay>
+            {dragging ? (
+              <div className="w-64 rounded-xl border border-primary/50 bg-card p-3 shadow-lg cursor-grabbing">
+                <CardBody client={dragging} canEdit={false} />
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
       ) : (
         <Attention
           rows={attention.data ?? []}
