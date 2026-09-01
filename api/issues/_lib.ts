@@ -230,7 +230,15 @@ export async function sbFetch<T = unknown>(path: string, init?: RequestInit): Pr
     err.body = txt
     throw err
   }
-  return r.json() as Promise<T>
+  // A successful write can legitimately have no body. `Prefer: return=minimal`
+  // makes PostgREST answer 204 No Content, and DELETE does the same — calling
+  // r.json() on that throws SyntaxError even though the write succeeded, and
+  // r.ok is true for 204 so the check above does not catch it. Callers that
+  // asked for no representation get undefined, which is what they expect.
+  if (r.status === 204) return undefined as T
+  const body = await r.text()
+  if (!body) return undefined as T
+  return JSON.parse(body) as T
 }
 
 // Filter the request body down to writable fields and coerce types where
