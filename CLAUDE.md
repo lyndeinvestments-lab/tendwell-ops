@@ -194,7 +194,12 @@ Inferred tables: `linen_inventory`, `access_codes`, `ac_filters`
 
 **CRM client lifecycle (migration `20260831_crm_client_lifecycle.sql`):**
 
-There are **two independent stage axes**, and nothing cascades between them — moving a client never moves their properties, and vice versa. The UI shows both side by side and a human decides.
+There are **two stage axes**. They are independent for stage moves in general — moving a client does not move their properties, and the UI shows both side by side so a human decides. **Two narrow cascades are the exception** (migration `20260901_crm_quote_cascades.sql`, added at Jordan's request):
+
+1. Client → `not_interested` **archives their outstanding quotes.** Only `Lead` and `Quote` stage properties — an Active/Onboarding/Offboarding property is live billed work and is never touched.
+2. Attaching a **live `Quote`-stage property to a client moves that client to `quoted`.** Never demotes a `won` client (HomeTeam is won and carries live quotes); skips clients already at `quoted`; does promote from `nurture` / `not_interested` / `churned`, since a fresh quote against a dormant client is a revival signal.
+
+Both are **triggers**, not RPC logic, so they hold whichever path writes — the RPC, a direct `properties` edit, a CSV import, or the API gateway. They cannot recurse: A archives properties so B returns early on `archived_at IS NOT NULL`; B sets `quoted` so A returns early on the stage not being `not_interested`. B also ignores unrelated edits to an already-quoted property, or renaming a quote would re-promote the client and fight a human who had just moved the card.
 
 | Axis | Where | Stages |
 |---|---|---|
