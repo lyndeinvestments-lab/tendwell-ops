@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
 
 // POST /api/invoices/approve  Body: { run_id }
 //
@@ -74,6 +74,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // paid to the vendor but silently missing from BOTH AR exports (the
   // formatters filter by channel). Hand-resolved lines can end up here when
   // the property fix didn't re-derive the channel — refuse rather than leak.
+  // First pick up any client channel fixed since the lines were resolved
+  // (Clients page / review dialog), so a fixed client unblocks Approve
+  // without a manual re-reconcile.
+  try {
+    await refreshBillingChannels(supabase, runId)
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to refresh billing channels', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
   const { count: unrouted, error: chErr } = await supabase
     .from('invoice_lines')
     .select('id', { count: 'exact', head: true })
@@ -87,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if ((unrouted ?? 0) > 0) {
     res.status(400).json({
-      error: `Cannot approve: ${unrouted} billable line(s) have no billing channel (would be paid to the vendor but never invoiced to a client). Fix the property/client link and re-run reconcile.`,
+      error: `Cannot approve: ${unrouted} billable line(s) have no billing channel (would be paid to the vendor but never invoiced to a client). Open the line (pencil) and pick a billing channel, or set the client's Payment Method on the Clients page, then approve again.`,
     })
     return
   }
