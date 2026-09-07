@@ -307,6 +307,69 @@ export interface ReconcileResult {
   status: 'reconciled' | 'review_needed'
 }
 
+// Route still-unrouted billable lines from their client's current channel.
+// Why: reconcile preserves human-resolved and manual rows untouched, so when
+// a client's billing channel is fixed AFTER those rows exist (Clients page
+// payment method, or the review dialog's "save as client default"), the
+// lines kept 'none' and Approve refused the whole run (I260906806, Morgan
+// Hogg, 2026-09-07). Called from reconcile and approve. Never downgrades a
+// routed line; lines without a property are left for the property guard.
+export async function refreshBillingChannels(supabase: SupabaseClient, runId: string): Promise<number> {
+  const lines = await fetchAllRows<{ id: string; property_id: number; flags: string[] | null }>(
+    'invoice_lines (unrouted)',
+    () => supabase
+      .from('invoice_lines')
+      .select('id, property_id, flags')
+      .eq('run_id', runId)
+      .not('line_kind', 'in', '(operating_expense,excluded)')
+      .neq('review_status', 'excluded')
+      .or('billing_channel.is.null,billing_channel.eq.none')
+      .not('property_id', 'is', null)
+      .order('id'),
+    'id',
+  )
+  if (lines.length === 0) return 0
+
+  const propertyIds = [...new Set(lines.map(l => l.property_id))]
+  const { data: props, error: propErr } = await supabase
+    .from('properties')
+    .select('id, contact_id')
+    .in('id', propertyIds)
+  if (propErr) throw new Error(`Failed to load properties for channel refresh: ${propErr.message}`)
+  const contactByProperty = new Map<number, string>()
+  for (const p of (props ?? []) as Array<{ id: number; contact_id: string | null }>) {
+    if (p.contact_id) contactByProperty.set(p.id, p.contact_id)
+  }
+  const contactIds = [...new Set(contactByProperty.values())]
+  if (contactIds.length === 0) return 0
+  const { data: contacts, error: cErr } = await supabase
+    .from('contacts')
+    .select('id, billing_channel')
+    .in('id', contactIds)
+  if (cErr) throw new Error(`Failed to load contacts for channel refresh: ${cErr.message}`)
+  const channelByContact = new Map<string, BillingChannel>()
+  for (const c of (contacts ?? []) as Array<{ id: string; billing_channel: BillingChannel }>) {
+    channelByContact.set(c.id, c.billing_channel)
+  }
+
+  let updated = 0
+  for (const line of lines) {
+    const contactId = contactByProperty.get(line.property_id)
+    const channel = contactId ? channelByContact.get(contactId) : undefined
+    if (!channel || channel === 'none') continue
+    const { error } = await supabase
+      .from('invoice_lines')
+      .update({
+        billing_channel: channel,
+        flags: (line.flags ?? []).filter(f => f !== 'no_billing_channel'),
+      })
+      .eq('id', line.id)
+    if (error) throw new Error(`Failed to route line ${line.id}: ${error.message}`)
+    updated += 1
+  }
+  return updated
+}
+
 // Run the engine over a run's raw lines and persist the classified output.
 // Rows a human already resolved (review_status='resolved') or added manually
 // (source='manual') are preserved untouched; everything else is rebuilt.
@@ -428,6 +491,10 @@ export async function reconcileRun(
         .filter(r => r.line_kind !== 'excluded' && r.line_kind !== 'operating_expense')
         .reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0),
   )
+
+  // Preserved rows never see the engine's channel lookup — pick up any client
+  // channel fixed since they were resolved (see refreshBillingChannels).
+  await refreshBillingChannels(supabase, runId)
 
   const stated = run.stated_subtotal != null ? Number(run.stated_subtotal) : null
   const subtotalOk = stated == null || Math.abs(summary.totalInvoiced - stated) <= 0.005

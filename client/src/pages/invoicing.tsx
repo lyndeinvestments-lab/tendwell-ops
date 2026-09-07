@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -1409,6 +1410,41 @@ function AddLineDialog({ runId, nextLineNo, userLabel, onClose, onSaved }: {
   )
 }
 
+interface ClientChannelInfo {
+  id: string
+  full_name: string | null
+  billing_channel: BillingChannel
+  payment_method: string | null
+}
+
+// Property → owning client's AR routing. Seeds the review dialog's billing
+// channel when a property is picked and powers "save as client default".
+async function loadClientForProperty(propertyId: number): Promise<ClientChannelInfo | null> {
+  const { data: propRow } = await supabase.from('properties').select('contact_id').eq('id', propertyId).maybeSingle()
+  if (!propRow?.contact_id) return null
+  const { data: c } = await supabase
+    .from('contacts')
+    .select('id, full_name, billing_channel, payment_method')
+    .eq('id', propRow.contact_id)
+    .maybeSingle()
+  if (!c) return null
+  return {
+    id: c.id,
+    full_name: c.full_name,
+    billing_channel: (c.billing_channel as BillingChannel) ?? 'none',
+    payment_method: c.payment_method,
+  }
+}
+
+// Clients-page "Payment Method" label for each channel. Written alongside
+// billing_channel so the Clients page shows what invoicing does; a DB trigger
+// (20260907b) maps the label back to the channel when edited over there.
+const PAYMENT_METHOD_FOR_CHANNEL: Record<BillingChannel, string | null> = {
+  bill_com: 'Bill.com',
+  qbo_haven: 'QuickBooks',
+  none: null,
+}
+
 function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }: {
   line: InvoiceLine
   runId: string
@@ -1441,6 +1477,21 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   const [invoiced, setInvoiced] = useState<string>(String(line.raw_amount ?? ''))
   const [cleanerPay, setCleanerPay] = useState<string>(line.cleaner_pay_amount != null ? String(line.cleaner_pay_amount) : '')
   const [clientCharge, setClientCharge] = useState<string>(line.client_charge_amount != null ? String(line.client_charge_amount) : '')
+
+  // Where the client charge is invoiced. Seeded from the line, reset to the
+  // client's default when the property changes, and editable here because a
+  // new client often has no channel yet — that must not hold up Approve.
+  const [billingChannel, setBillingChannel] = useState<BillingChannel>(line.billing_channel ?? 'none')
+  const [saveChannelToClient, setSaveChannelToClient] = useState(true)
+  const isExpenseKind = lineKind === 'operating_expense' || lineKind === 'excluded'
+
+  const clientQuery = useQuery<ClientChannelInfo | null>({
+    queryKey: ['invoicing-property-client', propertyId],
+    enabled: propertyId != null,
+    queryFn: () => loadClientForProperty(propertyId!),
+    staleTime: 30_000,
+  })
+  const clientInfo = clientQuery.data ?? null
 
   const propertyOptions = (propertiesQuery.data ?? []).map(p => ({ value: String(p.id), label: p.name ?? `Property #${p.id}` }))
 
@@ -1559,7 +1610,14 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   async function onSelectProperty(value: string) {
     const id = value ? Number(value) : null
     setPropertyId(id)
-    if (id !== (currentProperty?.id ?? null)) setMatchedTaskId(null) // old match belongs to the old property
+    if (id !== (currentProperty?.id ?? null)) {
+      setMatchedTaskId(null) // old match belongs to the old property
+      // Any property change — including clearing it — resets the channel to
+      // the new client's default; a stale channel from another client's line
+      // would export to the wrong AR file.
+      setBillingChannel('none')
+      if (id != null) loadClientForProperty(id).then(c => setBillingChannel(c?.billing_channel ?? 'none')).catch(() => {})
+    }
     if (id == null) return
     const p = (propertiesQuery.data ?? []).find(x => x.id === id)
     if (!p) return
@@ -1600,40 +1658,21 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
       const invoicedNum = invoiced.trim() === '' ? null : Number(invoiced)
       const invoicedChanged = invoicedNum != null && Number.isFinite(invoicedNum) && Math.abs(invoicedNum - Number(line.raw_amount ?? 0)) > 0.005
 
-      // Re-derive the billing channel when the property changes — resolved
-      // rows are preserved by reconcile, so a stale 'none' here would leave
-      // the line off BOTH AR exports forever (paid to vendor, never billed).
-      let billingChannel = line.billing_channel
-      if (propertyChanged) {
-        // Any property change — including CLEARING it — resets the channel;
-        // a stale 'qbo_haven' on a property-less line would export a Haven
-        // invoice row with a blank property.
-        billingChannel = 'none'
-      }
-      if (propertyChanged && propertyId != null) {
-        const { data: propRow } = await supabase
-          .from('properties')
-          .select('contact_id')
-          .eq('id', propertyId)
-          .maybeSingle()
-        if (propRow?.contact_id) {
-          const { data: contactRow } = await supabase
-            .from('contacts')
-            .select('billing_channel')
-            .eq('id', propRow.contact_id)
-            .maybeSingle()
-          billingChannel = (contactRow?.billing_channel as typeof billingChannel) ?? 'none'
-        }
-      }
+      // The channel is whatever the picker shows (seeded from the line, reset
+      // to the client's default on property change, editable). Resolved rows
+      // are preserved by reconcile, so 'none' here would leave the line off
+      // BOTH AR exports (paid to vendor, never billed) — the Approve gate
+      // refuses that. Expense/excluded lines and property-less lines are
+      // never AR and carry no channel.
+      const billingChannelToSave: BillingChannel = isExpenseKind || propertyId == null ? 'none' : billingChannel
 
       // Drop the flags this resolution just addressed — a resolved Tendwell
       // expense showing "Unresolved property / No billing channel" reads as
       // still-broken. Expense/excluded kinds don't need property or channel
       // at all; other kinds shed those flags once a property/channel exists.
-      const isExpenseKind = lineKind === 'operating_expense' || lineKind === 'excluded'
       const newFlags = line.flags.filter(f => {
         if (f === 'unresolved_property') return !isExpenseKind && propertyId == null
-        if (f === 'no_billing_channel') return !isExpenseKind && (billingChannel == null || billingChannel === 'none')
+        if (f === 'no_billing_channel') return !isExpenseKind && billingChannelToSave === 'none'
         if (f === 'low_confidence_alias' || f === 'unmatched_task') return !isExpenseKind
         return true
       })
@@ -1644,7 +1683,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
         .update({
           property_id: propertyId,
           matched_task_id: matchedTaskId,
-          billing_channel: billingChannel,
+          billing_channel: billingChannelToSave,
           service_type: serviceType || null,
           line_kind: lineKind,
           flags: newFlags,
@@ -1664,6 +1703,29 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
       // rows are preserved, so this is safe).
       if (invoicedChanged) {
         await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } }).catch(() => {})
+      }
+
+      // Remember the channel on the client so the next invoice routes itself
+      // (and so the Clients page shows the same Payment Method). Only when
+      // the reviewer picked something different from the client's default.
+      if (saveChannelToClient && !isExpenseKind && propertyId != null && billingChannelToSave !== 'none') {
+        const client = clientInfo ?? (await loadClientForProperty(propertyId).catch(() => null))
+        if (client && client.billing_channel !== billingChannelToSave) {
+          const { error: clientErr } = await supabase
+            .from('contacts')
+            .update({
+              billing_channel: billingChannelToSave,
+              payment_method: PAYMENT_METHOD_FOR_CHANNEL[billingChannelToSave] ?? client.payment_method,
+            })
+            .eq('id', client.id)
+          if (clientErr) {
+            toast({
+              title: 'Line saved, but the client default didn’t persist',
+              description: `${client.full_name ?? 'This client'} will need a billing channel again next invoice (${clientErr.message})`,
+              variant: 'destructive',
+            })
+          }
+        }
       }
 
       if (propertyChanged && propertyId != null && line.raw_property_text) {
@@ -1792,6 +1854,35 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
             <p className="text-2xs text-muted-foreground">
               Tendwell expense: paid to the vendor via Ramp, never invoiced to Haven or bill.com — no property needed.
             </p>
+          )}
+          {!isExpenseKind && propertyId != null && (
+            <div className="space-y-1.5">
+              <Label>
+                Billing channel{' '}
+                <span className="text-muted-foreground font-normal">(where the client charge is invoiced)</span>
+              </Label>
+              <Select value={billingChannel} onValueChange={v => setBillingChannel(v as BillingChannel)}>
+                <SelectTrigger data-testid="select-billing-channel"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {BILLING_CHANNELS.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {billingChannel === 'none' && (
+                <p className="text-2xs text-warning">
+                  {clientInfo?.full_name ?? 'This client'} has no billing channel yet. Pick one here or the invoice can’t be approved.
+                </p>
+              )}
+              {clientInfo && billingChannel !== 'none' && billingChannel !== clientInfo.billing_channel && (
+                <label className="flex items-center gap-2 text-xs cursor-pointer">
+                  <Checkbox
+                    checked={saveChannelToClient}
+                    onCheckedChange={v => setSaveChannelToClient(v === true)}
+                    data-testid="checkbox-save-channel-to-client"
+                  />
+                  <span>Save as {clientInfo.full_name ?? 'this client'}’s billing channel for future invoices</span>
+                </label>
+              )}
+            </div>
           )}
           <div className="space-y-1.5">
             <Label>Review note</Label>
