@@ -63,6 +63,14 @@ export const onboardingEs: typeof onboardingEn = {
       notes: 'Instrucciones Especiales / Notas',
       notesPlaceholder: 'Cualquier detalle específico sobre cómo quieres que se limpie o prepare la propiedad, o algo que debamos saber.',
     },
+    owner: {
+      backToPortal: 'Volver al portal',
+      whichProperty: '¿Para cuál propiedad es esto?',
+      newProperty: 'Otra propiedad / una nueva',
+      prefilledHint: 'Ya completamos lo que tenemos. Revise cada respuesta y corrija lo que esté desactualizado.',
+      newPropertyHint: 'Sus datos de contacto ya están completos. Cuéntenos sobre la nueva propiedad a continuación.',
+      previewReadOnly: 'Vista de solo lectura: el envío está deshabilitado mientras se ve como propietario.',
+    },
     bedSizes: {
       king: 'King',
       queen: 'Queen',
@@ -170,6 +178,7 @@ export const onboardingEs: typeof onboardingEn = {
       noName: '(sin nombre)',
       unknownClient: 'Desconocido',
       sourcePublic: 'Público',
+      sourceOwner: 'Portal del propietario',
       sourceToken: 'Token',
       linkedToProperty: 'Vinculado a la propiedad #{{id}} · aprobado {{date}} por {{name}}',
       apiKeyBadge: 'Clave de API',

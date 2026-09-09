@@ -20,7 +20,7 @@ import { slugify } from '@/lib/issues'
 
 interface OnboardingSubmission {
   id: string
-  source: 'token' | 'public'
+  source: 'token' | 'public' | 'owner'
   status: 'pending' | 'approved' | 'rejected' | 'converted'
   token: string | null
   client_name: string | null
@@ -211,7 +211,10 @@ export default function OnboardingQueuePage() {
           {rows!.map(r => {
             const expanded = expandedId === r.id
             const isWorking = working === r.id
-            const isPublic = r.source === 'public'
+            // 'owner' rows come from a signed-in owner filling the same
+            // intake form from their portal — pre-filled and attributable,
+            // so worth distinguishing from an anonymous public submission.
+            const sourceKey = r.source === 'public' ? 'sourcePublic' : r.source === 'owner' ? 'sourceOwner' : 'sourceToken'
             return (
               <Card key={r.id} data-testid={`row-submission-${r.id}`}>
                 <CardHeader className="cursor-pointer p-3" onClick={() => setExpandedId(expanded ? null : r.id)}>
@@ -224,7 +227,7 @@ export default function OnboardingQueuePage() {
                       <p className="text-xs text-muted-foreground mt-0.5">{fmtDate(r.submitted_at, locale)}</p>
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge variant={isPublic ? 'secondary' : 'outline'}>{isPublic ? t('queue.row.sourcePublic') : t('queue.row.sourceToken')}</Badge>
+                      <Badge variant={r.source === 'token' ? 'outline' : 'secondary'}>{t(`queue.row.${sourceKey}`)}</Badge>
                       <Badge variant={r.status === 'pending' ? 'default' : r.status === 'converted' ? 'secondary' : 'outline'}>{t(`queue.status.${slugify(r.status)}`, undefined, r.status)}</Badge>
                       {r.photos.length > 0 && <Badge variant="outline"><ImageIcon className="w-3 h-3 mr-1" />{r.photos.length}</Badge>}
                       {r.api_key && <Badge variant="outline">{t('queue.row.apiKeyBadge')}</Badge>}

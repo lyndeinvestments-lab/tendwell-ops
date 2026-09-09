@@ -1157,7 +1157,7 @@ function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
             </li>
           ))}
         </ul>
-        <a href="/#/onboarding" className="inline-block text-sm font-medium text-primary hover:underline">
+        <a href="/onboarding" className="inline-block text-sm font-medium text-primary hover:underline">
           {t('onboarding.startHere')}
         </a>
       </CardContent>

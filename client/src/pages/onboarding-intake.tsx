@@ -1,19 +1,59 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { useQuery } from '@tanstack/react-query'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Check, Building2, Upload, X } from 'lucide-react'
+import { Skeleton } from '@/components/ui/skeleton'
+import { ArrowLeft, Check, Building2, Upload, X } from 'lucide-react'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { resizeImageFile } from '@/lib/resize-image'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { LanguageToggle } from '@/components/LanguageToggle'
+import { useAuth } from '@/lib/auth'
+import { supabase } from '@/lib/supabase'
+import { boolToYesNo, formatWifi, numToStr, parseWifi, type YesNo } from '@/lib/onboarding-prefill'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-const publicSupabase = createClient(supabaseUrl, supabaseAnonKey)
+// Anonymous client for the signed-out public form. `persistSession: false` and
+// a distinct storageKey keep it genuinely anonymous: the app's real client uses
+// storageKey 'tendwell-sb-auth', and if this one ever shared it, an owner
+// opening the same page would post with their JWT and be refused by RLS (the
+// authenticated policies on onboarding_submissions require is_staff()). Owner
+// submissions go through the authenticated `supabase` client on purpose.
+const publicSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'tendwell-intake-anon' },
+})
 
-type YesNo = '' | 'yes' | 'no'
+/** One row of `get_owner_properties()` — the same shape the owner portal reads. */
+type OwnerIntakeProperty = {
+  id: number
+  name: string
+  stage?: string | null
+  address?: string | null
+  bedrooms?: number | null
+  full_baths?: number | null
+  half_baths?: number | null
+  square_footage?: number | null
+  king_beds?: number | null
+  queen_beds?: number | null
+  full_beds?: number | null
+  twin_beds?: number | null
+  hot_tub?: boolean | null
+  pool?: boolean | null
+  door_code?: string | null
+  other_codes?: string | null
+  wifi_info?: string | null
+  filter_size?: string | null
+  check_in_time?: string | null
+  check_out_time?: string | null
+  ical_url?: string | null
+}
+
+const NEW_PROPERTY = 'new' as const
+type PropertyChoice = number | typeof NEW_PROPERTY
+
 type IntegrationKind = '' | 'ical' | 'api_key' | 'none'
 
 type BedSize = 'king' | 'queen' | 'full' | 'twin'
@@ -75,6 +115,126 @@ export default function OnboardingIntakePage() {
   const [photoUploading, setPhotoUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // ── Owner mode ──────────────────────────────────────────────────────────────
+  // The same page serves three audiences: a signed-out prospect (anonymous), a
+  // staff member opening /onboarding from the app shell, and — since the portal
+  // link was fixed — a signed-in owner. Only the last gets pre-filled, and only
+  // they submit through the authenticated client.
+  const { user, emulatedOwner } = useAuth()
+  const previewing = !!emulatedOwner
+
+  const ownerSelf = useQuery({
+    queryKey: ['intake-owner-self'],
+    enabled: !!user,
+    // Seed data for a form in progress: take one snapshot and hold it. A
+    // background refetch under a half-filled form has nothing to offer and
+    // everything to lose.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      // Null for staff who aren't owners, which is exactly how we detect
+      // "not owner mode" — the same resolver the portal uses.
+      const { data: oid } = await supabase.rpc('current_owner_id')
+      if (!oid) return null
+      const { data, error } = await supabase
+        .from('property_owners')
+        .select('id, name, email, phone')
+        .eq('id', oid as any)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+
+  const owner = ownerSelf.data ?? null
+  const ownerMode = !!owner
+
+  const ownerProperties = useQuery({
+    queryKey: ['intake-owner-properties'],
+    enabled: ownerMode,
+    // Seed data for a form in progress: take one snapshot and hold it. A
+    // background refetch under a half-filled form has nothing to offer and
+    // everything to lose.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<OwnerIntakeProperty[]> => {
+      const { data, error } = await supabase.rpc('get_owner_properties')
+      if (error) throw error
+      return (data ?? []) as unknown as OwnerIntakeProperty[]
+    },
+  })
+
+  const properties = useMemo(() => ownerProperties.data ?? [], [ownerProperties.data])
+  const [choice, setChoice] = useState<PropertyChoice | null>(null)
+
+  // Default selection. The portal's entry point sits in the "Onboarding in
+  // progress" card, so when exactly one property is mid-onboarding that's
+  // overwhelmingly the one they came to fill in. With none — or several — we
+  // can't guess, so start on "a new property" and let them pick.
+  useEffect(() => {
+    if (!ownerMode || choice !== null || !ownerProperties.isSuccess) return
+    const onboarding = properties.filter(p => p.stage === 'Onboarding')
+    setChoice(onboarding.length === 1 ? onboarding[0]!.id : NEW_PROPERTY)
+  }, [ownerMode, choice, ownerProperties.isSuccess, properties])
+
+  const selected = useMemo(
+    () => (typeof choice === 'number' ? properties.find(p => p.id === choice) ?? null : null),
+    [choice, properties],
+  )
+
+  // Pre-fill (and re-fill when they switch property). Contact details always
+  // come from the owner record; property answers come from the chosen property,
+  // or blank for a new one. Everything stays editable — this only seeds the
+  // fields, and every question is still asked.
+  // Seed once per selection. Guarded by a ref rather than the effect deps
+  // because `properties`/`owner` get fresh object identities on any refetch,
+  // and re-running this would silently discard everything the owner has typed.
+  const prefilledFor = useRef<PropertyChoice | null>(null)
+  useEffect(() => {
+    if (!ownerMode || choice === null) return
+    if (prefilledFor.current === choice) return
+    prefilledFor.current = choice
+    setClientName(owner?.name ?? '')
+    setContactEmail(owner?.email ?? '')
+    setContactPhone(owner?.phone ?? '')
+    setInvoiceSameAsPrimary(true)
+    setInvoiceEmail('')
+
+    const p = typeof choice === 'number' ? properties.find(x => x.id === choice) ?? null : null
+    setPropertyName(p?.name ?? '')
+    setAddress(p?.address ?? '')
+    setBedrooms(numToStr(p?.bedrooms))
+    setFullBaths(numToStr(p?.full_baths))
+    setHalfBaths(numToStr(p?.half_baths))
+    setSquareFootage(numToStr(p?.square_footage))
+    setBedCounts({
+      king: numToStr(p?.king_beds),
+      queen: numToStr(p?.queen_beds),
+      full: numToStr(p?.full_beds),
+      twin: numToStr(p?.twin_beds),
+    })
+    setHotTub(boolToYesNo(p?.hot_tub))
+    setPool(boolToYesNo(p?.pool))
+    setDoorCode(p?.door_code ?? '')
+    setOtherCodes(p?.other_codes ?? '')
+    const wifi = parseWifi(p?.wifi_info)
+    setWifiNetwork(wifi.network)
+    setWifiPassword(wifi.password)
+    setFilterSize(p?.filter_size ?? '')
+    setCheckInTime(p?.check_in_time ?? '')
+    setCheckOutTime(p?.check_out_time ?? '')
+    setIcalUrl(p?.ical_url ?? '')
+    setIntegrationKind(p?.ical_url ? 'ical' : '')
+    // Not stored on `properties`: the pool/closet/lockbox code breakdown, other
+    // sleeping arrangements, linen program, deep clean, photos and notes. Those
+    // stay blank and get asked as usual.
+  }, [ownerMode, choice, owner, properties])
+
+  // The client used for this submission's writes. Owners are `authenticated`
+  // and covered by `onboarding_submissions_owner_insert`; everyone else posts
+  // anonymously under the anon policy.
+  const writeClient = ownerMode ? supabase : publicSupabase
+
   async function uploadFile(raw: File): Promise<UploadedPhoto | null> {
     const file = await resizeImageFile(raw)
     const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
@@ -82,12 +242,12 @@ export default function OnboardingIntakePage() {
     const today = new Date().toISOString().slice(0, 10)
     const rand = crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const path = `${today}/${rand}.${safeExt}`
-    const { error: uploadErr } = await publicSupabase
+    const { error: uploadErr } = await writeClient
       .storage
       .from('onboarding-uploads')
       .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false })
     if (uploadErr) return null
-    const { data: urlData } = publicSupabase.storage.from('onboarding-uploads').getPublicUrl(path)
+    const { data: urlData } = writeClient.storage.from('onboarding-uploads').getPublicUrl(path)
     return { url: urlData.publicUrl, path, name: file.name }
   }
 
@@ -114,7 +274,7 @@ export default function OnboardingIntakePage() {
     const photo = photos[idx]
     if (!photo) return
     setPhotos(prev => prev.filter((_, i) => i !== idx))
-    await publicSupabase.storage.from('onboarding-uploads').remove([photo.path]).catch(() => {})
+    await writeClient.storage.from('onboarding-uploads').remove([photo.path]).catch(() => {})
   }
 
   async function handleSubmit() {
@@ -136,7 +296,7 @@ export default function OnboardingIntakePage() {
         .map(s => `${s.count} ${s.label}`),
       otherBeds.trim() && `Other: ${otherBeds.trim()}`,
     ].filter(Boolean).join(', ')
-    const wifiCombined = [wifiNetwork.trim() && `Network: ${wifiNetwork.trim()}`, wifiPassword.trim() && `Password: ${wifiPassword.trim()}`].filter(Boolean).join(' / ') || null
+    const wifiCombined = formatWifi(wifiNetwork, wifiPassword)
     const otherCodesCombined = [
       poolCode.trim() && `Pool: ${poolCode.trim()}`,
       closetCode.trim() && `Cleaner closet: ${closetCode.trim()}`,
@@ -144,41 +304,51 @@ export default function OnboardingIntakePage() {
       otherCodes.trim(),
     ].filter(Boolean).join(' | ') || null
 
-    const { error: insertErr } = await publicSupabase
-      .from('onboarding_submissions')
-      .insert({
-        source: 'public',
-        token: null,
-        status: 'pending',
-        client_name: clientName.trim(),
-        contact_email: contactEmail.trim() || null,
-        invoice_email: (invoiceSameAsPrimary ? contactEmail.trim() : invoiceEmail.trim()) || null,
-        contact_phone: contactPhone.trim() || null,
-        property_name: propertyName.trim() || null,
-        address: address.trim(),
-        bedrooms: bedrooms ? parseInt(bedrooms) : null,
-        number_of_beds: bedTotal,
-        full_baths: fullBaths ? parseInt(fullBaths) : null,
-        half_baths: halfBaths ? parseInt(halfBaths) : null,
-        square_footage: squareFootage ? parseFloat(squareFootage) : null,
-        bed_sizes: bedSizesText,
-        hot_tub: hotTub === 'yes' ? true : hotTub === 'no' ? false : null,
-        pool: pool === 'yes' ? true : pool === 'no' ? false : null,
-        linen_program: linenProgram === 'yes' ? true : linenProgram === 'no' ? false : null,
-        onboarding_deep_clean: deepClean === 'yes' ? true : deepClean === 'no' ? false : null,
-        door_code: doorCode.trim() || null,
-        other_codes: otherCodesCombined,
-        wifi_info: wifiCombined,
-        filter_size: filterSize.trim() || null,
-        check_in_time: checkInTime.trim() || null,
-        check_out_time: checkOutTime.trim() || null,
-        ical_url: integrationKind === 'ical' ? icalUrl.trim() || null : null,
-        api_client_id: integrationKind === 'api_key' ? apiClientId.trim() || null : null,
-        api_key: integrationKind === 'api_key' ? apiKey.trim() || null : null,
-        notes: notes.trim() || null,
-        photos: photos.map(p => p.path),
-        submitted_at: new Date().toISOString(),
-      })
+    // `source` drives both the staff queue badge and the RLS policy that let
+    // this row through: an owner may only insert source='owner' rows carrying
+    // their own owner_id and one of their own properties.
+    const payload = {
+      source: ownerMode ? 'owner' : 'public',
+      owner_id: ownerMode ? owner!.id : null,
+      property_id: ownerMode && typeof choice === 'number' ? choice : null,
+      token: null,
+      status: 'pending',
+      client_name: clientName.trim(),
+      contact_email: contactEmail.trim() || null,
+      invoice_email: (invoiceSameAsPrimary ? contactEmail.trim() : invoiceEmail.trim()) || null,
+      contact_phone: contactPhone.trim() || null,
+      property_name: propertyName.trim() || null,
+      address: address.trim(),
+      bedrooms: bedrooms ? parseInt(bedrooms) : null,
+      number_of_beds: bedTotal,
+      full_baths: fullBaths ? parseInt(fullBaths) : null,
+      half_baths: halfBaths ? parseInt(halfBaths) : null,
+      square_footage: squareFootage ? parseFloat(squareFootage) : null,
+      bed_sizes: bedSizesText,
+      hot_tub: hotTub === 'yes' ? true : hotTub === 'no' ? false : null,
+      pool: pool === 'yes' ? true : pool === 'no' ? false : null,
+      linen_program: linenProgram === 'yes' ? true : linenProgram === 'no' ? false : null,
+      onboarding_deep_clean: deepClean === 'yes' ? true : deepClean === 'no' ? false : null,
+      door_code: doorCode.trim() || null,
+      other_codes: otherCodesCombined,
+      wifi_info: wifiCombined,
+      filter_size: filterSize.trim() || null,
+      check_in_time: checkInTime.trim() || null,
+      check_out_time: checkOutTime.trim() || null,
+      ical_url: integrationKind === 'ical' ? icalUrl.trim() || null : null,
+      api_client_id: integrationKind === 'api_key' ? apiClientId.trim() || null : null,
+      api_key: integrationKind === 'api_key' ? apiKey.trim() || null : null,
+      notes: notes.trim() || null,
+      photos: photos.map(p => p.path),
+      submitted_at: new Date().toISOString(),
+    }
+
+    // `as any` on the owner path: the row shape is checked by RLS and by the
+    // CHECK constraints, and `shared/database.types.ts` is regenerated from the
+    // live schema out of band. The anonymous client is untyped either way.
+    const { error: insertErr } = ownerMode
+      ? await supabase.from('onboarding_submissions').insert(payload as any)
+      : await publicSupabase.from('onboarding_submissions').insert(payload)
 
     setSaving(false)
     if (insertErr) {
@@ -213,6 +383,21 @@ export default function OnboardingIntakePage() {
     )
   }
 
+  // Owner mode resolves the owner record and their properties before the first
+  // paint, so the form never flashes empty and then fills itself in.
+  const ownerLoading = !!user && (ownerSelf.isLoading || (ownerMode && (ownerProperties.isLoading || choice === null)))
+  if (ownerLoading) {
+    return (
+      <div className="min-h-screen bg-background p-4 sm:p-8">
+        <div className="max-w-2xl mx-auto space-y-4">
+          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+          <Skeleton className="h-64 rounded-2xl" />
+        </div>
+      </div>
+    )
+  }
+
   const inputCls = 'h-10 text-sm'
   const labelCls = 'text-xs font-medium text-muted-foreground block mb-1'
 
@@ -238,7 +423,12 @@ export default function OnboardingIntakePage() {
   return (
     <div className="min-h-screen bg-background p-4 sm:p-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="flex items-center justify-end">
+        <div className={`flex items-center ${ownerMode ? 'justify-between' : 'justify-end'}`}>
+          {ownerMode && (
+            <a href="/" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline" data-testid="link-back-to-portal">
+              <ArrowLeft className="w-4 h-4" /> {t('intake.owner.backToPortal')}
+            </a>
+          )}
           <LanguageToggle size="lg" />
         </div>
 
@@ -251,6 +441,41 @@ export default function OnboardingIntakePage() {
             {t('intake.page.subtitle')}
           </p>
         </div>
+
+        {ownerMode && (
+          <Card data-testid="card-owner-property-picker">
+            <CardHeader><CardTitle className="text-sm">{t('intake.owner.whichProperty')}</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-col gap-2">
+                {properties.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setChoice(p.id)}
+                    data-testid={`button-choose-property-${p.id}`}
+                    className={`w-full text-left rounded-md border px-3 py-2.5 text-sm transition-colors ${choice === p.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+                  >
+                    <span className="font-medium">{p.name}</span>
+                    {p.stage && (
+                      <span className={`ml-2 text-xs ${choice === p.id ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>{p.stage}</span>
+                    )}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setChoice(NEW_PROPERTY)}
+                  data-testid="button-choose-property-new"
+                  className={`w-full text-left rounded-md border px-3 py-2.5 text-sm transition-colors ${choice === NEW_PROPERTY ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-border hover:bg-muted/50'}`}
+                >
+                  {t('intake.owner.newProperty')}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {selected ? t('intake.owner.prefilledHint') : t('intake.owner.newPropertyHint')}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader><CardTitle className="text-sm">{t('intake.sections.contactProperty')}</CardTitle></CardHeader>
@@ -521,9 +746,12 @@ export default function OnboardingIntakePage() {
 
         {error && <p className="text-sm text-destructive text-center">{error}</p>}
 
-        <Button className="w-full h-12 text-base" disabled={saving || photoUploading} onClick={handleSubmit} data-testid="button-submit">
+        <Button className="w-full h-12 text-base" disabled={saving || photoUploading || previewing} onClick={handleSubmit} data-testid="button-submit">
           {saving ? t('intake.submit.submitting') : t('intake.submit.submit')}
         </Button>
+        {previewing && (
+          <p className="text-xs text-muted-foreground text-center">{t('intake.owner.previewReadOnly')}</p>
+        )}
 
         <p className="text-xs text-muted-foreground text-center">Tendwell Cleaning Co.</p>
       </div>

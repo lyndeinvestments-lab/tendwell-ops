@@ -68,6 +68,15 @@ export const onboardingEn = {
       notes: 'Special Instructions / Notes',
       notesPlaceholder: 'Anything specific about how you want the property cleaned, set up, or anything we should know.',
     },
+    // Shown only when a signed-in owner opens this form from their portal.
+    owner: {
+      backToPortal: 'Back to portal',
+      whichProperty: 'Which property is this for?',
+      newProperty: 'A different / new property',
+      prefilledHint: "We've filled in what we already have. Please check every answer and correct anything that's out of date.",
+      newPropertyHint: 'Your contact details are filled in. Tell us about the new property below.',
+      previewReadOnly: 'Read-only preview — submission is disabled while viewing as an owner.',
+    },
     bedSizes: {
       king: 'King',
       queen: 'Queen',
@@ -177,6 +186,7 @@ export const onboardingEn = {
       noName: '(no name)',
       unknownClient: 'Unknown',
       sourcePublic: 'Public',
+      sourceOwner: 'Owner portal',
       sourceToken: 'Token',
       linkedToProperty: 'Linked to property #{{id}} · approved {{date}} by {{name}}',
       apiKeyBadge: 'API key',
