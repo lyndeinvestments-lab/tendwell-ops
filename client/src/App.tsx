@@ -479,6 +479,18 @@ function AppLayout() {
   // same portal by switching into "Owner view" (actingAsOwner), and an admin
   // previewing a specific owner (emulatedOwner) sees the portal read-only.
   if (user.role === 'owner' || (actingAsOwner && user.ownerIdentity) || (user.role === 'admin' && emulatedOwner)) {
+    // The portal returns here BEFORE <Router/>, so owners never see a wouter
+    // route — which is why the portal's "Onboarding a new property? Start
+    // here" link used to dead-end on the portal itself no matter what it
+    // pointed at. Serve the intake form by path, the same way the signed-out
+    // branch above does; the page detects the owner session and pre-fills.
+    if (window.location.pathname === '/onboarding' || window.location.pathname.startsWith('/onboarding/')) {
+      return (
+        <Suspense fallback={spinnerFallback}>
+          <OnboardingIntakePage />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={spinnerFallback}>
         <OwnerPortalPage />
