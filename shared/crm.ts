@@ -54,10 +54,10 @@ export const CLIENT_STAGES: ClientStageDef[] = [
     label: 'New',
     order: 0,
     terminal: false,
-    // This column IS the review queue for meeting intake — see the migration
-    // header. A card sitting here means "a meeting happened and nobody has
-    // decided whether it's real yet".
-    blurb: 'Auto-created from a meeting — needs your glance',
+    // This column IS the review queue for automated intake — see the migration
+    // header. A card sitting here means "something happened (a meeting, a
+    // website form) and nobody has decided whether it's real yet".
+    blurb: 'Auto-created from a meeting or the website — needs your glance',
     tone: 'info',
   },
   {
