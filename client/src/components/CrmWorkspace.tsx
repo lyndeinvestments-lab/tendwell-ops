@@ -64,6 +64,7 @@ import {
   CalendarClock,
   ChevronRight,
   Clock,
+  Globe,
   Loader2,
   MoveRight,
   Phone,
@@ -191,6 +192,15 @@ function CardBody({
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-2xs text-muted-foreground tabular-nums">
+        {client.source === 'Website' && (
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-info/10 px-1.5 py-0.5 font-medium text-info"
+            title="Came in through the Book a Call form on tendwellcleaningco.com"
+          >
+            <Globe className="w-3 h-3" />
+            Web
+          </span>
+        )}
         <span className="inline-flex items-center gap-1">
           <Building2 className="w-3 h-3" />
           {client.property_count}
@@ -731,7 +741,10 @@ function ClientSheet({
                       {i.source && i.source !== 'ui' && ` · via ${i.source}`}
                       {i.created_by && ` · ${i.created_by}`}
                     </p>
-                    <p>{i.summary ?? '(no summary)'}</p>
+                    {/* whitespace-pre-line: web-form intake writes a multi-line
+                        block (portfolio, location, contact, notes) and it must not
+                        collapse into one run-on line. */}
+                    <p className="whitespace-pre-line">{i.summary ?? '(no summary)'}</p>
                   </div>
                 ))}
               </div>
