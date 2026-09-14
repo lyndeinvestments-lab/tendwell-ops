@@ -936,6 +936,38 @@ describe('inspection labor lines', () => {
   })
 })
 
+// ─── Courier / shipping charges ──────────────────────────────────────────────
+
+describe('courier charges fronted by the vendor', () => {
+  // Real pair from run I260913808 (lines 286-287). These are not property
+  // cleans — no property, no client to bill — but they fell through to the
+  // clean path and queued as unresolved_property. Once a human hit Resolve
+  // without assigning a property they blocked Approve from OUTSIDE the review
+  // queue, where they were effectively unfindable on a 287-line run.
+  it('classifies UPS/FedEx delivery lines as a Tendwell expense', () => {
+    expect(isOperatingExpenseText('Ups Deliver 8/31/26')).toBe(true)
+    expect(isOperatingExpenseText('Fedex Deliver')).toBe(true)
+    expect(isOperatingExpenseText('USPS postage')).toBe(true)
+    expect(isOperatingExpenseText('Shipping charge')).toBe(true)
+  })
+
+  it('pays the vendor the full amount and never bills a client', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Ups Deliver 8/31/26', rawAmount: 33.95,
+    })]))
+    expect(lines[0].lineKind).toBe('operating_expense')
+    expect(lines[0].cleanerPayAmount).toBe(33.95)
+    expect(lines[0].clientChargeAmount).toBeNull()
+    expect(lines[0].reviewStatus).not.toBe('needs_review')
+  })
+
+  it('leaves a supplies delivery TO a resolved property as a billable extra', () => {
+    // The /\bdeliver/ Reimbursement rule owns that case; the courier patterns
+    // must not swallow it, since it has a property and a client to bill.
+    expect(isOperatingExpenseText('Towel delivery')).toBe(false)
+  })
+})
+
 // ─── Notes crammed into the property cell ────────────────────────────────────
 
 describe('noteFromPropertyCell', () => {
