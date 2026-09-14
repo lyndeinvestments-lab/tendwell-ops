@@ -33,11 +33,15 @@
       "includeFiles": "api/qbo/_lib.ts,api/qbo/_pl-parse.ts",
       "maxDuration": 300
     },
+    "api/cron/owner-activity.ts": {
+      "includeFiles": "api/cron/_owner-activity.ts,api/notify/_lib.ts,api/qbo/_lib.ts",
+      "maxDuration": 60
+    },
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts,api/issues/_translate-core.ts,api/notify/_lib.ts"
     },
     "api/leads/*.ts": {
-      "includeFiles": "api/leads/_lib.ts,api/issues/_lib.ts"
+      "includeFiles": "api/leads/_lib.ts,api/issues/_lib.ts,api/notify/_lib.ts"
     },
     "api/data/*.ts": {
       "includeFiles": "api/data/_lib.ts,api/issues/_lib.ts,shared/api-areas.ts"
@@ -130,6 +134,10 @@
     {
       "path": "/api/cron/archive-stale-quotes",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/owner-activity",
+      "schedule": "*/15 * * * *"
     }
   ],
   "headers": [

@@ -13,8 +13,9 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { authenticateApiKey, sbFetch } from '../issues/_lib.js'
+import { getSupabaseConfig, notifyStaff } from '../notify/_lib.js'
 import { parseLead, rateLimit, clientIp } from './_lib.js'
-import type { LeadInput } from './_lib.js'
+import type { LeadInput, LeadRpcArgs } from './_lib.js'
 
 const REQUIRED_SCOPES = ['clients:edit']
 
@@ -53,6 +54,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       method: 'POST',
       body: JSON.stringify(parsed.args),
     })
+
+    // Tell staff, unless this POST was a retry of one already recorded — the
+    // RPC is idempotent on external_id and the email should be too.
+    if (!result?.already_logged) {
+      await sendLeadEmail(parsed.args, result)
+    }
+
     return res.status(200).json({
       ok: true,
       lead_id: result?.lead_id ?? null,
@@ -67,6 +75,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('crm_log_web_lead failed:', e)
     return res.status(500).json({ error: 'Could not record the lead' })
   }
+}
+
+// Email the CRM audience the moment a form lands, with everything they need to
+// reply without opening the app. Deliberately awaited but never allowed to
+// throw: notifyStaff swallows its own errors, so a Resend outage costs the
+// email, not the lead.
+async function sendLeadEmail(args: LeadRpcArgs, result: LeadRpcResult | null): Promise<void> {
+  let sb
+  try {
+    sb = getSupabaseConfig()
+  } catch {
+    return // no service role configured; the lead itself already landed
+  }
+
+  const name = args.p_full_name
+  const lines = [
+    `<strong>${name}</strong> just asked for a 5-Star Audit call on the website.`,
+    args.p_email ? `Email: ${args.p_email}` : '',
+    args.p_phone ? `Phone: ${args.p_phone}` : '',
+    args.p_property_count ? `Portfolio: ${args.p_property_count}` : '',
+    args.p_property_location ? `Location: ${args.p_property_location}` : '',
+    args.p_source_page ? `Page: ${args.p_source_page}` : '',
+    // They have NOT booked yet at this point in the flow — Calendly loads
+    // after this call returns, and plenty of people never pick a time.
+    result?.created_contact
+      ? 'New client card, filed under Clients → Pipeline → New.'
+      : 'Matched an existing client, so this is on their card rather than a new one.',
+  ].filter(Boolean)
+
+  await notifyStaff(sb, {
+    eventType: 'web_lead_received',
+    subject: `New website lead: ${name}`,
+    lines,
+    quote: args.p_message || null,
+    ctaUrl: 'https://app.tendwellcleaningco.com/contacts',
+    ctaLabel: 'Open Clients',
+    meta: {
+      lead_id: result?.lead_id ?? null,
+      contact_id: result?.contact_id ?? null,
+      source_page: args.p_source_page ?? null,
+    },
+  })
 }
 
 function safeJson(s: string): unknown {

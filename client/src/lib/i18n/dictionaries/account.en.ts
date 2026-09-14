@@ -68,5 +68,7 @@ export const accountEn = {
     notify_agreement_signed: 'Agreement signed by owner',
     notify_issue_overdue: 'Overdue issues (daily digest)',
     notify_feedback_unacknowledged: 'Unacknowledged guest feedback (daily digest)',
+    notify_web_lead: 'New website lead',
+    notify_owner_portal_activity: 'Owner portal activity',
   },
 }
