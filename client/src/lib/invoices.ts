@@ -89,6 +89,7 @@ export const FLAG_LABELS: Record<string, string> = {
   reason_required: 'Reason required',
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
   standard_priced: 'Standard price applied',
+  suspect_service_date: 'Service date looks wrong',
 }
 
 export function flagLabel(flag: string): string {
@@ -188,6 +189,45 @@ export interface JoinedProperty {
   cleaner_pay: number | null
 }
 
+/**
+ * Everything wrong with a line, in plain English — the client-side mirror of
+ * the guards in api/invoices/approve.ts plus the engine's date-header check.
+ *
+ * Why this exists: `review_status` is NOT the same thing as "this line is
+ * fine". A human can mark a line resolved without actually fixing what makes
+ * it unexportable, and it then vanishes from the Needs-review filter while
+ * still refusing to approve — a blocker hiding outside the queue whose whole
+ * job is to show blockers (invoice I260913808, lines 286-287, 2026-09-14).
+ * So issues are computed from the line's own data, never from its status.
+ *
+ * Keep in sync with api/invoices/approve.ts.
+ */
+export function lineIssues(l: InvoiceLine): string[] {
+  const out: string[] = []
+  const excluded = l.line_kind === 'excluded' || l.review_status === 'excluded'
+  const billable = !excluded && l.line_kind !== 'operating_expense'
+  if (billable && (l.billing_channel == null || l.billing_channel === 'none')) {
+    out.push('No billing channel — would be paid to the vendor but never invoiced to a client')
+  }
+  if (billable && l.property_id == null) {
+    out.push('No property assigned')
+  }
+  if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {
+    out.push('No cleaner pay — would be missing from the Ramp export')
+  }
+  if ((l.flags ?? []).includes('suspect_service_date')) {
+    out.push('Service date looks wrong')
+  }
+  if (l.review_status === 'needs_review') {
+    out.push('Needs review')
+  }
+  return out
+}
+
+export function hasIssues(l: InvoiceLine): boolean {
+  return lineIssues(l).length > 0
+}
+
 export function vendorNameOf(run: Pick<InvoiceRun, 'vendors'>): string {
   const v = run.vendors
   if (!v) return 'Unknown vendor'
@@ -206,6 +246,28 @@ export function propertyOf(line: Pick<InvoiceLine, 'properties'>): JoinedPropert
  * Calls a POST/GET /api/invoices/<path> endpoint, attaching the current
  * session's bearer token (all endpoints are admin-only Bearer-gated).
  */
+/**
+ * A failed `/api/invoices/*` call, carrying the response body. Approve's
+ * guards return `blocking_lines` naming exactly which lines hold the run up;
+ * a plain Error would drop that on the floor and leave the user hunting
+ * through hundreds of rows for a line the server already identified.
+ */
+export class InvoiceApiError extends Error {
+  readonly body: any
+  constructor(message: string, body: any) {
+    super(message)
+    this.name = 'InvoiceApiError'
+    this.body = body
+  }
+}
+
+/** A line the approve guards named as blocking the run. */
+export interface BlockingLine {
+  line_no: number
+  raw_property_text: string | null
+  raw_amount: number | string | null
+}
+
 export async function invoicesApi<T = any>(
   path: string,
   opts: { method?: 'GET' | 'POST'; body?: Record<string, unknown> } = {},
@@ -223,7 +285,7 @@ export async function invoicesApi<T = any>(
   const json = await res.json().catch(() => ({}))
   if (!res.ok) {
     const message = (json && (json.error || json.detail)) || `Request failed (${res.status})`
-    throw new Error(message)
+    throw new InvoiceApiError(message, json)
   }
   return json as T
 }

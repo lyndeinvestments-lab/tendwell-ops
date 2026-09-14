@@ -8,6 +8,9 @@ import {
   generateDraftLines,
   effectiveNoteText,
   isExcludedTitle,
+  detectMisdatedBlocks,
+  isCourierText,
+  misdatedBlockNote,
   isOperatingExpenseText,
   matchToTask,
   standardExtraCharge,
@@ -940,31 +943,43 @@ describe('inspection labor lines', () => {
 
 describe('courier charges fronted by the vendor', () => {
   // Real pair from run I260913808 (lines 286-287). These are not property
-  // cleans — no property, no client to bill — but they fell through to the
-  // clean path and queued as unresolved_property. Once a human hit Resolve
-  // without assigning a property they blocked Approve from OUTSIDE the review
-  // queue, where they were effectively unfindable on a 287-line run.
-  it('classifies UPS/FedEx delivery lines as a Tendwell expense', () => {
-    expect(isOperatingExpenseText('Ups Deliver 8/31/26')).toBe(true)
-    expect(isOperatingExpenseText('Fedex Deliver')).toBe(true)
-    expect(isOperatingExpenseText('USPS postage')).toBe(true)
-    expect(isOperatingExpenseText('Shipping charge')).toBe(true)
+  // cleans, but they are NOT overhead either: Jordan 2026-09-14 — we bill
+  // them back to whoever the shipment was for. So they must never land in
+  // the operating-expense bucket, which would silently absorb the cost.
+  it('recognises carrier text', () => {
+    expect(isCourierText('Ups Deliver 8/31/26')).toBe(true)
+    expect(isCourierText('Fedex Deliver')).toBe(true)
+    expect(isCourierText('USPS postage')).toBe(true)
+    expect(isCourierText('Shipping charge')).toBe(true)
+    expect(isCourierText('Irma Work')).toBe(false)
   })
 
-  it('pays the vendor the full amount and never bills a client', () => {
+  it('bills a property-less courier line as a reimbursable extra, not an expense', () => {
     const { lines } = reconcile(input([vendorLine({
       rawPropertyText: 'Ups Deliver 8/31/26', rawAmount: 33.95,
     })]))
-    expect(lines[0].lineKind).toBe('operating_expense')
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Reimbursement')
+    // We owe the vendor regardless of who we bill it back to.
     expect(lines[0].cleanerPayAmount).toBe(33.95)
-    expect(lines[0].clientChargeAmount).toBeNull()
-    expect(lines[0].reviewStatus).not.toBe('needs_review')
+    expect(lines[0].lineKind).not.toBe('operating_expense')
   })
 
-  it('leaves a supplies delivery TO a resolved property as a billable extra', () => {
-    // The /\bdeliver/ Reimbursement rule owns that case; the courier patterns
-    // must not swallow it, since it has a property and a client to bill.
-    expect(isOperatingExpenseText('Towel delivery')).toBe(false)
+  it('sends it to review naming the reimbursement, so the cost is never absorbed', () => {
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Fedex Deliver', rawAmount: 26.01,
+    })]))
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].engineNote).toMatch(/REIMBURSABLE/)
+    expect(lines[0].engineNote).toMatch(/billed back/)
+  })
+
+  it('still treats a named labor line as a Tendwell expense', () => {
+    // The courier branch runs first, so guard that it did not capture labor.
+    const { lines } = reconcile(input([vendorLine({
+      rawPropertyText: 'Irma Work', rawAmount: 1060,
+    })]))
+    expect(lines[0].lineKind).toBe('operating_expense')
   })
 })
 
@@ -1264,5 +1279,67 @@ describe('standardExtraCharge', () => {
     expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)!.charge).toBe(50)
     expect(standardExtraCharge('Excessive Trash Pickup', 30)!.charge).toBe(50)
     expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 30)!.charge).toBe(55)
+  })
+})
+
+// ─── Mis-dated date-header blocks ────────────────────────────────────────────
+
+describe('detectMisdatedBlocks', () => {
+  // Shaped on the real failure: invoice I260913808's first header said 9/3
+  // when the work was done 9/7. 66 of its 69 lines had no clean on 9/3 and
+  // did have one on 9/7.
+  function block(statedDate: string, n: number, opts: { taskDay: string; stragglers?: number } ) {
+    const lines: any[] = []
+    const tasks: any[] = []
+    for (let i = 1; i <= n; i++) {
+      lines.push({
+        lineNo: i, propertyId: i, rawDateMentioned: statedDate,
+        lineKind: 'clean', flags: [], engineNote: null,
+      })
+      const straggler = opts.stragglers != null && i <= opts.stragglers
+      tasks.push({
+        externalId: `t${i}`, propertyId: i,
+        dueDate: straggler ? statedDate : opts.taskDay,
+        title: 'Turn Clean', isClean: true, isDeepClean: false, totalCostRef: null,
+      })
+    }
+    return { lines, tasks }
+  }
+
+  it('spots a whole block shifted off its real service day', () => {
+    const { lines, tasks } = block('2026-09-03', 69, { taskDay: '2026-09-07', stragglers: 3 })
+    const [w] = detectMisdatedBlocks(lines as any, tasks as any)
+    expect(w).toBeDefined()
+    expect(w.statedDate).toBe('2026-09-03')
+    expect(w.suggestedDate).toBe('2026-09-07')
+    expect(w.blockLines).toBe(69)
+    expect(w.linesWithoutSameDayTask).toBe(66)
+    expect(misdatedBlockNote(w)).toMatch(/prints on the client's invoice/)
+  })
+
+  it('stays silent on a correctly dated block', () => {
+    const { lines, tasks } = block('2026-09-09', 40, { taskDay: '2026-09-09' })
+    expect(detectMisdatedBlocks(lines as any, tasks as any)).toEqual([])
+  })
+
+  it('stays silent when the block is too small to be evidence', () => {
+    const { lines, tasks } = block('2026-09-03', 3, { taskDay: '2026-09-07' })
+    expect(detectMisdatedBlocks(lines as any, tasks as any)).toEqual([])
+  })
+
+  it('stays silent when the misses do not agree on one alternative day', () => {
+    // Properties whose cleans scatter across many days are a coverage gap,
+    // not a typo — flagging those would cry wolf on every normal invoice.
+    const lines: any[] = []
+    const tasks: any[] = []
+    for (let i = 1; i <= 20; i++) {
+      lines.push({ lineNo: i, propertyId: i, rawDateMentioned: '2026-09-03', lineKind: 'clean', flags: [], engineNote: null })
+      tasks.push({
+        externalId: `t${i}`, propertyId: i,
+        dueDate: `2026-09-${String(10 + (i % 8)).padStart(2, '0')}`,
+        title: 'Turn Clean', isClean: true, isDeepClean: false, totalCostRef: null,
+      })
+    }
+    expect(detectMisdatedBlocks(lines as any, tasks as any)).toEqual([])
   })
 })

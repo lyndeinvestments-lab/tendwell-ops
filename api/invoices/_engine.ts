@@ -120,6 +120,10 @@ export const FLAGS = {
   // The client charge on this extra came from STANDARD_EXTRA_PRICING rather
   // than the vendor's invoiced amount. Informational — explains charge ≠ raw.
   STANDARD_PRICED: 'standard_priced',
+  // This line's whole date-header block looks mis-dated: almost none of its
+  // lines have a clean on that day, and almost all of them have one on a
+  // single other day. See detectMisdatedBlocks.
+  SUSPECT_SERVICE_DATE: 'suspect_service_date',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -201,19 +205,28 @@ const OPERATING_EXPENSE_PATTERNS = [
   // could NOT be resolved.
   /\blabou?r\b/i,
   /\bwork\b/i,
-  // Courier charges the vendor fronts for us ("Ups Deliver 8/31/26", "Fedex
-  // Deliver") are a Tendwell expense, not a clean: no property, no client to
-  // bill. Before this they fell through to the clean path, queued as
-  // unresolved_property, and — once a human hit Resolve without assigning a
-  // property — blocked Approve from OUTSIDE the review queue, where they were
-  // effectively unfindable (I260913808, lines 286-287, 2026-09-14).
-  // Verified against every property name and vendor alias: no collisions.
-  // Note this is distinct from the /\bdeliver/ Reimbursement extra rule, which
-  // only fires on lines whose property DID resolve (supplies run to a cabin).
+]
+
+// Courier charges the vendor fronts for us ("Ups Deliver 8/31/26", "Fedex
+// Deliver"). Jordan 2026-09-14: these are REIMBURSABLE — we bill them back to
+// the client whose shipment it was — so they must never be swallowed as a
+// Tendwell expense the way labor is.
+//
+// They arrive with the carrier name occupying the property cell, so there is
+// nothing to resolve a property from, and the only way to bill one back is for
+// a human to say whose it was. So they classify as a Reimbursement extra and
+// go to review saying exactly that, rather than silently absorbing the cost.
+// Verified against every property name and vendor alias: no collisions.
+const COURIER_PATTERNS = [
   /\b(ups|usps|fedex|dhl)\b/i,
   /\bpostage\b/i,
   /\bship(ping|ment)\b/i,
 ]
+
+export function isCourierText(text: string | null): boolean {
+  if (!text) return false
+  return COURIER_PATTERNS.some(re => re.test(text))
+}
 
 interface TitleRule {
   re: RegExp
@@ -262,6 +275,9 @@ const EXTRA_RULES: TitleRule[] = [
   // Delivery/Supplies/Reimbursement service, not a generic Extra Cleaning:
   // routed there they bill the standard $50 review-free instead of queueing.
   { re: /\bdeliver|\bsuppl(?:y|ies)\b/i, title: 'Reimbursement', keepInReason: true },
+  // A courier charge that DID resolve to a property is the same billable
+  // service, even when the vendor omits the word "deliver" ("Fedex 8/31/26").
+  { re: /\b(?:ups|usps|fedex|dhl)\b|\bpostage\b|\bship(?:ping|ment)\b/i, title: 'Reimbursement', keepInReason: true },
   // "Maintenance work replace …" (real line 78, run "Test 1"): a $50 repair
   // charge with no rule here fell through to the clean path and the rate floor
   // paid $380 on it. Pass through as a reason-required extra so the work
@@ -766,6 +782,21 @@ export function classifyLine(
   // Unresolved property: bulk/ops-expense text → operating expense list;
   // anything else is a probable misspelling → review queue.
   if (resolution.propertyId == null || property == null) {
+    // Checked BEFORE the operating-expense list: a courier charge is money we
+    // get back from a client, not overhead we absorb, so it must never fall
+    // into the "Tendwell expense" bucket. Without a property there is nobody
+    // to bill, so this is a real question for a human, not a silent default.
+    if (isCourierText(text)) {
+      line.lineKind = 'extra'
+      line.serviceType = 'Reimbursement'
+      line.cleanerPayAmount = round2(raw.rawAmount) // owed to the vendor either way
+      line.clientChargeAmount = null // set once we know whose shipment it was
+      line = withNote(
+        line,
+        `Courier charge of ${usd(raw.rawAmount)} — this is REIMBURSABLE, not a Tendwell expense. Assign the property it was shipped for so it can be billed back to that client.`,
+      )
+      return [withChannel(needsReview(line, FLAGS.UNRESOLVED_PROPERTY), null)]
+    }
     if (isOperatingExpenseText(text)) {
       line.lineKind = 'operating_expense'
       line.serviceType = null
@@ -1141,6 +1172,113 @@ export function generateDraftLines(
 
 // ─── Orchestrator ────────────────────────────────────────────────────────────
 
+// ─── Mis-dated date-header blocks ────────────────────────────────────────────
+//
+// Busy Bee groups lines under typed date-header rows, and those headers get
+// typo'd. Real case (invoice I260913808, 2026-09-14): the first two headers
+// said 9/3 and 9/5 when the work was done 9/7 and 9/8 — almost certainly left
+// over from copying the previous week's file, which really did cover those
+// days. 109 of 294 lines carried the wrong service date, which is the date
+// printed on the CLIENT's invoice, and it surfaced only as 34 scattered
+// "unmatched task" badges that read as a matching problem rather than one
+// wrong cell.
+//
+// The signal is unmistakable at the block level even though it is invisible
+// per line: nearly every property in the block has no clean on the stated day
+// and does have one on a single other day. Individually that is a shrug;
+// 66 times over it is a typo.
+//
+// Deliberately conservative — this must never cry wolf on a normal invoice:
+//   - blocks smaller than MIN_BLOCK_LINES are ignored (coincidence is cheap)
+//   - at least SUSPECT_SHARE of the block must lack a same-day clean
+//   - at least AGREE_SHARE of those must point at the SAME alternative day
+//   - that day must be within CANDIDATE_WINDOW and not the stated day itself
+const MISDATED_MIN_BLOCK_LINES = 5
+const MISDATED_SUSPECT_SHARE = 0.6
+const MISDATED_AGREE_SHARE = 0.6
+const MISDATED_CANDIDATE_WINDOW = 10
+
+export interface MisdatedBlock {
+  statedDate: string
+  suggestedDate: string
+  blockLines: number
+  linesWithoutSameDayTask: number
+  linesAgreeingOnSuggestion: number
+}
+
+function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+export function misdatedBlockNote(w: MisdatedBlock): string {
+  return (
+    `Service date ${w.statedDate} looks wrong: of ${w.blockLines} lines dated ${w.statedDate}, ` +
+    `${w.linesWithoutSameDayTask} have no clean scheduled that day and ${w.linesAgreeingOnSuggestion} ` +
+    `have one on ${w.suggestedDate}. The vendor's date header is probably a typo — the stated date is ` +
+    `what prints on the client's invoice, so fix it before approving.`
+  )
+}
+
+// Pure: no I/O, so the thresholds above are unit-testable against real blocks.
+export function detectMisdatedBlocks(lines: EngineLine[], tasks: TaskRow[]): MisdatedBlock[] {
+  const cleanDaysByProperty = new Map<number, Set<string>>()
+  for (const t of tasks) {
+    if (t.propertyId == null || !t.dueDate) continue
+    let set = cleanDaysByProperty.get(t.propertyId)
+    if (!set) cleanDaysByProperty.set(t.propertyId, (set = new Set()))
+    set.add(t.dueDate)
+  }
+
+  const blocks = new Map<string, EngineLine[]>()
+  for (const l of lines) {
+    if (!l.rawDateMentioned || l.propertyId == null) continue
+    if (l.lineKind === 'operating_expense' || l.lineKind === 'excluded') continue
+    const arr = blocks.get(l.rawDateMentioned)
+    if (arr) arr.push(l)
+    else blocks.set(l.rawDateMentioned, [l])
+  }
+
+  const out: MisdatedBlock[] = []
+  for (const [statedDate, blockLines] of blocks) {
+    if (blockLines.length < MISDATED_MIN_BLOCK_LINES) continue
+
+    const suspect = blockLines.filter(
+      l => !cleanDaysByProperty.get(l.propertyId!)?.has(statedDate),
+    )
+    if (suspect.length / blockLines.length < MISDATED_SUSPECT_SHARE) continue
+
+    // Which single other day do the suspect lines point at?
+    const votes = new Map<string, number>()
+    for (const l of suspect) {
+      const days = cleanDaysByProperty.get(l.propertyId!)
+      if (!days) continue
+      for (let off = -MISDATED_CANDIDATE_WINDOW; off <= MISDATED_CANDIDATE_WINDOW; off++) {
+        if (off === 0) continue
+        const day = addDays(statedDate, off)
+        if (days.has(day)) votes.set(day, (votes.get(day) ?? 0) + 1)
+      }
+    }
+    let suggestedDate: string | null = null
+    let top = 0
+    for (const [day, n] of votes) {
+      if (n > top) { top = n; suggestedDate = day }
+    }
+    if (!suggestedDate) continue
+    if (top / suspect.length < MISDATED_AGREE_SHARE) continue
+
+    out.push({
+      statedDate,
+      suggestedDate,
+      blockLines: blockLines.length,
+      linesWithoutSameDayTask: suspect.length,
+      linesAgreeingOnSuggestion: top,
+    })
+  }
+  return out.sort((a, b) => a.statedDate.localeCompare(b.statedDate))
+}
+
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
   const threshold = input.fuzzyThreshold ?? FUZZY_CONFIRM_THRESHOLD
   const propsById = new Map(input.properties.map(p => [p.id, p]))
@@ -1168,6 +1306,15 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
       )
     }
     outLines.push(...classified)
+  }
+
+  for (const w of detectMisdatedBlocks(outLines, input.tasks)) {
+    for (const l of outLines) {
+      if (l.rawDateMentioned !== w.statedDate || l.propertyId == null) continue
+      if (l.lineKind === 'operating_expense' || l.lineKind === 'excluded') continue
+      if (!l.flags.includes(FLAGS.SUSPECT_SERVICE_DATE)) l.flags.push(FLAGS.SUSPECT_SERVICE_DATE)
+      l.engineNote = l.engineNote ?? misdatedBlockNote(w)
+    }
   }
 
   const active = outLines.filter(l => l.lineKind !== 'excluded')
