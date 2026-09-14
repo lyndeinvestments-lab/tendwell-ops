@@ -27,6 +27,8 @@ export const DEFAULT_NOTIF_PREFS = {
   notify_agreement_signed: true,
   notify_issue_overdue: true,
   notify_feedback_unacknowledged: true,
+  notify_web_lead: true,
+  notify_owner_portal_activity: true,
 } as const
 
 // Each notification event maps to the view a user must have access to for the
@@ -54,4 +56,6 @@ export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
   { field: 'notify_agreement_signed',      label: 'Agreement signed by owner',    view: 'settings' },
   { field: 'notify_issue_overdue',           label: 'Overdue issues (daily digest)',                view: 'issues' },
   { field: 'notify_feedback_unacknowledged', label: 'Unacknowledged guest feedback (daily digest)', view: 'issues' },
+  { field: 'notify_web_lead',                label: 'New website lead',                             view: 'contacts' },
+  { field: 'notify_owner_portal_activity',   label: 'Owner portal activity',                        view: 'settings' },
 ]
