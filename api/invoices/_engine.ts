@@ -201,6 +201,18 @@ const OPERATING_EXPENSE_PATTERNS = [
   // could NOT be resolved.
   /\blabou?r\b/i,
   /\bwork\b/i,
+  // Courier charges the vendor fronts for us ("Ups Deliver 8/31/26", "Fedex
+  // Deliver") are a Tendwell expense, not a clean: no property, no client to
+  // bill. Before this they fell through to the clean path, queued as
+  // unresolved_property, and — once a human hit Resolve without assigning a
+  // property — blocked Approve from OUTSIDE the review queue, where they were
+  // effectively unfindable (I260913808, lines 286-287, 2026-09-14).
+  // Verified against every property name and vendor alias: no collisions.
+  // Note this is distinct from the /\bdeliver/ Reimbursement extra rule, which
+  // only fires on lines whose property DID resolve (supplies run to a cabin).
+  /\b(ups|usps|fedex|dhl)\b/i,
+  /\bpostage\b/i,
+  /\bship(ping|ment)\b/i,
 ]
 
 interface TitleRule {

@@ -1,6 +1,28 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
 
+// A line that is holding up Approve. Every guard below reports these, because
+// a bare count ("2 billable line(s) have no billing channel") is unfindable on
+// a 287-line run — especially once a human has hit Resolve on the line, which
+// drops it out of the review-queue filter while it keeps blocking the run.
+interface BlockingLine {
+  line_no: number
+  raw_property_text: string | null
+  raw_amount: number | string | null
+}
+
+// "Line 286 "Ups Deliver 8/31/26" ($33.95), line 287 …" — names the first few
+// so the run detail's All filter can be searched for them directly.
+function describeLines(rows: BlockingLine[], max = 5): string {
+  const shown = rows.slice(0, max).map(r => {
+    const amt = r.raw_amount == null ? '' : ` (${Number(r.raw_amount).toFixed(2)})`
+    const what = (r.raw_property_text ?? '').trim()
+    return `line ${r.line_no}${what ? ` "${what}"` : ''}${amt}`
+  })
+  const more = rows.length > max ? `, and ${rows.length - max} more` : ''
+  return `Affected: ${shown.join(', ')}${more}.`
+}
+
 // POST /api/invoices/approve  Body: { run_id }
 //
 // The gate before any export: refuses while (a) any line still needs review,
@@ -83,40 +105,56 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ error: 'Failed to refresh billing channels', detail: e instanceof Error ? e.message : String(e) })
     return
   }
-  const { count: unrouted, error: chErr } = await supabase
-    .from('invoice_lines')
-    .select('id', { count: 'exact', head: true })
-    .eq('run_id', runId)
-    .not('line_kind', 'in', '(operating_expense,excluded)')
-    .neq('review_status', 'excluded')
-    .or('billing_channel.is.null,billing_channel.eq.none')
-  if (chErr) {
-    res.status(500).json({ error: 'Failed to check billing channels', detail: chErr.message })
+  let unroutedRows: BlockingLine[]
+  try {
+    unroutedRows = await fetchAllRows<BlockingLine>(
+      'invoice_lines (unrouted)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount')
+        .eq('run_id', runId)
+        .not('line_kind', 'in', '(operating_expense,excluded)')
+        .neq('review_status', 'excluded')
+        .or('billing_channel.is.null,billing_channel.eq.none')
+        .order('line_no'),
+      'line_no',
+    )
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check billing channels', detail: e instanceof Error ? e.message : String(e) })
     return
   }
-  if ((unrouted ?? 0) > 0) {
+  if (unroutedRows.length > 0) {
     res.status(400).json({
-      error: `Cannot approve: ${unrouted} billable line(s) have no billing channel (would be paid to the vendor but never invoiced to a client). Open the line (pencil) and pick a billing channel, or set the client's Payment Method on the Clients page, then approve again.`,
+      error: `Cannot approve: ${unroutedRows.length} billable line(s) have no billing channel (would be paid to the vendor but never invoiced to a client). ${describeLines(unroutedRows)} Open the line (pencil) and pick a billing channel, or set the client's Payment Method on the Clients page, then approve again.`,
+      blocking_lines: unroutedRows,
     })
     return
   }
 
   // Same class of leak via a different path: a billable line whose property
   // was cleared in review would export with a blank property name/class.
-  const { count: propertyless, error: propErr } = await supabase
-    .from('invoice_lines')
-    .select('id', { count: 'exact', head: true })
-    .eq('run_id', runId)
-    .not('line_kind', 'in', '(operating_expense,excluded)')
-    .neq('review_status', 'excluded')
-    .is('property_id', null)
-  if (propErr) {
-    res.status(500).json({ error: 'Failed to check property links', detail: propErr.message })
+  let propertylessRows: BlockingLine[]
+  try {
+    propertylessRows = await fetchAllRows<BlockingLine>(
+      'invoice_lines (no property)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount')
+        .eq('run_id', runId)
+        .not('line_kind', 'in', '(operating_expense,excluded)')
+        .neq('review_status', 'excluded')
+        .is('property_id', null)
+        .order('line_no'),
+      'line_no',
+    )
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check property links', detail: e instanceof Error ? e.message : String(e) })
     return
   }
-  if ((propertyless ?? 0) > 0) {
+  if (propertylessRows.length > 0) {
     res.status(400).json({
-      error: `Cannot approve: ${propertyless} billable line(s) have no property assigned. Assign a property or exclude the line.`,
+      error: `Cannot approve: ${propertylessRows.length} billable line(s) have no property assigned. ${describeLines(propertylessRows)} Assign a property, or set the line kind to Tendwell expense if it isn't a property clean.`,
+      blocking_lines: propertylessRows,
     })
     return
   }
@@ -134,7 +172,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'invoice_lines',
       () => supabase
         .from('invoice_lines')
-        .select('id, raw_amount, cleaner_pay_amount, line_kind, review_status')
+        .select('id, line_no, raw_property_text, raw_amount, cleaner_pay_amount, line_kind, review_status')
         .eq('run_id', runId)
         .neq('line_kind', 'excluded')
         .neq('review_status', 'excluded')
@@ -148,8 +186,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const unpaid = unpaidRows.filter(r => !(Number(r.cleaner_pay_amount ?? 0) !== 0))
   if (unpaid.length > 0) {
+    const named = unpaid.map(r => ({ line_no: r.line_no, raw_property_text: r.raw_property_text, raw_amount: r.raw_amount }))
     res.status(400).json({
-      error: `Cannot approve: ${unpaid.length} billed line(s) have no cleaner pay — they would be silently missing from the Ramp export. Set the pay (usually the invoiced amount) or exclude the line.`,
+      error: `Cannot approve: ${unpaid.length} billed line(s) have no cleaner pay — they would be silently missing from the Ramp export. ${describeLines(named)} Set the pay (usually the invoiced amount) or exclude the line.`,
+      blocking_lines: named,
     })
     return
   }
