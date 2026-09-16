@@ -35,6 +35,16 @@ Staff ops + CRM dashboard for Tendwell Cleaning Co. (STR property cleaning). Rol
 | Medium | Reset password form shown without recovery session | `/reset-password` open | Gate on `isPasswordRecovery`; marketing-auth styling |
 | Medium | Login muted text contrast + 148KB 3200px logo | Lighthouse/manual a11y | Darken to `#6B5A45`; 480w WebP (~6KB); `role="alert"` |
 
+## Follow-up 2026-09-16 — e2e drift (#586)
+
+| Check | Result |
+|---|---|
+| PR | https://github.com/lyndeinvestments-lab/tendwell-ops/pull/586 merged (`860a92c`) |
+| Production deploy | Ready for `860a92c` |
+| `BASE_URL=http://127.0.0.1:5001 npm run test:e2e` | 5 passed, 1 skipped |
+| `BASE_URL=https://app.tendwellcleaningco.com npm run test:e2e` | 5 passed, 1 skipped |
+| Login smoke | `https://app.tendwellcleaningco.com/login` → HTTP 200 |
+
 ## Verification (this branch)
 
 | Check | Result |
@@ -43,7 +53,7 @@ Staff ops + CRM dashboard for Tendwell Cleaning Co. (STR property cleaning). Rol
 | `npm test` | Includes new preserve-line / local-date / photo-url / audit-IP tests |
 | Browser (prod login/reset) | Pre-fix audit screenshots on disk; post-fix local verify pending |
 | Migration applied to production | **Not applied this session** — requires Supabase SQL/dashboard |
-| Authenticated E2E | **Not run** — no `tests/.auth/admin.json` |
+| Authenticated E2E | **Passed on prod** after #586 (see follow-up above) |
 | Lighthouse field CWV | **Unavailable** — lab-only not re-run post-fix on production build |
 
 ## Remaining issues / decisions needed
