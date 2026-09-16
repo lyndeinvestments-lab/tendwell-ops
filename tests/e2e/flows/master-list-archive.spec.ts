@@ -1,24 +1,34 @@
 import { test, expect } from '@playwright/test'
 
-// QA audit #10 (PR #123): Master List has an admin-only Archive toggle.
-// This test verifies the UI wiring. The actual soft-delete/restore roundtrip
-// is covered by the DB smoke test run during the audit (see session notes).
-test.describe('Master List archive panel', () => {
-  test('admin sees Archive toggle and panel header opens', async ({ page }) => {
+// Soft-delete is triggered per Offboarded row; the confirm dialog carries the
+// recoverability copy. (The old page-level Archive panel toggle was removed
+// when Master List merged into Cost Tracking.)
+test.describe('Master List archive', () => {
+  test('admin can open the archive confirmation dialog for an Offboarded property', async ({ page }) => {
     await page.goto('/master-list')
     await page.waitForLoadState('networkidle')
 
-    const archiveBtn = page.getByRole('button', { name: /^archive\b/i }).first()
-    if (!(await archiveBtn.isVisible().catch(() => false))) {
-      test.skip(true, 'Current user is not admin on this env')
+    // Row-archive controls only render for Offboarded properties.
+    const offboardedTally = page.getByTestId('tally-Offboarded')
+    if (!(await offboardedTally.isVisible().catch(() => false))) {
+      test.skip(true, 'No Offboarded properties on this env')
     }
+    await offboardedTally.click()
+    await page.waitForLoadState('networkidle')
 
+    const archiveBtn = page.locator('[data-testid^="row-archive-"]').first()
+    if (!(await archiveBtn.isVisible().catch(() => false))) {
+      test.skip(true, 'No row-archive control (need admin + Offboarded row)')
+    }
     await archiveBtn.click()
-    await expect(page.getByRole('heading', { name: /archived properties/i })).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText(/auto-purged permanently after 30 days/i)).toBeVisible()
 
-    // Toggle back
-    await page.getByRole('button', { name: /hide archive/i }).click()
-    await expect(page.getByRole('heading', { name: /archived properties/i })).not.toBeVisible()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible({ timeout: 10_000 })
+    await expect(dialog.getByRole('heading', { name: /archive property/i })).toBeVisible()
+    await expect(dialog.getByText(/recoverable for 30 days/i)).toBeVisible()
+
+    // Cancel — do not mutate production data in this smoke test.
+    await page.getByTestId('button-archive-cancel').click()
+    await expect(dialog).not.toBeVisible()
   })
 })

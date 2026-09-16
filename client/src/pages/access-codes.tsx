@@ -408,7 +408,13 @@ export default function AccessCodesPage() {
                           <TooltipProvider delayDuration={200}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge variant="destructive" className="text-xs py-0 px-1 h-4 cursor-help">{t('badges.missing')}</Badge>
+                                <Badge
+                                  variant="destructive"
+                                  className="text-xs py-0 px-1 h-4 cursor-help"
+                                  title={t('badges.missingTooltip', { fields: missingLabel })}
+                                >
+                                  {t('badges.missing')}
+                                </Badge>
                               </TooltipTrigger>
                               <TooltipContent>{t('badges.missingTooltip', { fields: missingLabel })}</TooltipContent>
                             </Tooltip>
@@ -418,7 +424,12 @@ export default function AccessCodesPage() {
                           <TooltipProvider delayDuration={200}>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Badge className="text-xs py-0 px-1 h-4 bg-warning/10 text-warning border-warning/25 hover:bg-warning/15 cursor-help">{t('badges.incomplete')}</Badge>
+                                <Badge
+                                  className="text-xs py-0 px-1 h-4 bg-warning/10 text-warning border-warning/25 hover:bg-warning/15 cursor-help"
+                                  title={t('badges.incompleteTooltip', { fields: missingLabel })}
+                                >
+                                  {t('badges.incomplete')}
+                                </Badge>
                               </TooltipTrigger>
                               <TooltipContent>{t('badges.incompleteTooltip', { fields: missingLabel })}</TooltipContent>
                             </Tooltip>
