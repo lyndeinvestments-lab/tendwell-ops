@@ -548,6 +548,20 @@ function AppSettingsSection() {
     { key: 'amenity_kitchen', label: 'Kitchen Supplies ($ per kitchen)', placeholder: '2.05', section: 'amenity' },
     { key: 'amenity_trash_bag', label: 'Trash Bags ($ per bed)', placeholder: '0.06', section: 'amenity' },
     { key: 'amenity_hot_tub', label: 'Hot Tub Chemicals ($ per property)', placeholder: '0.88', section: 'amenity' },
+    // Linen unit costs (Dzee contracted, per set unless noted). Drive both the
+    // one-time onboarding fee and the recurring program cost per clean.
+    { key: 'linen_set_king', label: 'Bed Linens — King ($ per set)', placeholder: '48.02', section: 'linen' },
+    { key: 'linen_set_queen', label: 'Bed Linens — Queen / Full ($ per set)', placeholder: '43.59', section: 'linen' },
+    { key: 'linen_set_twin', label: 'Bed Linens — Twin ($ per set)', placeholder: '29.21', section: 'linen' },
+    { key: 'linen_set_full_bath', label: 'Bath Linens — Full Bath ($ per set)', placeholder: '15.13', section: 'linen' },
+    { key: 'linen_set_half_bath', label: 'Bath Linens — Half Bath ($ per set)', placeholder: '2.32', section: 'linen' },
+    { key: 'linen_duvet_king', label: 'Duvet Inserts — King ($ per bed)', placeholder: '42.60', section: 'linen' },
+    { key: 'linen_duvet_queen', label: 'Duvet Inserts — Queen / Full ($ per bed)', placeholder: '40.82', section: 'linen' },
+    { key: 'linen_duvet_twin', label: 'Duvet Inserts — Twin ($ per bed)', placeholder: '31.52', section: 'linen' },
+    { key: 'linen_pool_towel_guest', label: 'Pool Towels ($ per guest)', placeholder: '11.80', section: 'linen' },
+    { key: 'linen_markup_pct', label: 'Onboarding Markup (%)', placeholder: '0', section: 'linen' },
+    { key: 'linen_recur_sets_year', label: 'Replacement Sets per Bed per Year', placeholder: '2', section: 'linen' },
+    { key: 'linen_blended_per_set', label: 'Blended Rate — No Bed Sizes ($ per set)', placeholder: '41.71', section: 'linen' },
     { key: 'auto_code', label: 'Smart-Lock Auto Code (shared)', placeholder: 'e.g. 1656', section: 'access', type: 'text' },
   ]
 
@@ -568,6 +582,7 @@ function AppSettingsSection() {
 
   const COST_FIELDS = ALL_FIELDS.filter(f => f.section === 'cost')
   const AMENITY_FIELDS = ALL_FIELDS.filter(f => f.section === 'amenity')
+  const LINEN_FIELDS = ALL_FIELDS.filter(f => f.section === 'linen')
   const PROFIT_FIELDS = ALL_FIELDS.filter(f => f.section === 'profit')
   const AC_FIELDS = ALL_FIELDS.filter(f => f.section === 'ac')
   const ACCESS_FIELDS = ALL_FIELDS.filter(f => f.section === 'access')
@@ -613,6 +628,20 @@ function AppSettingsSection() {
         </div>
         <p className="text-xs text-muted-foreground">
           {t('config.amenityFormula')}
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="text-base font-medium flex items-center gap-2">
+          <DollarSign className="w-4 h-4" />
+          {t('config.linenHeading')}
+        </h2>
+        <p className="text-xs text-muted-foreground">{t('config.linenDesc')}</p>
+        <div className="rounded-lg border border-border p-4 space-y-3">
+          {LINEN_FIELDS.map(f => <FieldRow key={f.key} f={f} />)}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {t('config.linenFormula')}
         </p>
       </div>
 
