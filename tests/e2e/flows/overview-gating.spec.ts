@@ -8,13 +8,11 @@ test.describe('Property Modal Overview expansion', () => {
     await page.goto('/master-list')
     await page.waitForLoadState('networkidle')
 
-    const firstName = page
-      .locator('button')
-      .filter({ hasText: /\S/ })
-      .filter({ hasNotText: /archive|export|import|deactivate|confirm/i })
-      .first()
-    await expect(firstName).toBeVisible({ timeout: 15_000 })
-    await firstName.click()
+    // Desktop table uses open-panel-*; mobile-open-* exists in DOM but is
+    // md:hidden — .first() without a visibility filter matches the hidden one.
+    const openProperty = page.locator('[data-testid^="open-panel-"]').first()
+    await expect(openProperty).toBeVisible({ timeout: 15_000 })
+    await openProperty.click()
 
     const modal = page.locator('[data-testid="property-detail-modal"]').or(page.getByRole('dialog')).first()
     await expect(modal).toBeVisible({ timeout: 10_000 })

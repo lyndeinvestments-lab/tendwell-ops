@@ -1906,9 +1906,21 @@ export function PropertyDetailModal() {
               {canViewFinancials && (
                 <div className="rounded-md border border-border bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('tabs.financials')}</p>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t('financials.fields.cleanerPay')}</span>
-                    <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.fields.clientCharged')}</span>
+                      <span className="text-sm font-medium tabular-nums">{property.ce_charged != null ? `$${Number(property.ce_charged).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.fields.cleanerPay')}</span>
+                      <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.breakdown.profitPercent')}</span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

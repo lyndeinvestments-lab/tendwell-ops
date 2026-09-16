@@ -11,9 +11,10 @@ test.describe('Access Codes badges', () => {
     await expect(anyBadge.or(emptyState)).toBeVisible({ timeout: 15_000 })
 
     if (await anyBadge.isVisible().catch(() => false)) {
-      const title = await anyBadge.getAttribute('title')
+      // Prefer native title (always present); fall back to aria-label if set.
+      const title = (await anyBadge.getAttribute('title')) || (await anyBadge.getAttribute('aria-label'))
       expect(title).toBeTruthy()
-      expect(title).toMatch(/access codes|missing/i)
+      expect(title!).toMatch(/access codes|missing/i)
     }
   })
 })

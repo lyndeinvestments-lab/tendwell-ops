@@ -44,6 +44,108 @@ function fmt(n: number | null | undefined) {
   return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// Module-scoped so parent setEdits re-renders do not remount the cell and
+// wipe editing state mid-keystroke (Escape cancel / live Profit % e2e).
+function EditableNumberCell({
+  p,
+  field,
+  displayValue,
+  canEdit,
+  onDraftChange,
+  onClearDraft,
+  onPersist,
+  step = '1',
+  prefix = '',
+  className = '',
+}: {
+  p: any
+  field: string
+  displayValue: any
+  canEdit: boolean
+  onDraftChange: (id: number, field: string, value: number | null) => void
+  onClearDraft: (id: number, field: string) => void
+  onPersist: (args: { id: number; field: string; value: any }) => void
+  step?: string
+  prefix?: string
+  className?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<string>(() => {
+    return displayValue == null ? '' : String(displayValue)
+  })
+  // Set when the user presses Escape so the trailing blur from unmount
+  // doesn't commit the typed draft (April 2026 audit P0 fix).
+  const cancelRef = useRef(false)
+
+  function commit() {
+    setEditing(false)
+    if (cancelRef.current) {
+      cancelRef.current = false
+      return
+    }
+    const current = p[field]
+    const nextVal = draft === '' ? null : Number(draft)
+    const isSame = String(current ?? '') === String(nextVal ?? '')
+    if (!isSame) {
+      onPersist({ id: p.id, field, value: draft })
+    } else {
+      onClearDraft(p.id, field)
+    }
+  }
+
+  if (!canEdit) {
+    const v = displayValue
+    return <span className="tabular-nums">{v == null || v === '' ? '—' : (prefix ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}` : (typeof v === 'number' ? v.toLocaleString() : v))}</span>
+  }
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        type="number"
+        step={step}
+        value={draft}
+        onChange={e => {
+          setDraft(e.target.value)
+          onDraftChange(p.id, field, e.target.value === '' ? null : Number(e.target.value))
+        }}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
+          if (e.key === 'Escape') {
+            cancelRef.current = true
+            onClearDraft(p.id, field)
+            const v = p[field]
+            setDraft(v == null ? '' : String(v))
+            setEditing(false)
+          }
+        }}
+        className={`h-6 w-20 rounded border border-input bg-background px-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
+        data-testid={`qs-cell-${field}-${p.id}`}
+      />
+    )
+  }
+
+  const v = displayValue
+  const display = v == null || v === '' ? '—'
+    : prefix
+      ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}`
+      : (typeof v === 'number' ? v.toLocaleString() : String(v))
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setDraft(v == null ? '' : String(v))
+        setEditing(true)
+      }}
+      className={`tabular-nums text-left w-full hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
+      data-testid={`qs-cell-${field}-${p.id}`}
+    >
+      {display}
+    </button>
+  )
+}
+
 type NewProp = {
   name: string
   ce_charged: string
@@ -571,103 +673,20 @@ export default function QuoteSheetPage() {
     onError: (e: any) => toast({ title: t('quoteSheet.toasts.restoreFailed'), description: e?.message, variant: 'destructive' }),
   })
 
-  function EditableNumberCell({
-    p, field, step = '1', prefix = '', className = '',
-  }: { p: any; field: string; step?: string; prefix?: string; className?: string }) {
-    const m = merged(p)
-    const [editing, setEditing] = useState(false)
-    const [draft, setDraft] = useState<string>(() => {
-      const v = m[field]
-      return v == null ? '' : String(v)
+  function clearDraft(id: number, field: string) {
+    setEdits(prev => {
+      const row = prev[id]
+      if (!row) return prev
+      const { [field]: _removed, ...rest } = row
+      const next = { ...prev }
+      if (Object.keys(rest).length === 0) delete next[id]
+      else next[id] = rest
+      return next
     })
-    // Set when the user presses Escape so the trailing blur from unmount
-    // doesn't commit the typed draft (April 2026 audit P0 fix).
-    const cancelRef = useRef(false)
+  }
 
-    function commit() {
-      setEditing(false)
-      if (cancelRef.current) {
-        cancelRef.current = false
-        return
-      }
-      const current = p[field]
-      const nextVal = draft === '' ? null : Number(draft)
-      const isSame = String(current ?? '') === String(nextVal ?? '')
-      if (!isSame) {
-        persistField({ id: p.id, field, value: draft })
-      } else {
-        // No-op commit: drop any lingering edit override
-        setEdits(prev => {
-          const row = prev[p.id]
-          if (!row) return prev
-          const { [field]: _removed, ...rest } = row
-          const next = { ...prev }
-          if (Object.keys(rest).length === 0) delete next[p.id]
-          else next[p.id] = rest
-          return next
-        })
-      }
-    }
-
-    if (!canEdit) {
-      const v = m[field]
-      return <span className="tabular-nums">{v == null || v === '' ? '—' : (prefix ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}` : (typeof v === 'number' ? v.toLocaleString() : v))}</span>
-    }
-
-    if (editing) {
-      return (
-        <input
-          autoFocus
-          type="number"
-          step={step}
-          value={draft}
-          onChange={e => {
-            setDraft(e.target.value)
-            setEdits(prev => ({ ...prev, [p.id]: { ...(prev[p.id] || {}), [field]: e.target.value === '' ? null : Number(e.target.value) } }))
-          }}
-          onBlur={commit}
-          onKeyDown={e => {
-            if (e.key === 'Enter') { (e.target as HTMLInputElement).blur() }
-            if (e.key === 'Escape') {
-              cancelRef.current = true
-              setEdits(prev => {
-                const row = prev[p.id]
-                if (!row) return prev
-                const { [field]: _removed, ...rest } = row
-                const next = { ...prev }
-                if (Object.keys(rest).length === 0) delete next[p.id]
-                else next[p.id] = rest
-                return next
-              })
-              const v = p[field]
-              setDraft(v == null ? '' : String(v))
-              setEditing(false)
-            }
-          }}
-          className={`h-6 w-20 rounded border border-input bg-background px-1.5 text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${className}`}
-          data-testid={`qs-cell-${field}-${p.id}`}
-        />
-      )
-    }
-
-    const v = m[field]
-    const display = v == null || v === '' ? '—'
-      : prefix
-        ? `${prefix}${typeof v === 'number' ? v.toFixed(2) : v}`
-        : (typeof v === 'number' ? v.toLocaleString() : String(v))
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          setDraft(v == null ? '' : String(v))
-          setEditing(true)
-        }}
-        className={`tabular-nums text-left w-full hover:bg-muted/60 rounded px-1 -mx-1 transition-colors ${className}`}
-        data-testid={`qs-cell-${field}-${p.id}`}
-      >
-        {display}
-      </button>
-    )
+  function draftChange(id: number, field: string, value: number | null) {
+    setEdits(prev => ({ ...prev, [id]: { ...(prev[id] || {}), [field]: value } }))
   }
 
   function exportCsv() {
@@ -869,13 +888,13 @@ export default function QuoteSheetPage() {
                         )
                       })() : '—'}
                     </td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" step="0.01" prefix="$" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" step="0.01" prefix="$" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="bedrooms" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="number_of_beds" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" step="0.5" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" step="0.5" /></td>
-                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="ce_charged" displayValue={p.ce_charged} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="cleaner_pay" displayValue={p.cleaner_pay} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} step="0.01" prefix="$" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="bedrooms" displayValue={p.bedrooms} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="number_of_beds" displayValue={p.number_of_beds} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="full_baths" displayValue={p.full_baths} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="half_baths" displayValue={p.half_baths} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} step="0.5" /></td>
+                    <td className="py-2 px-3 text-xs"><EditableNumberCell p={rawP} field="square_footage" displayValue={p.square_footage} canEdit={canEdit} onDraftChange={draftChange} onClearDraft={clearDraft} onPersist={persistField} /></td>
                     <td className="py-2 px-3 text-xs tabular-nums">
                       <LaundryFormulaTooltip numberOfBeds={p.number_of_beds} override={p.est_laundry}>
                         <span>{fmt(laundry)}</span>
@@ -896,7 +915,7 @@ export default function QuoteSheetPage() {
                     </td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
-                    <td className="py-2 px-3 text-xs tabular-nums">
+                    <td className="py-2 px-3 text-xs tabular-nums" data-testid={`qs-profit-${p.id}`}>
                       {profitPct != null ? (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-current/30 ${profitColorClass(profitPct)}`}>
                           {profitPct.toFixed(1)}%
