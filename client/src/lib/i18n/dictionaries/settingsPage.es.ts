@@ -72,7 +72,7 @@ export const settingsPageEs: typeof settingsPageEn = {
     amenityFormula: 'Fórmula: (Baños completos + Medios baños) × (Baño + Papel higiénico) + Cocinas × Cocina + Camas × Bolsa de basura + Jacuzzi',
     linenHeading: 'Costos de Ropa de Cama',
     linenDesc: 'Costos unitarios contratados de Dzee. Determinan la cuota inicial de ropa de cama y el costo recurrente del programa por limpieza.',
-    linenFormula: 'Inicial: juegos × (camas por tamaño + baños por tipo), más rellenos por cama y toallas de piscina por huésped, más margen. Recurrente: juegos de reemplazo al año × costo por juego de cada cama / 12 / 4.',
+    linenFormula: 'Inicial: juegos × (camas por tamaño + baños por tipo), más rellenos por cama y toallas de piscina por huésped, más margen. Recurrente: juegos de reemplazo al año × costo por juego de cada cama / 12 / 4. Las camas sin tamaño registrado se cobran como king, para que una mezcla desconocida nunca quede por debajo.',
     profitHeading: 'Niveles de Ganancia',
     profitDesc: 'Umbrales para las insignias de % de ganancia verde/amarillo/rojo en Pipeline, Seguimiento de Costos y Panel Principal. El margen objetivo de punto de equilibrio activa el indicador de punto de equilibrio en Seguimiento de Costos.',
     acHeading: 'Calendario de Filtros de A/C',

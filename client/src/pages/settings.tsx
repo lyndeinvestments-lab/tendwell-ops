@@ -561,7 +561,6 @@ function AppSettingsSection() {
     { key: 'linen_pool_towel_guest', label: 'Pool Towels ($ per guest)', placeholder: '11.80', section: 'linen' },
     { key: 'linen_markup_pct', label: 'Onboarding Markup (%)', placeholder: '0', section: 'linen' },
     { key: 'linen_recur_sets_year', label: 'Replacement Sets per Bed per Year', placeholder: '2', section: 'linen' },
-    { key: 'linen_blended_per_set', label: 'Blended Rate — No Bed Sizes ($ per set)', placeholder: '41.71', section: 'linen' },
     { key: 'auto_code', label: 'Smart-Lock Auto Code (shared)', placeholder: 'e.g. 1656', section: 'access', type: 'text' },
   ]
 
