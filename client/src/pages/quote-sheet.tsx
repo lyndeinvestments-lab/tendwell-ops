@@ -859,6 +859,7 @@ export default function QuoteSheetPage() {
                 { col: 'est_consumables', label: t('quoteSheet.table.estConsumables'), title: t('quoteSheet.table.estConsumablesTitle') },
                 { col: 'inspection_cost', label: t('quoteSheet.table.inspection') },
                 { col: 'trash_cost', label: t('quoteSheet.table.trash') },
+                { col: 'linen_onboarding_fee', label: t('quoteSheet.table.onboardingLinens'), title: t('quoteSheet.table.onboardingLinensTitle') },
                 { col: 'profit_percentage', label: t('quoteSheet.table.profitPercent') },
               ] as { col: string; label: string; title?: string }[]).map(({ col, label, title }) => (
                 <th
@@ -881,18 +882,18 @@ export default function QuoteSheetPage() {
             {isLoading ? (
               [...Array(4)].map((_, i) => (
                 <tr key={i} className="border-b border-border/50">
-                  {[...Array(16)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
+                  {[...Array(17)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}
                 </tr>
               ))
             ) : !properties || properties.length === 0 ? (
               <tr>
-                <td colSpan={16}>
+                <td colSpan={17}>
                   <EmptyState icon={FileSpreadsheet} title={t('quoteSheet.emptyNoQuotes.title')} description={t('quoteSheet.emptyNoQuotes.description')} action={{ label: t('quoteSheet.emptyNoQuotes.action'), onClick: () => setAddOpen(true) }} />
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={16}>
+                <td colSpan={17}>
                   <EmptyState icon={Search} title={t('quoteSheet.emptyNoResults.title')} description={t('quoteSheet.emptyNoResults.description', { search })} />
                 </td>
               </tr>
@@ -950,6 +951,27 @@ export default function QuoteSheetPage() {
                     </td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(INSPECTION_COST)}</td>
                     <td className="py-2 px-3 text-xs tabular-nums text-muted-foreground">{fmt(TRASH_COST)}</td>
+                    <td className="py-2 px-3 text-xs tabular-nums" data-testid={`qs-linen-onboarding-${p.id}`}>
+                      {p.linen_program ? (() => {
+                        // Read-only here; the editable breakdown lives in the
+                        // property modal's Financials tab.
+                        const fee = suggestedLinenFee(linenCosts, p, {
+                          sets: p.linen_onboarding_sets,
+                          comforters: p.linen_onboarding_comforters,
+                          override: p.linen_onboarding_fee,
+                        })
+                        return (
+                          <span
+                            className={fee.isOverridden ? 'font-medium' : 'text-muted-foreground'}
+                            title={fee.isOverridden
+                              ? t('quoteSheet.table.onboardingLinensOverridden', { amount: fmt(fee.suggested) })
+                              : t('quoteSheet.table.onboardingLinensSuggested')}
+                          >
+                            {fmt(fee.effective)}{fee.isOverridden ? '*' : ''}
+                          </span>
+                        )
+                      })() : <span className="text-muted-foreground">—</span>}
+                    </td>
                     <td className="py-2 px-3 text-xs tabular-nums" data-testid={`qs-profit-${p.id}`}>
                       {profitPct != null ? (
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-current/30 ${profitColorClass(profitPct)}`}>

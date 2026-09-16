@@ -4130,6 +4130,9 @@ export type Database = {
           kitchens: number | null
           last_filter_changed: string | null
           linen_notes: string | null
+          linen_onboarding_comforters: boolean
+          linen_onboarding_fee: number | null
+          linen_onboarding_sets: number
           linen_program: boolean
           linen_program_cost: number
           listing_url: string | null
@@ -4216,6 +4219,9 @@ export type Database = {
           kitchens?: number | null
           last_filter_changed?: string | null
           linen_notes?: string | null
+          linen_onboarding_comforters?: boolean
+          linen_onboarding_fee?: number | null
+          linen_onboarding_sets?: number
           linen_program?: boolean
           linen_program_cost?: number
           listing_url?: string | null
@@ -4302,6 +4308,9 @@ export type Database = {
           kitchens?: number | null
           last_filter_changed?: string | null
           linen_notes?: string | null
+          linen_onboarding_comforters?: boolean
+          linen_onboarding_fee?: number | null
+          linen_onboarding_sets?: number
           linen_program?: boolean
           linen_program_cost?: number
           listing_url?: string | null
