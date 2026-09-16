@@ -1170,6 +1170,7 @@ export type Database = {
           next_action: string | null
           next_action_date: string | null
           notes: string | null
+          organization_id: string | null
           payment_method: string | null
           payment_notes: string | null
           phone: string | null
@@ -1196,6 +1197,7 @@ export type Database = {
           next_action?: string | null
           next_action_date?: string | null
           notes?: string | null
+          organization_id?: string | null
           payment_method?: string | null
           payment_notes?: string | null
           phone?: string | null
@@ -1222,6 +1224,7 @@ export type Database = {
           next_action?: string | null
           next_action_date?: string | null
           notes?: string | null
+          organization_id?: string | null
           payment_method?: string | null
           payment_notes?: string | null
           phone?: string | null
@@ -2962,6 +2965,42 @@ export type Database = {
           },
         ]
       }
+      organizations: {
+        Row: {
+          billing_channel: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          notes: string | null
+          payment_method: string | null
+          payment_notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          billing_channel?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          notes?: string | null
+          payment_method?: string | null
+          payment_notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          billing_channel?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          notes?: string | null
+          payment_method?: string | null
+          payment_notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       owner_agreements: {
         Row: {
           consent_text: string | null
@@ -4104,6 +4143,7 @@ export type Database = {
           offboarded_at: string | null
           offboarding_date: string | null
           onboarding_date: string | null
+          organization_id: string | null
           other_codes: string | null
           pet_friendly: string | null
           pool: boolean | null
@@ -4189,6 +4229,7 @@ export type Database = {
           offboarded_at?: string | null
           offboarding_date?: string | null
           onboarding_date?: string | null
+          organization_id?: string | null
           other_codes?: string | null
           pet_friendly?: string | null
           pool?: boolean | null
@@ -4274,6 +4315,7 @@ export type Database = {
           offboarded_at?: string | null
           offboarding_date?: string | null
           onboarding_date?: string | null
+          organization_id?: string | null
           other_codes?: string | null
           pet_friendly?: string | null
           pool?: boolean | null
@@ -5786,6 +5828,7 @@ export type Database = {
           client_stage: string | null
           client_stage_since: string | null
           company: string | null
+          organization_id: string | null
           days_in_stage: number | null
           email: string | null
           full_name: string | null
@@ -6517,6 +6560,10 @@ export type Database = {
       current_user_role: { Args: never; Returns: string }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
       get_owner_agreement: { Args: never; Returns: Json[] }
+      grant_org_properties_to_owner: {
+        Args: { p_organization_id: string; p_owner_id: string }
+        Returns: number
+      }
       get_owner_properties: { Args: never; Returns: Json[] }
       get_owner_property_notes: {
         Args: { p_property_id: number }

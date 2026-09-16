@@ -2576,11 +2576,28 @@ function useClientRows() {
 }
 
 /**
- * Assigns every property belonging to `contactId` (properties.contact_id) to
- * the owner's portal (owner_properties), skipping ones already assigned.
+ * Assigns every property belonging to `contactId` (direct contact_id) plus
+ * the contact's company portfolio (organization_id) to the owner's portal.
  * Returns the number of newly assigned properties.
  */
 async function autoAssignClientProperties(ownerId: string, contactId: string): Promise<number> {
+  const { data: contact, error: contactErr } = await supabase
+    .from('contacts')
+    .select('organization_id')
+    .eq('id', contactId)
+    .maybeSingle()
+  if (contactErr) throw contactErr
+
+  let orgGranted = 0
+  if (contact?.organization_id) {
+    const { data, error } = await supabase.rpc('grant_org_properties_to_owner', {
+      p_owner_id: ownerId,
+      p_organization_id: contact.organization_id,
+    })
+    if (error) throw error
+    orgGranted = typeof data === 'number' ? data : 0
+  }
+
   const [{ data: props, error: propsErr }, { data: existing, error: existingErr }] = await Promise.all([
     supabase.from('properties').select('id').eq('contact_id', contactId),
     supabase.from('owner_properties').select('property_id').eq('owner_id', ownerId),
@@ -2589,12 +2606,12 @@ async function autoAssignClientProperties(ownerId: string, contactId: string): P
   if (existingErr) throw existingErr
   const have = new Set((existing || []).map(r => r.property_id))
   const missing = (props || []).filter(p => !have.has(p.id))
-  if (missing.length === 0) return 0
+  if (missing.length === 0) return orgGranted
   const { error } = await supabase
     .from('owner_properties')
     .insert(missing.map(p => ({ owner_id: ownerId, property_id: p.id })))
   if (error) throw error
-  return missing.length
+  return orgGranted + missing.length
 }
 
 // Every new portal starts with the standard owner password; the owner can

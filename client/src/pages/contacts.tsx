@@ -14,8 +14,10 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { EmptyState } from '@/components/EmptyState'
 import { ContactModal } from '@/components/ContactModal'
+import { OrganizationModal } from '@/components/OrganizationModal'
 import { CrmWorkspace } from '@/components/CrmWorkspace'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { useOrganizations } from '@/hooks/use-organizations'
 import { TablePagination } from '@/components/TablePagination'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
@@ -31,7 +33,7 @@ const SOURCE_OPTIONS = ['Referral', 'Google', 'Cold Outreach', 'Trade Show', 'So
 const PAYMENT_OPTIONS = ['Ramp', 'Bill.com', 'QuickBooks', 'Check', 'ACH', 'Other']
 const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280', '#14b8a6']
 
-type SortKey = 'full_name' | 'company' | 'email' | 'phone' | 'source' | 'payment_method' | 'client_since' | 'properties' | 'tags'
+type SortKey = 'full_name' | 'company' | 'organization' | 'email' | 'phone' | 'source' | 'payment_method' | 'client_since' | 'properties' | 'tags'
 type SortDir = 'asc' | 'desc'
 
 function SortHeader({ label, sortKey, currentSort, currentDir, onSort }: {
@@ -112,8 +114,16 @@ export default function ContactsPage() {
   const [modalContactId, setModalContactId] = useState<string | null>(null)
   const [modalMode, setModalMode] = useState<'view' | 'create'>('view')
   const [modalOpen, setModalOpen] = useState(false)
+  const [orgModalOpen, setOrgModalOpen] = useState(false)
   const [sourceReportOpen, setSourceReportOpen] = useState(false)
   const [duplicateOpen, setDuplicateOpen] = useState(false)
+
+  const { data: organizations } = useOrganizations({ activeOnly: false })
+  const orgNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const o of organizations || []) m.set(o.id, o.name)
+    return m
+  }, [organizations])
 
   // Nested under the shared CONTACTS_QUERY_KEY prefix so any mutation that
   // invalidates ['contacts'] (ContactModal create/update, merges, etc.) also
@@ -121,11 +131,26 @@ export default function ContactsPage() {
   const { data: contacts, isLoading } = useQuery({
     queryKey: [...CONTACTS_QUERY_KEY, 'with-property-counts'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*, properties(id)')
+      const [{ data, error }, { data: orgProps, error: orgErr }] = await Promise.all([
+        supabase.from('contacts').select('*, properties(id)'),
+        supabase.from('properties').select('id, organization_id').not('organization_id', 'is', null).is('archived_at', null),
+      ])
       if (error) throw error
-      return data || []
+      if (orgErr) throw orgErr
+      const byOrg = new Map<string, number[]>()
+      for (const p of orgProps || []) {
+        if (!p.organization_id) continue
+        const list = byOrg.get(p.organization_id) || []
+        list.push(p.id)
+        byOrg.set(p.organization_id, list)
+      }
+      return (data || []).map((c: any) => {
+        const ids = new Set<number>((c.properties || []).map((p: any) => p.id))
+        if (c.organization_id) {
+          for (const id of byOrg.get(c.organization_id) || []) ids.add(id)
+        }
+        return { ...c, _propertyIds: Array.from(ids) }
+      })
     },
   })
 
@@ -143,7 +168,13 @@ export default function ContactsPage() {
     if (!contacts) return []
     let result = contacts.filter((c: any) => {
       const q = search.toLowerCase()
-      const matchSearch = !q || (c.full_name?.toLowerCase().includes(q) || c.company?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q))
+      const orgName = c.organization_id ? (orgNameById.get(c.organization_id) || '') : ''
+      const matchSearch = !q || (
+        c.full_name?.toLowerCase().includes(q)
+        || c.company?.toLowerCase().includes(q)
+        || c.email?.toLowerCase().includes(q)
+        || orgName.toLowerCase().includes(q)
+      )
       const matchSource = sourceFilter === 'all' || c.source === sourceFilter
       const matchPayment = paymentFilter === 'all' || c.payment_method === paymentFilter
       return matchSearch && matchSource && matchPayment
@@ -155,6 +186,10 @@ export default function ContactsPage() {
         cmp = (a.full_name || '').localeCompare(b.full_name || '')
       } else if (sortKey === 'company') {
         cmp = (a.company || '').localeCompare(b.company || '')
+      } else if (sortKey === 'organization') {
+        const an = a.organization_id ? (orgNameById.get(a.organization_id) || '') : ''
+        const bn = b.organization_id ? (orgNameById.get(b.organization_id) || '') : ''
+        cmp = an.localeCompare(bn)
       } else if (sortKey === 'email') {
         cmp = (a.email || '').localeCompare(b.email || '')
       } else if (sortKey === 'phone') {
@@ -166,7 +201,7 @@ export default function ContactsPage() {
       } else if (sortKey === 'client_since') {
         cmp = (a.client_since || '').localeCompare(b.client_since || '')
       } else if (sortKey === 'properties') {
-        cmp = (a.properties?.length || 0) - (b.properties?.length || 0)
+        cmp = (a._propertyIds?.length || 0) - (b._propertyIds?.length || 0)
       } else if (sortKey === 'tags') {
         const aLen = (a.tags || []).length
         const bLen = (b.tags || []).length
@@ -177,7 +212,7 @@ export default function ContactsPage() {
     })
 
     return result
-  }, [contacts, search, sourceFilter, paymentFilter, sortKey, sortDir])
+  }, [contacts, search, sourceFilter, paymentFilter, sortKey, sortDir, orgNameById])
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
@@ -197,12 +232,13 @@ export default function ContactsPage() {
     const rows = filtered.map((c: any) => ({
       [t('table.csv.name')]: c.full_name || '',
       [t('table.csv.company')]: c.company || '',
+      [t('table.csv.organization')]: c.organization_id ? (orgNameById.get(c.organization_id) || '') : '',
       [t('table.csv.email')]: c.email || '',
       [t('table.csv.phone')]: c.phone || '',
       [t('table.csv.source')]: c.source || '',
       [t('table.csv.paymentMethod')]: c.payment_method || '',
       [t('table.csv.clientSince')]: c.client_since || '',
-      [t('table.csv.properties')]: c.properties?.length || 0,
+      [t('table.csv.properties')]: c._propertyIds?.length || 0,
       [t('table.csv.tags')]: (c.tags || []).join(', '),
     }))
     const csv = Papa.unparse(rows)
@@ -285,6 +321,9 @@ export default function ContactsPage() {
           <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setDuplicateOpen(true)} disabled={filtered.length === 0}>
             <GitMerge className="w-3.5 h-3.5" /> {t('page.findDuplicatesButton')}
           </Button>
+          <Button variant="outline" size="sm" className="h-8 text-xs gap-1" onClick={() => setOrgModalOpen(true)} data-testid="button-add-organization">
+            <Building2 className="w-3.5 h-3.5" /> {t('page.addOrganizationButton')}
+          </Button>
           <Button size="sm" className="h-8 text-xs gap-1" onClick={openCreateContact} data-testid="button-add-contact">
             <Plus className="w-3.5 h-3.5" /> {t('page.addClientButton')}
           </Button>
@@ -325,8 +364,10 @@ export default function ContactsPage() {
         const total = list.length
         const since = Date.now() - 30 * 24 * 60 * 60 * 1000
         const new30 = list.filter((c: any) => c.created_at && new Date(c.created_at).getTime() >= since).length
-        const unassigned = list.filter((c: any) => !(c.properties && c.properties.length > 0)).length
-        const totalProps = list.reduce((s: number, c: any) => s + (c.properties?.length || 0), 0)
+        const unassigned = list.filter((c: any) => !(c._propertyIds && c._propertyIds.length > 0)).length
+        const uniquePropIds = new Set<number>()
+        for (const c of list) for (const id of (c._propertyIds || [])) uniquePropIds.add(id)
+        const totalProps = uniquePropIds.size
         const avgProps = total ? (totalProps / total) : 0
         return (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
@@ -355,7 +396,7 @@ export default function ContactsPage() {
           <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
             <tr>
               <SortHeader label={t('common.labels.name')} sortKey="full_name" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
-              <SortHeader label={t('table.company')} sortKey="company" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
+              <SortHeader label={t('table.organization')} sortKey="organization" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label={t('common.labels.email')} sortKey="email" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label={t('common.labels.phone')} sortKey="phone" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
               <SortHeader label={t('table.source')} sortKey="source" currentSort={sortKey} currentDir={sortDir} onSort={handleSort} />
@@ -398,7 +439,9 @@ export default function ContactsPage() {
                   data-testid={`row-contact-${c.id}`}
                 >
                   <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
-                  <td className="py-2 px-3 text-xs text-muted-foreground">{c.company || '—'}</td>
+                  <td className="py-2 px-3 text-xs text-muted-foreground">
+                    {c.organization_id ? (orgNameById.get(c.organization_id) || '—') : (c.company || '—')}
+                  </td>
                   <td className="py-2 px-3 text-xs">
                     {c.email ? (
                       <a href={`mailto:${c.email}`} onClick={e => e.stopPropagation()} className="text-primary hover:underline">{c.email}</a>
@@ -413,8 +456,8 @@ export default function ContactsPage() {
                   </td>
                   <td className="py-2 px-3 text-xs text-muted-foreground whitespace-nowrap">{c.client_since ? formatDate(new Date(c.client_since + 'T00:00:00'), 'MMM d, yyyy') : '—'}</td>
                   <td className="py-2 px-3 text-xs">
-                    {(c.properties?.length || 0) > 0
-                      ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c.properties.length}</span>
+                    {(c._propertyIds?.length || 0) > 0
+                      ? <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-2xs font-semibold tabular-nums ring-1 ring-primary/20"><Building2 className="w-3 h-3" />{c._propertyIds.length}</span>
                       : <span className="inline-flex items-center rounded-full bg-warning/10 text-warning px-2 py-0.5 text-2xs font-medium ring-1 ring-warning/20">{t('table.noneBadge')}</span>}
                   </td>
                   <td className="py-2 px-3 text-xs">
@@ -465,6 +508,7 @@ export default function ContactsPage() {
         onClose={() => setModalOpen(false)}
         mode={modalMode}
       />
+      <OrganizationModal open={orgModalOpen} onClose={() => setOrgModalOpen(false)} />
 
       {/* Source Report Modal */}
       <Dialog open={sourceReportOpen} onOpenChange={setSourceReportOpen}>
