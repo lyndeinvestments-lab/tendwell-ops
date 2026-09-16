@@ -10,6 +10,7 @@ on:
   schedule:
     # Weekly regression check — Mondays 13:00 UTC (~9am ET)
     - cron: '0 13 * * 1'
+  workflow_dispatch:
 
 jobs:
   check:
