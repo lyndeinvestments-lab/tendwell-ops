@@ -4,6 +4,28 @@ import type { Database } from '@shared/database.types'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
+// A dead password-recovery link is reported by GoTrue as a 303 back to our
+// redirect_to with the failure in the URL *hash*:
+//   /reset-password#error=access_denied&error_code=otp_expired&error_description=...
+// auth-js consumes and clears that hash while the client below initializes,
+// and it initializes long before the lazy-loaded /reset-password chunk mounts.
+// So capture it here, synchronously at module load, or the page has no way to
+// tell an expired link from an ordinary visit -- which is exactly how Kristy
+// Horn (2026-09-16) got a working-looking form that failed on submit with
+// Supabase's internal "Auth session missing!".
+export type AuthRedirectError = { code: string; description: string | null }
+
+export const authRedirectError: AuthRedirectError | null = (() => {
+  if (typeof window === 'undefined') return null
+  const hash = window.location.hash.replace(/^#/, '')
+  if (!hash) return null
+  const params = new URLSearchParams(hash)
+  const code = params.get('error_code') ?? params.get('error')
+  if (!code) return null
+  // URLSearchParams already percent-decodes and turns "+" into spaces.
+  return { code, description: params.get('error_description') }
+})()
+
 // Strongly-typed client. With <Database> parameterized, every .from('xyz')
 // call and column reference is checked against the schema at compile time —
 // the silent runtime bugs from days 2-5 (wrong column names, nonexistent
