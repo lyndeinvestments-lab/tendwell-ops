@@ -51,6 +51,10 @@ export const propertyModalEn = {
     noClientsFound: 'No clients found',
     unlinkClientTooltip: 'Unlink client',
     directionsTooltip: 'Directions / copy address',
+    listingUrl: 'Listing link',
+    listingUrlOpen: 'Open listing',
+    listingUrlPlaceholder: 'https://…',
+    listingUrlAdd: 'Add listing link',
     fields: {
       bedrooms: 'Bedrooms',
       baths: 'Baths',

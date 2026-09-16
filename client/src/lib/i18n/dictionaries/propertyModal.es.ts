@@ -51,6 +51,10 @@ export const propertyModalEs: typeof propertyModalEn = {
     noClientsFound: 'No se encontraron clientes',
     unlinkClientTooltip: 'Desvincular cliente',
     directionsTooltip: 'Indicaciones / copiar dirección',
+    listingUrl: 'Enlace del anuncio',
+    listingUrlOpen: 'Abrir anuncio',
+    listingUrlPlaceholder: 'https://…',
+    listingUrlAdd: 'Agregar enlace del anuncio',
     fields: {
       bedrooms: 'Habitaciones',
       baths: 'Baños',

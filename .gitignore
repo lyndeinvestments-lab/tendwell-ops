@@ -27,3 +27,4 @@ _backups/
 
 # Supabase CLI local cache
 supabase/.temp/
+__pycache__/
