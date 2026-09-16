@@ -483,10 +483,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [sessionEmail])
 
   useEffect(() => {
+    const RECOVERY_FLAG = 'tendwell-password-recovery'
+    // Survive refresh: PASSWORD_RECOVERY only fires once; a reload emits
+    // INITIAL_SESSION while the recovery session can still updateUser.
+    try {
+      if (sessionStorage.getItem(RECOVERY_FLAG) === '1') setIsPasswordRecovery(true)
+    } catch { /* private mode / blocked storage */ }
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       // A recovery link signs the user into a temporary session and fires this
       // event — gate the app behind the "set a new password" screen until done.
-      if (event === 'PASSWORD_RECOVERY') setIsPasswordRecovery(true)
+      if (event === 'PASSWORD_RECOVERY') {
+        setIsPasswordRecovery(true)
+        try { sessionStorage.setItem(RECOVERY_FLAG, '1') } catch { /* ignore */ }
+      }
+      if (event === 'SIGNED_OUT') {
+        setIsPasswordRecovery(false)
+        try { sessionStorage.removeItem(RECOVERY_FLAG) } catch { /* ignore */ }
+      }
       setSessionEmail(session?.user?.email ?? null)
     })
     const failsafe = setTimeout(() => setSessionEmail(prev => prev === undefined ? null : prev), 5000)
@@ -579,13 +593,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function updatePassword(newPassword: string): Promise<{ error: string | null }> {
     const { error } = await supabase.auth.updateUser({ password: newPassword })
-    if (!error) setIsPasswordRecovery(false)
+    if (!error) {
+      setIsPasswordRecovery(false)
+      try { sessionStorage.removeItem('tendwell-password-recovery') } catch { /* ignore */ }
+    }
     return { error: error?.message ?? null }
   }
 
   const logout = useCallback(async () => {
     setViewAsState(null)
     setIsPasswordRecovery(false)
+    try { sessionStorage.removeItem('tendwell-password-recovery') } catch { /* ignore */ }
     setActingAsOwnerState(false)
     // End any owner-portal preview so the next sign-in starts in staff view.
     setEmulatedOwner(null)

@@ -36,6 +36,9 @@
     "api/issues/*.ts": {
       "includeFiles": "api/issues/_lib.ts,api/issues/_translate-core.ts,api/notify/_lib.ts"
     },
+    "api/issues/share/*.ts": {
+      "includeFiles": "api/issues/share/_photo-url.ts,api/issues/_translate-core.ts"
+    },
     "api/data/*.ts": {
       "includeFiles": "api/data/_lib.ts,api/issues/_lib.ts,shared/api-areas.ts"
     },
@@ -46,7 +49,7 @@
       "includeFiles": "api/lost-items/_lib.ts"
     },
     "api/agreements/*.ts": {
-      "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts"
+      "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts,client/public/agreements/service-agreement-v1.pdf"
     },
     "api/invoices/*.ts": {
       "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/qbo/_lib.ts"

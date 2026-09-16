@@ -78,16 +78,74 @@ export async function resolveOwnerFromToken(
 // Template loading
 // ---------------------------------------------------------------------------
 
+const TEMPLATE_REL = 'agreements/service-agreement-v1.pdf'
+/** Origins allowed for the network fallback — never derived from request Host. */
+const TEMPLATE_ORIGIN_ALLOWLIST = new Set([
+  'https://app.tendwellcleaningco.com',
+])
+
 /**
- * Fetch the template PDF from the deployment's own origin.
- * Returns the raw bytes as a Uint8Array.
- * Throws if the fetch fails or returns a non-OK status.
+ * Load the service-agreement template bytes without trusting the request Host
+ * (SSRF / content-substitution risk — the bytes are hashed into the signed PDF).
+ *
+ * Prefers a co-deployed file (bundled via vercel.json includeFiles). Falls back
+ * to fetching from an allowlisted origin only (AGREEMENT_TEMPLATE_ORIGIN or the
+ * production app hostname).
  */
-export async function loadTemplateBytes(host: string): Promise<Uint8Array> {
-  const url = `https://${host}/agreements/service-agreement-v1.pdf`
+export async function loadTemplateBytes(): Promise<Uint8Array> {
+  const { readFile } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const candidates = [
+    join(process.cwd(), 'client/public', TEMPLATE_REL),
+    join(process.cwd(), 'dist/public', TEMPLATE_REL),
+    join(process.cwd(), 'public', TEMPLATE_REL),
+    join(process.cwd(), TEMPLATE_REL),
+  ]
+  for (const path of candidates) {
+    try {
+      return new Uint8Array(await readFile(path))
+    } catch {
+      // try next candidate
+    }
+  }
+
+  const configured = (process.env.AGREEMENT_TEMPLATE_ORIGIN || '').replace(/\/$/, '')
+  const origin = configured || 'https://app.tendwellcleaningco.com'
+  if (!TEMPLATE_ORIGIN_ALLOWLIST.has(origin)) {
+    throw new Error(`Agreement template origin not allowlisted: ${origin}`)
+  }
+  const url = `${origin}/${TEMPLATE_REL}`
   const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed to load template PDF (${res.status}): ${url}`)
+  if (!res.ok) throw new Error(`Failed to load template PDF (${res.status})`)
   return new Uint8Array(await res.arrayBuffer())
+}
+
+/**
+ * Resolve the caller IP for the e-signature audit trail.
+ * Prefer platform-provided headers; never take the leftmost X-Forwarded-For
+ * hop (client-spoofable on Vercel).
+ */
+export function resolveAuditIp(headers: Record<string, string | string[] | undefined>): string {
+  const first = (name: string): string | undefined => {
+    const raw = headers[name]
+    if (!raw) return undefined
+    const value = Array.isArray(raw) ? raw[0] : raw
+    return value.split(',')[0]?.trim() || undefined
+  }
+  const vercel = first('x-vercel-forwarded-for')
+  if (vercel) return vercel
+  const realIp = first('x-real-ip')
+  if (realIp) return realIp
+  // Platform appends the connecting IP as the rightmost XFF entry.
+  const xffRaw = headers['x-forwarded-for']
+  if (xffRaw) {
+    const parts = (Array.isArray(xffRaw) ? xffRaw.join(',') : xffRaw)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (parts.length) return parts[parts.length - 1]
+  }
+  return 'unknown'
 }
 
 // ---------------------------------------------------------------------------

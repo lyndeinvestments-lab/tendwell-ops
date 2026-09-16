@@ -51,8 +51,9 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
         changedBy: effectiveUser?.label || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
+      return result
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       // Stage changes ripple into every property-derived view (dashboard
       // velocity, operational_properties, pro-forma, revenue, etc.), not just
       // the six keys previously listed — invalidate the full registry.
@@ -60,7 +61,11 @@ function StageBadgePopover({ propertyId, propertyName, currentStageName, stageCo
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: t('toasts.stageUpdated') })
+      if (result.warning) {
+        toast({ title: t('toasts.stageUpdated'), description: result.warning, variant: 'destructive' })
+      } else {
+        toast({ title: t('toasts.stageUpdated') })
+      }
       setOpen(false)
     },
     onError: (error: any) => toast({ title: t('toasts.updateFailed'), description: error?.message, variant: 'destructive' }),

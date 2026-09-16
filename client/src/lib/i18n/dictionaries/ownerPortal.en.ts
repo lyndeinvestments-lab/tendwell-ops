@@ -322,5 +322,7 @@ export const ownerPortalEn = {
     doneTitle: 'Password updated',
     doneDescription: 'You can now sign in with your new password.',
     continueButton: 'Continue to sign in',
+    linkExpiredTitle: 'This reset link is invalid or expired',
+    linkExpiredDescription: 'Request a new password reset from the sign-in page, then open the link from your email.',
   },
 }

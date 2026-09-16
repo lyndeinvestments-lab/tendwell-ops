@@ -388,13 +388,18 @@ export default function QuoteSheetPage() {
         changedBy: effectiveUser?.label || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
+      return result
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       // Stage change touches every property-derived cache; the shared helper
       // covers quote-sheet/pipeline/master-list/property-detail/dashboards/etc.
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
-      toast({ title: t('quoteSheet.toasts.movedToOnboarding') })
+      if (result.warning) {
+        toast({ title: t('quoteSheet.toasts.movedToOnboarding'), description: result.warning, variant: 'destructive' })
+      } else {
+        toast({ title: t('quoteSheet.toasts.movedToOnboarding') })
+      }
       setConverting(null)
     },
     onError: (error: any) => toast({ title: t('quoteSheet.toasts.convertFailed'), description: error?.message, variant: 'destructive' }),

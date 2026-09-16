@@ -669,6 +669,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         .from('invoice_lines')
         .update({
           review_status: 'excluded',
+          line_kind: 'excluded',
           resolved_by: userLabel,
           resolved_at: new Date().toISOString(),
         })
@@ -1317,7 +1318,7 @@ function AddLineDialog({ runId, nextLineNo, userLabel, onClose, onSaved }: {
       })
       if (error) throw error
       // Refresh the run's computed subtotal / status with the new line in it.
-      await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } }).catch(() => {})
+      await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } })
     },
     onSuccess: () => {
       toast({ title: 'Line added' })
@@ -1700,9 +1701,10 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 
       // An edited invoiced amount changes the run's computed subtotal — the
       // penny gate must see it, and only reconcile recomputes it (resolved
-      // rows are preserved, so this is safe).
+      // rows are preserved, so this is safe). Surface failures so reviewers
+      // don't think totals refreshed when they didn't.
       if (invoicedChanged) {
-        await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } }).catch(() => {})
+        await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } })
       }
 
       // Remember the channel on the client so the next invoice routes itself
