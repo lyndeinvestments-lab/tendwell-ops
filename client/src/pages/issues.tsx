@@ -28,6 +28,7 @@ import { ISSUE_STATUS_TONES, floatsToTop, isOverdue, issueTypeLabel, statusLabel
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useIssueTranslations, type TranslatableCandidate } from '@/hooks/use-issue-translations'
 import { triggerIssueTranslate } from '@/lib/issue-translate'
+import { localISODate } from '@/lib/local-date'
 import { TONE_SOFT, type StatusTone } from '@/lib/status-colors'
 import { cn } from '@/lib/utils'
 import {
@@ -63,7 +64,7 @@ function IssuesPageContent() {
   const [importData, setImportData] = useState<any[] | null>(null)
   const [importRunning, setImportRunning] = useState(false)
   const [newForm, setNewForm] = useState<NewIssueForm>({
-    report_date: new Date().toISOString().split('T')[0],
+    report_date: localISODate(),
     issue_type: 'needs_attention',
     priority: 'normal',
     due_date: '',
@@ -364,7 +365,7 @@ function IssuesPageContent() {
             else unmatchedCleaners.add(rawLastTouch)
           }
           return {
-            report_date: get(['Report Date', 'REPORT DATE', 'Date', 'date']) || new Date().toISOString().split('T')[0],
+            report_date: get(['Report Date', 'REPORT DATE', 'Date', 'date']) || localISODate(),
             property_name: get(['Property', 'PROPERTY NAME', 'Property Name', 'property_name']),
             category: get(['Category', 'CATEGORY', 'category']) || 'Other',
             last_touch,

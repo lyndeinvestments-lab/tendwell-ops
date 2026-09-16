@@ -314,5 +314,7 @@ export const ownerPortalEs: typeof ownerPortalEn = {
     doneTitle: 'Contraseña actualizada',
     doneDescription: 'Ahora puedes iniciar sesión con tu nueva contraseña.',
     continueButton: 'Continuar al inicio de sesión',
+    linkExpiredTitle: 'Este enlace de restablecimiento no es válido o expiró',
+    linkExpiredDescription: 'Solicita un nuevo restablecimiento desde la página de inicio de sesión y abre el enlace de tu correo.',
   },
 }

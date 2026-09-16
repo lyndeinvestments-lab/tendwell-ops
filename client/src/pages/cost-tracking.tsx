@@ -779,6 +779,7 @@ export default function CostTrackingPage() {
         changedBy: effectiveUser?.label || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
+      return result
     },
     onMutate: ({ id, stageId }) => {
       const snapshot = localProperties ? [...localProperties] : null
@@ -792,11 +793,15 @@ export default function CostTrackingPage() {
       } : p) : prev)
       return { snapshot }
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       invalidateAllPropertyQueries(qc)
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
       qc.invalidateQueries({ queryKey: ['/supabase/activity-log'] })
-      toast({ title: t('toasts.stageUpdated') })
+      if (result.warning) {
+        toast({ title: t('toasts.stageUpdated'), description: result.warning, variant: 'destructive' })
+      } else {
+        toast({ title: t('toasts.stageUpdated') })
+      }
     },
     onError: (e: any, _, ctx: any) => {
       if (ctx?.snapshot) setLocalProperties(ctx.snapshot)

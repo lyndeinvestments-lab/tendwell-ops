@@ -3,6 +3,7 @@ import {
   getSupabaseConfig,
   resolveOwnerFromToken,
   loadTemplateBytes,
+  resolveAuditIp,
   sha256Hex,
   generateSignedPdf,
   type AgreementRow,
@@ -146,19 +147,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── Fetch template + compute source hash ──────────────────────────────────
-  // Use the routing Host (Vercel only routes requests whose Host belongs to
-  // this deployment, so it cannot point elsewhere) and fall back to the
-  // platform deployment URL. Never trust x-forwarded-host: it is
-  // client-settable, and the fetched bytes become the hashed "source" of a
-  // legal document. (VERCEL_URL is second because the generated deployment
-  // URL can sit behind deployment protection, which would block this fetch.)
-  const host =
-    (req.headers['host'] as string | undefined) ||
-    process.env.VERCEL_URL ||
-    ''
+  // Never derive the template URL from request Host / x-forwarded-host — those
+  // bytes are hashed into the signed PDF. loadTemplateBytes() reads a bundled
+  // file or fetches from an allowlisted origin only.
   let templateBytes: Uint8Array
   try {
-    templateBytes = await loadTemplateBytes(host)
+    templateBytes = await loadTemplateBytes()
   } catch (e: any) {
     return res.status(500).json({ error: `Template load failed: ${e.message}` })
   }
@@ -179,10 +173,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const now = new Date()
-  const ip =
-    ((req.headers['x-forwarded-for'] as string | undefined) || '')
-      .split(',')[0]
-      .trim() || 'unknown'
+  const ip = resolveAuditIp(req.headers as Record<string, string | string[] | undefined>)
   const userAgent = (req.headers['user-agent'] as string | undefined) || ''
 
   const tendwellSigner: TendwellSigner = {

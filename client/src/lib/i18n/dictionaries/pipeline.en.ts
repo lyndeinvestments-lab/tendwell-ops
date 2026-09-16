@@ -78,6 +78,7 @@ export const pipelineEn = {
   },
   toasts: {
     moveFailed: 'Failed to move property',
+    movePartial: 'Stage updated with a warning',
     followUpFailed: 'Failed to save follow-up date',
     leadAdded: 'Lead added to pipeline',
     addLeadErrorPrefix: 'Error: ',

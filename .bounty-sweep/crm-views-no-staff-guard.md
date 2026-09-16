@@ -1,6 +1,10 @@
 # Finding: CRM read-model views leak all clients' data to non-staff authenticated users
 
-**Severity:** HIGH
+**Severity:** HIGH → **FIXED in code** (pending live migration apply)
+**Status:** Remediation shipped in `supabase/migrations/20260915_crm_views_staff_guard.sql`
+  (`WHERE public.crm_caller_allowed()` on `crm_client_360`, `crm_attention`,
+  `crm_stale_quote_properties`). Apply that migration to production to close
+  the live exposure.
 **File:** `supabase/migrations/20260831_crm_client_lifecycle.sql`
 **Lines:** 168-233 (`crm_client_360`), 239-298 (`crm_attention`), 303-325 (`crm_stale_quote_properties`), 676-678 (grants)
 
@@ -25,7 +29,7 @@ estimate, next scheduled action, and recent meeting/interaction summaries —
 This is exactly the "definer view over a mixed-RLS table" situation this
 codebase already has an established fix for — see CLAUDE.md's note on
 `property_month_financials`/`qbo_pl_months`: "Both views embed
-`WHERE public.is_staff()` ... keeps financials staff-only without requiring
+`WHERE public.crm_caller_allowed()` ... keeps financials staff-only without requiring
 the [wider] grant." The new CRM views omit that guard despite the migration's
 own comment describing them as "the read model shared by the CRM page and the
 Cowork MCP server" (i.e. staff/service-role-only intent).
@@ -64,7 +68,7 @@ bundle.
 ## Suggested Fix
 
 Add the same guard used elsewhere in this codebase for definer views over
-mixed-RLS tables: `WHERE public.is_staff()` on the outer `SELECT` of
+mixed-RLS tables: `WHERE public.crm_caller_allowed()` on the outer `SELECT` of
 `crm_client_360`, `crm_attention`, and `crm_stale_quote_properties` (or drop
 `security_invoker = true` in favor of a `SECURITY DEFINER` function/view that
 checks `is_staff()` explicitly), in
