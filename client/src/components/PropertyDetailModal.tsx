@@ -15,6 +15,7 @@ import { useOrganizations } from '@/hooks/use-organizations'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { calcLinenRecurringPerClean, linenCostsFromSettings } from '@/lib/linen-onboarding'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -596,6 +597,8 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
 
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
+  const { getNumber: getLinenNumber } = useAppSettings()
+  const linenCosts = linenCostsFromSettings(getLinenNumber)
   const { t } = useLocale('propertyModal')
   const { format } = useDateFormat()
   const { data: editHistory } = useQuery({
@@ -635,7 +638,7 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
   const consumables = Number(property.est_consumables || 0)
   const inspection = (property as any).exempt_from_inspections ? 0 : Number(property.inspection_cost ?? 15)
   const trash = Number(property.trash_cost ?? 5)
-  const linenCost = property.linen_program ? (Number(property.number_of_beds || 0) * 300) / 12 / 4 : 0
+  const linenCost = property.linen_program ? calcLinenRecurringPerClean(linenCosts, property) : 0
   const totalCost = pay + laundry + consumables + inspection + trash + linenCost
   const profit = ce - totalCost
   const profitPct = ce > 0 ? (profit / ce) * 100 : 0
@@ -785,7 +788,8 @@ export function PropertyDetailModal() {
   const { modalState, closePropertyModal } = usePropertyModal()
   const { user, effectiveUser } = useAuth()
   const { toast } = useToast()
-  const { get: getSetting } = useAppSettings()
+  const { get: getSetting, getNumber } = useAppSettings()
+  const linenCosts = linenCostsFromSettings(getNumber)
   const autoCodeValue = getSetting('auto_code', '')
   const qc = useQueryClient()
   const [, navigate] = useLocation()
@@ -2137,7 +2141,7 @@ export function PropertyDetailModal() {
                 {/* Linen Program toggle — adds (beds × 300)/12/4 per clean to total cost */}
                 {(() => {
                   const beds = Number(property.number_of_beds) || 0
-                  const cost = (beds * 300) / 12 / 4
+                  const cost = calcLinenRecurringPerClean(linenCosts, property)
                   const enabled = !!property.linen_program
                   return (
                     <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>

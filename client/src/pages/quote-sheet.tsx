@@ -26,6 +26,13 @@ import { profitColorClass } from '@/lib/profit-colors'
 import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { useAppSettings } from '@/hooks/use-app-settings'
 import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEFAULT_AMENITY_COSTS, type AmenityCosts } from '@/lib/amenity-costs'
+import {
+  calcLinenRecurringPerClean,
+  suggestedLinenFee,
+  linenCostsFromSettings,
+  DEFAULT_LINEN_SETS,
+  type LinenCosts,
+} from '@/lib/linen-onboarding'
 import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
@@ -161,6 +168,11 @@ type NewProp = {
   number_of_kitchens: string
   hot_tub: boolean
   linen_program: boolean
+  /** Par level for the one-time onboarding linen stock. */
+  linen_onboarding_sets: string
+  linen_onboarding_comforters: boolean
+  /** Blank means quote the suggested fee; '0' is a deliberately waived fee. */
+  linen_onboarding_fee: string
   sq_ft: string
   address: string
   contact_id: string
@@ -181,6 +193,9 @@ const EMPTY_PROP: NewProp = {
   number_of_kitchens: '',
   hot_tub: false,
   linen_program: false,
+  linen_onboarding_sets: String(DEFAULT_LINEN_SETS),
+  linen_onboarding_comforters: false,
+  linen_onboarding_fee: '',
   sq_ft: '',
   address: '',
   contact_id: '',
@@ -203,6 +218,7 @@ export default function QuoteSheetPage() {
     trashBag: getNumber(AMENITY_SETTINGS_KEYS.trashBag, DEFAULT_AMENITY_COSTS.trashBag),
     hotTub: getNumber(AMENITY_SETTINGS_KEYS.hotTub, DEFAULT_AMENITY_COSTS.hotTub),
   }
+  const linenCosts: LinenCosts = linenCostsFromSettings(getNumber)
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   // "Send quote to owner" flow: pick a provisioned owner to review the quote.
@@ -427,6 +443,19 @@ export default function QuoteSheetPage() {
         kitchens,
         hot_tub: newProp.hot_tub,
         linen_program: newProp.linen_program,
+        // Onboarding linen inputs. Only meaningful on the program, so a quote
+        // saved without it keeps the column defaults rather than a stale par
+        // level from a toggle the user turned back off.
+        linen_onboarding_sets: newProp.linen_program
+          ? Math.max(1, parseInt(newProp.linen_onboarding_sets) || DEFAULT_LINEN_SETS)
+          : DEFAULT_LINEN_SETS,
+        linen_onboarding_comforters: newProp.linen_program && newProp.linen_onboarding_comforters,
+        // Blank override means "quote the suggested figure", which is computed
+        // live on read, so it stays NULL here rather than freezing a number.
+        linen_onboarding_fee:
+          newProp.linen_program && newProp.linen_onboarding_fee !== ''
+            ? parseFloat(newProp.linen_onboarding_fee)
+            : null,
         square_footage: newProp.sq_ft ? parseFloat(newProp.sq_ft) : null,
         address: newProp.address || null,
         est_laundry: estLaundry || null,
@@ -523,6 +552,12 @@ export default function QuoteSheetPage() {
       number_of_kitchens: prop.kitchens != null ? String(prop.kitchens) : '',
       hot_tub: prop.hot_tub || false,
       linen_program: prop.linen_program || false,
+      linen_onboarding_sets:
+        prop.linen_onboarding_sets != null ? String(prop.linen_onboarding_sets) : String(DEFAULT_LINEN_SETS),
+      linen_onboarding_comforters: prop.linen_onboarding_comforters || false,
+      // The duplicate is a different property, so its suggested fee will differ.
+      // Carrying a hand-typed override across would silently misprice it.
+      linen_onboarding_fee: '',
       sq_ft: prop.square_footage != null ? String(prop.square_footage) : '',
       address: '',
       contact_id: '',
@@ -586,7 +621,7 @@ export default function QuoteSheetPage() {
     const consumables = hasEdit
       ? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens })
       : (p.est_consumables ?? calcConsumablesFromCosts(amenityCosts, { ...p, kitchens: p.kitchens }))
-    const linenProgramCost = p.linen_program ? (beds * 300) / 12 / 4 : 0
+    const linenProgramCost = p.linen_program ? calcLinenRecurringPerClean(linenCosts, p) : 0
     const ce = p.ce_charged != null && p.ce_charged !== '' ? Number(p.ce_charged) : null
     const pay = p.cleaner_pay != null && p.cleaner_pay !== '' ? Number(p.cleaner_pay) : null
     let profitPct: number | null
@@ -1218,7 +1253,7 @@ export default function QuoteSheetPage() {
               </div>
             </div>
 
-            {/* Linen Program toggle — adds (beds × 300)/12/4 per clean */}
+            {/* Linen Program toggle — recurring replacement cost per clean. */}
             <label className="flex items-start gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
@@ -1230,11 +1265,107 @@ export default function QuoteSheetPage() {
               <div className="text-xs">
                 <div className="font-medium">{t('quoteSheet.addDialog.linenProgram')}</div>
                 <div className="text-muted-foreground">
-                  {t('quoteSheet.addDialog.linenProgramAdds', { amount: newProp.number_of_beds ? `$${(Number(newProp.number_of_beds) * 300 / 12 / 4).toFixed(2)}` : '$0' })}
+                  {t('quoteSheet.addDialog.linenProgramAdds', { amount: `$${calcLinenRecurringPerClean(linenCosts, newProp).toFixed(2)}` })}
                   {newProp.number_of_beds ? t('quoteSheet.addDialog.linenProgramBeds', { beds: newProp.number_of_beds }) : ''}
                 </div>
               </div>
             </label>
+
+            {/* One-time onboarding linen fee. Only relevant on the program. */}
+            {newProp.linen_program && (() => {
+              const fee = suggestedLinenFee(linenCosts, newProp, {
+                sets: newProp.linen_onboarding_sets,
+                comforters: newProp.linen_onboarding_comforters,
+                override: newProp.linen_onboarding_fee,
+              })
+              const sets = Math.max(1, parseInt(newProp.linen_onboarding_sets) || DEFAULT_LINEN_SETS)
+              const setSets = (next: number) =>
+                setNewProp(prev => ({ ...prev, linen_onboarding_sets: String(Math.max(1, next)) }))
+              return (
+                <div className="rounded-xl border border-border bg-muted/30 px-4 py-3 space-y-2 text-xs" data-testid="quote-linen-onboarding">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold uppercase tracking-wide text-2xs text-muted-foreground">
+                      {t('quoteSheet.addDialog.linenOnboardingTitle')}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-muted-foreground">{t('quoteSheet.addDialog.linenSets')}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSets(sets - 1)}
+                        disabled={sets <= 1}
+                        className="h-6 w-6 rounded border border-input leading-none disabled:opacity-40"
+                        aria-label={t('quoteSheet.addDialog.linenSetsFewer')}
+                        data-testid="linen-sets-dec"
+                      >-</button>
+                      <span className="w-5 text-center tabular-nums font-medium" data-testid="linen-sets-value">{sets}</span>
+                      <button
+                        type="button"
+                        onClick={() => setSets(sets + 1)}
+                        className="h-6 w-6 rounded border border-input leading-none"
+                        aria-label={t('quoteSheet.addDialog.linenSetsMore')}
+                        data-testid="linen-sets-inc"
+                      >+</button>
+                    </div>
+                  </div>
+
+                  {fee.beds > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.linenBeds')}</span><span className="tabular-nums">{fmt(fee.beds)}</span></div>
+                  )}
+                  {fee.baths > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.linenBaths')}</span><span className="tabular-nums">{fmt(fee.baths)}</span></div>
+                  )}
+                  {fee.comforters > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.linenComforters')}</span><span className="tabular-nums">{fmt(fee.comforters)}</span></div>
+                  )}
+                  {fee.poolTowels > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.linenPoolTowels')}</span><span className="tabular-nums">{fmt(fee.poolTowels)}</span></div>
+                  )}
+                  {fee.markup > 0 && (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{t('quoteSheet.addDialog.linenMarkup', { pct: linenCosts.markupPct })}</span><span className="tabular-nums">{fmt(fee.markup)}</span></div>
+                  )}
+
+                  <label className="flex items-start gap-2 cursor-pointer select-none pt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={newProp.linen_onboarding_comforters}
+                      onChange={e => setNewProp(prev => ({ ...prev, linen_onboarding_comforters: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 rounded border-input"
+                      data-testid="input-new-linen_comforters"
+                    />
+                    <span className="text-muted-foreground">{t('quoteSheet.addDialog.linenComfortersToggle')}</span>
+                  </label>
+
+                  <div className="flex items-center justify-between border-t border-border pt-2">
+                    <span className="text-muted-foreground">{t('quoteSheet.addDialog.linenSuggested')}</span>
+                    <span className="tabular-nums font-medium" data-testid="linen-suggested">{fmt(fee.suggested)}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
+                    <Label className="text-xs text-muted-foreground">{t('quoteSheet.addDialog.linenOverride')}</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="h-8 w-32 text-right"
+                      placeholder={fee.suggested.toFixed(2)}
+                      value={newProp.linen_onboarding_fee}
+                      onChange={e => setNewProp(prev => ({ ...prev, linen_onboarding_fee: e.target.value }))}
+                      data-testid="input-new-linen_onboarding_fee"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-border pt-2">
+                    <span className="font-semibold">{t('quoteSheet.addDialog.linenFeeQuoted')}</span>
+                    <span className="text-base font-bold tabular-nums" data-testid="linen-effective">{fmt(fee.effective)}</span>
+                  </div>
+                  <p className="text-muted-foreground text-2xs">
+                    {fee.isOverridden
+                      ? t('quoteSheet.addDialog.linenOverrideNote', { amount: fmt(fee.suggested) })
+                      : t('quoteSheet.addDialog.linenOneTimeNote')}
+                  </p>
+                </div>
+              )
+            })()}
 
             {/* CE Charged and Cleaner Pay — with auto-suggestions */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1304,8 +1435,7 @@ export default function QuoteSheetPage() {
                   if (pay == null || Number.isNaN(pay)) return null
                   const pct = (pay / ce) * 100
                   if (pct <= 55) return null
-                  const beds = newProp.number_of_beds ? parseInt(newProp.number_of_beds) : 0
-                  const linen = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
+                  const linen = newProp.linen_program ? calcLinenRecurringPerClean(linenCosts, newProp) : 0
                   const suggested = pay / 0.55 + linen
                   return (
                     <p className="text-xs text-warning font-medium" data-testid="quote-client-charge-suggest">
@@ -1336,7 +1466,7 @@ export default function QuoteSheetPage() {
                     number_of_beds: beds,
                     hot_tub: newProp.hot_tub,
                   })
-                  const linenProgramCost = newProp.linen_program ? (beds * 300) / 12 / 4 : 0
+                  const linenProgramCost = newProp.linen_program ? calcLinenRecurringPerClean(linenCosts, newProp) : 0
                   const totalCost = laundry + consumables + INSPECTION_COST + TRASH_COST + linenProgramCost
                   const ce = newProp.ce_charged ? parseFloat(newProp.ce_charged) : null
                   const pay = newProp.cleaner_pay ? parseFloat(newProp.cleaner_pay) : null
