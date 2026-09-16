@@ -11,6 +11,7 @@ import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { useOrganizations } from '@/hooks/use-organizations'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
 import { useAppSettings } from '@/hooks/use-app-settings'
@@ -827,11 +828,18 @@ export function PropertyDetailModal() {
   const [contactSearch, setContactSearch] = useState('')
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
   const { data: allContacts } = useContacts({ enabled: !!propertyId })
+  const { data: organizations } = useOrganizations({ enabled: !!propertyId })
 
   const linkedContact = useMemo(() => {
     if (!property?.contact_id || !allContacts) return null
     return allContacts.find((c: any) => c.id === property.contact_id) || null
   }, [property?.contact_id, allContacts])
+
+  const linkedOrgName = useMemo(() => {
+    const orgId = property?.organization_id || linkedContact?.organization_id
+    if (!orgId || !organizations) return null
+    return organizations.find(o => o.id === orgId)?.name || null
+  }, [property?.organization_id, linkedContact?.organization_id, organizations])
 
   const filteredContacts = useMemo(() => {
     if (!allContacts) return []
@@ -1623,7 +1631,8 @@ export function PropertyDetailModal() {
                     <div className="flex items-center gap-2 flex-1">
                       <Users className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                       <span className="text-sm font-medium">{linkedContact.full_name}</span>
-                      {linkedContact.company && <span className="text-xs text-muted-foreground">({linkedContact.company})</span>}
+                      {linkedOrgName && <span className="text-xs text-muted-foreground">({linkedOrgName})</span>}
+                      {!linkedOrgName && linkedContact.company && <span className="text-xs text-muted-foreground">({linkedContact.company})</span>}
                       {linkedContact.payment_method && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
                       )}

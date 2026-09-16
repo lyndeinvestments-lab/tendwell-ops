@@ -35,6 +35,19 @@ Staff ops + CRM dashboard for Tendwell Cleaning Co. (STR property cleaning). Rol
 | Medium | Reset password form shown without recovery session | `/reset-password` open | Gate on `isPasswordRecovery`; marketing-auth styling |
 | Medium | Login muted text contrast + 148KB 3200px logo | Lighthouse/manual a11y | Darken to `#6B5A45`; 480w WebP (~6KB); `role="alert"` |
 
+## Follow-up 2026-09-16 — organizations (company → PoCs)
+
+Schema + UI for company accounts with shared portfolios and per-person portals.
+
+| Piece | Detail |
+|---|---|
+| Migration | `supabase/migrations/20260916_organizations.sql` — **apply in Supabase** |
+| Model | `organizations`; `contacts.organization_id`; `properties.organization_id` |
+| Portal | Triggers + `grant_org_properties_to_owner` share org properties with each linked portal |
+| UI | Clients: Add Company; contact modal Company account picker; directory column; property modal shows org |
+
+Backfill: distinct non-empty `contacts.company` → organizations, then link contacts/properties.
+
 ## Follow-up 2026-09-16 — e2e drift (#586)
 
 | Check | Result |

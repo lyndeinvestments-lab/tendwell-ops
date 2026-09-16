@@ -23,6 +23,7 @@ export interface Contact {
   id: string
   full_name: string
   company: string | null
+  organization_id: string | null
   email: string | null
   phone: string | null
   secondary_phone: string | null

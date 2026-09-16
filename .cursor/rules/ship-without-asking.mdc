@@ -1,0 +1,15 @@
+---
+description: Auto commit, PR, merge, and verify for tendwell-ops work
+alwaysApply: true
+---
+
+# Ship without asking
+
+When finishing a feature, fix, or docs change in tendwell-ops (unless the user explicitly says not to):
+
+1. **Commit** on a feature branch with a clear message
+2. **Push** and open a PR
+3. **Merge** when CI is green (squash + delete branch is fine)
+4. **Verify** post-deploy when relevant (smoke / e2e against production)
+
+Do not wait for "please commit" or "please merge." Prefer completing the loop end-to-end. Still never force-push main, skip hooks, or destroy data without an explicit ask. Call out anything that still needs a human (e.g. Supabase migration apply) in one short line.
