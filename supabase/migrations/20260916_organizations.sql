@@ -349,6 +349,64 @@ WHERE public.crm_caller_allowed();
 COMMENT ON VIEW public.crm_client_360 IS
   'One row per client with property, value, and interaction rollups. Property counts include the contact''s org portfolio when organization_id is set.';
 
+GRANT SELECT ON public.crm_client_360 TO authenticated, service_role;
+
+-- Recreate crm_attention (dropped above because it depends on crm_client_360).
+CREATE VIEW public.crm_attention
+WITH (security_invoker = true) AS
+WITH t AS (
+  SELECT
+    public.crm_setting_int('crm_new_lead_stale_days', 3)        AS new_lead_days,
+    public.crm_setting_int('crm_prospect_stale_days', 14)       AS prospect_days,
+    public.crm_setting_int('crm_quote_response_days', 7)        AS quote_days,
+    public.crm_setting_int('crm_nurture_revisit_days', 90)      AS nurture_days
+)
+SELECT v.id AS contact_id, v.full_name, v.company, v.client_stage,
+       v.days_in_stage, v.monthly_value, v.next_action, v.next_action_date,
+       v.last_interaction_at, v.reason, v.detail, v.priority
+FROM (
+  SELECT c.*, 'unreviewed_lead' AS reason,
+         'Auto-created from a meeting ' || c.days_in_stage || ' days ago and not yet reviewed' AS detail,
+         1 AS priority
+  FROM public.crm_client_360 c, t
+  WHERE c.client_stage = 'new' AND c.days_in_stage >= t.new_lead_days
+  UNION ALL
+  SELECT c.*, 'overdue_action' AS reason,
+         COALESCE(c.next_action, 'Follow-up') || ' was due ' || c.next_action_date::text AS detail,
+         1 AS priority
+  FROM public.crm_client_360 c
+  WHERE c.next_action_date IS NOT NULL AND c.next_action_date < CURRENT_DATE
+  UNION ALL
+  SELECT c.*, 'quote_no_response' AS reason,
+         'Quoted ' || c.days_in_stage || ' days ago with no recorded response' AS detail,
+         2 AS priority
+  FROM public.crm_client_360 c, t
+  WHERE c.client_stage = 'quoted' AND c.days_in_stage >= t.quote_days
+  UNION ALL
+  SELECT c.*, 'stale_prospect' AS reason,
+         CASE WHEN c.last_interaction_at IS NULL
+              THEN 'Prospect with no recorded interaction at all'
+              ELSE 'No contact in ' || EXTRACT(DAY FROM (now() - c.last_interaction_at))::int || ' days'
+         END AS detail,
+         2 AS priority
+  FROM public.crm_client_360 c, t
+  WHERE c.client_stage = 'prospect'
+    AND (c.last_interaction_at IS NULL
+         OR c.last_interaction_at < now() - (t.prospect_days || ' days')::interval)
+  UNION ALL
+  SELECT c.*, 'nurture_due' AS reason,
+         'On long-term nurture for ' || c.days_in_stage || ' days — time to revisit' AS detail,
+         3 AS priority
+  FROM public.crm_client_360 c, t
+  WHERE c.client_stage = 'nurture' AND c.days_in_stage >= t.nurture_days
+) v
+WHERE public.crm_caller_allowed();
+
+COMMENT ON VIEW public.crm_attention IS
+  'One row per (client, reason) for anything that has gone quiet. Thresholds live in app_settings under crm_*_days.';
+
+GRANT SELECT ON public.crm_attention TO authenticated, service_role;
+
 -- One-shot: existing portals under orgs get the shared portfolio now
 DO $$
 DECLARE
