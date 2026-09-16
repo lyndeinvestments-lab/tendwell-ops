@@ -37,8 +37,6 @@ export interface LinenCosts {
   markupPct: number
   /** Replacement sets per bed per year, for the recurring program cost. */
   recurringSetsPerYear: number
-  /** Per-set cost for beds with no size breakdown recorded. */
-  blendedPerSet: number
 }
 
 export const DEFAULT_LINEN_COSTS: LinenCosts = {
@@ -53,9 +51,6 @@ export const DEFAULT_LINEN_COSTS: LinenCosts = {
   poolTowelPerGuest: 11.8,
   markupPct: 0,
   recurringSetsPerYear: 2,
-  // Portfolio-weighted average across the 148 beds in the Hostimo reference
-  // set (67 king, 36 queen, 5 full, 40 twin).
-  blendedPerSet: 41.71,
 }
 
 // Setting keys in app_settings.
@@ -71,7 +66,6 @@ export const LINEN_SETTINGS_KEYS = {
   poolTowelPerGuest: 'linen_pool_towel_guest',
   markupPct: 'linen_markup_pct',
   recurringSetsPerYear: 'linen_recur_sets_year',
-  blendedPerSet: 'linen_blended_per_set',
 } as const
 
 /**
@@ -94,7 +88,6 @@ export function linenCostsFromSettings(
     poolTowelPerGuest: getNumber(LINEN_SETTINGS_KEYS.poolTowelPerGuest, DEFAULT_LINEN_COSTS.poolTowelPerGuest),
     markupPct: getNumber(LINEN_SETTINGS_KEYS.markupPct, DEFAULT_LINEN_COSTS.markupPct),
     recurringSetsPerYear: getNumber(LINEN_SETTINGS_KEYS.recurringSetsPerYear, DEFAULT_LINEN_COSTS.recurringSetsPerYear),
-    blendedPerSet: getNumber(LINEN_SETTINGS_KEYS.blendedPerSet, DEFAULT_LINEN_COSTS.blendedPerSet),
   }
 }
 
@@ -147,15 +140,28 @@ function n(v: number | string | null | undefined): number {
 export function linenSleepCount(p: LinenProperty): number {
   const guests = n(p.guest_count)
   if (guests > 0) return guests
-  return n(p.king_beds) * 2 + n(p.queen_beds) * 2 + n(p.full_beds) * 2 + n(p.twin_beds)
+  const { king, queen, twin } = bedsForPricing(p)
+  return king * 2 + queen * 2 + twin
 }
 
-/** Beds with a recorded size. Full beds are priced as queen. */
-function sizedBeds(p: LinenProperty) {
+/**
+ * Beds to price, by size. Full beds are priced as queen.
+ *
+ * When a property records a bed COUNT but no size breakdown, every bed is
+ * assumed to be a king. King is the most expensive size, so the assumption is
+ * deliberately conservative: if the property really is all kings we have
+ * quoted it correctly, and any other mix means we over-collected rather than
+ * eating the difference. Filling in the real sizes can only lower the number.
+ */
+export function bedsForPricing(p: LinenProperty) {
   const king = n(p.king_beds)
   const queen = n(p.queen_beds) + n(p.full_beds)
   const twin = n(p.twin_beds)
-  return { king, queen, twin, total: king + queen + twin }
+  const sized = king + queen + twin
+  if (sized > 0) return { king, queen, twin, total: sized, assumedKing: false }
+
+  const unsized = n(p.number_of_beds)
+  return { king: unsized, queen: 0, twin: 0, total: unsized, assumedKing: unsized > 0 }
 }
 
 /**
@@ -171,7 +177,7 @@ export function calcLinenOnboarding(
   // that is too low clamps to 1, so a stepper at 0 never zeroes out the quote.
   const sets =
     opts.sets == null || opts.sets === '' ? DEFAULT_LINEN_SETS : Math.max(1, n(opts.sets))
-  const { king, queen, twin } = sizedBeds(property)
+  const { king, queen, twin } = bedsForPricing(property)
 
   const beds = sets * (king * costs.setKing + queen * costs.setQueen + twin * costs.setTwin)
   const baths =
@@ -201,13 +207,8 @@ export function calcLinenOnboarding(
  * Properties with a bed count but no size breakdown use the blended rate.
  */
 export function calcLinenRecurringPerClean(costs: LinenCosts, property: LinenProperty): number {
-  const { king, queen, twin, total } = sizedBeds(property)
-
-  const annualPerSet =
-    total > 0
-      ? king * costs.setKing + queen * costs.setQueen + twin * costs.setTwin
-      : n(property.number_of_beds) * costs.blendedPerSet
-
+  const { king, queen, twin } = bedsForPricing(property)
+  const annualPerSet = king * costs.setKing + queen * costs.setQueen + twin * costs.setTwin
   return (annualPerSet * costs.recurringSetsPerYear) / CLEANS_PER_YEAR
 }
 

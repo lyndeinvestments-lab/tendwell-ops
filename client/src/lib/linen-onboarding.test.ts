@@ -84,6 +84,27 @@ describe('calcLinenOnboarding', () => {
     expect(r.total).toBeCloseTo(r.subtotal, 2)
   })
 
+  it('prices unsized beds as kings instead of charging nothing for them', () => {
+    // Regression: a property with a bed count but no sizes quoted $0 of bed
+    // linens, so a 12-bed cabin was billed for its bathrooms only.
+    const r = calcLinenOnboarding(C, { number_of_beds: 12, full_baths: 6, half_baths: 1 })
+    expect(r.beds).toBeCloseTo(12 * 48.02 * 3, 2)
+    expect(r.beds).toBeGreaterThan(0)
+  })
+
+  it('matches an explicit all-king property exactly when sizes are unset', () => {
+    const assumed = calcLinenOnboarding(C, { number_of_beds: 3, full_baths: 2 })
+    const explicit = calcLinenOnboarding(C, { king_beds: 3, full_baths: 2 })
+    expect(assumed.total).toBeCloseTo(explicit.total, 2)
+  })
+
+  it('applies the king assumption to comforters and pool towels too', () => {
+    const r = calcLinenOnboarding(C, { number_of_beds: 2, hot_tub: true }, { comforters: true })
+    expect(r.comforters).toBeCloseTo(2 * C.duvetKing, 2)
+    // Sleep count derives from the assumed kings: 2 beds x 2 guests.
+    expect(r.poolTowels).toBeCloseTo(4 * C.poolTowelPerGuest, 2)
+  })
+
   it('returns zero for a property with no beds or baths', () => {
     const r = calcLinenOnboarding(C, {})
     expect(r.total).toBe(0)
@@ -127,15 +148,25 @@ describe('calcLinenRecurringPerClean', () => {
     expect(mixed).toBeCloseTo(parts, 4)
   })
 
-  it('falls back to the blended per-bed rate when no size breakdown exists', () => {
+  it('assumes every bed is a king when no size breakdown exists', () => {
     // 7 of the 30 properties on the program have number_of_beds but no sizes.
+    // King is the dearest size, so an unknown mix can only over-collect.
     const r = calcLinenRecurringPerClean(C, { number_of_beds: 3 })
-    expect(r).toBeCloseTo((3 * 2 * C.blendedPerSet) / 12 / 4, 4)
+    expect(r).toBeCloseTo((3 * 2 * C.setKing) / 12 / 4, 4)
   })
 
-  it('prefers the real size breakdown over the blended fallback', () => {
-    const sized = calcLinenRecurringPerClean(C, { number_of_beds: 3, king_beds: 3 })
-    expect(sized).toBeCloseTo((3 * 2 * 48.02) / 12 / 4, 4)
+  it('never prices an unsized property below the same count of real kings', () => {
+    const assumed = calcLinenRecurringPerClean(C, { number_of_beds: 4 })
+    const realKings = calcLinenRecurringPerClean(C, { number_of_beds: 4, king_beds: 4 })
+    expect(assumed).toBeCloseTo(realKings, 4)
+    // Any cheaper mix comes in under the assumption, never over it.
+    const realTwins = calcLinenRecurringPerClean(C, { number_of_beds: 4, twin_beds: 4 })
+    expect(realTwins).toBeLessThan(assumed)
+  })
+
+  it('prefers a recorded size breakdown over the king assumption', () => {
+    const sized = calcLinenRecurringPerClean(C, { number_of_beds: 3, twin_beds: 3 })
+    expect(sized).toBeCloseTo((3 * 2 * C.setTwin) / 12 / 4, 4)
   })
 
   it('returns zero when the property has no beds at all', () => {
