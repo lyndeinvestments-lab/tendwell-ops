@@ -4093,6 +4093,7 @@ export type Database = {
           linen_notes: string | null
           linen_program: boolean
           linen_program_cost: number
+          listing_url: string | null
           monthly_cost_estimate: number | null
           monthly_profit_estimate: number | null
           monthly_revenue_estimate: number | null
@@ -4177,6 +4178,7 @@ export type Database = {
           linen_notes?: string | null
           linen_program?: boolean
           linen_program_cost?: number
+          listing_url?: string | null
           monthly_cost_estimate?: number | null
           monthly_profit_estimate?: number | null
           monthly_revenue_estimate?: number | null
@@ -4261,6 +4263,7 @@ export type Database = {
           linen_notes?: string | null
           linen_program?: boolean
           linen_program_cost?: number
+          listing_url?: string | null
           monthly_cost_estimate?: number | null
           monthly_profit_estimate?: number | null
           monthly_revenue_estimate?: number | null

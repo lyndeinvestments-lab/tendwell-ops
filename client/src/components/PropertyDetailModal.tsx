@@ -756,6 +756,7 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean, autoCo
 function buildFormFromProperty(property: any): Record<string, any> {
   const form: Record<string, any> = {
     address: property.address || '',
+    listing_url: property.listing_url || '',
     bedrooms: property.bedrooms ?? '',
     full_baths: property.full_baths ?? '',
     half_baths: property.half_baths ?? '',
@@ -905,6 +906,7 @@ export function PropertyDetailModal() {
         const out: Record<string, any> = {}
         if (canEditProperty) {
           out.address = src.address || null
+          out.listing_url = src.listing_url || null
           out.bedrooms = src.bedrooms !== '' ? parseFloat(String(src.bedrooms)) : null
           out.full_baths = src.full_baths !== '' ? parseFloat(String(src.full_baths)) : null
           out.half_baths = src.half_baths !== '' ? parseFloat(String(src.half_baths)) : null
@@ -1721,6 +1723,73 @@ export function PropertyDetailModal() {
                         </Button>
                       )}
                     </div>
+                  )}
+                </div>
+              </div>
+              {/* Listing link — the public Airbnb/VRBO/Zillow page. Read mode
+                  renders it as a link (never a bare URL, which wraps badly and
+                  reads as noise); editing follows the same inline/edit-mode
+                  pattern as every other Overview field. */}
+              <div className="grid grid-cols-1 gap-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">{t('overview.listingUrl')}</Label>
+                  {isEditing && canEditProperty ? (
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      placeholder={t('overview.listingUrlPlaceholder')}
+                      value={form.listing_url ?? ''}
+                      onChange={e => setForm(f => ({ ...f, listing_url: e.target.value }))}
+                      className={`mt-0.5 ${fieldCls('listing_url')}`}
+                      data-testid="modal-input-listing_url"
+                    />
+                  ) : inlineField === 'listing_url' ? (
+                    <Input
+                      autoFocus
+                      type="url"
+                      inputMode="url"
+                      placeholder={t('overview.listingUrlPlaceholder')}
+                      value={inlineValue}
+                      onChange={e => setInlineValue(e.target.value)}
+                      onBlur={() => commitInlineEdit('listing_url')}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') commitInlineEdit('listing_url')
+                        if (e.key === 'Escape') setInlineField(null)
+                      }}
+                      className="mt-0.5 h-7 text-xs"
+                    />
+                  ) : property.listing_url ? (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <a
+                        href={property.listing_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
+                        title={property.listing_url}
+                        data-testid="modal-listing-link"
+                      >
+                        {t('overview.listingUrlOpen')}
+                      </a>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                      {canEditProperty && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => startInlineEdit('listing_url', property.listing_url, canEditProperty)}
+                          data-testid="modal-listing-edit"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <p
+                      className={`text-sm mt-0.5 ${canEditProperty ? 'text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : 'text-muted-foreground'}`}
+                      onClick={() => canEditProperty && startInlineEdit('listing_url', '', canEditProperty)}
+                    >
+                      {canEditProperty ? t('overview.listingUrlAdd') : '—'}
+                    </p>
                   )}
                 </div>
               </div>
