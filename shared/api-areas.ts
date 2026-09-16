@@ -43,6 +43,7 @@ export const API_AREAS: ApiArea[] = [
   { key: 'clients',           label: 'Clients',              group: 'Sales',       table: 'contacts',               pk: 'id', access: 'rw', note: 'client_stage is write-denied here \u2014 move a client with the crm_set_client_stage RPC so the audit row is written.' },
   { key: 'client-notes',      label: 'Client Notes',         group: 'Sales',       table: 'contact_notes',          pk: 'id', access: 'rw' },
   { key: 'client-interactions',label: 'Client Interactions',  group: 'Sales',       table: 'contact_interactions',    pk: 'id', access: 'rw', note: 'Calls, emails, and meetings. Set external_id to make a write idempotent.' },
+  { key: 'website-leads',     label: 'Website Leads',        group: 'Sales',       table: 'website_leads',          pk: 'id', access: 'read', note: '"Book a Call" form submissions from tendwellcleaningco.com. Read-only here \u2014 writes go through POST /api/leads/intake, which also creates the CRM contact. booked_at is NULL for anyone who filled the form but never picked a time.' },
 
   // ─── Operations ─────────────────────────────────────────────────────────────
   { key: 'properties',        label: 'Properties',           group: 'Operations',  table: 'properties',             pk: 'id', access: 'rw', note: 'Includes access codes, AC filter size, bed sizes, and Wi-Fi (all property columns).' },
