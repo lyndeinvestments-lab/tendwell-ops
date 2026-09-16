@@ -275,7 +275,10 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.organizations TO authenticated;
 GRANT ALL ON public.organizations TO service_role;
 
 -- ─── CRM 360: count properties via contact_id OR shared organization ─────────
-CREATE OR REPLACE VIEW public.crm_client_360
+DROP VIEW IF EXISTS public.crm_attention CASCADE;
+DROP VIEW IF EXISTS public.crm_client_360 CASCADE;
+
+CREATE VIEW public.crm_client_360
 WITH (security_invoker = true) AS
 SELECT
   c.id,
