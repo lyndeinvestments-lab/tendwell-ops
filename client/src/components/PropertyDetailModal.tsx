@@ -15,7 +15,7 @@ import { useOrganizations } from '@/hooks/use-organizations'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
 import { useAppSettings } from '@/hooks/use-app-settings'
-import { calcLinenRecurringPerClean, linenCostsFromSettings } from '@/lib/linen-onboarding'
+import { calcLinenRecurringPerClean, linenCostsFromSettings, suggestedLinenFee, DEFAULT_LINEN_SETS } from '@/lib/linen-onboarding'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -774,6 +774,9 @@ function buildFormFromProperty(property: any): Record<string, any> {
     ce_charged: property.ce_charged ?? '',
     cleaner_pay: property.cleaner_pay ?? '',
     custom_deep_clean_income: property.custom_deep_clean_income ?? '',
+    linen_onboarding_fee: property.linen_onboarding_fee ?? '',
+    linen_onboarding_sets: property.linen_onboarding_sets ?? DEFAULT_LINEN_SETS,
+    linen_onboarding_comforters: !!property.linen_onboarding_comforters,
   }
   for (const k of LINEN_FIELD_KEYS) form[k] = property[k] ?? ''
   for (const k of ACCESS_FIELD_KEYS) form[k] = property[k] || ''
@@ -935,6 +938,11 @@ export function PropertyDetailModal() {
           out.cleaner_pay = src.cleaner_pay !== '' ? parseFloat(String(src.cleaner_pay)) : null
           // NULL restores the trigger-derived 3x CE default for deep_clean_3x_ce.
           out.custom_deep_clean_income = src.custom_deep_clean_income !== '' ? parseFloat(String(src.custom_deep_clean_income)) : null
+          // NULL means "quote the suggested figure" (computed live); an explicit
+          // 0 is a deliberately waived fee, so the two must stay distinct.
+          out.linen_onboarding_fee = src.linen_onboarding_fee !== '' ? parseFloat(String(src.linen_onboarding_fee)) : null
+          out.linen_onboarding_sets = Math.max(1, parseInt(String(src.linen_onboarding_sets)) || DEFAULT_LINEN_SETS)
+          out.linen_onboarding_comforters = !!src.linen_onboarding_comforters
         }
         if (canEditAccess) {
           for (const k of ACCESS_FIELD_KEYS) out[k] = src[k] || null
@@ -2165,6 +2173,85 @@ export function PropertyDetailModal() {
                     </label>
                   )
                 })()}
+
+                {/* One-time onboarding linen fee. Suggested figure is computed
+                    live from the bed/bath mix, so it tracks edits; only the
+                    operator's inputs are stored on the property. */}
+                {property.linen_program && (() => {
+                  const editing = isEditing && canEditFinancials
+                  const src = editing ? { ...property, ...form } : property
+                  const sets = Math.max(1, parseInt(String(editing ? form.linen_onboarding_sets : property.linen_onboarding_sets)) || DEFAULT_LINEN_SETS)
+                  const comforters = editing ? !!form.linen_onboarding_comforters : !!property.linen_onboarding_comforters
+                  const override = editing ? form.linen_onboarding_fee : (property.linen_onboarding_fee ?? '')
+                  const fee = suggestedLinenFee(linenCosts, src, { sets, comforters, override })
+                  const money = (n: number) => `$${n.toFixed(2)}`
+                  const setSets = (next: number) => setForm(f => ({ ...f, linen_onboarding_sets: Math.max(1, next) }))
+                  return (
+                    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2 text-xs" data-testid="modal-linen-onboarding">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground">
+                          {t('financials.linenOnboarding.title')}
+                        </span>
+                        {editing ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground">{t('financials.linenOnboarding.sets')}</span>
+                            <button type="button" onClick={() => setSets(sets - 1)} disabled={sets <= 1}
+                              className="h-6 w-6 rounded border border-input leading-none disabled:opacity-40"
+                              aria-label={t('financials.linenOnboarding.setsFewer')} data-testid="modal-linen-sets-dec">-</button>
+                            <span className="w-5 text-center tabular-nums font-medium" data-testid="modal-linen-sets-value">{sets}</span>
+                            <button type="button" onClick={() => setSets(sets + 1)}
+                              className="h-6 w-6 rounded border border-input leading-none"
+                              aria-label={t('financials.linenOnboarding.setsMore')} data-testid="modal-linen-sets-inc">+</button>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.sets')}: <span className="tabular-nums font-medium text-foreground">{sets}</span></span>
+                        )}
+                      </div>
+
+                      {fee.beds > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.beds')}</span><span className="tabular-nums">{money(fee.beds)}</span></div>}
+                      {fee.baths > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.baths')}</span><span className="tabular-nums">{money(fee.baths)}</span></div>}
+                      {fee.comforters > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.comforters')}</span><span className="tabular-nums">{money(fee.comforters)}</span></div>}
+                      {fee.poolTowels > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.poolTowels')}</span><span className="tabular-nums">{money(fee.poolTowels)}</span></div>}
+                      {fee.markup > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.markup', { pct: linenCosts.markupPct })}</span><span className="tabular-nums">{money(fee.markup)}</span></div>}
+
+                      {editing && (
+                        <label className="flex items-start gap-2 cursor-pointer select-none pt-0.5">
+                          <input type="checkbox" checked={comforters}
+                            onChange={e => setForm(f => ({ ...f, linen_onboarding_comforters: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 rounded border-input" data-testid="modal-input-linen_comforters" />
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.comfortersToggle')}</span>
+                        </label>
+                      )}
+
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <span className="text-muted-foreground">{t('financials.linenOnboarding.suggested')}</span>
+                        <span className="tabular-nums font-medium" data-testid="modal-linen-suggested">{money(fee.suggested)}</span>
+                      </div>
+
+                      {editing && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.override')}</span>
+                          <Input type="number" step="0.01" min="0" className="h-8 w-32 text-right"
+                            placeholder={fee.suggested.toFixed(2)}
+                            value={form.linen_onboarding_fee ?? ''}
+                            onChange={e => setForm(f => ({ ...f, linen_onboarding_fee: e.target.value }))}
+                            data-testid="modal-input-linen_onboarding_fee" />
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <span className="font-semibold">{t('financials.linenOnboarding.fee')}</span>
+                        <span className="text-sm font-bold tabular-nums" data-testid="modal-linen-effective">{money(fee.effective)}</span>
+                      </div>
+                      <p className="text-muted-foreground text-[10px]">
+                        {fee.isOverridden
+                          ? t('financials.linenOnboarding.overrideNote', { amount: money(fee.suggested) })
+                          : t('financials.linenOnboarding.oneTimeNote')}
+                      </p>
+                    </div>
+                  )
+                })()}
+
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
                     <span className="text-xs text-muted-foreground block">{t('financials.fields.dcCost')}</span>
