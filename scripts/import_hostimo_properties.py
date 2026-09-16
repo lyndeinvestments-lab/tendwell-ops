@@ -108,10 +108,22 @@ BED_OVERRIDES = {
     35: dict(king=2, queen=0, full=1, twin=4),
     # "2 King / 3 Full / 1 Twin"
     38: dict(king=2, queen=0, full=3, twin=1),
+    # "2 King / 1 Queen / 2 Sleeper Sofas (loft/downstairs)" is what the sheet
+    # says, but the property is 2 kings + 4 twins + a twin daybed with a twin
+    # trundle (Jordan, 2026-09-16). Per the sheet's own convention - 1344
+    # Paradise Lane records "4 Twin / 1 Twin (daybed with Twin trundle)" as 6
+    # twins - the daybed and its trundle are two twin sleeping surfaces. Sleep
+    # count lands on 10 either way, matching the Sleeps column.
+    19: dict(king=2, queen=0, full=0, twin=6),
     # "5 kings / 5 twins / 2 sleeper" - sleepers missing from Queens.
     46: dict(king=5, queen=2, full=0, twin=5),
     # "4 Kings / 2 sleepers" - every bed column is blank on this row.
     47: dict(king=4, queen=2, full=0, twin=0),
+}
+
+# Rows whose Linen Count text itself is wrong, not just mis-columned.
+BED_TEXT_OVERRIDES = {
+    19: "2 King / 4 Twin / 1 Twin daybed with Twin trundle",
 }
 
 # Only where the sheet itself evidences one (see module docstring).
@@ -253,7 +265,7 @@ def build(rows):
             door_code=door_code or None,
             other_codes=other_codes or None,
             wifi_info=normalize_wifi(r["Wifi Info"]),
-            bed_sizes_text=(r["Linen Count"] or "").strip() or None,
+            bed_sizes_text=BED_TEXT_OVERRIDES.get(idx, (r["Linen Count"] or "").strip()) or None,
             first_clean_date=parse_start_date(r["Start Date"]),
             notes=property_notes(r, idx, listing, icals[1:]),
             **par,
