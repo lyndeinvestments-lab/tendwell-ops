@@ -113,9 +113,9 @@ export const propertyModalEs: typeof propertyModalEn = {
     linenProgram: {
       label: 'Programa de Ropa de Cama',
       enabledPrefix: 'Agrega',
-      enabledSuffix: '/limpieza ({{beds}} camas × $300 / 12 / 4)',
+      enabledSuffix: '/limpieza ({{beds}} camas, 2 juegos de reemplazo al año / 12 / 4)',
       disabledPrefix: 'Agrega',
-      disabledSuffix: '/limpieza cuando esté activado ({{bedsPhrase}} × $300 / 12 / 4)',
+      disabledSuffix: '/limpieza cuando esté activado ({{bedsPhrase}}, 2 juegos de reemplazo al año / 12 / 4)',
       bedsPhraseSet: '{{beds}} camas',
       bedsPhraseUnset: 'definir camas', // REVIEW: "set beds" - no bed count entered yet
     },

@@ -29,9 +29,8 @@ import { calcConsumables as calcConsumablesFromCosts, AMENITY_SETTINGS_KEYS, DEF
 import {
   calcLinenRecurringPerClean,
   suggestedLinenFee,
-  DEFAULT_LINEN_COSTS,
+  linenCostsFromSettings,
   DEFAULT_LINEN_SETS,
-  LINEN_SETTINGS_KEYS,
   type LinenCosts,
 } from '@/lib/linen-onboarding'
 import { LaundryFormulaTooltip, ConsumablesFormulaTooltip } from '@/components/FormulaTooltip'
@@ -219,20 +218,7 @@ export default function QuoteSheetPage() {
     trashBag: getNumber(AMENITY_SETTINGS_KEYS.trashBag, DEFAULT_AMENITY_COSTS.trashBag),
     hotTub: getNumber(AMENITY_SETTINGS_KEYS.hotTub, DEFAULT_AMENITY_COSTS.hotTub),
   }
-  const linenCosts: LinenCosts = {
-    setKing: getNumber(LINEN_SETTINGS_KEYS.setKing, DEFAULT_LINEN_COSTS.setKing),
-    setQueen: getNumber(LINEN_SETTINGS_KEYS.setQueen, DEFAULT_LINEN_COSTS.setQueen),
-    setTwin: getNumber(LINEN_SETTINGS_KEYS.setTwin, DEFAULT_LINEN_COSTS.setTwin),
-    setFullBath: getNumber(LINEN_SETTINGS_KEYS.setFullBath, DEFAULT_LINEN_COSTS.setFullBath),
-    setHalfBath: getNumber(LINEN_SETTINGS_KEYS.setHalfBath, DEFAULT_LINEN_COSTS.setHalfBath),
-    duvetKing: getNumber(LINEN_SETTINGS_KEYS.duvetKing, DEFAULT_LINEN_COSTS.duvetKing),
-    duvetQueen: getNumber(LINEN_SETTINGS_KEYS.duvetQueen, DEFAULT_LINEN_COSTS.duvetQueen),
-    duvetTwin: getNumber(LINEN_SETTINGS_KEYS.duvetTwin, DEFAULT_LINEN_COSTS.duvetTwin),
-    poolTowelPerGuest: getNumber(LINEN_SETTINGS_KEYS.poolTowelPerGuest, DEFAULT_LINEN_COSTS.poolTowelPerGuest),
-    markupPct: getNumber(LINEN_SETTINGS_KEYS.markupPct, DEFAULT_LINEN_COSTS.markupPct),
-    recurringSetsPerYear: getNumber(LINEN_SETTINGS_KEYS.recurringSetsPerYear, DEFAULT_LINEN_COSTS.recurringSetsPerYear),
-    blendedPerSet: getNumber(LINEN_SETTINGS_KEYS.blendedPerSet, DEFAULT_LINEN_COSTS.blendedPerSet),
-  }
+  const linenCosts: LinenCosts = linenCostsFromSettings(getNumber)
   const [addOpen, setAddOpen] = useState(false)
   const [converting, setConverting] = useState<any>(null)
   // "Send quote to owner" flow: pick a provisioned owner to review the quote.

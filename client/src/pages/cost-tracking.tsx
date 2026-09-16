@@ -20,6 +20,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { calcLinenRecurringPerClean, linenCostsFromSettings } from '@/lib/linen-onboarding'
 import { ArrowUpDown, Search, Download, X, ChevronRight, ChevronDown, DollarSign as DollarSignIcon, RotateCcw, BedDouble, Lock, Wifi, Wind, ExternalLink, Trash2, TrendingUp, Wallet, Percent } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
 import { PageContainer } from '@/components/PageContainer'
@@ -680,6 +681,7 @@ export default function CostTrackingPage() {
   const inspectionCost = getNumber('cost_inspection', 15)
   const trashCost = getNumber('cost_trash', 5)
   const breakEvenMargin = getNumber('break_even_target_margin', 0.20)
+  const linenCosts = linenCostsFromSettings(getNumber)
 
   const { activeAlerts } = useAlerts()
   const alertByPropertyId = useMemo(() => {
@@ -867,7 +869,7 @@ export default function CostTrackingPage() {
       const laundry = Number(updated.est_laundry) || 0
       const consumables = Number(updated.est_consumables) || 0
       const linen = updated.linen_program
-        ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
+        ? calcLinenRecurringPerClean(linenCosts, updated)
         : 0
       const totalCost = pay + laundry + consumables + (Number(updated.inspection_cost ?? inspectionCost)) + trashCost + linen
       updated.total_estimated_cost = Math.round(totalCost * 100) / 100
@@ -902,7 +904,7 @@ export default function CostTrackingPage() {
           const laundry = Number(updated.est_laundry) || 0
           const consumables = Number(updated.est_consumables) || 0
           const linen = updated.linen_program
-            ? (Number(updated.number_of_beds) || 0) * 300 / 12 / 4
+            ? calcLinenRecurringPerClean(linenCosts, updated)
             : 0
           const totalCost = pay + laundry + consumables + (Number(updated.inspection_cost ?? inspectionCost)) + trashCost + linen
           updated.total_estimated_cost = Math.round(totalCost * 100) / 100

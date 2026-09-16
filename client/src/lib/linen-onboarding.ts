@@ -74,6 +74,30 @@ export const LINEN_SETTINGS_KEYS = {
   blendedPerSet: 'linen_blended_per_set',
 } as const
 
+/**
+ * Build the cost table from app_settings. Pass `getNumber` from
+ * useAppSettings(). Every surface that prices linens reads through this, so
+ * the quote sheet, the property modal and cost tracking cannot drift apart.
+ */
+export function linenCostsFromSettings(
+  getNumber: (key: string, fallback: number) => number
+): LinenCosts {
+  return {
+    setKing: getNumber(LINEN_SETTINGS_KEYS.setKing, DEFAULT_LINEN_COSTS.setKing),
+    setQueen: getNumber(LINEN_SETTINGS_KEYS.setQueen, DEFAULT_LINEN_COSTS.setQueen),
+    setTwin: getNumber(LINEN_SETTINGS_KEYS.setTwin, DEFAULT_LINEN_COSTS.setTwin),
+    setFullBath: getNumber(LINEN_SETTINGS_KEYS.setFullBath, DEFAULT_LINEN_COSTS.setFullBath),
+    setHalfBath: getNumber(LINEN_SETTINGS_KEYS.setHalfBath, DEFAULT_LINEN_COSTS.setHalfBath),
+    duvetKing: getNumber(LINEN_SETTINGS_KEYS.duvetKing, DEFAULT_LINEN_COSTS.duvetKing),
+    duvetQueen: getNumber(LINEN_SETTINGS_KEYS.duvetQueen, DEFAULT_LINEN_COSTS.duvetQueen),
+    duvetTwin: getNumber(LINEN_SETTINGS_KEYS.duvetTwin, DEFAULT_LINEN_COSTS.duvetTwin),
+    poolTowelPerGuest: getNumber(LINEN_SETTINGS_KEYS.poolTowelPerGuest, DEFAULT_LINEN_COSTS.poolTowelPerGuest),
+    markupPct: getNumber(LINEN_SETTINGS_KEYS.markupPct, DEFAULT_LINEN_COSTS.markupPct),
+    recurringSetsPerYear: getNumber(LINEN_SETTINGS_KEYS.recurringSetsPerYear, DEFAULT_LINEN_COSTS.recurringSetsPerYear),
+    blendedPerSet: getNumber(LINEN_SETTINGS_KEYS.blendedPerSet, DEFAULT_LINEN_COSTS.blendedPerSet),
+  }
+}
+
 /** The default onboarding par level: on the bed, in the wash, on the shelf. */
 export const DEFAULT_LINEN_SETS = 3
 

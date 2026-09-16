@@ -109,9 +109,9 @@ export const propertyModalEn = {
     linenProgram: {
       label: 'Linen Program',
       enabledPrefix: 'Adds',
-      enabledSuffix: '/clean ({{beds}} beds × $300 / 12 / 4)',
+      enabledSuffix: '/clean ({{beds}} beds, 2 replacement sets a year / 12 / 4)',
       disabledPrefix: 'Adds',
-      disabledSuffix: '/clean when enabled ({{bedsPhrase}} × $300 / 12 / 4)',
+      disabledSuffix: '/clean when enabled ({{bedsPhrase}}, 2 replacement sets a year / 12 / 4)',
       bedsPhraseSet: '{{beds}} beds',
       bedsPhraseUnset: 'set beds',
     },
