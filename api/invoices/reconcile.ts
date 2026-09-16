@@ -3,8 +3,8 @@ import { getServiceClient, reconcileRun, requireInvoicingBearer } from './_lib.j
 
 // POST /api/invoices/reconcile  Body: { run_id }
 // Re-runs the deterministic engine over a run's lines (e.g. after new aliases
-// were confirmed or rates were fixed). Rows already resolved by a human and
-// manually added rows are preserved; everything else is rebuilt.
+// were confirmed or rates were fixed). Rows already resolved or excluded by a
+// human and manually added rows are preserved; everything else is rebuilt.
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {

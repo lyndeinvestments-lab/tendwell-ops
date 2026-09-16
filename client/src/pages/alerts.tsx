@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
 import { breezewayFreshness, breezewayFreshnessDescription } from '@/lib/data-freshness'
+import { localISODate } from '@/lib/local-date'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -89,7 +90,7 @@ export function useAlerts() {
         .select('id, property_name, category, priority, due_date')
         .eq('issue_type', 'needs_attention')
         .neq('status', 'Completed')
-        .lte('due_date', new Date().toISOString().split('T')[0])
+        .lte('due_date', localISODate())
         .order('due_date', { ascending: true })
         .limit(50)
       if (error) return []
@@ -150,7 +151,7 @@ export function useAlerts() {
   const alerts = useMemo(() => {
     if (!properties) return []
     const result: Alert[] = []
-    const today = new Date().toISOString().split('T')[0]
+    const today = localISODate()
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 

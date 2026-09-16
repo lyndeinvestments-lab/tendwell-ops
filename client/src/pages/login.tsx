@@ -62,7 +62,7 @@ export default function LoginPage() {
   }
 
   const fieldClass =
-    'bg-white/80 border-[#E4D9C7] text-[#3D3225] placeholder:text-[#8A7860]/70 focus-visible:ring-[#C58A3D] focus-visible:border-[#C58A3D]'
+    'bg-white/80 border-[#E4D9C7] text-[#3D3225] placeholder:text-[#6B5A45]/80 focus-visible:ring-[#C58A3D] focus-visible:border-[#C58A3D]'
   const pineButtonClass =
     'w-full h-10 rounded-full bg-[#2F4A3C] text-[#FAF6EF] font-semibold tracking-wide hover:bg-[#22382D] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.2),0_6px_16px_-6px_rgba(61,50,37,0.45)] focus-visible:ring-[#C58A3D]'
   const outlineButtonClass =
@@ -76,12 +76,17 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-sm">
         {/* Brand mark */}
         <div className="flex flex-col items-center mb-8">
-          <img
-            src="/brand/tendwell-logo-black.png"
-            alt="Tendwell Cleaning Co."
-            className="w-60 max-w-full h-auto"
-          />
-          <p className="mt-3 text-xs uppercase tracking-[0.2em] text-[#8A7860]">{t('page.caption')}</p>
+          <picture>
+            <source srcSet="/brand/tendwell-logo-black-480.webp" type="image/webp" />
+            <img
+              src="/brand/tendwell-logo-black-480.png"
+              alt="Tendwell Cleaning Co."
+              width={480}
+              height={240}
+              className="w-60 max-w-full h-auto"
+            />
+          </picture>
+          <p className="mt-3 text-xs uppercase tracking-[0.2em] text-[#6B5A45]">{t('page.caption')}</p>
         </div>
 
         <div className="rounded-2xl border border-[#EDE3D3] bg-white/70 backdrop-blur-sm shadow-[0_8px_30px_rgba(61,50,37,0.10)] px-6 py-6">
@@ -105,7 +110,7 @@ export default function LoginPage() {
 
                 <div className="flex items-center gap-2">
                   <div className="h-px flex-1 bg-[#E4D9C7]" />
-                  <span className="text-2xs uppercase tracking-wider text-[#8A7860]">{t('page.or')}</span>
+                  <span className="text-2xs uppercase tracking-wider text-[#6B5A45]">{t('page.or')}</span>
                   <div className="h-px flex-1 bg-[#E4D9C7]" />
                 </div>
 
@@ -161,7 +166,7 @@ export default function LoginPage() {
               resetSent ? (
                 <div className="space-y-3 text-center">
                   <p className="text-sm font-medium text-[#3D3225]">{t('page.checkEmailTitle')}</p>
-                  <p className="text-xs text-[#8A7860]">
+                  <p className="text-xs text-[#6B5A45]">
                     {t('page.checkEmailBefore')} <span className="font-medium">{email}</span>{t('page.checkEmailAfter')}
                   </p>
                   <Button
@@ -198,7 +203,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => { setMode('signin'); setLocalError(null) }}
-                    className="text-xs text-[#8A7860] hover:text-[#3D3225] w-full text-center"
+                    className="text-xs text-[#6B5A45] hover:text-[#3D3225] w-full text-center"
                   >
                     {t('page.backToSignIn')}
                   </button>
@@ -207,12 +212,12 @@ export default function LoginPage() {
             )}
 
             {(authError || localError) && (
-              <p data-testid="text-login-error" className="text-sm text-red-700 text-center">
+              <p role="alert" data-testid="text-login-error" className="text-sm text-red-700 text-center">
                 {localError || authError}
               </p>
             )}
 
-            <p className="text-xs text-[#8A7860] text-center">
+            <p className="text-xs text-[#6B5A45] text-center">
               {t('page.restrictedAccess')}
             </p>
           </div>

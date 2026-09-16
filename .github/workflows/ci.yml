@@ -1,0 +1,27 @@
+name: ci
+
+# Typecheck + unit tests + production build. Catches regressions that the
+# typecheck-only workflow previously missed (logic bugs with green tsc).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly regression check — Mondays 13:00 UTC (~9am ET)
+    - cron: '0 13 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build

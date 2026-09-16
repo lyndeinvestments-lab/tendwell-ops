@@ -1224,9 +1224,9 @@ export function PropertyDetailModal() {
         changedBy: user?.label || (user as any)?.google_email || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
-      return toStage
+      return { toStage, warning: result.warning }
     },
-    onSuccess: (toStage) => {
+    onSuccess: ({ toStage, warning }) => {
       // executeStageTransition does not return the row, so optimistically
       // merge the known new stage into the detail cache (the stage badge reads
       // stage_id + the joined pipeline_stages). Avoids the read-after-write
@@ -1245,7 +1245,11 @@ export function PropertyDetailModal() {
       // dashboard counts/velocity, master list, pro-forma, revenue,
       // previous-properties (a move to Offboarded shows it there), etc.
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: t('toasts.stageUpdated') })
+      if (warning) {
+        toast({ title: t('toasts.stageUpdated'), description: warning, variant: 'destructive' })
+      } else {
+        toast({ title: t('toasts.stageUpdated') })
+      }
       setStagePopoverOpen(false)
     },
     onError: (err: any) => toast({ title: t('toasts.stageChangeFailed'), description: err?.message, variant: 'destructive' }),
