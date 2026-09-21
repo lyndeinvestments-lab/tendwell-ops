@@ -1,9 +1,7 @@
 name: typecheck
 
-# Locks in the day-20 win: the codebase reached 0 TS errors after 6 days of
-# triage following the typed-supabase codegen (PR #269). This workflow fails
-# any push / PR that would regress past zero, so the day-2-5 silent-bug class
-# stays caught at compile time forever.
+# Kept as a thin companion to ci.yml so PRs still get a known-good gate if
+# the newer workflow is awaiting first-run approval. Prefer ci.yml once green.
 
 on:
   push:
@@ -21,7 +19,4 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm run check
-      # Vite build doesn't typecheck (SWC transpilation), so verify it
-      # separately. Catches missing/broken imports, asset path issues,
-      # and any non-type build-time errors.
       - run: npm run build

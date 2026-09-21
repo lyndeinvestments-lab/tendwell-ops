@@ -24,6 +24,15 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   // Owner signed their service agreement (sent server-side from
   // api/agreements/sign.ts). Settings view = admin audience.
   agreement_signed: 'settings',
+  // A "Book a Call" form submission on tendwellcleaningco.com, sent the moment
+  // it lands from api/leads/intake.ts. Same audience as the CRM it creates.
+  web_lead_received: 'contacts',
+  // That lead then picked a time on Calendly.
+  web_lead_booked: 'contacts',
+  // An owner changed something in their portal, or signed in for the first
+  // time. Swept by api/cron/owner-activity.ts. Owner administration lives in
+  // Settings, so that is the audience.
+  owner_portal_activity: 'settings',
 }
 
 export const EVENT_PREF_FIELD: Record<string, string> = {
@@ -40,6 +49,11 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   contact_note_mention: 'notify_contact_note_mention',
   onboarding_intake_submitted: 'notify_onboarding_submitted',
   agreement_signed: 'notify_agreement_signed',
+  // Intake and booking share one toggle: someone who wants to hear about web
+  // leads wants to hear that the lead actually booked.
+  web_lead_received: 'notify_web_lead',
+  web_lead_booked: 'notify_web_lead',
+  owner_portal_activity: 'notify_owner_portal_activity',
 }
 
 export interface SupabaseClient {
@@ -158,6 +172,8 @@ export interface NotifPrefs {
   notify_agreement_signed: boolean
   notify_issue_overdue: boolean
   notify_feedback_unacknowledged: boolean
+  notify_web_lead: boolean
+  notify_owner_portal_activity: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
 }
 
@@ -181,6 +197,8 @@ export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   notify_agreement_signed: true,
   notify_issue_overdue: true,
   notify_feedback_unacknowledged: true,
+  notify_web_lead: true,
+  notify_owner_portal_activity: true,
   digest_frequency: 'instant',
 }
 
@@ -371,4 +389,60 @@ export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUr
     </td>
   </tr>
 </table></body></html>`
+}
+
+// Fan a server-initiated notification out to the staff who should get it.
+//
+// For events with no user session behind them — a webhook, a cron sweep, a
+// form submitted by a stranger on the marketing site. api/notify/send.ts is
+// the session-authenticated equivalent and deliberately refuses owners; this
+// helper is only ever reachable from server code holding the service role.
+//
+// Never throws: a notification that fails must not take down the thing it is
+// reporting on. The caller gets counts and the failure is written to
+// notification_log either way.
+export async function notifyStaff(sb: SupabaseClient, opts: {
+  eventType: string
+  subject: string
+  lines: string[]
+  quote?: string | null
+  ctaUrl?: string
+  ctaLabel?: string
+  meta?: Record<string, any>
+}): Promise<{ sent: number; failed: number; recipients: number }> {
+  try {
+    const [users, prefs] = await Promise.all([
+      getAllUsersWithViews(sb),
+      getAllPreferences(sb),
+    ])
+    const recipients = filterRecipients(users, prefs, opts.eventType)
+    if (recipients.length === 0) return { sent: 0, failed: 0, recipients: 0 }
+
+    const html = renderEmailLayout({
+      title: opts.subject,
+      bodyHtml: composeBodyHtml({ lines: opts.lines, quote: opts.quote ?? null }),
+      ctaUrl: validateCtaUrl(opts.ctaUrl) || undefined,
+      ctaLabel: opts.ctaLabel,
+    })
+
+    let sent = 0
+    let failed = 0
+    for (const u of recipients) {
+      const r = await sendEmail({ to: u.google_email, subject: opts.subject, html })
+      if (r.ok) sent++; else failed++
+      await logNotification(sb, {
+        recipient_email: u.google_email,
+        recipient_user_id: u.id,
+        event_type: opts.eventType,
+        subject: opts.subject,
+        status: r.ok ? 'sent' : 'failed',
+        error: r.error,
+        meta: opts.meta,
+      })
+    }
+    return { sent, failed, recipients: recipients.length }
+  } catch (err: any) {
+    console.error(`notifyStaff(${opts.eventType}) failed:`, err?.message || err)
+    return { sent: 0, failed: 0, recipients: 0 }
+  }
 }

@@ -371,8 +371,22 @@ export async function refreshBillingChannels(supabase: SupabaseClient, runId: st
 }
 
 // Run the engine over a run's raw lines and persist the classified output.
-// Rows a human already resolved (review_status='resolved') or added manually
-// (source='manual') are preserved untouched; everything else is rebuilt.
+// Rows a human already resolved (review_status='resolved'), excluded
+// (review_status/line_kind='excluded'), or added manually (source='manual')
+// are preserved untouched; everything else is rebuilt.
+export function shouldPreserveInvoiceLine(r: {
+  review_status?: string | null
+  source?: string | null
+  line_kind?: string | null
+}): boolean {
+  return (
+    r.review_status === 'resolved' ||
+    r.review_status === 'excluded' ||
+    r.line_kind === 'excluded' ||
+    r.source === 'manual'
+  )
+}
+
 export async function reconcileRun(
   supabase: SupabaseClient,
   runId: string,
@@ -388,8 +402,8 @@ export async function reconcileRun(
   }
 
   // Paged: a month-long run can carry >1000 lines once splits are added, and
-  // a truncated read here would silently drop preserved (resolved/manual)
-  // rows and skew computed_subtotal.
+  // a truncated read here would silently drop preserved (resolved/manual/
+  // excluded) rows and skew computed_subtotal.
   const rows = await fetchAllRows<Record<string, any>>(
     'invoice_lines',
     () => supabase
@@ -399,7 +413,7 @@ export async function reconcileRun(
       .order('line_no'),
     'line_no',
   )
-  const preserved = rows.filter(r => r.review_status === 'resolved' || r.source === 'manual')
+  const preserved = rows.filter(shouldPreserveInvoiceLine)
   const preservedLineNos = new Set(preserved.map(r => r.line_no))
   const rebuild = rows.filter(r => !preservedLineNos.has(r.line_no))
 

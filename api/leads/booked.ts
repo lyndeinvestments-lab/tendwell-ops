@@ -12,6 +12,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { authenticateApiKey, sbFetch } from '../issues/_lib.js'
+import { getSupabaseConfig, notifyStaff } from '../notify/_lib.js'
 import { rateLimit, clientIp } from './_lib.js'
 
 const REQUIRED_SCOPES = ['clients:edit']
@@ -54,6 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }),
       },
     )
+    // Only the caller that actually claimed the booking sends the email; a
+    // duplicated Calendly postMessage comes back already_booked and stays quiet.
+    if (result && !result.already_booked) {
+      await sendBookedEmail(leadId, result.contact_id ?? null)
+    }
     return res.status(200).json({ ok: true, already_booked: result?.already_booked ?? false })
   } catch (e) {
     console.error('crm_mark_web_lead_booked failed:', e)
@@ -63,6 +69,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (msg.includes('not found')) return res.status(404).json({ error: 'Lead not found' })
     return res.status(500).json({ error: 'Could not record the booking' })
   }
+}
+
+// Short follow-on to the intake email. The intake one cannot say whether they
+// booked — Calendly loads after it is sent — so this is the other half of the
+// answer, and the reason the booked flag exists at all.
+async function sendBookedEmail(leadId: string, contactId: string | null): Promise<void> {
+  let sb
+  try {
+    sb = getSupabaseConfig()
+  } catch {
+    return
+  }
+
+  let who = 'A website lead'
+  try {
+    const rows = await sbFetch<Array<{ full_name: string }>>(
+      `website_leads?id=eq.${encodeURIComponent(leadId)}&select=full_name`,
+    )
+    if (rows?.[0]?.full_name) who = rows[0].full_name
+  } catch {
+    // Name lookup is a nicety; send the email without it rather than not at all.
+  }
+
+  await notifyStaff(sb, {
+    eventType: 'web_lead_booked',
+    subject: `${who} booked a 5-Star Audit call`,
+    lines: [
+      `<strong>${who}</strong> picked a time on Calendly after filling out the website form.`,
+      'The call is on the Calendly calendar; their answers are on their client card.',
+    ],
+    ctaUrl: 'https://app.tendwellcleaningco.com/contacts',
+    ctaLabel: 'Open Clients',
+    meta: { lead_id: leadId, contact_id: contactId },
+  })
 }
 
 function safeJson(s: string): unknown {

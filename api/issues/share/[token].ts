@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createHash } from 'node:crypto'
 import Anthropic from '@anthropic-ai/sdk'
+import { isAllowedIssuePhotoUrl } from './_photo-url.js'
 
 // Public, token-gated access to a single cleaning issue for the cleaner share
 // link (/issue/:token). No login or API key — the unguessable share_token in
@@ -217,13 +218,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (body.action === 'photo') {
         const photo_url = String(body.photo_url || '')
         if (!photo_url) return res.status(400).json({ error: 'No photo' })
-        // This endpoint is unauthenticated (cleaner share link). The stored
-        // photo_url is later rendered as <img src> and <a href> in the Ops
-        // dashboard, so reject anything that isn't an https Supabase Storage
-        // URL to prevent stored javascript:/data: injection.
-        let parsed: URL
-        try { parsed = new URL(photo_url) } catch { return res.status(400).json({ error: 'Invalid photo URL' }) }
-        if (parsed.protocol !== 'https:' || !parsed.host.toLowerCase().endsWith('.supabase.co')) {
+        // Unauthenticated cleaner share link. photo_url is later rendered as
+        // <img>/<a> in Ops — allow only this project's Storage public object
+        // URLs for the issue-photos bucket (not any *.supabase.co host).
+        if (!isAllowedIssuePhotoUrl(photo_url)) {
           return res.status(400).json({ error: 'Invalid photo URL' })
         }
         await sb('issue_photos', { method: 'POST', body: JSON.stringify({ issue_id: issue.id, photo_url, photo_path: body.photo_path || null, phase: body.phase === 'completion' ? 'completion' : 'initial', uploaded_by: author, author_type: 'cleaner' }) })

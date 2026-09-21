@@ -5,6 +5,7 @@ import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth, canEditView } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
+import { localISODate } from '@/lib/local-date'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -172,7 +173,7 @@ export default function InspectionsPage() {
   // Summary-strip counts — computed from already-loaded rows only (no new query)
   const summary = useMemo(() => {
     if (!properties) return { total: 0, verified: 0, needs: 0, overdue: 0 }
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localISODate()
     let verified = 0, needs = 0, overdue = 0
     for (const p of properties as any[]) {
       if (getStatus(p) === 'verified') verified++
@@ -665,7 +666,7 @@ export default function InspectionsPage() {
                 const v = verificationMap[String(p.id)]
                 const daysSince = getDaysSince(p)
                 const isSelected = selected.has(p.id)
-                const dueOverdue = v?.due_date && v.due_date < new Date().toISOString().slice(0,10)
+                const dueOverdue = v?.due_date && v.due_date < localISODate()
                 return (
                   <tr
                     key={p.id}

@@ -34,8 +34,10 @@ import {
 } from 'lucide-react'
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
-  downloadExport, flagLabel, invoicesApi, propertyOf, serviceTypeFromTaskTitle, vendorNameOf,
-  type BillingChannel, type ExportFormat, type InvoiceLine, type InvoiceRun,
+  InvoiceApiError,
+  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf,
+  serviceTypeFromTaskTitle, vendorNameOf,
+  type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
 
@@ -654,13 +656,32 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     onError: (e: unknown) => toast({ title: 'Reconcile failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
+  // Lines the server named as blocking the last approve attempt. A toast
+  // scrolls away and a count alone ("2 billable lines have no billing
+  // channel") is unfindable in a 300-row table, so these get pinned to the
+  // top of the run until they're dealt with.
+  const [approveBlockers, setApproveBlockers] = useState<BlockingLine[] | null>(null)
+  const [approveError, setApproveError] = useState<string | null>(null)
+
   const approveMutation = useMutation({
     mutationFn: async () => invoicesApi<{ ok: boolean; status: string }>('approve', { method: 'POST', body: { run_id: runId } }),
     onSuccess: (r) => {
+      setApproveBlockers(null)
+      setApproveError(null)
       toast({ title: 'Invoice approved', description: `Status: ${r.status}` })
       invalidate()
     },
-    onError: (e: unknown) => toast({ title: 'Cannot approve', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
+    onError: (e: unknown) => {
+      const message = e instanceof Error ? e.message : String(e)
+      const blockers = e instanceof InvoiceApiError && Array.isArray(e.body?.blocking_lines)
+        ? (e.body.blocking_lines as BlockingLine[])
+        : null
+      setApproveError(message)
+      setApproveBlockers(blockers)
+      // Jump straight to the offending rows rather than making the user hunt.
+      if (blockers?.length) setLineFilter('issues')
+      toast({ title: 'Cannot approve', description: message, variant: 'destructive' })
+    },
   })
 
   const excludeMutation = useGuardedMutation<void, Error, InvoiceLine>('invoicing', {
@@ -669,6 +690,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         .from('invoice_lines')
         .update({
           review_status: 'excluded',
+          line_kind: 'excluded',
           resolved_by: userLabel,
           resolved_at: new Date().toISOString(),
         })
@@ -727,18 +749,40 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // The dialog is for lines that need CHANGES. A line whose engine result is
   // already right (or that a human has eyeballed) just needs "yes, reviewed" —
   // one click per row, or one confirmed click for everything left.
-  const [lineFilter, setLineFilter] = useState<'all' | 'needs_review' | 'resolved' | 'ok'>('all')
+  const [lineFilter, setLineFilter] = useState<'all' | 'issues' | 'needs_review' | 'resolved' | 'ok'>('all')
   const [confirmAcceptAll, setConfirmAcceptAll] = useState(false)
+  // Anything actually wrong with a line, independent of its review_status —
+  // see lineIssues(). This is what makes a blocker findable after someone has
+  // marked it resolved without fixing it.
+  const issueLines = useMemo(() => lines.filter(hasIssues), [lines])
   const counts = useMemo(() => ({
     all: lines.length,
+    issues: issueLines.length,
     needs_review: lines.filter(l => l.review_status === 'needs_review').length,
     resolved: lines.filter(l => l.review_status === 'resolved').length,
     ok: lines.filter(l => l.review_status === 'ok').length,
-  }), [lines])
+  }), [lines, issueLines])
   const filteredLines = useMemo(
-    () => (lineFilter === 'all' ? lines : lines.filter(l => l.review_status === lineFilter)),
-    [lines, lineFilter],
+    () => (lineFilter === 'all'
+      ? lines
+      : lineFilter === 'issues'
+        ? issueLines
+        : lines.filter(l => l.review_status === lineFilter)),
+    [lines, lineFilter, issueLines],
   )
+
+  // Date-header blocks the engine judged mis-dated, collapsed to one banner
+  // per stated date instead of one message on each of ~69 lines.
+  const suspectDateBlocks = useMemo(() => {
+    const by = new Map<string, { date: string; count: number; note: string | null }>()
+    for (const l of lines) {
+      if (!(l.flags ?? []).includes('suspect_service_date') || !l.raw_date_mentioned) continue
+      const e = by.get(l.raw_date_mentioned)
+      if (e) e.count += 1
+      else by.set(l.raw_date_mentioned, { date: l.raw_date_mentioned, count: 1, note: l.engine_note })
+    }
+    return Array.from(by.values()).sort((a, b) => a.date.localeCompare(b.date))
+  }, [lines])
 
   const acceptMutation = useGuardedMutation<void, Error, InvoiceLine>('invoicing', {
     mutationFn: async (line: InvoiceLine) => {
@@ -979,10 +1023,51 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         <EmptyState icon={Receipt} title="No lines" description="This run has no invoice lines." />
       ) : (
         <>
+          {/* Anything wrong rises to the top of the run, before the table. */}
+          {approveError && (
+            <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3" data-testid="approve-blockers">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 text-destructive shrink-0" />
+                <div className="min-w-0 space-y-1.5">
+                  <p className="text-sm font-medium text-destructive">Cannot approve</p>
+                  <p className="text-sm text-foreground/90">{approveError}</p>
+                  {!!approveBlockers?.length && (
+                    <ul className="text-sm space-y-0.5">
+                      {approveBlockers.map(b => (
+                        <li key={b.line_no} className="tabular-nums">
+                          <span className="font-medium">Line {b.line_no}</span>
+                          {b.raw_property_text ? ` — ${b.raw_property_text}` : ''}
+                          {b.raw_amount != null ? ` (${fmtMoney(Number(b.raw_amount))})` : ''}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <Button size="sm" variant="outline" className="h-7" onClick={() => { setApproveError(null); setApproveBlockers(null) }}>
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {suspectDateBlocks.map(b => (
+            <div key={b.date} className="rounded-2xl border border-warning/40 bg-warning/10 p-3" data-testid={`suspect-date-${b.date}`}>
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 text-warning shrink-0" />
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium">
+                    {b.count} line{b.count === 1 ? '' : 's'} dated {b.date} may carry the wrong service date
+                  </p>
+                  {b.note && <p className="text-sm text-muted-foreground">{b.note}</p>}
+                </div>
+              </div>
+            </div>
+          ))}
+
           {/* Review fast path: filter to the queue, accept per-row or all at once */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1">
-              {([['all', 'All'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK']] as const).map(([id, label]) => (
+              {([['all', 'All'], ['issues', 'Issues'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK']] as const).map(([id, label]) => (
                 <Button
                   key={id}
                   size="sm"
@@ -992,7 +1077,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                   data-testid={`filter-lines-${id}`}
                 >
                   {label}
-                  <span className={cn('ml-1.5 text-2xs tabular-nums', id === 'needs_review' && counts.needs_review > 0 ? 'text-warning font-semibold' : 'text-muted-foreground')}>
+                  <span className={cn(
+                    'ml-1.5 text-2xs tabular-nums',
+                    id === 'issues' && counts.issues > 0 ? 'text-destructive font-semibold'
+                      : id === 'needs_review' && counts.needs_review > 0 ? 'text-warning font-semibold'
+                      : 'text-muted-foreground',
+                  )}>
                     {counts[id]}
                   </span>
                 </Button>
@@ -1138,10 +1228,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                             ))}
                             {/* The engine's plain-English "what's wrong" — a badge
                                 alone ("Unexplained discrepancy") forces the reviewer
-                                to know every property's rate by heart. */}
-                            {line.engine_note && line.review_status === 'needs_review' && (
+                                to know every property's rate by heart.
+                                Shown whenever the line still has an issue, NOT only
+                                while it says needs_review: marking a line resolved
+                                without fixing it used to hide this explanation while
+                                the line went on blocking Approve. */}
+                            {line.engine_note && (line.review_status === 'needs_review' || hasIssues(line)) && (
                               <p className="w-full text-2xs text-muted-foreground">{line.engine_note}</p>
                             )}
+                            {lineIssues(line)
+                              .filter(msg => msg !== 'Needs review')
+                              .map(msg => (
+                                <p key={msg} className="w-full text-2xs text-destructive">Blocks approval: {msg}</p>
+                              ))}
                           </div>
                         </td>
                         <td className="px-2 py-2 text-right">
@@ -1219,9 +1318,14 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         {line.flags.map(f => <StatusBadge key={f} tone="warning" className="text-2xs">{flagLabel(f)}</StatusBadge>)}
                       </div>
                     )}
-                    {line.engine_note && line.review_status === 'needs_review' && (
+                    {line.engine_note && (line.review_status === 'needs_review' || hasIssues(line)) && (
                       <p className="text-2xs text-muted-foreground">{line.engine_note}</p>
                     )}
+                    {lineIssues(line)
+                      .filter(msg => msg !== 'Needs review')
+                      .map(msg => (
+                        <p key={msg} className="text-2xs text-destructive">Blocks approval: {msg}</p>
+                      ))}
                     <div className="flex items-center gap-2 pt-1">
                       <Button size="sm" variant="outline" className="h-7 flex-1" onClick={() => onReview(line)}>
                         <Pencil className="w-3.5 h-3.5 mr-1.5" /> Review
@@ -1317,7 +1421,7 @@ function AddLineDialog({ runId, nextLineNo, userLabel, onClose, onSaved }: {
       })
       if (error) throw error
       // Refresh the run's computed subtotal / status with the new line in it.
-      await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } }).catch(() => {})
+      await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } })
     },
     onSuccess: () => {
       toast({ title: 'Line added' })
@@ -1700,9 +1804,10 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
 
       // An edited invoiced amount changes the run's computed subtotal — the
       // penny gate must see it, and only reconcile recomputes it (resolved
-      // rows are preserved, so this is safe).
+      // rows are preserved, so this is safe). Surface failures so reviewers
+      // don't think totals refreshed when they didn't.
       if (invoicedChanged) {
-        await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } }).catch(() => {})
+        await invoicesApi('reconcile', { method: 'POST', body: { run_id: runId } })
       }
 
       // Remember the channel on the client so the next invoice routes itself

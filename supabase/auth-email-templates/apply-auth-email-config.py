@@ -34,6 +34,15 @@ SMTP_HOST = "smtp.resend.com"
 SMTP_PORT = "465"
 SMTP_USER = "resend"
 
+# How long an emailed link (password recovery, magic link, signup confirm) stays
+# valid, in seconds. Supabase's default is 3600 (1 hour), which is far too short
+# for this audience: an owner gets a reset email from staff during the workday
+# and opens it that evening. On 2026-09-16 Kristy Horn's link was issued at
+# 21:07 UTC and clicked at 00:45 UTC -- 3h38m later -- so GoTrue answered
+# "email link has expired" and the portal had nothing to offer her. 86400 (24h)
+# is the maximum Supabase accepts.
+MAILER_OTP_EXP = 86400
+
 TEMPLATES = {
     # management-api field stem -> (html file, subject)
     "recovery": ("reset-password.html", "Reset your Tendwell password"),
@@ -89,6 +98,7 @@ def main() -> None:
         "smtp_port": SMTP_PORT,
         "smtp_user": SMTP_USER,
         "smtp_pass": resend_key,
+        "mailer_otp_exp": MAILER_OTP_EXP,
     }
     for stem, (filename, subject) in TEMPLATES.items():
         path = os.path.join(HERE, filename)
@@ -104,7 +114,8 @@ def main() -> None:
     before = request("GET", API, token)
     print(f"Project {PROJECT_REF} auth config fetched.")
     print(f"  before: smtp_host={before.get('smtp_host') or '(built-in mailer)'} "
-          f"sender={before.get('smtp_admin_email') or '-'}")
+          f"sender={before.get('smtp_admin_email') or '-'} "
+          f"mailer_otp_exp={before.get('mailer_otp_exp') or '-'}")
 
     # 3. Apply.
     request("PATCH", API, token, payload)
@@ -119,6 +130,7 @@ def main() -> None:
         "smtp_user": SMTP_USER,
         "smtp_admin_email": SENDER_EMAIL,
         "smtp_sender_name": SENDER_NAME,
+        "mailer_otp_exp": str(MAILER_OTP_EXP),
     }
     for key, expected in checks.items():
         actual = str(after.get(key) or "")

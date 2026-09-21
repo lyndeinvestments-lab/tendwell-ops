@@ -34,6 +34,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
+import { localISODate } from '@/lib/local-date'
 import { slugify } from '@/lib/issues'
 
 // Kanban-optimised collision: pointer-within first, fall back to closestCenter.
@@ -520,8 +521,9 @@ export default function PipelinePage() {
         changedBy: user?.label || '',
       })
       if (!result.ok) throw new Error(result.error)
+      return result
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (result, variables) => {
       const toStage = stages?.find((s: any) => s.id === variables.stageId)
       // Stage transitions touch every property-derived cache (pipeline,
       // master list, all dashboard aggregates, pro-forma, revenue,
@@ -537,12 +539,16 @@ export default function PipelinePage() {
       qc.invalidateQueries({ queryKey: ['/supabase/activity-edit-log'] })
       qc.invalidateQueries({ queryKey: ['/supabase/tasks'] })
 
+      if (result.warning) {
+        toast({ title: t('toasts.movePartial'), description: result.warning, variant: 'destructive' })
+      }
+
       if (toStage?.name === 'Onboarding') {
         const prop = displayProperties?.find((p: any) => p.id === variables.propId)
         if (prop && !prop.follow_up_date) {
           const sevenDaysFromNow = new Date()
           sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7)
-          updateFollowUpDate({ propId: variables.propId, date: sevenDaysFromNow.toISOString().split('T')[0] })
+          updateFollowUpDate({ propId: variables.propId, date: localISODate(sevenDaysFromNow) })
         }
       }
       setTransition(null)

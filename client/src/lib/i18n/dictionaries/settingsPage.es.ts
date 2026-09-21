@@ -70,6 +70,9 @@ export const settingsPageEs: typeof settingsPageEn = {
     amenityHeading: 'Costos de Amenidades',
     amenityDesc: 'Costos de suministros por unidad usados para calcular los Consumibles Estimados en cada propiedad',
     amenityFormula: 'Fórmula: (Baños completos + Medios baños) × (Baño + Papel higiénico) + Cocinas × Cocina + Camas × Bolsa de basura + Jacuzzi',
+    linenHeading: 'Costos de Ropa de Cama',
+    linenDesc: 'Costos unitarios contratados de Dzee. Determinan la cuota inicial de ropa de cama y el costo recurrente del programa por limpieza.',
+    linenFormula: 'Inicial: juegos × (camas por tamaño + baños por tipo), más rellenos por cama y toallas de piscina por huésped, más margen. Recurrente: juegos de reemplazo al año × costo por juego de cada cama / 12 / 4. Las camas sin tamaño registrado se cobran como king, para que una mezcla desconocida nunca quede por debajo.',
     profitHeading: 'Niveles de Ganancia',
     profitDesc: 'Umbrales para las insignias de % de ganancia verde/amarillo/rojo en Pipeline, Seguimiento de Costos y Panel Principal. El margen objetivo de punto de equilibrio activa el indicador de punto de equilibrio en Seguimiento de Costos.',
     acHeading: 'Calendario de Filtros de A/C',
@@ -375,6 +378,8 @@ export const settingsPageEs: typeof settingsPageEn = {
       notify_agreement_signed: 'Contrato firmado por el propietario',
       notify_issue_overdue: 'Incidencias vencidas (resumen diario)',
       notify_feedback_unacknowledged: 'Comentarios de huéspedes sin confirmar (resumen diario)',
+      notify_web_lead: 'Nuevo contacto del sitio web',
+      notify_owner_portal_activity: 'Actividad en el portal del propietario',
     },
   },
   integrations: {

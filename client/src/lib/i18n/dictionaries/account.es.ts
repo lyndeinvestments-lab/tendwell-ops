@@ -63,5 +63,7 @@ export const accountEs: typeof accountEn = {
     notify_agreement_signed: 'Contrato firmado por el propietario',
     notify_issue_overdue: 'Incidencias vencidas (resumen diario)',
     notify_feedback_unacknowledged: 'Comentarios de huéspedes sin confirmar (resumen diario)',
+    notify_web_lead: 'Nuevo contacto del sitio web',
+    notify_owner_portal_activity: 'Actividad en el portal del propietario',
   },
 }

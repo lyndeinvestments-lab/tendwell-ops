@@ -11,9 +11,11 @@ import { cleanerMinForBedrooms } from '@/lib/cleaner-pay'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { useOrganizations } from '@/hooks/use-organizations'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useToast } from '@/hooks/use-toast'
 import { useAppSettings } from '@/hooks/use-app-settings'
+import { calcLinenRecurringPerClean, linenCostsFromSettings, suggestedLinenFee, DEFAULT_LINEN_SETS } from '@/lib/linen-onboarding'
 import { useLocation } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -595,6 +597,8 @@ function SuppliesTab({ propertyId }: { propertyId: string }) {
 
 // ── Financials Enhancement: Profit History + Per-property breakdown ──
 function FinancialsEnhancement({ property, enabled = true }: { property: any; enabled?: boolean }) {
+  const { getNumber: getLinenNumber } = useAppSettings()
+  const linenCosts = linenCostsFromSettings(getLinenNumber)
   const { t } = useLocale('propertyModal')
   const { format } = useDateFormat()
   const { data: editHistory } = useQuery({
@@ -634,7 +638,7 @@ function FinancialsEnhancement({ property, enabled = true }: { property: any; en
   const consumables = Number(property.est_consumables || 0)
   const inspection = (property as any).exempt_from_inspections ? 0 : Number(property.inspection_cost ?? 15)
   const trash = Number(property.trash_cost ?? 5)
-  const linenCost = property.linen_program ? (Number(property.number_of_beds || 0) * 300) / 12 / 4 : 0
+  const linenCost = property.linen_program ? calcLinenRecurringPerClean(linenCosts, property) : 0
   const totalCost = pay + laundry + consumables + inspection + trash + linenCost
   const profit = ce - totalCost
   const profitPct = ce > 0 ? (profit / ce) * 100 : 0
@@ -756,6 +760,7 @@ function buildPropertyCopyText(property: any, includeFinancials: boolean, autoCo
 function buildFormFromProperty(property: any): Record<string, any> {
   const form: Record<string, any> = {
     address: property.address || '',
+    listing_url: property.listing_url || '',
     bedrooms: property.bedrooms ?? '',
     full_baths: property.full_baths ?? '',
     half_baths: property.half_baths ?? '',
@@ -769,6 +774,9 @@ function buildFormFromProperty(property: any): Record<string, any> {
     ce_charged: property.ce_charged ?? '',
     cleaner_pay: property.cleaner_pay ?? '',
     custom_deep_clean_income: property.custom_deep_clean_income ?? '',
+    linen_onboarding_fee: property.linen_onboarding_fee ?? '',
+    linen_onboarding_sets: property.linen_onboarding_sets ?? DEFAULT_LINEN_SETS,
+    linen_onboarding_comforters: !!property.linen_onboarding_comforters,
   }
   for (const k of LINEN_FIELD_KEYS) form[k] = property[k] ?? ''
   for (const k of ACCESS_FIELD_KEYS) form[k] = property[k] || ''
@@ -783,7 +791,8 @@ export function PropertyDetailModal() {
   const { modalState, closePropertyModal } = usePropertyModal()
   const { user, effectiveUser } = useAuth()
   const { toast } = useToast()
-  const { get: getSetting } = useAppSettings()
+  const { get: getSetting, getNumber } = useAppSettings()
+  const linenCosts = linenCostsFromSettings(getNumber)
   const autoCodeValue = getSetting('auto_code', '')
   const qc = useQueryClient()
   const [, navigate] = useLocation()
@@ -826,11 +835,18 @@ export function PropertyDetailModal() {
   const [contactSearch, setContactSearch] = useState('')
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
   const { data: allContacts } = useContacts({ enabled: !!propertyId })
+  const { data: organizations } = useOrganizations({ enabled: !!propertyId })
 
   const linkedContact = useMemo(() => {
     if (!property?.contact_id || !allContacts) return null
     return allContacts.find((c: any) => c.id === property.contact_id) || null
   }, [property?.contact_id, allContacts])
+
+  const linkedOrgName = useMemo(() => {
+    const orgId = property?.organization_id || linkedContact?.organization_id
+    if (!orgId || !organizations) return null
+    return organizations.find(o => o.id === orgId)?.name || null
+  }, [property?.organization_id, linkedContact?.organization_id, organizations])
 
   const filteredContacts = useMemo(() => {
     if (!allContacts) return []
@@ -905,6 +921,7 @@ export function PropertyDetailModal() {
         const out: Record<string, any> = {}
         if (canEditProperty) {
           out.address = src.address || null
+          out.listing_url = src.listing_url || null
           out.bedrooms = src.bedrooms !== '' ? parseFloat(String(src.bedrooms)) : null
           out.full_baths = src.full_baths !== '' ? parseFloat(String(src.full_baths)) : null
           out.half_baths = src.half_baths !== '' ? parseFloat(String(src.half_baths)) : null
@@ -921,6 +938,11 @@ export function PropertyDetailModal() {
           out.cleaner_pay = src.cleaner_pay !== '' ? parseFloat(String(src.cleaner_pay)) : null
           // NULL restores the trigger-derived 3x CE default for deep_clean_3x_ce.
           out.custom_deep_clean_income = src.custom_deep_clean_income !== '' ? parseFloat(String(src.custom_deep_clean_income)) : null
+          // NULL means "quote the suggested figure" (computed live); an explicit
+          // 0 is a deliberately waived fee, so the two must stay distinct.
+          out.linen_onboarding_fee = src.linen_onboarding_fee !== '' ? parseFloat(String(src.linen_onboarding_fee)) : null
+          out.linen_onboarding_sets = Math.max(1, parseInt(String(src.linen_onboarding_sets)) || DEFAULT_LINEN_SETS)
+          out.linen_onboarding_comforters = !!src.linen_onboarding_comforters
         }
         if (canEditAccess) {
           for (const k of ACCESS_FIELD_KEYS) out[k] = src[k] || null
@@ -1224,9 +1246,9 @@ export function PropertyDetailModal() {
         changedBy: user?.label || (user as any)?.google_email || 'unknown',
       })
       if (!result.ok) throw new Error(result.error)
-      return toStage
+      return { toStage, warning: result.warning }
     },
-    onSuccess: (toStage) => {
+    onSuccess: ({ toStage, warning }) => {
       // executeStageTransition does not return the row, so optimistically
       // merge the known new stage into the detail cache (the stage badge reads
       // stage_id + the joined pipeline_stages). Avoids the read-after-write
@@ -1245,7 +1267,11 @@ export function PropertyDetailModal() {
       // dashboard counts/velocity, master list, pro-forma, revenue,
       // previous-properties (a move to Offboarded shows it there), etc.
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
-      toast({ title: t('toasts.stageUpdated') })
+      if (warning) {
+        toast({ title: t('toasts.stageUpdated'), description: warning, variant: 'destructive' })
+      } else {
+        toast({ title: t('toasts.stageUpdated') })
+      }
       setStagePopoverOpen(false)
     },
     onError: (err: any) => toast({ title: t('toasts.stageChangeFailed'), description: err?.message, variant: 'destructive' }),
@@ -1617,7 +1643,8 @@ export function PropertyDetailModal() {
                     <div className="flex items-center gap-2 flex-1">
                       <Users className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
                       <span className="text-sm font-medium">{linkedContact.full_name}</span>
-                      {linkedContact.company && <span className="text-xs text-muted-foreground">({linkedContact.company})</span>}
+                      {linkedOrgName && <span className="text-xs text-muted-foreground">({linkedOrgName})</span>}
+                      {!linkedOrgName && linkedContact.company && <span className="text-xs text-muted-foreground">({linkedContact.company})</span>}
                       {linkedContact.payment_method && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">{linkedContact.payment_method}</span>
                       )}
@@ -1717,6 +1744,73 @@ export function PropertyDetailModal() {
                         </Button>
                       )}
                     </div>
+                  )}
+                </div>
+              </div>
+              {/* Listing link — the public Airbnb/VRBO/Zillow page. Read mode
+                  renders it as a link (never a bare URL, which wraps badly and
+                  reads as noise); editing follows the same inline/edit-mode
+                  pattern as every other Overview field. */}
+              <div className="grid grid-cols-1 gap-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">{t('overview.listingUrl')}</Label>
+                  {isEditing && canEditProperty ? (
+                    <Input
+                      type="url"
+                      inputMode="url"
+                      placeholder={t('overview.listingUrlPlaceholder')}
+                      value={form.listing_url ?? ''}
+                      onChange={e => setForm(f => ({ ...f, listing_url: e.target.value }))}
+                      className={`mt-0.5 ${fieldCls('listing_url')}`}
+                      data-testid="modal-input-listing_url"
+                    />
+                  ) : inlineField === 'listing_url' ? (
+                    <Input
+                      autoFocus
+                      type="url"
+                      inputMode="url"
+                      placeholder={t('overview.listingUrlPlaceholder')}
+                      value={inlineValue}
+                      onChange={e => setInlineValue(e.target.value)}
+                      onBlur={() => commitInlineEdit('listing_url')}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') commitInlineEdit('listing_url')
+                        if (e.key === 'Escape') setInlineField(null)
+                      }}
+                      className="mt-0.5 h-7 text-xs"
+                    />
+                  ) : property.listing_url ? (
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <a
+                        href={property.listing_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
+                        title={property.listing_url}
+                        data-testid="modal-listing-link"
+                      >
+                        {t('overview.listingUrlOpen')}
+                      </a>
+                      <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                      {canEditProperty && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={() => startInlineEdit('listing_url', property.listing_url, canEditProperty)}
+                          data-testid="modal-listing-edit"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <p
+                      className={`text-sm mt-0.5 ${canEditProperty ? 'text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : 'text-muted-foreground'}`}
+                      onClick={() => canEditProperty && startInlineEdit('listing_url', '', canEditProperty)}
+                    >
+                      {canEditProperty ? t('overview.listingUrlAdd') : '—'}
+                    </p>
                   )}
                 </div>
               </div>
@@ -1902,9 +1996,21 @@ export function PropertyDetailModal() {
               {canViewFinancials && (
                 <div className="rounded-md border border-border bg-muted/30 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{t('tabs.financials')}</p>
-                  <div>
-                    <span className="text-xs text-muted-foreground block">{t('financials.fields.cleanerPay')}</span>
-                    <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.fields.clientCharged')}</span>
+                      <span className="text-sm font-medium tabular-nums">{property.ce_charged != null ? `$${Number(property.ce_charged).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.fields.cleanerPay')}</span>
+                      <span className="text-sm font-medium tabular-nums">{property.cleaner_pay != null ? `$${Number(property.cleaner_pay).toFixed(2)}` : '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">{t('financials.breakdown.profitPercent')}</span>
+                      <span className="text-sm font-medium tabular-nums">
+                        {property.profit_percentage != null ? `${Number(property.profit_percentage).toFixed(1)}%` : '—'}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -2043,7 +2149,7 @@ export function PropertyDetailModal() {
                 {/* Linen Program toggle — adds (beds × 300)/12/4 per clean to total cost */}
                 {(() => {
                   const beds = Number(property.number_of_beds) || 0
-                  const cost = (beds * 300) / 12 / 4
+                  const cost = calcLinenRecurringPerClean(linenCosts, property)
                   const enabled = !!property.linen_program
                   return (
                     <label className={`flex items-start gap-2 rounded-md border border-border p-2.5 ${canEditFinancials ? 'cursor-pointer hover:bg-muted/30' : 'opacity-80'}`}>
@@ -2067,6 +2173,85 @@ export function PropertyDetailModal() {
                     </label>
                   )
                 })()}
+
+                {/* One-time onboarding linen fee. Suggested figure is computed
+                    live from the bed/bath mix, so it tracks edits; only the
+                    operator's inputs are stored on the property. */}
+                {property.linen_program && (() => {
+                  const editing = isEditing && canEditFinancials
+                  const src = editing ? { ...property, ...form } : property
+                  const sets = Math.max(1, parseInt(String(editing ? form.linen_onboarding_sets : property.linen_onboarding_sets)) || DEFAULT_LINEN_SETS)
+                  const comforters = editing ? !!form.linen_onboarding_comforters : !!property.linen_onboarding_comforters
+                  const override = editing ? form.linen_onboarding_fee : (property.linen_onboarding_fee ?? '')
+                  const fee = suggestedLinenFee(linenCosts, src, { sets, comforters, override })
+                  const money = (n: number) => `$${n.toFixed(2)}`
+                  const setSets = (next: number) => setForm(f => ({ ...f, linen_onboarding_sets: Math.max(1, next) }))
+                  return (
+                    <div className="rounded-md border border-border bg-muted/30 p-3 space-y-2 text-xs" data-testid="modal-linen-onboarding">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold uppercase tracking-wide text-[10px] text-muted-foreground">
+                          {t('financials.linenOnboarding.title')}
+                        </span>
+                        {editing ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-muted-foreground">{t('financials.linenOnboarding.sets')}</span>
+                            <button type="button" onClick={() => setSets(sets - 1)} disabled={sets <= 1}
+                              className="h-6 w-6 rounded border border-input leading-none disabled:opacity-40"
+                              aria-label={t('financials.linenOnboarding.setsFewer')} data-testid="modal-linen-sets-dec">-</button>
+                            <span className="w-5 text-center tabular-nums font-medium" data-testid="modal-linen-sets-value">{sets}</span>
+                            <button type="button" onClick={() => setSets(sets + 1)}
+                              className="h-6 w-6 rounded border border-input leading-none"
+                              aria-label={t('financials.linenOnboarding.setsMore')} data-testid="modal-linen-sets-inc">+</button>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.sets')}: <span className="tabular-nums font-medium text-foreground">{sets}</span></span>
+                        )}
+                      </div>
+
+                      {fee.beds > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.beds')}</span><span className="tabular-nums">{money(fee.beds)}</span></div>}
+                      {fee.baths > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.baths')}</span><span className="tabular-nums">{money(fee.baths)}</span></div>}
+                      {fee.comforters > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.comforters')}</span><span className="tabular-nums">{money(fee.comforters)}</span></div>}
+                      {fee.poolTowels > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.poolTowels')}</span><span className="tabular-nums">{money(fee.poolTowels)}</span></div>}
+                      {fee.markup > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{t('financials.linenOnboarding.markup', { pct: linenCosts.markupPct })}</span><span className="tabular-nums">{money(fee.markup)}</span></div>}
+
+                      {editing && (
+                        <label className="flex items-start gap-2 cursor-pointer select-none pt-0.5">
+                          <input type="checkbox" checked={comforters}
+                            onChange={e => setForm(f => ({ ...f, linen_onboarding_comforters: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 rounded border-input" data-testid="modal-input-linen_comforters" />
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.comfortersToggle')}</span>
+                        </label>
+                      )}
+
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <span className="text-muted-foreground">{t('financials.linenOnboarding.suggested')}</span>
+                        <span className="tabular-nums font-medium" data-testid="modal-linen-suggested">{money(fee.suggested)}</span>
+                      </div>
+
+                      {editing && (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-muted-foreground">{t('financials.linenOnboarding.override')}</span>
+                          <Input type="number" step="0.01" min="0" className="h-8 w-32 text-right"
+                            placeholder={fee.suggested.toFixed(2)}
+                            value={form.linen_onboarding_fee ?? ''}
+                            onChange={e => setForm(f => ({ ...f, linen_onboarding_fee: e.target.value }))}
+                            data-testid="modal-input-linen_onboarding_fee" />
+                        </div>
+                      )}
+
+                      <div className="flex items-center justify-between border-t border-border pt-2">
+                        <span className="font-semibold">{t('financials.linenOnboarding.fee')}</span>
+                        <span className="text-sm font-bold tabular-nums" data-testid="modal-linen-effective">{money(fee.effective)}</span>
+                      </div>
+                      <p className="text-muted-foreground text-[10px]">
+                        {fee.isOverridden
+                          ? t('financials.linenOnboarding.overrideNote', { amount: money(fee.suggested) })
+                          : t('financials.linenOnboarding.oneTimeNote')}
+                      </p>
+                    </div>
+                  )
+                })()}
+
                 <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3">
                   <div>
                     <span className="text-xs text-muted-foreground block">{t('financials.fields.dcCost')}</span>

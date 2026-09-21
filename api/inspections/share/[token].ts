@@ -82,8 +82,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     return res.json({ report })
   } catch (err: any) {
+    // Public unauthenticated endpoint — never echo internal/supabase error text.
     console.error('inspection share error:', err)
-    return res.status(500).json({ error: err?.message || 'Server error' })
+    return res.status(500).json({ error: 'Server error' })
   }
 }
 

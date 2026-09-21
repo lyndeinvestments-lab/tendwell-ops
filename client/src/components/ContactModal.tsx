@@ -16,6 +16,8 @@ import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2
 import { format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
 import { CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
+import { useOrganizations, ORGANIZATIONS_QUERY_KEY } from '@/hooks/use-organizations'
+import { OrganizationModal } from '@/components/OrganizationModal'
 import { profitColorClass } from '@/lib/profit-colors'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
@@ -117,8 +119,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   const [interactionType, setInteractionType] = useState('Note')
   const [interactionSummary, setInteractionSummary] = useState('')
   const [assignPropId, setAssignPropId] = useState('')
+  const [orgModalOpen, setOrgModalOpen] = useState(false)
 
   const isCreate = mode === 'create'
+  const { data: organizations } = useOrganizations({ enabled: open })
 
   const { data: contact, isLoading } = useQuery({
     queryKey: ['/supabase/contact-detail', contactId],
@@ -135,14 +139,27 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   })
 
   const { data: linkedProperties } = useQuery({
-    queryKey: ['/supabase/contact-properties', contactId],
+    queryKey: ['/supabase/contact-properties', contactId, contact?.organization_id],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Direct PoC link + shared company portfolio (deduped by id).
+      const direct = await supabase
         .from('properties')
-        .select('id, name, ce_charged, profit_percentage, pipeline_stages!properties_stage_id_fkey(name, color)')
+        .select('id, name, ce_charged, profit_percentage, organization_id, contact_id, pipeline_stages!properties_stage_id_fkey(name, color)')
         .eq('contact_id', contactId!)
-      if (error) throw error
-      return data || []
+      if (direct.error) throw direct.error
+      let orgRows: typeof direct.data = []
+      if (contact?.organization_id) {
+        const org = await supabase
+          .from('properties')
+          .select('id, name, ce_charged, profit_percentage, organization_id, contact_id, pipeline_stages!properties_stage_id_fkey(name, color)')
+          .eq('organization_id', contact.organization_id)
+          .is('archived_at', null)
+        if (org.error) throw org.error
+        orgRows = org.data || []
+      }
+      const byId = new Map<number, any>()
+      for (const row of [...(direct.data || []), ...orgRows]) byId.set(row.id, row)
+      return Array.from(byId.values())
     },
     enabled: !!contactId && !isCreate,
   })
@@ -209,11 +226,12 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   // Initialize form when contact loads or create mode
   useEffect(() => {
     if (isCreate) {
-      setForm({ full_name: '', company: '', email: '', phone: '', secondary_phone: '', mailing_address: '', source: '', source_notes: '', payment_method: '', payment_notes: '', client_since: '', tags: [], notes: '' })
+      setForm({ full_name: '', company: '', organization_id: '', email: '', phone: '', secondary_phone: '', mailing_address: '', source: '', source_notes: '', payment_method: '', payment_notes: '', client_since: '', tags: [], notes: '' })
     } else if (contact) {
       setForm({
         full_name: contact.full_name || '',
         company: contact.company || '',
+        organization_id: contact.organization_id || '',
         email: contact.email || '',
         phone: contact.phone || '',
         secondary_phone: contact.secondary_phone || '',
@@ -248,6 +266,8 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       })
       qc.invalidateQueries({ queryKey: ['/supabase/contact-detail', contactId] })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ['/supabase/contact-properties', contactId] })
+      qc.invalidateQueries({ queryKey: ORGANIZATIONS_QUERY_KEY })
       toast({ title: t('modal.toastSaved') })
     },
     onError: (error: any) => toast({ title: t('modal.toastSaveFailed'), description: error?.message, variant: 'destructive' }),
@@ -259,6 +279,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
       const { error } = await supabase.from('contacts').insert({
         full_name: form.full_name?.trim(),
         company: form.company?.trim() || null,
+        organization_id: form.organization_id || null,
         email: form.email?.trim() || null,
         phone: form.phone?.trim() || null,
         secondary_phone: form.secondary_phone?.trim() || null,
@@ -280,9 +301,10 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         action: 'create',
         new_value: form.full_name?.trim() ?? null,
         changed_by: user?.label ?? null,
-        metadata: { company: form.company?.trim() || null, source: form.source || null },
+        metadata: { company: form.company?.trim() || null, organization_id: form.organization_id || null, source: form.source || null },
       })
       qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ORGANIZATIONS_QUERY_KEY })
       toast({ title: t('modal.toastClientCreated') })
       onClose()
     },
@@ -351,6 +373,7 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
       <SheetContent side="right" className="w-full sm:w-[480px] sm:max-w-[480px] overflow-y-auto" data-testid="contact-modal">
         <SheetHeader>
@@ -379,6 +402,54 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
             <TabsContent value="details" className="mt-3 space-y-3">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label={t('modal.fieldFullName')} field="full_name" placeholder={t('modal.placeholderClientName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
+                <div>
+                  <Label className="text-xs text-muted-foreground">{t('modal.fieldOrganization')}</Label>
+                  <Select
+                    value={form.organization_id || '_none'}
+                    onValueChange={v => {
+                      if (v === '_create') {
+                        setOrgModalOpen(true)
+                        return
+                      }
+                      const orgId = v === '_none' ? null : v
+                      const orgName = organizations?.find(o => o.id === orgId)?.name ?? ''
+                      setForm(f => ({
+                        ...f,
+                        organization_id: orgId || '',
+                        company: orgName || (orgId ? f.company : f.company),
+                      }))
+                      if (!isCreate && contactId) {
+                        const patch: Record<string, any> = { organization_id: orgId }
+                        if (orgName) patch.company = orgName
+                        void (async () => {
+                          const { error } = await supabase.from('contacts').update(patch).eq('id', contactId)
+                          if (error) {
+                            toast({ title: t('modal.toastSaveFailed'), description: error.message, variant: 'destructive' })
+                            return
+                          }
+                          qc.invalidateQueries({ queryKey: ['/supabase/contact-detail', contactId] })
+                          qc.invalidateQueries({ queryKey: CONTACTS_QUERY_KEY })
+                          qc.invalidateQueries({ queryKey: ['/supabase/contact-properties', contactId] })
+                          qc.invalidateQueries({ queryKey: ORGANIZATIONS_QUERY_KEY })
+                          toast({ title: t('modal.toastSaved') })
+                        })()
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-7 text-xs mt-0.5" data-testid="contact-organization">
+                      <SelectValue placeholder={t('org.none')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_none">{t('org.none')}</SelectItem>
+                      {(organizations || []).map(o => (
+                        <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                      ))}
+                      <SelectItem value="_create">{t('org.createInline')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label={t('modal.fieldCompany')} field="company" placeholder={t('modal.placeholderCompanyName')} form={form} setForm={setForm} onBlurField={handleFieldBlur} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -527,6 +598,11 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                         >
                           <div className="flex items-center gap-2">
                             <span className="text-sm font-medium">{p.name}</span>
+                            {p.contact_id !== contactId && (
+                              <span className="text-2xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                                {t('modal.sharedViaOrg')}
+                              </span>
+                            )}
                             <span
                               className="text-xs px-1.5 py-0.5 rounded font-medium"
                               style={{ backgroundColor: stageColor + '20', color: stageColor, border: `1px solid ${stageColor}40` }}
@@ -617,5 +693,16 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         )}
       </SheetContent>
     </Sheet>
+    <OrganizationModal
+      open={orgModalOpen}
+      onClose={() => setOrgModalOpen(false)}
+      onSaved={(id) => {
+        const orgName = '' // refreshed via invalidate; set id immediately
+        setForm(f => ({ ...f, organization_id: id }))
+        if (!isCreate && contactId) saveField({ field: 'organization_id', value: id })
+        qc.invalidateQueries({ queryKey: ORGANIZATIONS_QUERY_KEY })
+      }}
+    />
+    </>
   )
 }

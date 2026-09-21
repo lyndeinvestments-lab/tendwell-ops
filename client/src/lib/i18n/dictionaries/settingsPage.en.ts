@@ -92,6 +92,9 @@ export const settingsPageEn = {
     amenityHeading: 'Amenity Costs',
     amenityDesc: 'Per-unit supply costs used to calculate Est Consumables on each property',
     amenityFormula: 'Formula: (Full Baths + Half Baths) × (Bathroom + Toilet Paper) + Kitchens × Kitchen + Beds × Trash Bag + Hot Tub',
+    linenHeading: 'Linen Costs',
+    linenDesc: 'Dzee contracted unit costs. Drive the one-time onboarding linen fee and the recurring linen program cost per clean.',
+    linenFormula: 'Onboarding: sets × (beds by size + baths by type), plus duvet inserts per bed and pool towels per guest, plus markup. Recurring: replacement sets per year × each bed\u2019s per-set cost / 12 / 4. Beds with no recorded size are priced as kings, so an unknown mix never under-quotes.',
     profitHeading: 'Profit Tiers',
     profitDesc: 'Thresholds for green/yellow/red profit % badges across Pipeline, Cost Tracking, and Dashboard. Break-even target margin drives the break-even flag on Cost Tracking.',
     acHeading: 'AC Filter Schedule',
@@ -412,6 +415,8 @@ export const settingsPageEn = {
       notify_agreement_signed: 'Agreement signed by owner',
       notify_issue_overdue: 'Overdue issues (daily digest)',
       notify_feedback_unacknowledged: 'Unacknowledged guest feedback (daily digest)',
+      notify_web_lead: 'New website lead',
+      notify_owner_portal_activity: 'Owner portal activity',
     },
   },
   // Integrations tab.

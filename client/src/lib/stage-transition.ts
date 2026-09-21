@@ -3,6 +3,7 @@
 // offboarded_at, and auto-creation of workflow tasks from templates.
 
 import { supabase, logActivity } from '@/lib/supabase'
+import { localISODate } from '@/lib/local-date'
 
 interface TransitionParams {
   propertyId: number
@@ -24,7 +25,7 @@ async function getPublicListId(): Promise<string | null> {
   return publicListIdCache
 }
 
-export async function executeStageTransition(params: TransitionParams): Promise<{ ok: boolean; error?: string }> {
+export async function executeStageTransition(params: TransitionParams): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const { propertyId, propertyName, fromStageId, fromStageName, toStageId, toStageName, changedBy } = params
 
   // 1. Update property stage
@@ -65,8 +66,18 @@ export async function executeStageTransition(params: TransitionParams): Promise<
     changed_by: changedBy,
   })
 
-  // 4. Create workflow tasks from templates (fire-and-forget)
-  createWorkflowTasks(fromStageName, toStageName, propertyId, propertyName, changedBy).catch(() => {})
+  // 4. Create workflow tasks from templates — awaited so callers can warn
+  // when the stage moved but onboarding/offboarding checklist tasks did not.
+  try {
+    await createWorkflowTasks(fromStageName, toStageName, propertyId, propertyName, changedBy)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e)
+    console.warn('[executeStageTransition] workflow tasks failed:', message)
+    return {
+      ok: true,
+      warning: `Stage updated, but workflow tasks were not created: ${message}`,
+    }
+  }
 
   return { ok: true }
 }
@@ -79,12 +90,13 @@ async function createWorkflowTasks(
   createdBy: string,
 ) {
   // Fetch matching enabled templates
-  const { data: templates } = await supabase
+  const { data: templates, error: templatesError } = await supabase
     .from('stage_workflow_templates')
     .select('*')
     .eq('to_stage', toStage)
     .eq('enabled', true)
     .order('sort_order')
+  if (templatesError) throw new Error(templatesError.message)
 
   if (!templates || templates.length === 0) return
 
@@ -93,7 +105,9 @@ async function createWorkflowTasks(
   if (matching.length === 0) return
 
   const listId = await getPublicListId()
-  if (!listId) return
+  if (!listId) {
+    throw new Error('No public task list found — cannot create workflow tasks')
+  }
 
   const today = new Date()
   const category = toStage === 'Offboarding' ? 'Offboarding' : 'Onboarding'
@@ -117,7 +131,7 @@ async function createWorkflowTasks(
   if (existingParent?.id) {
     parentId = existingParent.id
   } else {
-    const { data: parent } = await supabase.from('tasks').insert({
+    const { data: parent, error: parentError } = await supabase.from('tasks').insert({
       title: parentTitle,
       description: `Workflow tasks for ${propertyName} moving to ${toStage}`,
       status: 'To Do',
@@ -128,7 +142,9 @@ async function createWorkflowTasks(
       list_id: listId,
       parent_task_id: null,
     }).select('id').single()
-    if (!parent) return
+    if (parentError || !parent) {
+      throw new Error(parentError?.message || 'Failed to create workflow parent task')
+    }
     parentId = parent.id
   }
 
@@ -165,7 +181,7 @@ async function createWorkflowTasks(
       category,
       property_name: propertyName,
       assignee_name: t.default_assignee_name || null,
-      due_date: dueDate.toISOString().split('T')[0],
+      due_date: localISODate(dueDate),
       created_by: createdBy,
       list_id: listId,
       workflow_template_id: t.id,
@@ -173,5 +189,6 @@ async function createWorkflowTasks(
     }
   })
 
-  await supabase.from('tasks').insert(subtasks)
+  const { error: subError } = await supabase.from('tasks').insert(subtasks)
+  if (subError) throw new Error(subError.message)
 }

@@ -12,7 +12,8 @@ test.describe('Quote Sheet live recompute', () => {
 
     const firstRow = rows.first()
     const ceCell = firstRow.locator('[data-testid^="qs-cell-ce_charged-"]')
-    const profitCell = firstRow.locator('td').nth(11) // Profit % column
+    // Prefer the dedicated profit test id — column index drifts as fields are added.
+    const profitCell = firstRow.locator('[data-testid^="qs-profit-"]')
 
     const profitBefore = (await profitCell.textContent())?.trim() || ''
 

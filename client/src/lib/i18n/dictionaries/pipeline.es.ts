@@ -67,6 +67,7 @@ export const pipelineEs: typeof pipelineEn = {
   },
   toasts: {
     moveFailed: 'Error al mover la propiedad',
+    movePartial: 'Etapa actualizada con una advertencia',
     followUpFailed: 'Error al guardar la fecha de seguimiento',
     leadAdded: 'Prospecto agregado al pipeline', // REVIEW: "Lead" / "pipeline"
     addLeadErrorPrefix: 'Error: ',
