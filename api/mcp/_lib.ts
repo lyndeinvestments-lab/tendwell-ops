@@ -110,7 +110,7 @@ export const JSON_RPC_ERRORS = {
 // interactions/stages; slicing it finer would be ceremony for a single-operator
 // business. `crm:read` is the default when a client requests nothing.
 
-export const MCP_SCOPES = ['crm:read', 'crm:write'] as const
+export const MCP_SCOPES = ['crm:read', 'crm:write', 'audit:read', 'audit:write'] as const
 export type McpScope = (typeof MCP_SCOPES)[number]
 const MCP_SCOPE_SET = new Set<string>(MCP_SCOPES)
 
@@ -119,6 +119,12 @@ export const MCP_SCOPE_DESCRIPTIONS: Record<McpScope, string> = {
     'Read your clients, their properties and value, interaction history, and what needs attention.',
   'crm:write':
     'Log meetings and calls, move clients and properties between stages, and set follow-ups.',
+  // Task audit (billable auxiliary work — hot tub refreshes, trash pickups…):
+  // what Breezeway/Trellis say was done and whether it has been billed.
+  'audit:read':
+    'Read completed billable tasks from Breezeway and Trellis and whether each one has been invoiced.',
+  'audit:write':
+    'Record work observed in Slack, Quo or email so it can be checked against tasks and billed.',
 }
 
 /**
@@ -577,6 +583,7 @@ export function hasScope(ctx: McpContext, needed: McpScope): boolean {
   // crm:write implies crm:read — a connector granted write should not have to
   // ask for both just to read back what it wrote.
   if (needed === 'crm:read' && ctx.scopes.includes('crm:write')) return true
+  if (needed === 'audit:read' && ctx.scopes.includes('audit:write')) return true
   return false
 }
 

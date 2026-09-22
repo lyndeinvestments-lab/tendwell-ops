@@ -16,6 +16,15 @@ import {
   type RunSummary,
   type TaskRow,
 } from './_engine.js'
+import { buildTaskLines, isHumanTouchedTaskLine, type AuxTaskRow, type ExistingLineRef } from './_aux.js'
+import {
+  APP_SETTING_AUX_BILLABLE,
+  APP_SETTING_EXTRA_PRICING,
+  isTaskCancelled,
+  isTaskCompleted,
+  resolveAuxSettings,
+  type AuxBillingSettings,
+} from '../../shared/aux-tasks.js'
 
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -43,6 +52,8 @@ export interface EngineContext {
   properties: PropertyRates[]
   aliases: AliasRow[]
   tasks: TaskRow[]
+  /** properties.trellis_id → properties.id, for resolving Trellis snapshot rows. */
+  propertyByTrellisId: Map<string, number>
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -168,7 +179,11 @@ export async function loadEngineContext(
       () => supabase
         .from('trellis_task_snapshot')
         .select('trellis_task_id, trellis_property_id, title, status, scheduled_date')
-        .ilike('department_name', '%clean%')
+        // A NULL department is not "not cleaning": 4 completed "Turn Clean"
+        // rows in the 90 days to 2026-09-22 carried no department and were
+        // invisible here, so their vendor lines flagged unmatched_task. The
+        // title rules below still decide what counts as a clean.
+        .or('department_name.ilike.%clean%,department_name.is.null')
         .gte('scheduled_date', taskWindowStart)
         .lte('scheduled_date', taskWindowEnd)
         .order('trellis_task_id'),
@@ -251,7 +266,210 @@ export async function loadEngineContext(
     )
     .map(({ status: _s, ...t }) => t)
 
-  return { properties, aliases, tasks: [...tasks, ...trellisTasks] }
+  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId }
+}
+
+// ─── Billable auxiliary tasks (see _aux.ts) ──────────────────────────────────
+
+/** Pricing + billability overrides from app_settings, merged over the shared defaults. */
+export async function loadAuxSettings(supabase: SupabaseClient): Promise<AuxBillingSettings> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('key, value')
+    .in('key', [APP_SETTING_EXTRA_PRICING, APP_SETTING_AUX_BILLABLE])
+  if (error) throw new Error(`Failed to load invoicing settings: ${error.message}`)
+  const byKey = new Map<string, unknown>((data ?? []).map((r: { key: string; value: unknown }) => [r.key, r.value]))
+  return resolveAuxSettings({
+    pricing: byKey.get(APP_SETTING_EXTRA_PRICING),
+    billable: byKey.get(APP_SETTING_AUX_BILLABLE),
+  })
+}
+
+/**
+ * Every task (any department, any status) in [start, end] from BOTH sources,
+ * property-resolved. Unlike the clean loader above this does not pad the
+ * window or filter by department — a hot tub refresh lives under Maintenance
+ * as often as Cleaning, and only work dated inside the period bills. The
+ * builder (_aux.ts) decides completion, billability and Breezeway-vs-Trellis
+ * dedup; this stays a dumb, paged read.
+ */
+export async function loadAuxiliaryTasks(
+  supabase: SupabaseClient,
+  start: string,
+  end: string,
+  propertyByTrellisId: ReadonlyMap<string, number>,
+): Promise<AuxTaskRow[]> {
+  const [bw, tr] = await Promise.all([
+    fetchAllRows<{
+      external_id: string
+      property_id: number | null
+      due_date: string | null
+      task_title: string
+      department: string | null
+      status: string | null
+      completed_date: string | null
+    }>(
+      'breezeway_tasks (aux)',
+      () => supabase
+        .from('breezeway_tasks')
+        .select('external_id, property_id, due_date, task_title, department, status, completed_date')
+        .gte('due_date', start)
+        .lte('due_date', end)
+        .order('external_id'),
+      'external_id',
+    ),
+    fetchAllRows<{
+      trellis_task_id: string
+      trellis_property_id: string | null
+      title: string | null
+      department_name: string | null
+      status: string | null
+      scheduled_date: string | null
+      completed_at: string | null
+    }>(
+      'trellis_task_snapshot (aux)',
+      () => supabase
+        .from('trellis_task_snapshot')
+        .select('trellis_task_id, trellis_property_id, title, department_name, status, scheduled_date, completed_at')
+        .gte('scheduled_date', start)
+        .lte('scheduled_date', end)
+        .order('trellis_task_id'),
+      'trellis_task_id',
+    ),
+  ])
+  const rows: AuxTaskRow[] = []
+  for (const t of bw) {
+    rows.push({
+      externalId: t.external_id,
+      source: 'breezeway',
+      propertyId: t.property_id,
+      date: t.due_date,
+      title: t.task_title,
+      department: t.department,
+      completed: isTaskCompleted('breezeway', t.status, t.completed_date),
+      cancelled: isTaskCancelled(t.status),
+    })
+  }
+  for (const t of tr) {
+    rows.push({
+      externalId: `trellis:${t.trellis_task_id}`,
+      source: 'trellis',
+      propertyId: t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null,
+      date: t.scheduled_date,
+      title: t.title ?? '',
+      department: t.department_name,
+      completed: isTaskCompleted('trellis', t.status, t.completed_at),
+      cancelled: isTaskCancelled(t.status),
+    })
+  }
+  return rows
+}
+
+export interface TaskLineSyncResult {
+  inserted: number
+  kept: number
+  totalClientCharge: number
+  needsReviewCount: number
+}
+
+/**
+ * Bring a run's `source='task'` lines in step with the completed billable
+ * tasks in its period. Human-touched task rows (dismissed / resolved / edited)
+ * are kept exactly as they are — a dismissal sticks across reconciles and a
+ * dismissed task is never re-added (the builder sees its matched_task_id).
+ * Untouched task rows are deleted and rebuilt so a settings change (price,
+ * billability) or a late-arriving task lands without anyone doing anything.
+ */
+export async function syncTaskLines(
+  supabase: SupabaseClient,
+  runId: string,
+  input: {
+    periodStart: string
+    periodEnd: string
+    properties: PropertyRates[]
+    propertyByTrellisId: ReadonlyMap<string, number>
+    /** Every existing source='task' row on the run (any state). */
+    taskRows: Array<Record<string, any>>
+    /** Every non-task line that will be on the run after this reconcile. */
+    otherLines: ExistingLineRef[]
+    nextLineNo: number
+  },
+): Promise<TaskLineSyncResult> {
+  const kept = input.taskRows.filter(isHumanTouchedTaskLine)
+  const stale = input.taskRows.filter(r => !isHumanTouchedTaskLine(r))
+  for (let i = 0; i < stale.length; i += 200) {
+    const ids = stale.slice(i, i + 200).map(r => r.id as string)
+    const { error } = await supabase.from('invoice_lines').delete().in('id', ids)
+    if (error) throw new Error(`Failed to clear task lines: ${error.message}`)
+  }
+
+  const [settings, tasks, dismissedObs] = await Promise.all([
+    loadAuxSettings(supabase),
+    loadAuxiliaryTasks(supabase, input.periodStart, input.periodEnd, input.propertyByTrellisId),
+    // A task dismissed from the Task Audit view BEFORE any run covered its
+    // date has no invoice line to remember the dismissal by — the audit view
+    // records it as a dismissed observation pointing at the task instead.
+    // Fed in as excluded refs so the builder skips it (already_on_run) and
+    // never counts it as a vendor line.
+    fetchAllRows<{ matched_task_id: string }>(
+      'task_audit_observations (dismissed)',
+      () => supabase
+        .from('task_audit_observations')
+        .select('matched_task_id')
+        .eq('status', 'dismissed')
+        .not('matched_task_id', 'is', null)
+        .gte('occurred_on', shiftDate(input.periodStart, -1))
+        .lte('occurred_on', shiftDate(input.periodEnd, 1))
+        .order('id'),
+      'id',
+    ),
+  ])
+  const existing: ExistingLineRef[] = [
+    ...input.otherLines,
+    ...dismissedObs.map(o => ({
+      source: 'observation',
+      propertyId: null,
+      serviceType: null,
+      date: null,
+      matchedTaskId: o.matched_task_id,
+      lineKind: 'excluded',
+      reviewStatus: 'excluded',
+    })),
+    ...kept.map(r => ({
+      source: String(r.source),
+      propertyId: r.property_id == null ? null : Number(r.property_id),
+      serviceType: r.service_type ?? null,
+      date: r.raw_date_mentioned ?? null,
+      matchedTaskId: r.matched_task_id ?? null,
+      lineKind: String(r.line_kind),
+      reviewStatus: String(r.review_status),
+    })),
+  ]
+  const built = buildTaskLines({
+    tasks,
+    existing,
+    properties: new Map(input.properties.map(p => [p.id, p])),
+    settings,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
+    nextLineNo: input.nextLineNo,
+  })
+  if (built.inserts.length > 0) {
+    const { error } = await supabase
+      .from('invoice_lines')
+      .insert(built.inserts.map(l => ({ ...l, run_id: runId })))
+    if (error) throw new Error(`Failed to insert task lines: ${error.message}`)
+  }
+
+  const keptActive = kept.filter(r => r.line_kind !== 'excluded' && r.review_status !== 'excluded')
+  return {
+    inserted: built.inserts.length,
+    kept: kept.length,
+    totalClientCharge: round2(
+      built.totalClientCharge + keptActive.reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0),
+    ),
+    needsReviewCount: built.needsReviewCount + kept.filter(r => r.review_status === 'needs_review').length,
+  }
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -305,6 +523,8 @@ export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineIn
 export interface ReconcileResult {
   summary: RunSummary
   status: 'reconciled' | 'review_needed'
+  /** Billable Breezeway/Trellis task lines added / kept on this pass (see _aux.ts). */
+  taskLines: TaskLineSyncResult
 }
 
 // Route still-unrouted billable lines from their client's current channel.
@@ -413,9 +633,15 @@ export async function reconcileRun(
       .order('line_no'),
     'line_no',
   )
-  const preserved = rows.filter(shouldPreserveInvoiceLine)
+  // Task-derived rows (billable Breezeway/Trellis tasks, source='task') never
+  // enter the engine — syncTaskLines rebuilds them from the task tables once
+  // the vendor lines are settled — so they sit outside both buckets here.
+  const taskRows = rows.filter(r => r.source === 'task')
+  const taskLineNos = taskRows.map(r => Number(r.line_no))
+  const nonTaskRows = rows.filter(r => r.source !== 'task')
+  const preserved = nonTaskRows.filter(shouldPreserveInvoiceLine)
   const preservedLineNos = new Set(preserved.map(r => r.line_no))
-  const rebuild = rows.filter(r => !preservedLineNos.has(r.line_no))
+  const rebuild = nonTaskRows.filter(r => !preservedLineNos.has(r.line_no))
 
   // Reconstruct one RawLine per original line_no. Split rows share a line_no;
   // the base row (kind != 'extra' or no split_group) carries the original
@@ -466,11 +692,12 @@ export async function reconcileRun(
   // Replace rebuilt rows atomically-ish: delete then insert (staff-only table,
   // single-writer workflow — a lost race here just means re-running reconcile).
   if (rebuild.length > 0) {
+    const keepLineNos = [...preservedLineNos, ...taskLineNos]
     const { error: delErr } = await supabase
       .from('invoice_lines')
       .delete()
       .eq('run_id', runId)
-      .not('line_no', 'in', `(${preservedLineNos.size ? [...preservedLineNos].join(',') : '-1'})`)
+      .not('line_no', 'in', `(${keepLineNos.length ? keepLineNos.join(',') : '-1'})`)
     if (delErr) throw new Error(`Failed to clear lines: ${delErr.message}`)
   }
   if (lines.length > 0) {
@@ -480,6 +707,48 @@ export async function reconcileRun(
       if (insErr) throw new Error(`Failed to insert lines: ${insErr.message}`)
     }
   }
+
+  // Billable auxiliary tasks the vendor did not invoice (hot tub refreshes,
+  // trash pickups… — see _aux.ts). Runs after the vendor lines are settled so
+  // the builder can see what the vendor DID bill and never double-charge.
+  // raw_amount is 0 on every task line, so computed_subtotal is unaffected.
+  const maxLineNo = Math.max(0, ...rows.map(r => Number(r.line_no)), ...lines.map(l => l.lineNo))
+  const asRef = (l: {
+    source: string; propertyId: number | null; serviceType: string | null
+    date: string | null; matchedTaskId: string | null; lineKind: string; reviewStatus: string
+  }): ExistingLineRef => l
+  const taskSync = await syncTaskLines(supabase, runId, {
+    periodStart,
+    periodEnd,
+    properties: ctx.properties,
+    propertyByTrellisId: ctx.propertyByTrellisId,
+    taskRows,
+    otherLines: [
+      ...preserved.map(r => asRef({
+        source: String(r.source),
+        propertyId: r.property_id == null ? null : Number(r.property_id),
+        serviceType: r.service_type ?? null,
+        date: r.raw_date_mentioned ?? null,
+        matchedTaskId: r.matched_task_id ?? null,
+        lineKind: String(r.line_kind),
+        reviewStatus: String(r.review_status),
+      })),
+      ...offsetLines
+        .filter(l => !preservedLineNos.has(l.lineNo))
+        .map(l => asRef({
+          source: l.source,
+          propertyId: l.propertyId,
+          serviceType: l.serviceType,
+          date: l.rawDateMentioned,
+          matchedTaskId: l.matchedTaskId,
+          lineKind: l.lineKind,
+          reviewStatus: l.reviewStatus,
+        })),
+    ],
+    nextLineNo: maxLineNo + 1,
+  })
+  summary.totalClientCharge = round2(summary.totalClientCharge + taskSync.totalClientCharge)
+  summary.needsReviewCount += taskSync.needsReviewCount
 
   // Preserved (human-resolved / manual) rows never enter the engine, so the
   // engine's summary omits them — the stored computed_subtotal and totals
@@ -521,7 +790,7 @@ export async function reconcileRun(
     .eq('id', runId)
   if (updErr) throw new Error(`Failed to update run: ${updErr.message}`)
 
-  return { summary, status }
+  return { summary, status, taskLines: taskSync }
 }
 
 // Bounded raw-body drain for text/csv posts (same pattern as

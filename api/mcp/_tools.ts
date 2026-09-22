@@ -12,6 +12,15 @@
 import { sbFetch } from '../issues/_lib.js'
 import { CLIENT_STAGES } from '../../shared/crm.js'
 import {
+  AUX_CATEGORIES,
+  classifyAuxTask,
+  isBillableCategory,
+  matchObservationToTask,
+  type AuxCategory,
+} from '../../shared/aux-tasks.js'
+import { getServiceClient, loadAuxSettings, loadAuxiliaryTasks } from '../invoices/_lib.js'
+import { resolveProperty, type AliasRow, type BillingChannel, type PropertyRates } from '../invoices/_engine.js'
+import {
   JSON_RPC_ERRORS,
   MCP_DEFAULT_PROTOCOL_VERSION,
   MCP_SERVER_NAME,
@@ -527,6 +536,411 @@ const movePropertyStage: Tool = {
   },
 }
 
+// ─── Task audit tools (Cowork's daily Slack / Quo sweep) ────────────────────
+//
+// Busy Bee stopped billing auxiliary work (Jordan 2026-09-22): a hot tub
+// refresh, trash pickup or lockbox check is billed to the client only if a
+// Breezeway/Trellis task exists for it (reconcile adds those lines itself, see
+// api/invoices/_aux.ts). Work that was only ever mentioned in Slack or Quo has
+// no task and would be lost. These tools let an agent record what it saw,
+// check it against the task tables, and leave anything untracked in the Task
+// Audit view (Invoicing → Task audit) for a human to bill.
+
+const OBS_SOURCES = ['slack', 'quo', 'email', 'manual', 'other'] as const
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+const isoDate = (v: unknown): string | undefined => {
+  const s = str(v)
+  return s && ISO_DATE_RE.test(s) ? s : undefined
+}
+function addDays(iso: string, n: number): string {
+  const d = new Date(`${iso}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+const todayIso = () => new Date().toISOString().slice(0, 10)
+const usd = (n: number | null | undefined) => (n == null ? '—' : `$${Number(n).toFixed(2)}`)
+
+interface PropertyContext {
+  properties: PropertyRates[]
+  aliases: AliasRow[]
+  byId: Map<number, PropertyRates>
+  byTrellisId: Map<string, number>
+}
+
+async function loadPropertyContext(): Promise<PropertyContext> {
+  const [props, contacts, aliases] = await Promise.all([
+    sbFetch<Array<{ id: number; name: string; trellis_id: string | null; contact_id: string | null }>>(
+      'properties?select=id,name,trellis_id,contact_id&deleted_at=is.null&order=id&limit=5000',
+    ),
+    sbFetch<Array<{ id: string; billing_channel: BillingChannel | null }>>('contacts?select=id,billing_channel&limit=5000'),
+    sbFetch<Array<{ vendor_id: string | null; alias_raw: string; property_id: number }>>(
+      'vendor_property_aliases?select=vendor_id,alias_raw,property_id&limit=5000',
+    ),
+  ])
+  const channelByContact = new Map(contacts.map(c => [c.id, c.billing_channel]))
+  const properties: PropertyRates[] = props.map(p => ({
+    id: p.id,
+    name: p.name,
+    ceCharged: null,
+    cleanerPay: null,
+    deepClean3xCe: null,
+    billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
+  }))
+  const byTrellisId = new Map<string, number>()
+  for (const p of props) if (p.trellis_id) byTrellisId.set(p.trellis_id, p.id)
+  return {
+    properties,
+    aliases: aliases.map(a => ({ vendorId: a.vendor_id, aliasRaw: a.alias_raw, propertyId: a.property_id })),
+    byId: new Map(properties.map(p => [p.id, p])),
+    byTrellisId,
+  }
+}
+
+interface TaskBilling {
+  state: 'billed' | 'on_run' | 'needs_price' | 'dismissed'
+  runStatus: string | null
+  charge: number | null
+}
+
+/** How each task id is represented on invoice runs, if at all. */
+async function loadTaskBilling(taskIds: string[]): Promise<Map<string, TaskBilling>> {
+  const out = new Map<string, TaskBilling>()
+  for (let i = 0; i < taskIds.length; i += 80) {
+    const chunk = taskIds.slice(i, i + 80).map(id => `"${id.replace(/"/g, '')}"`).join(',')
+    const rows = await sbFetch<Array<Record<string, any>>>(
+      `invoice_lines?matched_task_id=in.(${encodeURIComponent(chunk)})` +
+        `&select=matched_task_id,line_kind,review_status,client_charge_amount,invoice_runs(status)`,
+    )
+    for (const r of rows) {
+      const runStatus: string | null = Array.isArray(r.invoice_runs) ? r.invoice_runs[0]?.status ?? null : r.invoice_runs?.status ?? null
+      if (runStatus === 'void') continue
+      const excluded = r.line_kind === 'excluded' || r.review_status === 'excluded'
+      const next: TaskBilling = excluded
+        ? { state: 'dismissed', runStatus, charge: null }
+        : r.review_status === 'needs_review'
+          ? { state: 'needs_price', runStatus, charge: r.client_charge_amount == null ? null : Number(r.client_charge_amount) }
+          : {
+              state: runStatus === 'approved' || runStatus === 'exported' ? 'billed' : 'on_run',
+              runStatus,
+              charge: r.client_charge_amount == null ? null : Number(r.client_charge_amount),
+            }
+      // A live line beats a dismissed one for the same task.
+      const prev = out.get(r.matched_task_id)
+      if (!prev || prev.state === 'dismissed') out.set(r.matched_task_id, next)
+    }
+  }
+  return out
+}
+
+function describeBilling(b: TaskBilling | undefined): string {
+  if (!b) return 'NOT on any invoice run yet'
+  switch (b.state) {
+    case 'billed': return `billed ${usd(b.charge)} (run ${b.runStatus})`
+    case 'on_run': return `on a run ${b.runStatus === 'review_needed' ? 'awaiting review' : `(${b.runStatus})`} at ${usd(b.charge)}`
+    case 'needs_price': return 'on a run but NEEDS A PRICE'
+    case 'dismissed': return 'dismissed by staff (will not bill)'
+  }
+}
+
+const listBillableTasks: Tool = {
+  name: 'ops_list_billable_tasks',
+  description:
+    'List the auxiliary (non-clean) tasks recorded in Breezeway and Trellis for a date range — hot tub ' +
+    'refreshes, trash pickups, lockbox checks, deliveries, touch-ups — with whether each was completed and ' +
+    'whether it has been put on a client invoice. Call this to check whether work someone mentioned in Slack ' +
+    'or Quo has a task record, before logging an observation, or when the user asks what billable work ' +
+    'happened this week. Cleans are excluded unless include_cleans is true. Dates are yyyy-mm-dd.',
+  scope: 'audit:read',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      from: { type: 'string', description: 'Start date yyyy-mm-dd (default: 7 days ago).' },
+      to: { type: 'string', description: 'End date yyyy-mm-dd inclusive (default: today).' },
+      property: { type: 'string', description: 'Only tasks on properties whose name contains this (case-insensitive).' },
+      include_cleans: { type: 'boolean', description: 'Also list scheduled cleans (departure / turn / deep / onboarding). Default false.' },
+      include_non_billable: { type: 'boolean', description: 'Also list non-billable auxiliary tasks (self-inspections, walkthroughs, air filters, vacancy cleans). Default false.' },
+    },
+    additionalProperties: false,
+  },
+  async handler(args) {
+    const to = isoDate(args.to) ?? todayIso()
+    const from = isoDate(args.from) ?? addDays(to, -7)
+    if (from > to) return { text: 'from must be on or before to.', isError: true }
+    const propFilter = str(args.property)?.toLowerCase()
+    const includeCleans = args.include_cleans === true
+    const includeNonBillable = args.include_non_billable === true
+
+    const supabase = getServiceClient()
+    if (!supabase) return { text: 'Supabase service role not configured.', isError: true }
+    const [pctx, settings] = await Promise.all([loadPropertyContext(), loadAuxSettings(supabase)])
+    const tasks = await loadAuxiliaryTasks(supabase, from, to, pctx.byTrellisId)
+
+    const rows: Array<{ category: AuxCategory; task: (typeof tasks)[number] }> = []
+    for (const t of tasks) {
+      const category = classifyAuxTask(t.title)
+      if (category === 'clean' && !includeCleans) continue
+      if (category === 'no_clean') continue
+      const billable = isBillableCategory(category, settings)
+      if (!billable && category !== 'clean' && category !== 'unclassified' && !includeNonBillable) continue
+      const pname = t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? '' : ''
+      if (propFilter && !pname.toLowerCase().includes(propFilter) && !t.title.toLowerCase().includes(propFilter)) continue
+      rows.push({ category, task: t })
+    }
+    // Breezeway and Trellis usually both carry the same task — show one row
+    // per (property, day, category), Breezeway first, like the invoice does.
+    rows.sort((a, b) =>
+      (a.task.date ?? '').localeCompare(b.task.date ?? '') ||
+      (a.task.source === b.task.source ? 0 : a.task.source === 'breezeway' ? -1 : 1),
+    )
+    const seen = new Set<string>()
+    const deduped = rows.filter(r => {
+      const k = `${r.task.propertyId}|${r.task.date}|${r.category}`
+      if (r.task.propertyId != null && seen.has(k)) return false
+      seen.add(k)
+      return true
+    })
+    const billing = await loadTaskBilling(deduped.map(r => r.task.externalId))
+
+    if (deduped.length === 0) return { text: `No matching tasks between ${from} and ${to}.`, data: [] }
+    const shown = deduped.slice(0, 200)
+    const lines = shown.map(({ category, task: t }) => {
+      const def = AUX_CATEGORIES[category]
+      const pname = t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? `property #${t.propertyId}` : 'UNRESOLVED PROPERTY'
+      const state = t.cancelled ? 'cancelled' : t.completed ? 'completed' : 'open / not completed'
+      const billable = isBillableCategory(category, settings)
+      const bill = billable && t.completed && !t.cancelled ? ` · ${describeBilling(billing.get(t.externalId))}` : billable ? '' : ' · not billable'
+      return `- ${t.date ?? '????-??-??'} · ${pname} · ${def.label}${def.serviceType ? ` (${def.serviceType})` : ''} · ${t.source} "${t.title}" · ${state}${bill} · id ${t.externalId}`
+    })
+    const completedBillable = deduped.filter(r => r.task.completed && !r.task.cancelled && isBillableCategory(r.category, settings))
+    const unbilled = completedBillable.filter(r => !billing.get(r.task.externalId) || billing.get(r.task.externalId)!.state === 'needs_price')
+    const header =
+      `${deduped.length} task(s) ${from} → ${to}: ${completedBillable.length} completed & billable, ` +
+      `${unbilled.length} of those not yet billed / needing a price` +
+      (deduped.length > shown.length ? ` (showing first ${shown.length})` : '')
+    return {
+      text: `${header}\n${lines.join('\n')}`,
+      data: shown.map(({ category, task: t }) => ({
+        ...t,
+        category,
+        service_type: AUX_CATEGORIES[category].serviceType,
+        billable: isBillableCategory(category, settings),
+        billing: billing.get(t.externalId) ?? null,
+        property_name: t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? null : null,
+      })),
+    }
+  },
+}
+
+const logTaskObservation: Tool = {
+  name: 'ops_log_task_observation',
+  description:
+    'Record that auxiliary work was done, as observed in Slack, Quo (texts/calls), or email — e.g. "Norma ' +
+    'refreshed the hot tub at Tara Rao 116 today", "mid-stay trash pickup at 437 Geri Giddens". Call this for ' +
+    'EVERY such mention during a sweep; it is idempotent on external_id (use the Slack permalink / Quo message ' +
+    'id), so re-running a sweep never duplicates. The server resolves the property name (aliases + fuzzy), ' +
+    'classifies the work, and checks Breezeway/Trellis for a matching task within a day. The reply says ' +
+    'whether the work is TRACKED (a task exists, so it will bill automatically) or UNTRACKED (no task — staff ' +
+    'will bill it from the Task Audit view). Do NOT log scheduled cleans (departure / turn / deep), only the ' +
+    'extra work around them.',
+  scope: 'audit:write',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      external_id: { type: 'string', description: 'Stable id for this mention: Slack permalink, Quo message id, or "<channel>:<date>:<short hash>".' },
+      source: { type: 'string', enum: [...OBS_SOURCES], description: 'Where it was seen.' },
+      property: { type: 'string', description: 'Property as written in the message ("Tara Rao 116", "437 Geri Giddens", a listing name). Resolved server-side.' },
+      occurred_on: { type: 'string', description: 'Date the work was done, yyyy-mm-dd (the day of the message if not stated).' },
+      summary: { type: 'string', description: 'One sentence: what was done, by whom, why (quote the message if short).' },
+      service_hint: { type: 'string', description: 'What kind of work, in plain words: "hot tub refresh", "trash pickup", "linen pull", "delivery", "lockbox", "touch up", "pet fee", "extra cleaning". Optional — inferred from summary when omitted.' },
+      evidence_url: { type: 'string', description: 'Link to the message, if any.' },
+      reported_by: { type: 'string', description: 'Who reported / did the work.' },
+    },
+    required: ['external_id', 'source', 'property', 'occurred_on', 'summary'],
+    additionalProperties: false,
+  },
+  async handler(args, ctx) {
+    const externalId = str(args.external_id)
+    const source = str(args.source) as (typeof OBS_SOURCES)[number] | undefined
+    const propertyText = str(args.property)
+    const occurredOn = isoDate(args.occurred_on)
+    const summary = str(args.summary)
+    if (!externalId || !source || !OBS_SOURCES.includes(source) || !propertyText || !occurredOn || !summary) {
+      return { text: 'external_id, source (slack|quo|email|manual|other), property, occurred_on (yyyy-mm-dd) and summary are required.', isError: true }
+    }
+
+    // Never overwrite a human's decision on a re-run.
+    const existing = await sbFetch<Array<Record<string, any>>>(
+      `task_audit_observations?external_id=eq.${encodeURIComponent(externalId)}&select=id,status,property_id,matched_task_id`,
+    )
+    if (existing[0] && (existing[0].status === 'dismissed' || existing[0].status === 'billed')) {
+      return { text: `Already recorded and ${existing[0].status} by staff — nothing changed.`, data: existing[0] }
+    }
+
+    const supabase = getServiceClient()
+    if (!supabase) return { text: 'Supabase service role not configured.', isError: true }
+    const pctx = await loadPropertyContext()
+    const resolution = resolveProperty(propertyText, pctx.aliases, pctx.properties, null)
+    const propertyId = resolution.propertyId
+    const property = propertyId != null ? pctx.byId.get(propertyId) ?? null : null
+
+    const hint = str(args.service_hint)
+    let category = classifyAuxTask(hint ?? summary)
+    if (category === 'unclassified' && hint) category = classifyAuxTask(summary)
+    if (category === 'clean') {
+      return { text: 'That is a scheduled clean — cleans bill through the vendor invoice, so nothing was logged. Only log auxiliary work (hot tub, trash, deliveries, lockbox, touch-ups…).', isError: true }
+    }
+    const def = AUX_CATEGORIES[category]
+
+    const tasks = propertyId != null
+      ? await loadAuxiliaryTasks(supabase, addDays(occurredOn, -1), addDays(occurredOn, 1), pctx.byTrellisId)
+      : []
+    const match = matchObservationToTask(
+      { propertyId, date: occurredOn, category },
+      tasks.filter(t => !t.cancelled).map(t => ({ externalId: t.externalId, propertyId: t.propertyId, date: t.date, category: classifyAuxTask(t.title) })),
+    )
+    const matchedTask = match ? tasks.find(t => t.externalId === match.externalId) ?? null : null
+    const billing = matchedTask ? (await loadTaskBilling([matchedTask.externalId])).get(matchedTask.externalId) : undefined
+
+    const row = {
+      external_id: externalId,
+      source,
+      property_id: propertyId,
+      property_text: propertyText,
+      category,
+      service_type: def.serviceType,
+      occurred_on: occurredOn,
+      summary,
+      evidence_url: str(args.evidence_url) ?? null,
+      reported_by: str(args.reported_by) ?? null,
+      raw: { service_hint: hint ?? null, resolution },
+      status: matchedTask ? 'matched' : 'open',
+      matched_task_id: matchedTask?.externalId ?? null,
+      created_by: ctx.subjectEmail,
+    }
+    const saved = await sbFetch<Array<Record<string, any>>>(
+      'task_audit_observations?on_conflict=external_id',
+      { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify([row]) },
+    )
+
+    const where = property ? property.name : `"${propertyText}" (UNRESOLVED — no Ops property matched; staff will assign one)`
+    let verdict: string
+    if (matchedTask) {
+      verdict =
+        `TRACKED: ${matchedTask.source} task "${matchedTask.title}" on ${matchedTask.date} ` +
+        `(${matchedTask.completed ? 'completed' : 'not marked complete yet'}) — ` +
+        (def.serviceType
+          ? matchedTask.completed
+            ? `it is ${describeBilling(billing)}; reconcile bills it automatically.`
+            : 'it will bill once the task is marked complete.'
+          : `${def.label} is not a billable category.`)
+    } else if (propertyId == null) {
+      verdict = 'UNTRACKED and the property could not be resolved — logged for staff to assign a property and bill.'
+    } else if (!def.serviceType) {
+      verdict = `UNTRACKED, but ${def.label} is not billable — logged for the record only.`
+    } else {
+      verdict = `UNTRACKED: no ${def.label} task exists on ${where} within a day of ${occurredOn}. Logged as untracked work — it appears in Invoicing → Task audit for staff to bill as ${def.serviceType}.`
+    }
+    return {
+      text: `${def.label} at ${where} on ${occurredOn} — ${verdict}`,
+      data: { observation: saved[0] ?? row, matched_task: matchedTask, billing: billing ?? null, resolution },
+    }
+  },
+}
+
+const taskAuditSummary: Tool = {
+  name: 'ops_task_audit_summary',
+  description:
+    'Summarise the state of billable auxiliary work for a date range: observations logged from Slack/Quo that ' +
+    'have NO task record (untracked work staff must bill by hand), completed billable tasks not yet on any ' +
+    'invoice run, and tasks on a run that still need a price. Call this at the end of a sweep to report, or ' +
+    'when the user asks what is unbilled / what needs attention in invoicing. Dates are yyyy-mm-dd.',
+  scope: 'audit:read',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      from: { type: 'string', description: 'Start date yyyy-mm-dd (default: 14 days ago).' },
+      to: { type: 'string', description: 'End date yyyy-mm-dd inclusive (default: today).' },
+    },
+    additionalProperties: false,
+  },
+  async handler(args) {
+    const to = isoDate(args.to) ?? todayIso()
+    const from = isoDate(args.from) ?? addDays(to, -14)
+    if (from > to) return { text: 'from must be on or before to.', isError: true }
+    const supabase = getServiceClient()
+    if (!supabase) return { text: 'Supabase service role not configured.', isError: true }
+
+    const [pctx, settings, observations] = await Promise.all([
+      loadPropertyContext(),
+      loadAuxSettings(supabase),
+      sbFetch<Array<Record<string, any>>>(
+        `task_audit_observations?occurred_on=gte.${from}&occurred_on=lte.${to}` +
+          `&select=id,external_id,source,property_id,property_text,category,service_type,occurred_on,summary,status,matched_task_id,evidence_url,reported_by` +
+          `&order=occurred_on.desc&limit=500`,
+      ),
+    ])
+    const tasks = await loadAuxiliaryTasks(supabase, from, to, pctx.byTrellisId)
+    const billableDone = tasks.filter(t => t.completed && !t.cancelled && t.propertyId != null && isBillableCategory(classifyAuxTask(t.title), settings))
+    const seen = new Set<string>()
+    const deduped = billableDone
+      .sort((a, b) => (a.source === b.source ? 0 : a.source === 'breezeway' ? -1 : 1))
+      .filter(t => {
+        const k = `${t.propertyId}|${t.date}|${classifyAuxTask(t.title)}`
+        if (seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+    const billing = await loadTaskBilling(deduped.map(t => t.externalId))
+    const pname = (id: number | null) => (id != null ? pctx.byId.get(id)?.name ?? `property #${id}` : 'unresolved property')
+    const catLabel = (c: unknown) => AUX_CATEGORIES[(typeof c === 'string' && c in AUX_CATEGORIES ? c : 'unclassified') as AuxCategory].label
+
+    const unbilled = deduped.filter(t => !billing.has(t.externalId))
+    const needsPrice = deduped.filter(t => billing.get(t.externalId)?.state === 'needs_price')
+    const billed = deduped.filter(t => ['billed', 'on_run'].includes(billing.get(t.externalId)?.state ?? ''))
+    const untracked = observations.filter(o => o.status === 'open')
+    const matched = observations.filter(o => o.status === 'matched')
+
+    const parts: string[] = []
+    parts.push(
+      `Task audit ${from} → ${to}: ${deduped.length} completed billable task(s) — ${billed.length} billed/on a run, ` +
+        `${needsPrice.length} need a price, ${unbilled.length} not on any run yet. ` +
+        `${observations.length} observation(s) logged — ${matched.length} matched a task, ${untracked.length} UNTRACKED (no task record).`,
+    )
+    if (untracked.length) {
+      parts.push(
+        'UNTRACKED work (no task — staff must bill by hand from Invoicing → Task audit):\n' +
+          untracked.slice(0, 50).map(o =>
+            `- ${o.occurred_on} · ${o.property_id != null ? pname(o.property_id) : `"${o.property_text}" (unresolved)`} · ${catLabel(o.category)} · ${o.summary} (${o.source})`,
+          ).join('\n'),
+      )
+    }
+    if (needsPrice.length) {
+      parts.push(
+        'On a run but NEED A PRICE:\n' +
+          needsPrice.slice(0, 50).map(t => `- ${t.date} · ${pname(t.propertyId)} · ${AUX_CATEGORIES[classifyAuxTask(t.title)].serviceType} · "${t.title}"`).join('\n'),
+      )
+    }
+    if (unbilled.length) {
+      parts.push(
+        'Completed but not on any invoice run yet (bills automatically when a run covering the date is generated or reconciled):\n' +
+          unbilled.slice(0, 50).map(t => `- ${t.date} · ${pname(t.propertyId)} · ${AUX_CATEGORIES[classifyAuxTask(t.title)].serviceType} · ${t.source} "${t.title}"`).join('\n'),
+      )
+    }
+    return {
+      text: parts.join('\n\n'),
+      data: {
+        from, to,
+        completed_billable: deduped.length,
+        billed: billed.length,
+        needs_price: needsPrice.map(t => ({ ...t, property_name: pname(t.propertyId) })),
+        unbilled: unbilled.map(t => ({ ...t, property_name: pname(t.propertyId) })),
+        untracked_observations: untracked,
+        matched_observations: matched.length,
+      },
+    }
+  },
+}
+
 export const TOOLS: Tool[] = [
   listClients,
   getClient,
@@ -535,6 +949,9 @@ export const TOOLS: Tool[] = [
   logInteraction,
   setClientStage,
   movePropertyStage,
+  listBillableTasks,
+  logTaskObservation,
+  taskAuditSummary,
 ]
 
 const TOOL_BY_NAME = new Map(TOOLS.map(t => [t.name, t]))
@@ -559,7 +976,10 @@ const SERVER_INSTRUCTIONS =
   'PROPERTY pipeline (Lead → Quote → Onboarding → Active → Offboarding → Offboarded). ' +
   'Moving one never moves the other. Resolve people by name with crm_get_client before writing ' +
   'against them. When logging meetings in bulk, always pass a stable external_id so re-runs are ' +
-  'no-ops rather than duplicates.'
+  'no-ops rather than duplicates. Task audit: auxiliary work (hot tub refreshes, trash pickups, ' +
+  'deliveries, lockbox checks, touch-ups) bills the client only when a Breezeway/Trellis task exists; ' +
+  'log every Slack/Quo mention of such work with ops_log_task_observation (stable external_id) and ' +
+  'finish a sweep with ops_task_audit_summary.'
 
 const SERVER_CAPABILITIES = { tools: { listChanged: false } } as const
 
