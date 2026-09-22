@@ -11,6 +11,7 @@ import { StatCard } from '@/components/StatCard'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
+import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -109,8 +110,13 @@ export default function InvoicingPage() {
   const [generateOpen, setGenerateOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [reviewLine, setReviewLine] = useState<InvoiceLine | null>(null)
+  // Runs = the vendor-invoice workflow. Task audit = billable work that is
+  // NOT on the vendor invoice (completed Breezeway/Trellis tasks, Slack/Quo
+  // observations logged by Cowork) and what still needs billing.
+  const [view, setView] = useState<'runs' | 'audit'>('runs')
 
   const userLabel = effectiveUser?.label || 'Unknown'
+  const isAdmin = effectiveUser?.role === 'admin'
 
   // ── Vendors (used by both dialogs) ─────────────────────────────────────────
   const vendorsQuery = useQuery<Vendor[]>({
@@ -253,7 +259,25 @@ export default function InvoicingPage() {
         <>
           <PageHeader
             title="Invoicing"
-            subtitle="Reconcile vendor cleaning invoices, review flagged lines, and export to Ramp / QBO / bill.com."
+            subtitle={view === 'audit'
+              ? 'Billable work that is not on the vendor invoice: completed tasks, what was seen in Slack / Quo, and what still needs billing.'
+              : 'Reconcile vendor cleaning invoices, review flagged lines, and export to Ramp / QBO / bill.com.'}
+            beneath={
+              <div className="flex items-center gap-1" data-testid="invoicing-view-toggle">
+                {([['runs', 'Invoice runs'], ['audit', 'Task audit']] as const).map(([id, label]) => (
+                  <Button
+                    key={id}
+                    size="sm"
+                    variant={view === id ? 'secondary' : 'ghost'}
+                    className="h-7 px-2.5"
+                    onClick={() => setView(id)}
+                    data-testid={`invoicing-view-${id}`}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            }
             actions={
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} data-testid="button-upload-invoice">
@@ -266,6 +290,10 @@ export default function InvoicingPage() {
             }
           />
 
+          {view === 'audit' ? (
+            <TaskAudit userLabel={userLabel} isAdmin={isAdmin} />
+          ) : (
+          <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -412,6 +440,8 @@ export default function InvoicingPage() {
                 ))}
               </div>
             </>
+          )}
+          </>
           )}
         </>
       )}
@@ -749,26 +779,36 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // The dialog is for lines that need CHANGES. A line whose engine result is
   // already right (or that a human has eyeballed) just needs "yes, reviewed" —
   // one click per row, or one confirmed click for everything left.
-  const [lineFilter, setLineFilter] = useState<'all' | 'issues' | 'needs_review' | 'resolved' | 'ok'>('all')
+  const [lineFilter, setLineFilter] = useState<'all' | 'issues' | 'needs_review' | 'resolved' | 'ok' | 'tasks'>('all')
   const [confirmAcceptAll, setConfirmAcceptAll] = useState(false)
   // Anything actually wrong with a line, independent of its review_status —
   // see lineIssues(). This is what makes a blocker findable after someone has
   // marked it resolved without fixing it.
   const issueLines = useMemo(() => lines.filter(hasIssues), [lines])
+  // Billable Breezeway/Trellis tasks the vendor did NOT invoice (source =
+  // 'task', see api/invoices/_aux.ts): client charge only, no vendor pay.
+  // Auto-approved when priced; dismiss (exclude) or edit like any line.
+  const taskLines = useMemo(() => lines.filter(l => l.source === 'task'), [lines])
+  const activeTaskLines = useMemo(() => taskLines.filter(l => l.review_status !== 'excluded' && l.line_kind !== 'excluded'), [taskLines])
+  const taskTotal = useMemo(() => sum(activeTaskLines.map(l => l.client_charge_amount)), [activeTaskLines])
+  const taskNeedsPrice = useMemo(() => activeTaskLines.filter(l => l.review_status === 'needs_review').length, [activeTaskLines])
   const counts = useMemo(() => ({
     all: lines.length,
     issues: issueLines.length,
     needs_review: lines.filter(l => l.review_status === 'needs_review').length,
     resolved: lines.filter(l => l.review_status === 'resolved').length,
     ok: lines.filter(l => l.review_status === 'ok').length,
-  }), [lines, issueLines])
+    tasks: taskLines.length,
+  }), [lines, issueLines, taskLines])
   const filteredLines = useMemo(
     () => (lineFilter === 'all'
       ? lines
       : lineFilter === 'issues'
         ? issueLines
-        : lines.filter(l => l.review_status === lineFilter)),
-    [lines, lineFilter, issueLines],
+        : lineFilter === 'tasks'
+          ? taskLines
+          : lines.filter(l => l.review_status === lineFilter)),
+    [lines, lineFilter, issueLines, taskLines],
   )
 
   // Date-header blocks the engine judged mis-dated, collapsed to one banner
@@ -926,6 +966,27 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         </div>
       )}
 
+      {taskLines.length > 0 && (
+        <div className="rounded-xl border border-info/40 bg-info/10 px-4 py-3 text-sm flex items-start gap-2.5" data-testid="task-lines-banner">
+          <Receipt className="w-4 h-4 mt-0.5 shrink-0 text-info" />
+          <div className="min-w-0">
+            <p className="font-medium">
+              {activeTaskLines.length} billable task{activeTaskLines.length === 1 ? '' : 's'} from Breezeway / Trellis added to this run
+              {taskTotal > 0 && <> — {fmtMoney(taskTotal)} to clients</>}
+              {taskLines.length > activeTaskLines.length && <span className="text-muted-foreground font-normal"> · {taskLines.length - activeTaskLines.length} dismissed</span>}
+            </p>
+            <p className="text-muted-foreground">
+              Hot tub refreshes, trash pickups, deliveries and other work the vendor no longer invoices. Billed to the client at the standard price, not paid to the vendor; the vendor subtotal is unaffected.
+              They are approved as-is — use <Ban className="inline w-3 h-3 align-text-bottom" /> to dismiss one you don't want to bill, or the pencil to change the charge.
+              {taskNeedsPrice > 0 && <> <span className="text-warning font-medium">{taskNeedsPrice} need{taskNeedsPrice === 1 ? 's' : ''} a price</span> (no standard price for that service — set one under Task audit → Pricing, or edit the line).</>}
+            </p>
+            <Button size="sm" variant="ghost" className="h-7 px-2 mt-1 -ml-2" onClick={() => setLineFilter('tasks')} data-testid="button-show-task-lines">
+              Show billable tasks
+            </Button>
+          </div>
+        </div>
+      )}
+
       {addOpen && (
         <AddLineDialog
           runId={runId}
@@ -970,7 +1031,14 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard title="Total invoiced" value={fmtMoney(totals.invoiced)} icon={Receipt} loading={linesQuery.isLoading} />
         <StatCard title="Cleaner pay (Ramp)" value={fmtMoney(totals.cleanerPay)} icon={Receipt} tone="info" loading={linesQuery.isLoading} />
-        <StatCard title="Client charge" value={fmtMoney(totals.clientCharge)} icon={Receipt} tone="primary" loading={linesQuery.isLoading} />
+        <StatCard
+          title="Client charge"
+          value={fmtMoney(totals.clientCharge)}
+          subtitle={activeTaskLines.length > 0 ? `incl. ${fmtMoney(taskTotal)} from ${activeTaskLines.length} billable task${activeTaskLines.length === 1 ? '' : 's'}` : undefined}
+          icon={Receipt}
+          tone="primary"
+          loading={linesQuery.isLoading}
+        />
         <StatCard
           title="Net discrepancy"
           value={fmtMoney(netDiscrepancy)}
@@ -1067,7 +1135,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
           {/* Review fast path: filter to the queue, accept per-row or all at once */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-1">
-              {([['all', 'All'], ['issues', 'Issues'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK']] as const).map(([id, label]) => (
+              {([['all', 'All'], ['issues', 'Issues'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK'], ['tasks', 'Billable tasks']] as const).map(([id, label]) => (
                 <Button
                   key={id}
                   size="sm"
@@ -1081,6 +1149,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                     'ml-1.5 text-2xs tabular-nums',
                     id === 'issues' && counts.issues > 0 ? 'text-destructive font-semibold'
                       : id === 'needs_review' && counts.needs_review > 0 ? 'text-warning font-semibold'
+                      : id === 'tasks' && counts.tasks > 0 ? 'text-info font-semibold'
                       : 'text-muted-foreground',
                   )}>
                     {counts[id]}
@@ -1169,6 +1238,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         <td className="px-2 py-2 tabular-nums text-muted-foreground">
                           {line.line_no}
                           {line.split_group != null && <span className="ml-1 text-2xs">split</span>}
+                          {line.source === 'task' && <span className="ml-1 text-2xs text-info" title="Billable task from Breezeway / Trellis — not on the vendor invoice">task</span>}
                         </td>
                         <td className="px-2 py-2 max-w-48">
                           {/* No property record (labor / expense lines): the vendor's
@@ -1267,7 +1337,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                                 variant="ghost"
                                 className="h-7 px-2 text-muted-foreground hover:text-destructive"
                                 onClick={() => excludeMutation.mutate(line)}
-                                title="Exclude line"
+                                title={line.source === 'task' ? "Dismiss — don't bill this task (sticks across reconciles)" : 'Exclude line'}
                                 data-testid={`button-exclude-${line.id}`}
                               >
                                 <Ban className="w-3.5 h-3.5" />

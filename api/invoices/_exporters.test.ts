@@ -178,6 +178,46 @@ describe('toRampCsv', () => {
   })
 })
 
+describe('billable task lines (source=task, vendor billed nothing)', () => {
+  // A completed Breezeway hot tub refresh Busy Bee did not invoice: client
+  // charge only. It must reach the client (QBO or bill.com) and never Ramp.
+  const taskLine: ExportLine = {
+    lineKind: 'extra',
+    serviceType: 'Hot Tub Refresh Requested by Guest',
+    serviceDate: '2026-08-07',
+    propertyName: 'Michael Rohwer 2455',
+    clientName: 'Haven Vacation Rentals',
+    billingChannel: 'qbo_haven',
+    cleanerPayAmount: null,
+    clientChargeAmount: 50,
+    note: 'Cleaning: Hot Tub Refresh',
+    reviewStatus: 'ok',
+  }
+
+  it('is absent from the Ramp (AP) file', () => {
+    const rows = Papa.parse<string[]>(toRampCsv(RUN, [LINES[0], taskLine]).trim()).data
+    expect(rows).toHaveLength(2) // header + the one paid clean
+    expect(toRampCsv(RUN, [LINES[0], taskLine])).not.toMatch(/Hot Tub/)
+  })
+
+  it('is billed to Haven in both QBO formats at the client charge', () => {
+    const flat = Papa.parse<string[]>(toQboFlatCsv(RUN, [taskLine]).trim()).data
+    expect(flat).toHaveLength(2)
+    expect(flat[1].join('|')).toMatch(/Hot Tub Refresh Requested by Guest/)
+    expect(flat[1].join('|')).toMatch(/\$50\.00/)
+    const ml = toQboMultilineCsv(RUN, [taskLine])
+    expect(ml).toMatch(/Hot Tub Refresh Requested by Guest/)
+    expect(ml).toMatch(/50\.00/)
+  })
+
+  it('reaches the bill.com worksheet for a bill.com client', () => {
+    const bc = Papa.parse<string[]>(toBillComCsv(RUN, [{ ...taskLine, billingChannel: 'bill_com', clientName: 'Jane Owner' }]).trim()).data
+    expect(bc).toHaveLength(2)
+    expect(bc[1].join('|')).toMatch(/Hot Tub Refresh Requested by Guest/)
+    expect(bc[1].join('|')).toMatch(/50\.00/)
+  })
+})
+
 describe('toQboFlatCsv', () => {
   const csv = toQboFlatCsv(RUN, LINES)
   const rows = csv.split('\r\n')

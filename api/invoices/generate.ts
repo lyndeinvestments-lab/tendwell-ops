@@ -44,10 +44,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
     const propsById = new Map(ctx.properties.map(p => [p.id, p]))
     const rawLines = generateDraftLines(inPeriod, propsById)
-    if (rawLines.length === 0) {
-      res.status(200).json({ ok: false, reason: 'no_tasks', detail: 'No clean/deep-clean tasks with a linked property in that period' })
-      return
-    }
+    // No cleans is not necessarily no work: reconcileRun also appends the
+    // period's completed billable auxiliary tasks (hot tub refreshes, trash
+    // pickups… — see _aux.ts). Create the run, let reconcile fill it, and only
+    // report no_tasks if it ends up genuinely empty.
 
     const { data: run, error: runErr } = await supabase
       .from('invoice_runs')
@@ -73,13 +73,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       periodStart,
       periodEnd,
     })
-    const { error: insErr } = await supabase.from('invoice_lines').insert(toLineInserts(run.id, lines))
-    if (insErr) throw new Error(`Failed to insert lines: ${insErr.message}`)
+    if (lines.length > 0) {
+      const { error: insErr } = await supabase.from('invoice_lines').insert(toLineInserts(run.id, lines))
+      if (insErr) throw new Error(`Failed to insert lines: ${insErr.message}`)
+    }
 
     // reconcileRun recomputes status + computed_subtotal off the stored rows
-    // (idempotent with the insert above — it preserves nothing on first pass).
+    // (idempotent with the insert above — it preserves nothing on first pass)
+    // and appends the period's billable task lines.
     const result = await reconcileRun(supabase, run.id)
-    res.status(200).json({ ok: true, run_id: run.id, status: result.status, summary: result.summary })
+    if (lines.length === 0 && result.taskLines.inserted === 0) {
+      // Nothing at all — don't leave an empty run behind (lines cascade).
+      await supabase.from('invoice_runs').delete().eq('id', run.id)
+      res.status(200).json({ ok: false, reason: 'no_tasks', detail: 'No cleans or completed billable tasks with a linked property in that period' })
+      return
+    }
+    res.status(200).json({ ok: true, run_id: run.id, status: result.status, summary: result.summary, task_lines: result.taskLines })
   } catch (e) {
     res.status(500).json({ error: 'Generate failed', detail: e instanceof Error ? e.message : String(e) })
   }

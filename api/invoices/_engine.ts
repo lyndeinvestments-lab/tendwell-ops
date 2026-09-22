@@ -37,7 +37,9 @@ export interface TaskRow {
 
 export interface RawLine {
   lineNo: number
-  source: 'vendor' | 'generated' | 'manual'
+  // 'task' rows (billable Breezeway/Trellis tasks, see _aux.ts) never enter
+  // the engine — reconcileRun rebuilds them separately — but share the type.
+  source: 'vendor' | 'generated' | 'manual' | 'task'
   rawPropertyText: string | null
   rawNoteText: string | null
   rawAmount: number
@@ -124,6 +126,10 @@ export const FLAGS = {
   // lines have a clean on that day, and almost all of them have one on a
   // single other day. See detectMisdatedBlocks.
   SUSPECT_SERVICE_DATE: 'suspect_service_date',
+  // The line came from a completed Breezeway/Trellis task the vendor did NOT
+  // bill (Busy Bee stopped invoicing auxiliary work, Jordan 2026-09-22): it
+  // is charged to the client and paid to nobody. See _aux.ts.
+  AUX_TASK: 'aux_task',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82

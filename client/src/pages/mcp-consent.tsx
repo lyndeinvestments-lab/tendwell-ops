@@ -28,6 +28,10 @@ const SCOPE_COPY: Record<string, string> = {
     'Read your clients, their properties and value, interaction history, and what needs attention.',
   'crm:write':
     'Log meetings and calls, move clients and properties between stages, and set follow-ups.',
+  'audit:read':
+    'Read completed billable tasks from Breezeway and Trellis and whether each one has been invoiced.',
+  'audit:write':
+    'Record work observed in Slack, Quo or email so it can be checked against tasks and billed.',
 }
 
 /**

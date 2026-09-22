@@ -47,9 +47,9 @@ describe('parseScopeParam', () => {
   // failed the first time it tried to log a meeting, with no scope field in
   // Claude's UI to fix it.
   it('falls back to the full scope set when nothing is asked for', () => {
-    expect(parseScopeParam(undefined)).toEqual(['crm:read', 'crm:write'])
-    expect(parseScopeParam(null)).toEqual(['crm:read', 'crm:write'])
-    expect(parseScopeParam('')).toEqual(['crm:read', 'crm:write'])
+    expect(parseScopeParam(undefined)).toEqual([...MCP_SCOPES])
+    expect(parseScopeParam(null)).toEqual([...MCP_SCOPES])
+    expect(parseScopeParam('')).toEqual([...MCP_SCOPES])
   })
 
   it('drops unknown scopes rather than rejecting the request (RFC 6749 §3.3)', () => {
@@ -62,7 +62,7 @@ describe('parseScopeParam', () => {
   })
 
   it('falls back to the full set when every requested scope is unknown', () => {
-    expect(parseScopeParam('admin:everything')).toEqual(['crm:read', 'crm:write'])
+    expect(parseScopeParam('admin:everything')).toEqual([...MCP_SCOPES])
   })
 
   it('keeps write when asked for, and de-duplicates', () => {
