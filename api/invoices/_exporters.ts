@@ -116,13 +116,26 @@ export function fmtUsDate(iso: string | null): string {
 
 function isApLine(l: ExportLine): boolean {
   // Everything we actually owe the vendor: cleans, extras, operating expenses.
-  return l.lineKind !== 'excluded' && l.cleanerPayAmount != null && l.cleanerPayAmount !== 0
+  // Checks BOTH exclusion signals — line_kind='excluded' is the engine's own
+  // (self-inspection/air-filter) exclusion, review_status='excluded' is a
+  // human excluding a line (e.g. a caught duplicate) in review without the
+  // engine ever reclassifying line_kind. A line excluded only the second way
+  // used to still export at full amount (real case, 2026-09: four Aug 18
+  // duplicate lines Nina marked excluded in review still went out on Ramp/QBO
+  // because this check only ever looked at line_kind) — keep both checks.
+  return (
+    l.lineKind !== 'excluded' &&
+    l.reviewStatus !== 'excluded' &&
+    l.cleanerPayAmount != null &&
+    l.cleanerPayAmount !== 0
+  )
 }
 
 function isArLine(l: ExportLine, channel: BillingChannel): boolean {
   return (
     l.billingChannel === channel &&
     l.lineKind !== 'excluded' &&
+    l.reviewStatus !== 'excluded' &&
     l.lineKind !== 'operating_expense' &&
     l.clientChargeAmount != null &&
     l.clientChargeAmount !== 0

@@ -764,14 +764,21 @@ export async function reconcileRun(
     [...preservedBaseByLineNo.values()].reduce((a, r) => a + Number(r.raw_amount ?? 0), 0),
   )
   summary.totalInvoiced = round2(summary.totalInvoiced + preservedInvoiced)
+  // A human can exclude a line in review (e.g. a caught duplicate) without
+  // the engine ever reclassifying line_kind — review_status='excluded' is
+  // that signal and must count the same as line_kind='excluded' here, or a
+  // line marked excluded in review still inflates these totals (and, via
+  // isApLine/isArLine in _exporters.ts, still gets paid/billed in full).
   summary.totalCleanerPay = round2(
     summary.totalCleanerPay +
-      preserved.filter(r => r.line_kind !== 'excluded').reduce((a, r) => a + Number(r.cleaner_pay_amount ?? 0), 0),
+      preserved
+        .filter(r => r.line_kind !== 'excluded' && r.review_status !== 'excluded')
+        .reduce((a, r) => a + Number(r.cleaner_pay_amount ?? 0), 0),
   )
   summary.totalClientCharge = round2(
     summary.totalClientCharge +
       preserved
-        .filter(r => r.line_kind !== 'excluded' && r.line_kind !== 'operating_expense')
+        .filter(r => r.line_kind !== 'excluded' && r.review_status !== 'excluded' && r.line_kind !== 'operating_expense')
         .reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0),
   )
 
