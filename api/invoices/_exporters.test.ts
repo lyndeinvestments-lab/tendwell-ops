@@ -178,6 +178,32 @@ describe('toRampCsv', () => {
   })
 })
 
+describe('review_status=excluded is honored the same as line_kind=excluded', () => {
+  // Real case (2026-09): Nina caught 4 duplicate lines from a mis-dated
+  // invoice header and marked them excluded in review — but the engine never
+  // reclassifies line_kind on a human exclude, so line_kind stayed 'clean'.
+  // isApLine/isArLine used to check ONLY line_kind, so these still went out
+  // on Ramp (paying the vendor again) and on QBO/bill.com (overbilling the
+  // client) at full amount despite being marked excluded.
+  const humanExcluded: ExportLine = {
+    ...LINES[0], // lineKind: 'clean', still has cleanerPayAmount/clientChargeAmount
+    reviewStatus: 'excluded',
+  }
+
+  it('drops a review-excluded line from the Ramp (AP) export even though line_kind is still "clean"', () => {
+    const csv = toRampCsv(RUN, [LINES[1], humanExcluded])
+    const rows = csv.split('\r\n')
+    expect(rows).toHaveLength(1 + 1) // header + the one real line only
+    expect(csv).not.toContain(humanExcluded.cleanerPayAmount!.toFixed(2))
+  })
+
+  it('drops a review-excluded line from the QBO flat (AR) export even though line_kind is still "clean"', () => {
+    const csv = toQboFlatCsv(RUN, [LINES[0], humanExcluded])
+    const rows = csv.split('\r\n')
+    expect(rows).toHaveLength(1 + 1) // header + the one real line only
+  })
+})
+
 describe('billable task lines (source=task, vendor billed nothing)', () => {
   // A completed Breezeway hot tub refresh Busy Bee did not invoice: client
   // charge only. It must reach the client (QBO or bill.com) and never Ramp.
