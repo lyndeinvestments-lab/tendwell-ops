@@ -21,6 +21,7 @@ import {
   APP_SETTING_AUX_BILLABLE,
   APP_SETTING_EXTRA_PRICING,
   isTaskCancelled,
+  feeOverridesByContact,
   isTaskCompleted,
   resolveAuxSettings,
   type AuxBillingSettings,
@@ -115,7 +116,7 @@ export async function loadEngineContext(
 
   // Every one of these is paged: a truncated context makes the engine flag
   // real cleans as `unmatched_task`, and it does so silently. See fetchAllRows.
-  const [propRowsRaw, contactRows, aliasRows, taskRows, trellisRows] = await Promise.all([
+  const [propRowsRaw, contactRows, aliasRows, taskRows, trellisRows, overrideRows] = await Promise.all([
     fetchAllRows<{
       id: number
       name: string
@@ -124,11 +125,12 @@ export async function loadEngineContext(
       deep_clean_3x_ce: number | null
       contact_id: string | null
       trellis_id: string | null
+      hot_tub: boolean | null
     }>(
       'properties',
       () => supabase
         .from('properties')
-        .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id')
+        .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id, hot_tub')
         .is('deleted_at', null)
         .order('id'),
       'id',
@@ -189,8 +191,20 @@ export async function loadEngineContext(
         .order('trellis_task_id'),
       'trellis_task_id',
     ),
+    // Per-client negotiated fee prices (Invoicing → Task audit → Client fee
+    // overrides). Resolved per property through contact_id, like the billing
+    // channel, so every property of one client prices the same.
+    fetchAllRows<{ contact_id: string | null; service_type: string; charge: number | string | null; hot_tub_charge: number | string | null }>(
+      'client_fee_overrides',
+      () => supabase
+        .from('client_fee_overrides')
+        .select('id, contact_id, service_type, charge, hot_tub_charge')
+        .order('id'),
+      'id',
+    ),
   ])
 
+  const overridesByContact = feeOverridesByContact(overrideRows)
   const channelByContact = new Map<string, BillingChannel>()
   for (const c of contactRows) {
     channelByContact.set(c.id, c.billing_channel)
@@ -204,6 +218,8 @@ export async function loadEngineContext(
     cleanerPay: p.cleaner_pay,
     deepClean3xCe: p.deep_clean_3x_ce,
     billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
+    hotTub: p.hot_tub === true,
+    feeOverrides: p.contact_id ? overridesByContact.get(p.contact_id) : undefined,
   }))
   const propertyByTrellisId = new Map<string, number>()
   for (const p of propRows) if (p.trellis_id) propertyByTrellisId.set(p.trellis_id, p.id)

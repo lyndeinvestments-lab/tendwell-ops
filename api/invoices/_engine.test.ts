@@ -14,6 +14,8 @@ import {
   isOperatingExpenseText,
   matchToTask,
   standardExtraCharge,
+  extraPriceFor,
+  STANDARD_EXTRA_PRICING,
   noteFromPropertyCell,
   reconcile,
   resolveProperty,
@@ -27,6 +29,7 @@ import {
   type RawLine,
   type TaskRow,
 } from './_engine.js'
+import { DEFAULT_EXTRA_PRICING, DEFAULT_HOT_TUB_PRICING } from '../../shared/aux-tasks'
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -1181,7 +1184,7 @@ describe('TEST 3–6 review-queue fixes', () => {
     expect(lines[0].lineKind).toBe('extra')
     expect(lines[0].serviceType).toBe('Vacancy Clean / Touch Up Clean')
     expect(lines[0].cleanerPayAmount).toBe(25)
-    expect(lines[0].clientChargeAmount).toBe(55)
+    expect(lines[0].clientChargeAmount).toBe(50)
     expect(lines[0].reviewStatus).toBe('ok')
   })
 
@@ -1254,18 +1257,18 @@ describe('engine notes explain the review reason', () => {
 
 describe('standardExtraCharge', () => {
   it('bills the standard charge for the normal case', () => {
-    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)).toEqual({ charge: 50, review: false })
-    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 20)).toEqual({ charge: 55, review: false })
-    expect(standardExtraCharge('Pet Fee', 23.5)).toEqual({ charge: 45, review: false })
-    expect(standardExtraCharge('Excessive Trash Pickup', 44.72)).toEqual({ charge: 50, review: false })
+    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)).toMatchObject({ charge: 50, review: false, source: 'standard' })
+    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 20)).toMatchObject({ charge: 50, review: false })
+    expect(standardExtraCharge('Pet Fee', 23.5)).toMatchObject({ charge: 45, review: false })
+    expect(standardExtraCharge('Excessive Trash Pickup', 44.72)).toMatchObject({ charge: 50, review: false })
   })
 
   it('floors at the next $5 above cost and asks for review when the standard would be unprofitable', () => {
     // "We should be profitable on all tasks": a $62 hot-tub cost can't bill
     // the $50 standard, so the system won't invent a price — a human sets one.
-    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 62)).toEqual({ charge: 65, review: true })
+    expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 62)).toMatchObject({ charge: 65, review: true, price: 50 })
     // At exactly the standard charge there is zero margin → same treatment.
-    expect(standardExtraCharge('Excessive Trash Pickup', 50)).toEqual({ charge: 50, review: true })
+    expect(standardExtraCharge('Excessive Trash Pickup', 50)).toMatchObject({ charge: 50, review: true })
   })
 
   it('returns null for types with no price history', () => {
@@ -1275,10 +1278,123 @@ describe('standardExtraCharge', () => {
   })
 
   it('prices the real lines 77/82/85 from run "Test 1"', () => {
-    // Hot tub $30 → bill 50; trash $30 → bill 50; touch-up $30 → bill 55.
+    // Hot tub $30 → bill 50; trash $30 → bill 50; touch-up $30 → bill 50 (no tub).
     expect(standardExtraCharge('Hot Tub Refresh Requested by Guest', 30)!.charge).toBe(50)
     expect(standardExtraCharge('Excessive Trash Pickup', 30)!.charge).toBe(50)
-    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 30)!.charge).toBe(55)
+    expect(standardExtraCharge('Vacancy Clean / Touch Up Clean', 30)!.charge).toBe(50)
+  })
+})
+
+describe('touch-up pricing by hot tub (Jordan, 2026-09-24)', () => {
+  const TU = 'Vacancy Clean / Touch Up Clean'
+
+  it('$65 with a hot tub, $50 without, $50 when the property is unknown', () => {
+    expect(extraPriceFor(TU, { hotTub: true })).toEqual({ charge: 65, source: 'standard' })
+    expect(extraPriceFor(TU, { hotTub: false })).toEqual({ charge: 50, source: 'standard' })
+    expect(extraPriceFor(TU, null)).toEqual({ charge: 50, source: 'standard' })
+  })
+
+  it('a hot tub does not change fees that have no hot-tub price', () => {
+    expect(extraPriceFor('Excessive Trash Pickup', { hotTub: true })!.charge).toBe(50)
+    expect(extraPriceFor('Pet Fee', { hotTub: true })!.charge).toBe(45)
+  })
+
+  it('an unprofitable hot-tub touch-up compares against $65, and the note says so', () => {
+    const p = standardExtraCharge(TU, 70, { hotTub: true })!
+    expect(p).toMatchObject({ review: true, price: 65, charge: 70 })
+  })
+
+  it('reconcile bills a hot-tub property\'s touch-up at $65 and a plain one at $50', () => {
+    const props: PropertyRates[] = [
+      { ...PROPS[0], hotTub: true },
+      { ...PROPS[1], hotTub: false },
+    ]
+    const { lines } = reconcile(input([
+      vendorLine({ lineNo: 1, rawPropertyText: 'Michael Rohwer 2455 - Touch up', rawNoteText: null, rawAmount: 25 }),
+      vendorLine({ lineNo: 2, rawPropertyText: 'Brandi Tropf 2505 - Touch up', rawNoteText: null, rawAmount: 25 }),
+    ], { properties: props, tasks: [] }))
+    const byLine = new Map(lines.map(l => [l.lineNo, l]))
+    expect(byLine.get(1)!.clientChargeAmount).toBe(65)
+    expect(byLine.get(2)!.clientChargeAmount).toBe(50)
+    expect(byLine.get(1)!.flags).toContain('standard_priced')
+  })
+
+  it('the bare "Vacancy clean" reroute also honors the hot tub', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Vacancy clean', rawAmount: 25 })],
+      { properties: [{ ...PROPS[0], hotTub: true }, ...PROPS.slice(1)] },
+    ))
+    expect(lines[0].serviceType).toBe(TU)
+    expect(lines[0].clientChargeAmount).toBe(65)
+  })
+
+  it('the task-billing defaults match this table exactly', () => {
+    // Two pricing paths (vendor lines here, task lines in shared/aux-tasks);
+    // a touch-up must never show two prices.
+    for (const [type, fee] of Object.entries(STANDARD_EXTRA_PRICING)) {
+      expect(DEFAULT_EXTRA_PRICING[type]).toBe(fee.charge)
+      expect(DEFAULT_HOT_TUB_PRICING[type]).toBe(fee.hotTubCharge)
+    }
+    expect(Object.keys(DEFAULT_EXTRA_PRICING).sort()).toEqual(Object.keys(STANDARD_EXTRA_PRICING).sort())
+    expect(Object.keys(DEFAULT_HOT_TUB_PRICING).every(k => k in STANDARD_EXTRA_PRICING)).toBe(true)
+  })
+})
+
+describe('client fee overrides', () => {
+  const TU = 'Vacancy Clean / Touch Up Clean'
+
+  it('a flat override beats the standard price, hot tub or not', () => {
+    const ov = { [TU]: { charge: 40, hotTubCharge: null } }
+    expect(extraPriceFor(TU, { hotTub: true, feeOverrides: ov })).toEqual({ charge: 40, source: 'client' })
+    expect(extraPriceFor(TU, { hotTub: false, feeOverrides: ov })).toEqual({ charge: 40, source: 'client' })
+  })
+
+  it('an override with its own hot-tub price uses it on tub properties', () => {
+    const ov = { [TU]: { charge: 45, hotTubCharge: 60 } }
+    expect(extraPriceFor(TU, { hotTub: true, feeOverrides: ov })!.charge).toBe(60)
+    expect(extraPriceFor(TU, { hotTub: false, feeOverrides: ov })!.charge).toBe(45)
+  })
+
+  it('an override on a fee with no standard price is ignored (keeps its review path)', () => {
+    const ov = { 'Trip Fee': { charge: 35, hotTubCharge: null } }
+    expect(extraPriceFor('Trip Fee', { feeOverrides: ov })).toBeNull()
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Trip fee', rawAmount: 30, rawDateMentioned: null })],
+      { properties: [{ ...PROPS[0], feeOverrides: ov }, ...PROPS.slice(1)], tasks: [] },
+    ))
+    expect(lines[0].flags).not.toContain('client_priced')
+  })
+
+  it('reconcile flags client_priced and bills the agreed price', () => {
+    const ov = { 'Excessive Trash Pickup': { charge: 40, hotTubCharge: null } }
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Trash pick up request by guest', rawAmount: 30, rawDateMentioned: null })],
+      { properties: [{ ...PROPS[0], feeOverrides: ov }, ...PROPS.slice(1)], tasks: [] },
+    ))
+    expect(lines[0].clientChargeAmount).toBe(40)
+    expect(lines[0].flags).toContain('client_priced')
+    expect(lines[0].flags).not.toContain('standard_priced')
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('an override at or below the vendor cost queues review and the note names the agreed price', () => {
+    const ov = { 'Excessive Trash Pickup': { charge: 25, hotTubCharge: null } }
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Trash pick up request by guest', rawAmount: 30, rawDateMentioned: null })],
+      { properties: [{ ...PROPS[0], feeOverrides: ov }, ...PROPS.slice(1)], tasks: [] },
+    ))
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].clientChargeAmount).toBe(30)
+    expect(lines[0].engineNote).toMatch(/this client's agreed \$25\.00/)
+  })
+
+  it('the standard review note names the list price, not the floored charge', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Hot tub refresh', rawAmount: 62, rawDateMentioned: null })],
+      { tasks: [] },
+    ))
+    expect(lines[0].clientChargeAmount).toBe(65)
+    expect(lines[0].engineNote).toMatch(/the standard \$50\.00/)
   })
 })
 
