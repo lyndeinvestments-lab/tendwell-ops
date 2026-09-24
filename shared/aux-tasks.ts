@@ -185,27 +185,51 @@ export function classifyAuxTask(title: string | null | undefined): AuxCategory {
 // ─── Pricing & billability settings ────────────────────────────────────────
 //
 // Defaults mirror STANDARD_EXTRA_PRICING in api/invoices/_engine.ts (the
-// client charge column). A service type with no price still gets ADDED to
-// the run, flagged missing_rate and queued for review so a human sets one —
-// it is never silently dropped. Both maps are overridable from app_settings
-// (`invoicing_extra_pricing`, `invoicing_aux_billable`) so a price change
-// never needs a deploy.
+// client charge column, plus its hot-tub variant) — a test in
+// _engine.test.ts pins the two together. A service type with no price still
+// gets ADDED to the run, flagged missing_rate and queued for review so a
+// human sets one — it is never silently dropped. Both maps are overridable
+// from app_settings (`invoicing_extra_pricing`, `invoicing_aux_billable`) so
+// a price change never needs a deploy.
 
 export const DEFAULT_EXTRA_PRICING: Readonly<Record<string, number>> = {
   'Hot Tub Refresh Requested by Guest': 50,
   'Excessive Trash Pickup': 50,
-  'Vacancy Clean / Touch Up Clean': 55,
+  'Vacancy Clean / Touch Up Clean': 50,
   'Linen Pull': 50,
   'Reimbursement': 50,
   'Pet Fee': 45,
 }
 
+// Price on a property WITH a hot tub, for fees whose work includes the tub
+// (Jordan, 2026-09-24: a touch-up is $65 with a hot tub, $50 without). A type
+// absent here costs the same either way.
+export const DEFAULT_HOT_TUB_PRICING: Readonly<Record<string, number>> = {
+  'Vacancy Clean / Touch Up Clean': 65,
+}
+
 export const APP_SETTING_EXTRA_PRICING = 'invoicing_extra_pricing'
 export const APP_SETTING_AUX_BILLABLE = 'invoicing_aux_billable'
+
+/** A client's agreed price for one fee. `hotTubCharge` null = same price
+ *  whether or not the property has a hot tub. */
+export interface FeeOverride {
+  charge: number
+  hotTubCharge: number | null
+}
+
+/** What a price lookup needs to know about the property. */
+export interface FeePricingContext {
+  hotTub?: boolean
+  /** The property's CLIENT's overrides, keyed by service type. */
+  feeOverrides?: Readonly<Record<string, FeeOverride>>
+}
 
 export interface AuxBillingSettings {
   /** service_type → client charge. */
   pricing: Record<string, number>
+  /** service_type → client charge on a property with a hot tub. */
+  hotTubPricing: Record<string, number>
   /** category → billable override. Absent = the category default. */
   billable: Partial<Record<AuxCategory, boolean>>
 }
@@ -217,16 +241,45 @@ function parseJson(raw: unknown): unknown {
   try { return JSON.parse(raw) } catch { return null }
 }
 
-/** Merge stored overrides over the defaults. Malformed values are ignored, never fatal. */
+function toPrice(v: unknown): number | null {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
+  return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? n : null
+}
+
+/** Merge stored overrides over the defaults. Malformed values are ignored, never fatal.
+ *
+ *  A stored price is either a number (one price, hot tub or not) or
+ *  `{ charge, hot_tub_charge }`. An explicit null (or blank) clears a default
+ *  so the type queues for review. */
 export function resolveAuxSettings(raw: { pricing?: unknown; billable?: unknown } = {}): AuxBillingSettings {
   const pricing: Record<string, number> = { ...DEFAULT_EXTRA_PRICING }
+  const hotTubPricing: Record<string, number> = { ...DEFAULT_HOT_TUB_PRICING }
   const p = parseJson(raw.pricing)
   if (p && typeof p === 'object') {
     for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
-      const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v
-      if (typeof n === 'number' && Number.isFinite(n) && n >= 0) pricing[k] = n
-      // An explicit null (or blank) clears a default so the type queues for review.
-      else if (v === null || v === '') delete pricing[k]
+      if (v === null || v === '') {
+        delete pricing[k]
+        delete hotTubPricing[k]
+        continue
+      }
+      if (typeof v === 'object') {
+        const o = v as Record<string, unknown>
+        const charge = toPrice(o.charge)
+        if (charge == null) {
+          if (o.charge === null || o.charge === '') { delete pricing[k]; delete hotTubPricing[k] }
+          continue
+        }
+        pricing[k] = charge
+        const hot = toPrice(o.hot_tub_charge)
+        if (hot != null) hotTubPricing[k] = hot
+        else delete hotTubPricing[k]
+        continue
+      }
+      const n = toPrice(v)
+      if (n != null) {
+        pricing[k] = n
+        delete hotTubPricing[k] // a bare number means one price either way
+      }
     }
   }
   const billable: Partial<Record<AuxCategory, boolean>> = {}
@@ -236,7 +289,7 @@ export function resolveAuxSettings(raw: { pricing?: unknown; billable?: unknown 
       if (k in AUX_CATEGORIES && typeof v === 'boolean') billable[k as AuxCategory] = v
     }
   }
-  return { pricing, billable }
+  return { pricing, hotTubPricing, billable }
 }
 
 export function isBillableCategory(category: AuxCategory, settings: AuxBillingSettings): boolean {
@@ -245,10 +298,53 @@ export function isBillableCategory(category: AuxCategory, settings: AuxBillingSe
   return settings.billable[category] ?? def.billableDefault
 }
 
-/** Client charge for a service type, or null when no price is on file. */
-export function auxCharge(serviceType: string, settings: AuxBillingSettings): number | null {
-  const n = settings.pricing[serviceType]
-  return typeof n === 'number' && Number.isFinite(n) ? n : null
+export interface AuxPrice {
+  charge: number
+  source: 'standard' | 'client'
+}
+
+/** Client charge for a service type on one property, or null when no price is
+ *  on file. The property's client override wins over the standard price; each
+ *  resolves its hot-tub variant when the property has a tub. Overrides only
+ *  apply to types that have a standard price — an unpriced type keeps queuing
+ *  for review (same rule as the vendor-invoice engine). */
+export function auxPrice(
+  serviceType: string,
+  settings: AuxBillingSettings,
+  property: FeePricingContext | null = null,
+): AuxPrice | null {
+  const base = settings.pricing[serviceType]
+  if (typeof base !== 'number' || !Number.isFinite(base)) return null
+  const hot = property?.hotTub === true
+  const ov = property?.feeOverrides?.[serviceType]
+  if (ov) return { charge: hot && ov.hotTubCharge != null ? ov.hotTubCharge : ov.charge, source: 'client' }
+  const hotPrice = settings.hotTubPricing[serviceType]
+  return { charge: hot && typeof hotPrice === 'number' ? hotPrice : base, source: 'standard' }
+}
+
+/** Just the number from auxPrice. */
+export function auxCharge(
+  serviceType: string,
+  settings: AuxBillingSettings,
+  property: FeePricingContext | null = null,
+): number | null {
+  return auxPrice(serviceType, settings, property)?.charge ?? null
+}
+
+/** Build the per-contact override map from client_fee_overrides rows. */
+export function feeOverridesByContact(
+  rows: ReadonlyArray<{ contact_id: string | null; service_type: string; charge: number | string | null; hot_tub_charge: number | string | null }>,
+): Map<string, Record<string, FeeOverride>> {
+  const out = new Map<string, Record<string, FeeOverride>>()
+  for (const r of rows) {
+    if (!r.contact_id || !r.service_type) continue
+    const charge = toPrice(r.charge)
+    if (charge == null) continue
+    const m = out.get(r.contact_id) ?? {}
+    m[r.service_type] = { charge, hotTubCharge: toPrice(r.hot_tub_charge) }
+    out.set(r.contact_id, m)
+  }
+  return out
 }
 
 // ─── Completion evidence ───────────────────────────────────────────────────

@@ -4,6 +4,8 @@ import {
   BILLABLE_AUX_CATEGORIES,
   DEFAULT_EXTRA_PRICING,
   auxCharge,
+  auxPrice,
+  feeOverridesByContact,
   classifyAuxTask,
   daysBetween,
   isBillableCategory,
@@ -164,7 +166,8 @@ describe('billability & pricing settings', () => {
     const s = resolveAuxSettings()
     expect(auxCharge('Hot Tub Refresh Requested by Guest', s)).toBe(50)
     expect(auxCharge('Excessive Trash Pickup', s)).toBe(50)
-    expect(auxCharge('Vacancy Clean / Touch Up Clean', s)).toBe(55)
+    expect(auxCharge('Vacancy Clean / Touch Up Clean', s)).toBe(50)
+    expect(auxCharge('Vacancy Clean / Touch Up Clean', s, { hotTub: true })).toBe(65)
     expect(auxCharge('Trip Fee', s)).toBeNull()
     expect(auxCharge('Extra Cleaning', s)).toBeNull()
     expect(Object.keys(DEFAULT_EXTRA_PRICING)).toHaveLength(6)
@@ -182,6 +185,46 @@ describe('billability & pricing settings', () => {
     expect(isBillableCategory('vacancy_clean', s)).toBe(false) // no service type → can never bill
     expect(isBillableCategory('hot_tub', s)).toBe(false)
     expect(isBillableCategory('trash', s)).toBe(true)
+  })
+
+  it('a bare stored number means one price either way; an object keeps the hot-tub split', () => {
+    const TU = 'Vacancy Clean / Touch Up Clean'
+    const flat = resolveAuxSettings({ pricing: JSON.stringify({ [TU]: 55 }) })
+    expect(auxCharge(TU, flat, { hotTub: true })).toBe(55)
+    expect(auxCharge(TU, flat, { hotTub: false })).toBe(55)
+    const split = resolveAuxSettings({ pricing: JSON.stringify({ [TU]: { charge: 52, hot_tub_charge: 70 } }) })
+    expect(auxCharge(TU, split, { hotTub: true })).toBe(70)
+    expect(auxCharge(TU, split, { hotTub: false })).toBe(52)
+    // The Pricing card saves every type as an object; hot_tub_charge null = same price.
+    const saved = resolveAuxSettings({ pricing: JSON.stringify({ 'Pet Fee': { charge: 45, hot_tub_charge: null }, [TU]: { charge: 50, hot_tub_charge: 65 } }) })
+    expect(auxCharge('Pet Fee', saved, { hotTub: true })).toBe(45)
+    expect(auxCharge(TU, saved, { hotTub: true })).toBe(65)
+  })
+
+  it('a client override wins over the standard price and carries its own hot-tub price', () => {
+    const TU = 'Vacancy Clean / Touch Up Clean'
+    const s = resolveAuxSettings()
+    const feeOverrides = { [TU]: { charge: 45, hotTubCharge: 58 }, 'Pet Fee': { charge: 30, hotTubCharge: null } }
+    expect(auxPrice(TU, s, { hotTub: true, feeOverrides })).toEqual({ charge: 58, source: 'client' })
+    expect(auxPrice(TU, s, { hotTub: false, feeOverrides })).toEqual({ charge: 45, source: 'client' })
+    expect(auxPrice('Pet Fee', s, { hotTub: true, feeOverrides })).toEqual({ charge: 30, source: 'client' })
+    expect(auxPrice('Linen Pull', s, { feeOverrides })).toEqual({ charge: 50, source: 'standard' })
+    // No standard price → the override does not invent one.
+    expect(auxPrice('Trip Fee', s, { feeOverrides: { 'Trip Fee': { charge: 35, hotTubCharge: null } } })).toBeNull()
+  })
+
+  it('feeOverridesByContact groups rows by client and drops bad prices', () => {
+    const m = feeOverridesByContact([
+      { contact_id: 'a', service_type: 'Pet Fee', charge: '30.00', hot_tub_charge: null },
+      { contact_id: 'a', service_type: 'Vacancy Clean / Touch Up Clean', charge: 45, hot_tub_charge: '60' },
+      { contact_id: 'b', service_type: 'Pet Fee', charge: 'x', hot_tub_charge: null },
+      { contact_id: null, service_type: 'Pet Fee', charge: 10, hot_tub_charge: null },
+    ])
+    expect(m.get('a')).toEqual({
+      'Pet Fee': { charge: 30, hotTubCharge: null },
+      'Vacancy Clean / Touch Up Clean': { charge: 45, hotTubCharge: 60 },
+    })
+    expect(m.has('b')).toBe(false)
   })
 
   it('survives garbage settings', () => {

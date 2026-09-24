@@ -6,6 +6,9 @@
 // invoicing dev plan). The engine never guesses: anything ambiguous gets a
 // flag + review_status='needs_review' and surfaces in the review queue.
 
+import type { FeeOverride } from '../../shared/aux-tasks.js'
+export type { FeeOverride }
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type BillingChannel = 'qbo_haven' | 'bill_com' | 'none'
@@ -17,7 +20,15 @@ export interface PropertyRates {
   cleanerPay: number | null
   deepClean3xCe: number | null
   billingChannel: BillingChannel | null // null = property has no client contact
+  // Drives fee prices that differ by hot tub (Touch Up / Vacancy Clean).
+  // Optional so existing fixtures keep compiling; absent means no hot tub.
+  hotTub?: boolean
+  // This property's CLIENT's negotiated fee prices, keyed by service type.
+  // Resolved from the property's contact exactly the way billingChannel is,
+  // so every property of one client shares the same map.
+  feeOverrides?: Readonly<Record<string, FeeOverride>>
 }
+
 
 export interface AliasRow {
   aliasRaw: string
@@ -122,6 +133,9 @@ export const FLAGS = {
   // The client charge on this extra came from STANDARD_EXTRA_PRICING rather
   // than the vendor's invoiced amount. Informational — explains charge ≠ raw.
   STANDARD_PRICED: 'standard_priced',
+  // Same, but the price came from this client's own fee override rather than
+  // the standard list. Informational.
+  CLIENT_PRICED: 'client_priced',
   // This line's whole date-header block looks mis-dated: almost none of its
   // lines have a clean on that day, and almost all of them have one on a
   // single other day. See detectMisdatedBlocks.
@@ -343,6 +357,9 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
 //   Hot Tub Refresh                50.00 → 50        32.31 → 30
 //   Excessive Trash Pickup        46.11 → 50        30.31 light / 44.72 heavy → 30/45
 //   Touch-up Clean                52.60 → 55        26.82 → 25
+//     └ superseded 2026-09-24 (Jordan): $65 with a hot tub, $50 without.
+//       A touch-up on a hot-tub property includes the tub, so one flat
+//       price under-charged those and over-charged the rest.
 //   Linen Pull                    50.00 → 50        40.00 → 40
 //   Delivery/Supplies/Reimburse   47.93 → 50        27.00 → 25
 //   Pet / Dog-hair Fee            44.44 → 45        23.50 → 25
@@ -350,29 +367,72 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
 // Types with no history (Trip Fee, Mailed Left Items, Extra Cleaning /
 // maintenance, Double Clean) are deliberately absent: they keep the old
 // pass-through-and-review behavior rather than getting an invented price.
-export const STANDARD_EXTRA_PRICING: Readonly<Record<string, { charge: number; costRef: number }>> = {
+export interface StandardFee {
+  charge: number
+  // Price when the property has a hot tub, for fees whose work includes it.
+  // Absent means the fee costs the same either way.
+  hotTubCharge?: number
+  costRef: number
+}
+
+export const STANDARD_EXTRA_PRICING: Readonly<Record<string, StandardFee>> = {
   'Hot Tub Refresh Requested by Guest': { charge: 50, costRef: 30 },
   'Excessive Trash Pickup': { charge: 50, costRef: 30 },
-  'Vacancy Clean / Touch Up Clean': { charge: 55, costRef: 25 },
+  'Vacancy Clean / Touch Up Clean': { charge: 50, hotTubCharge: 65, costRef: 25 },
   'Linen Pull': { charge: 50, costRef: 40 },
   'Reimbursement': { charge: 50, costRef: 25 },
   'Pet Fee': { charge: 45, costRef: 25 },
 }
 
-/** Client charge for a standalone extra. Normal case: the standard price, no
- *  review needed — that's the point of standardizing. When the vendor's cost
- *  meets or exceeds the standard charge, the standard price would be
- *  unprofitable, so the charge floors at the next $5 above cost and the line
- *  goes to review for a human to set a real price. Unpriced types return null
+export interface ExtraPrice {
+  charge: number
+  // Where the number came from, so the line can say so (and the reviewer can
+  // tell a client's negotiated price from a list price at a glance).
+  source: 'standard' | 'client'
+}
+
+/** The client price for one fee on one property: the property's CLIENT's
+ *  override when they have one, else the standard list — each resolving the
+ *  hot-tub variant when the property has a tub. A missing property (an
+ *  unresolved line) prices as no hot tub, no override.
+ *
+ *  Overrides only apply to fees on the standard list. An unpriced type (Trip
+ *  Fee, Extra Cleaning…) keeps its pass-through-and-review path on purpose:
+ *  that review is what catches a spurious keyword match, and an override must
+ *  not be a way around it. */
+export function extraPriceFor(
+  serviceType: string | null,
+  property: Pick<PropertyRates, 'hotTub' | 'feeOverrides'> | null = null,
+): ExtraPrice | null {
+  if (serviceType == null) return null
+  const std = STANDARD_EXTRA_PRICING[serviceType]
+  if (!std) return null
+  const hot = property?.hotTub === true
+  const ov = property?.feeOverrides?.[serviceType]
+  if (ov) {
+    return { charge: hot && ov.hotTubCharge != null ? ov.hotTubCharge : ov.charge, source: 'client' }
+  }
+  return { charge: hot && std.hotTubCharge != null ? std.hotTubCharge : std.charge, source: 'standard' }
+}
+
+/** Client charge for a standalone extra. Normal case: the resolved price (see
+ *  extraPriceFor), no review needed — that's the point of standardizing. When
+ *  the vendor's cost meets or exceeds that price it would be unprofitable, so
+ *  the charge floors at the next $5 above cost and the line goes to review for
+ *  a human to set a real price. `price` is always the resolved list/override
+ *  price, even when `charge` was floored above it — review notes need the
+ *  price that was compared against, not the floor. Unpriced types return null
  *  and keep their old behavior. */
 export function standardExtraCharge(
   serviceType: string | null,
   rawAmount: number,
-): { charge: number; review: boolean } | null {
-  const std = serviceType != null ? STANDARD_EXTRA_PRICING[serviceType] : undefined
-  if (!std) return null
-  if (rawAmount < std.charge - PENNY) return { charge: std.charge, review: false }
-  return { charge: Math.ceil(rawAmount / 5) * 5, review: true }
+  property: Pick<PropertyRates, 'hotTub' | 'feeOverrides'> | null = null,
+): { charge: number; review: boolean; price: number; source: ExtraPrice['source'] } | null {
+  const resolved = extraPriceFor(serviceType, property)
+  if (!resolved) return null
+  const { charge: price, source } = resolved
+  if (rawAmount < price - PENNY) return { charge: price, review: false, price, source }
+  return { charge: Math.ceil(rawAmount / 5) * 5, review: true, price, source }
 }
 
 export function extraTitleFromNote(note: string | null): string | null {
@@ -718,6 +778,29 @@ function requireReason(line: EngineLine, note: string | null): EngineLine {
   return line
 }
 
+// Price a standalone extra from the fee list (or the client's override).
+// Returns null for an unpriced type so the caller keeps its own fallback.
+// On the unprofitable case the note names the price that was compared
+// against, never the floor the charge was bumped to.
+function priceStandaloneExtra(
+  line: EngineLine,
+  rawAmount: number,
+  property: PropertyRates | null,
+): EngineLine | null {
+  const priced = standardExtraCharge(line.serviceType, rawAmount, property)
+  if (!priced) return null
+  let out: EngineLine = { ...line, clientChargeAmount: round2(priced.charge) }
+  out = flag(out, priced.source === 'client' ? FLAGS.CLIENT_PRICED : FLAGS.STANDARD_PRICED)
+  if (priced.review) {
+    const whose = priced.source === 'client' ? "this client's agreed" : 'the standard'
+    out = withNote(
+      needsReview(out, FLAGS.DISCREPANCY_UNEXPLAINED),
+      `Vendor billed ${usd(rawAmount)}, at or above ${whose} ${usd(priced.price)} charge for ${line.serviceType} — that price would be unprofitable, so set a client price.`,
+    )
+  }
+  return out
+}
+
 function baseLine(raw: RawLine): EngineLine {
   return {
     ...raw,
@@ -954,19 +1037,10 @@ export function classifyLine(
     line.lineKind = 'extra'
     line.serviceType = noteExtra ?? std?.title ?? 'Extra Cleaning'
     line.cleanerPayAmount = round2(raw.rawAmount)
-    // Standard-priced types bill the standard client charge; everything else
+    // Priced types bill the list (or client-override) charge; everything else
     // passes the invoiced amount through as before.
-    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
-    line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
-    if (priced) {
-      line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) {
-        line = withNote(
-          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
-          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(STANDARD_EXTRA_PRICING[line.serviceType!]?.charge ?? 0)} charge for ${line.serviceType} — the standard price would be unprofitable, so set a client price.`,
-        )
-      }
-    }
+    line = priceStandaloneExtra(line, raw.rawAmount, property)
+      ?? { ...line, clientChargeAmount: round2(raw.rawAmount) }
     // A bare "onboarding" note with no matched task is ambiguous: a WHOLE
     // onboarding clean should bill at Client Charged + $50 (two rows), not at
     // the vendor amount. Never guess between the two — review decides.
@@ -1010,17 +1084,8 @@ export function classifyLine(
     line.lineKind = 'extra'
     line.serviceType = textSaysBarePull ? 'Linen Pull' : 'Vacancy Clean / Touch Up Clean'
     line.cleanerPayAmount = round2(raw.rawAmount)
-    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
-    line.clientChargeAmount = priced ? round2(priced.charge) : round2(raw.rawAmount)
-    if (priced) {
-      line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) {
-        line = withNote(
-          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
-          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(STANDARD_EXTRA_PRICING[line.serviceType!]?.charge ?? 0)} charge for ${line.serviceType} — set a client price.`,
-        )
-      }
-    }
+    line = priceStandaloneExtra(line, raw.rawAmount, property)
+      ?? { ...line, clientChargeAmount: round2(raw.rawAmount) }
     return [withChannel(line, property)]
   }
 
@@ -1080,18 +1145,8 @@ export function classifyLine(
     line.lineKind = 'extra'
     line.serviceType = noteExtra
     line.cleanerPayAmount = round2(raw.rawAmount)
-    const priced = standardExtraCharge(line.serviceType, raw.rawAmount)
-    if (priced) {
-      line.clientChargeAmount = round2(priced.charge)
-      line = flag(line, FLAGS.STANDARD_PRICED)
-      if (priced.review) {
-        line = withNote(
-          needsReview(line, FLAGS.DISCREPANCY_UNEXPLAINED),
-          `Vendor billed ${usd(raw.rawAmount)}, at or above the standard ${usd(priced.charge)} charge for ${line.serviceType} — set a client price.`,
-        )
-      }
-      return [withChannel(requireReason(line, noteText), property)]
-    }
+    const priced = priceStandaloneExtra(line, raw.rawAmount, property)
+    if (priced) return [withChannel(requireReason(priced, noteText), property)]
     line.clientChargeAmount = round2(raw.rawAmount)
     line = withNote(line, `Billed ${usd(raw.rawAmount)} as ${line.serviceType}, which has no standard price — confirm the pay and client charge.`)
     return [withChannel(requireReason(needsReview(line, FLAGS.NEGATIVE_SPLIT_STANDALONE), noteText), property)]

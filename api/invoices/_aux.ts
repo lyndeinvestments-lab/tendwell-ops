@@ -19,7 +19,7 @@
 
 import {
   AUX_CATEGORIES,
-  auxCharge,
+  auxPrice,
   classifyAuxTask,
   isBillableCategory,
   type AuxBillingSettings,
@@ -171,16 +171,22 @@ export function buildTaskLines(input: BuildTaskLinesInput): BuildTaskLinesResult
     seenKeys.add(key)
 
     const property = properties.get(t.propertyId) ?? null
-    const charge = auxCharge(serviceType, settings)
+    const priced = auxPrice(serviceType, settings, property)
+    const charge = priced?.charge ?? null
     const flags: string[] = [FLAGS.AUX_TASK]
     let reviewStatus: 'ok' | 'needs_review' = 'ok'
     const notes: string[] = [
       `${AUX_CATEGORIES[category].label} completed per ${sourceLabel(t.source)} task "${t.title}" — not on the vendor invoice and not paid to the vendor; billed to the client.`,
     ]
 
-    if (charge != null) {
-      flags.push(FLAGS.STANDARD_PRICED)
-      notes.push(`Standard ${usd(charge)} applied.`)
+    if (priced) {
+      if (priced.source === 'client') {
+        flags.push(FLAGS.CLIENT_PRICED)
+        notes.push(`This client's agreed ${usd(priced.charge)} applied${property?.hotTub && property.feeOverrides?.[serviceType]?.hotTubCharge != null ? ' (hot tub property)' : ''}.`)
+      } else {
+        flags.push(FLAGS.STANDARD_PRICED)
+        notes.push(`Standard ${usd(priced.charge)} applied${property?.hotTub && settings.hotTubPricing[serviceType] != null ? ' (hot tub property)' : ''}.`)
+      }
     } else {
       flags.push(FLAGS.MISSING_RATE)
       reviewStatus = 'needs_review'

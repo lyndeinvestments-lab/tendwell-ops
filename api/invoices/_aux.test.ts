@@ -54,6 +54,32 @@ describe('buildTaskLines — the money rules', () => {
     expect(r.needsReviewCount).toBe(0)
   })
 
+  it('a touch-up bills $65 on a hot-tub property and $50 without', () => {
+    const properties = new Map<number, PropertyRates>([
+      [1, { ...props.get(1)!, hotTub: true }],
+      [2, { ...props.get(2)!, hotTub: false }],
+    ])
+    const r = buildTaskLines({ ...base, properties, tasks: [
+      task({ externalId: 'tu1', title: 'Touch Up Clean', propertyId: 1 }),
+      task({ externalId: 'tu2', title: 'Touch Up Clean', propertyId: 2 }),
+    ] })
+    const by = new Map(r.inserts.map(l => [l.matched_task_id, l]))
+    expect(by.get('tu1')!.client_charge_amount).toBe(65)
+    expect(by.get('tu2')!.client_charge_amount).toBe(50)
+    expect(by.get('tu1')!.engine_note).toMatch(/hot tub property/)
+  })
+
+  it("a client's fee override prices the task line and flags client_priced", () => {
+    const properties = new Map<number, PropertyRates>([
+      [1, { ...props.get(1)!, feeOverrides: { 'Hot Tub Refresh Requested by Guest': { charge: 40, hotTubCharge: null } } }],
+    ])
+    const r = buildTaskLines({ ...base, properties, tasks: [task({ externalId: 'bw9', title: 'Cleaning: Hot Tub Refresh' })] })
+    expect(r.inserts[0].client_charge_amount).toBe(40)
+    expect(r.inserts[0].flags).toContain('client_priced')
+    expect(r.inserts[0].flags).not.toContain('standard_priced')
+    expect(r.inserts[0].review_status).toBe('ok')
+  })
+
   it('an unpriced type (Trip Fee) is still added, but queued with missing_rate', () => {
     const r = buildTaskLines({ ...base, tasks: [task({ externalId: 'bw2', title: 'Lockbox Key Check' })] })
     expect(r.inserts[0]).toMatchObject({ service_type: 'Trip Fee', client_charge_amount: null, review_status: 'needs_review' })
