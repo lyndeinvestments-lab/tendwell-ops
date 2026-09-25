@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { Input } from '@/components/ui/input'
 import {
   Search, ArrowRight, LayoutDashboard, Kanban, Users, FileSpreadsheet,
-  DollarSign, Building2, BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, Settings,
+  DollarSign, Building2, BedDouble, Boxes, ShieldAlert, KeyRound, Wind, ListFilter, TrendingUp, Settings,
   ClipboardCheck, Brush, Bell, Activity, PieChart, AlertTriangle, CheckSquare, Star,
 } from 'lucide-react'
 
@@ -23,6 +23,7 @@ const PAGE_ROUTES = [
   { name: 'Property List', path: '/property-list', viewId: 'property-list', keywords: ['property', 'list', 'properties'], icon: Building2 },
   { name: 'Linen Requirements', path: '/linen-tracker', viewId: 'linen-tracker', keywords: ['linen', 'linens', 'towels', 'beds', 'inventory', 'requirements'], icon: BedDouble },
   { name: 'Linen Inventory', path: '/linen-inventory', viewId: 'linen-inventory', keywords: ['linen', 'inventory', 'count', 'par', 'sets', 'stock'], icon: Boxes },
+  { name: 'Damaged Linens', path: '/damaged-linens', viewId: 'damaged-linens', keywords: ['linen', 'damaged', 'stain', 'stained', 'torn', 'discard', 'replace'], icon: ShieldAlert },
   { name: 'Access Codes', path: '/access-codes', viewId: 'access-codes', keywords: ['access', 'codes', 'door', 'wifi', 'auto'], icon: KeyRound },
   { name: 'AC Filters', path: '/ac-filters', viewId: 'ac-filters', keywords: ['ac', 'filter', 'filters', 'hvac', 'air'], icon: Wind },
   { name: 'Pro Forma', path: '/pro-forma', viewId: 'pro-forma', keywords: ['pro forma', 'proforma', 'projections', 'monthly', 'forecaster', 'live', 'variance', 'forecast', 'per-property'], icon: TrendingUp },

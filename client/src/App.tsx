@@ -54,6 +54,7 @@ const TestPage = lazyRetry(() => import("@/pages/test"));
 const PropertyListPage = lazyRetry(() => import("@/pages/property-list"));
 const LinenTrackerPage = lazyRetry(() => import("@/pages/linen-tracker"));
 const LinenInventoryPage = lazyRetry(() => import("@/pages/linen-inventory"));
+const DamagedLinensPage = lazyRetry(() => import("@/pages/damaged-linens"));
 const AccessCodesPage = lazyRetry(() => import("@/pages/access-codes"));
 const AcFiltersPage = lazyRetry(() => import("@/pages/ac-filters"));
 const QuoteSheetPage = lazyRetry(() => import("@/pages/quote-sheet"));
@@ -255,6 +256,7 @@ function AppRoutes() {
             now render the same component so old/external links continue to work. */}
         <Route path="/linen-requirements">{() => <GuardedRoute viewId="linen-tracker" component={LinenTrackerPage} />}</Route>
         <Route path="/linen-inventory">{() => <GuardedRoute viewId="linen-inventory" component={LinenInventoryPage} />}</Route>
+        <Route path="/damaged-linens">{() => <GuardedRoute viewId="damaged-linens" component={DamagedLinensPage} />}</Route>
         <Route path="/access-codes">{() => <GuardedRoute viewId="access-codes" component={AccessCodesPage} />}</Route>
         <Route path="/ac-filters">{() => <GuardedRoute viewId="ac-filters" component={AcFiltersPage} />}</Route>
         <Route path="/quote-sheet">{() => <GuardedRoute viewId="quote-sheet" component={QuoteSheetPage} />}</Route>

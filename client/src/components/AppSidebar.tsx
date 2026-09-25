@@ -10,7 +10,7 @@ import {
 } from '@/components/ui/sidebar'
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
-  BedDouble, Boxes, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
+  BedDouble, Boxes, ShieldAlert, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
   ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks, Receipt
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Property List', href: '/property-list', view: 'property-list', icon: Building2 },
       { title: 'Linen Requirements', href: '/linen-tracker', view: 'linen-tracker', icon: BedDouble },
       { title: 'Linen Inventory', href: '/linen-inventory', view: 'linen-inventory', icon: Boxes },
+      { title: 'Damaged Linens', href: '/damaged-linens', view: 'damaged-linens', icon: ShieldAlert },
       { title: 'Access Codes', href: '/access-codes', view: 'access-codes', icon: KeyRound },
       { title: 'AC Filters', href: '/ac-filters', view: 'ac-filters', icon: Wind },
       { title: 'Property Verifications', href: '/property-verifications', view: 'property-verifications', icon: ClipboardCheck },
