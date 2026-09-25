@@ -16,6 +16,7 @@ export const commonEn = {
     'property-list': 'Property List',
     'linen-tracker': 'Linen Requirements',
     'linen-inventory': 'Linen Inventory',
+    'damaged-linens': 'Damaged Linens',
     'access-codes': 'Access Codes',
     'ac-filters': 'AC Filters',
     'property-verifications': 'Property Verifications',

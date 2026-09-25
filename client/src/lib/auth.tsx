@@ -16,6 +16,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'property-list',       label: 'Property List',       group: 'Operations' },
   { id: 'linen-tracker',       label: 'Linen Requirements',  group: 'Operations' },
   { id: 'linen-inventory',     label: 'Linen Inventory',     group: 'Operations' },
+  { id: 'damaged-linens',      label: 'Damaged Linens',      group: 'Operations' },
   { id: 'access-codes',        label: 'Access Codes',        group: 'Operations' },
   { id: 'ac-filters',          label: 'AC Filters',          group: 'Operations' },
   { id: 'property-verifications', label: 'Property Verifications', group: 'Operations' },
@@ -108,14 +109,14 @@ export const OWNER_ROLE = 'owner'
 export const ROLE_VIEWS: Record<string, string[]> = {
   admin: [
     'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
-    'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
+    'property-list', 'linen-tracker', 'linen-inventory', 'damaged-linens', 'access-codes', 'ac-filters',
     'master-list', 'pro-forma', 'forecaster', 'settings',
     'revenue-report', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
     'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue', 'trellis-sync',
     'trellis-tasks', 'invoicing',
   ],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'damaged-linens', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
   // Inspectors (invited from the Cleaners page with app role 'inspector')
   // get the inspections page by default; admins can extend via Settings.

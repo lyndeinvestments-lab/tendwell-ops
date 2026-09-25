@@ -15,6 +15,7 @@ export const commonEs: typeof commonEn = {
     'property-list': 'Lista de Propiedades',
     'linen-tracker': 'Requisitos de Ropa de Cama',
     'linen-inventory': 'Inventario de Ropa de Cama',
+    'damaged-linens': 'Ropa de Cama Dañada',
     'access-codes': 'Códigos de Acceso',
     'ac-filters': 'Filtros de A/C',
     'property-verifications': 'Verificaciones de Propiedades',
