@@ -17,14 +17,16 @@ import { ErrorState } from '@/components/ErrorState'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { TablePagination } from '@/components/TablePagination'
-import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin, Link2, Check } from 'lucide-react'
-import { parseISO } from 'date-fns'
+import { Search, ClipboardCheck, Download, X, Star, Camera, User, ExternalLink, Plus, Trash2, CalendarDays, AlertTriangle, MapPin, Link2, Check, Save, RotateCcw, CalendarCheck } from 'lucide-react'
+import { parseISO, format as formatIsoDate } from 'date-fns'
 import Papa from 'papaparse'
 import { InspectionFormSheet, type ExistingInspection } from '@/components/InspectionFormSheet'
 import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { MyInspectionsTab } from '@/components/MyInspectionsTab'
 import { useMyInspector } from '@/hooks/use-my-inspector'
+import { useUiPrefs } from '@/hooks/use-ui-prefs'
+import { MY_VIEW_PREF_KEY, defaultMyView, sanitizeMyView, sameMyView, effectiveMyViewDates, type MyViewFilters } from '@/lib/inspection-my-view'
 import { INSPECTION_SELECT, scoreColorClass, type Inspection, type InspectionStatus, type ReinspectUrgency } from '@/lib/inspections'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
@@ -135,11 +137,39 @@ export default function InspectionsPage() {
   const activeTab = tabChoice ?? (myInspector ? 'mine' : 'priority')
 
   const [search, setSearch] = useState('')
-  const [inspectorFilter, setInspectorFilter] = useState<string>('all')
-  const [statusFilter, setStatusFilter] = useState<'all' | InspectionStatus>('all')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [minScore, setMinScore] = useState<string>('any')
+  // History tab filters (session-only).
+  const [histInspector, setHistInspector] = useState<string>('all')
+  const [histStatus, setHistStatus] = useState<'all' | InspectionStatus>('all')
+  const [histDateFrom, setHistDateFrom] = useState('')
+  const [histDateTo, setHistDateTo] = useState('')
+  const [histMinScore, setHistMinScore] = useState<string>('any')
+
+  // My View tab: the same table, driven by filters each user saves
+  // (app_users.ui_prefs). Unsaved edits live in myViewDraft until Save.
+  const { prefs, savePref, isSaving: savingMyView } = useUiPrefs()
+  const hasSavedMyView = prefs[MY_VIEW_PREF_KEY] != null
+  const savedMyView = sanitizeMyView(prefs[MY_VIEW_PREF_KEY], defaultMyView(myInspector?.id ?? null))
+  const [myViewDraft, setMyViewDraft] = useState<MyViewFilters | null>(null)
+  const myView = myViewDraft ?? savedMyView
+  const myViewDirty = myViewDraft != null && !sameMyView(myViewDraft, savedMyView)
+  const myViewDates = effectiveMyViewDates(myView, formatIsoDate(new Date(), 'yyyy-MM-dd'))
+  const isMyView = activeTab === 'myview'
+  function patchMyView(patch: Partial<MyViewFilters>) {
+    setMyViewDraft({ ...myView, ...patch })
+  }
+
+  // The filter bar and queries read whichever tab is active.
+  const inspectorFilter = isMyView ? myView.inspectorFilter : histInspector
+  const statusFilter = isMyView ? myView.statusFilter : histStatus
+  const dateFrom = isMyView ? myViewDates.dateFrom : histDateFrom
+  const dateTo = isMyView ? myViewDates.dateTo : histDateTo
+  const minScore = isMyView ? myView.minScore : histMinScore
+  const setInspectorFilter = (v: string) => (isMyView ? patchMyView({ inspectorFilter: v }) : setHistInspector(v))
+  const setStatusFilter = (v: 'all' | InspectionStatus) => (isMyView ? patchMyView({ statusFilter: v }) : setHistStatus(v))
+  const setMinScore = (v: string) => (isMyView ? patchMyView({ minScore: v }) : setHistMinScore(v))
+  // Picking a date by hand turns the relative Today range off.
+  const setDateFrom = (v: string) => (isMyView ? patchMyView({ dateFrom: v, dateTo: myViewDates.dateTo, todayOnly: false }) : setHistDateFrom(v))
+  const setDateTo = (v: string) => (isMyView ? patchMyView({ dateTo: v, dateFrom: myViewDates.dateFrom, todayOnly: false }) : setHistDateTo(v))
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [activeDetail, setActiveDetail] = useState<Inspection | null>(null)
@@ -354,59 +384,10 @@ export default function InspectionsPage() {
     }
   }
 
-  return (
-    <PageContainer width="full" className="md:h-full md:flex md:flex-col overflow-x-hidden">
-      <PageHeader
-        title={t('page.title')}
-        subtitle={t('page.subtitle')}
-        actions={
-          <>
-            {canEdit && (
-              <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
-                <Plus className="w-3.5 h-3.5" />
-                {t('page.newInspection')}
-              </Button>
-            )}
-            <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
-              <Download className="w-3.5 h-3.5" />
-              {exporting ? t('page.exporting') : t('common.actions.exportCsv')}
-            </Button>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder={t('page.searchPlaceholder')}
-                value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1) }}
-                className="pl-8 pr-7 h-8 w-64 text-sm"
-              />
-              {search && (
-                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </>
-        }
-      />
-
-      <Tabs value={activeTab} onValueChange={setTabChoice} className="flex-1 flex flex-col min-h-0">
-        <TabsList className="self-start">
-          {(myInspector || myInspectorLoading) && (
-            <TabsTrigger value="mine" data-testid="tab-mine" disabled={!myInspector}>{t('tabs.mine')}</TabsTrigger>
-          )}
-          <TabsTrigger value="priority" data-testid="tab-priority">{t('tabs.priority')}</TabsTrigger>
-          <TabsTrigger value="history" data-testid="tab-history">{t('tabs.history')}</TabsTrigger>
-        </TabsList>
-        {myInspector && (
-          <TabsContent value="mine" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
-            <MyInspectionsTab inspectorId={myInspector.id} onOpen={handleRowClick} />
-          </TabsContent>
-        )}
-        <TabsContent value="priority" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
-          <InspectionPriorityDashboard />
-        </TabsContent>
-        <TabsContent value="history" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
+  // Table + tiles + filter bar, shared by the History and My View tabs
+  // (only one is mounted at a time; the filter values follow the active tab).
+  const historyBody = (
+    <>
       {/* Summary strip — at-a-glance quality stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
@@ -645,6 +626,116 @@ export default function InspectionsPage() {
           )}
         </>
       )}
+    </>
+  )
+
+  return (
+    <PageContainer width="full" className="md:h-full md:flex md:flex-col overflow-x-hidden">
+      <PageHeader
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
+        actions={
+          <>
+            {canEdit && (
+              <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                {t('page.newInspection')}
+              </Button>
+            )}
+            <Button variant="outline" size="sm" onClick={exportCsv} disabled={totalCount === 0 || exporting} className="h-8 text-xs gap-1.5">
+              <Download className="w-3.5 h-3.5" />
+              {exporting ? t('page.exporting') : t('common.actions.exportCsv')}
+            </Button>
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder={t('page.searchPlaceholder')}
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                className="pl-8 pr-7 h-8 w-64 text-sm"
+              />
+              {search && (
+                <button onClick={() => { setSearch(''); setPage(1) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </>
+        }
+      />
+
+      <Tabs value={activeTab} onValueChange={v => { setTabChoice(v); setPage(1) }} className="flex-1 flex flex-col min-h-0">
+        <TabsList className="self-start">
+          {(myInspector || myInspectorLoading) && (
+            <TabsTrigger value="mine" data-testid="tab-mine" disabled={!myInspector}>{t('tabs.mine')}</TabsTrigger>
+          )}
+          <TabsTrigger value="priority" data-testid="tab-priority">{t('tabs.priority')}</TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-history">{t('tabs.history')}</TabsTrigger>
+          <TabsTrigger value="myview" data-testid="tab-myview">{t('tabs.myView')}</TabsTrigger>
+        </TabsList>
+        {myInspector && (
+          <TabsContent value="mine" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+            <MyInspectionsTab inspectorId={myInspector.id} onOpen={handleRowClick} />
+          </TabsContent>
+        )}
+        <TabsContent value="priority" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+          <InspectionPriorityDashboard />
+        </TabsContent>
+        <TabsContent value="history" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
+          {historyBody}
+        </TabsContent>
+        <TabsContent value="myview" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
+          <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-card-border bg-card shadow-sm px-3 py-2 text-xs">
+            <div className="min-w-0">
+              <div className="text-sm font-medium truncate">
+                {myInspector ? t('myView.forInspector', { name: myInspector.full_name }) : t('myView.title')}
+              </div>
+              <div className="text-muted-foreground" data-testid="myview-status">
+                {myViewDirty ? t('myView.unsaved') : hasSavedMyView ? t('myView.saved') : t('myView.notSavedYet')}
+              </div>
+            </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant={myView.todayOnly ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                aria-pressed={myView.todayOnly}
+                onClick={() => { patchMyView({ todayOnly: !myView.todayOnly }); setPage(1) }}
+              >
+                <CalendarCheck className="w-3.5 h-3.5" />
+                {t('myView.today')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                disabled={!myViewDirty}
+                onClick={() => { setMyViewDraft(null); setPage(1) }}
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                {t('myView.reset')}
+              </Button>
+              <Button
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                disabled={savingMyView || (!myViewDirty && hasSavedMyView)}
+                onClick={async () => {
+                  try {
+                    await savePref({ key: MY_VIEW_PREF_KEY, value: myView })
+                    setMyViewDraft(null)
+                    toast({ title: t('myView.toastSaved') })
+                  } catch (e: any) {
+                    toast({ title: t('myView.toastSaveFailed'), description: e?.message, variant: 'destructive' })
+                  }
+                }}
+              >
+                <Save className="w-3.5 h-3.5" />
+                {savingMyView ? t('myView.saving') : t('myView.save')}
+              </Button>
+            </div>
+          </div>
+          {historyBody}
         </TabsContent>
       </Tabs>
 
