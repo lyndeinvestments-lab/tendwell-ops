@@ -149,6 +149,7 @@ export const inspectionsEn = {
     logInspection: 'Log Inspection',
     deleteInspection: 'Delete Inspection',
     noInfoOnFile: 'No filter, access, or Wi-Fi info on file for this property.',
+    noAccessOnFile: 'No access codes or Wi-Fi on file for this property.',
     infoAddress: 'Address',
     infoAcFilter: 'AC filter',
     infoChanged: 'Changed {{date}}',
