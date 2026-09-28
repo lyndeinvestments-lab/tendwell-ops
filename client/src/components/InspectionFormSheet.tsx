@@ -353,6 +353,10 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-5">
+          {/* Access + Wi-Fi first on an existing inspection: it's what the
+              inspector needs standing at the door. */}
+          {isEditing && selectedProperty && <AccessInfoCard property={selectedProperty} />}
+
           {/* Shareable link — available once the inspection exists (scheduled
               or completed). The same link shows the scheduled state now and
               the full report once completed; opens for anyone, no login. */}
@@ -439,7 +443,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           </div>
 
           {/* Property info card — appears when a property is selected */}
-          {selectedProperty && <PropertyInfoCard property={selectedProperty} />}
+          {selectedProperty && <PropertyInfoCard property={selectedProperty} showAccess={!isEditing} />}
 
           {/* Dates: scheduled or inspected, plus last cleaned */}
           <div className="grid grid-cols-1 gap-3">
@@ -681,12 +685,50 @@ type PropertyRow = {
   wifi_info: string | null
 }
 
-function PropertyInfoCard({ property }: { property: PropertyRow }) {
+function AccessInfoCard({ property }: { property: PropertyRow }) {
+  const { t } = useLocale('inspections')
+  const hasCodes = !!(property.auto_code || property.door_code || property.other_codes)
+  const hasWifi = !!property.wifi_info
+  if (!hasCodes && !hasWifi) {
+    return (
+      <div className="rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground">
+        {t('form.noAccessOnFile')}
+      </div>
+    )
+  }
+  return (
+    <div className="rounded-md border border-primary/40 bg-primary/5 divide-y divide-primary/20">
+      {hasCodes && (
+        <div className="px-3 py-2.5 space-y-1">
+          <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-primary font-medium">
+            <KeyRound className="w-3.5 h-3.5" />
+            <span>{t('form.infoAccessCodes')}</span>
+          </div>
+          {property.door_code && <div className="text-base"><span className="text-muted-foreground text-sm">{t('form.infoDoor')}</span> <span className="font-mono font-semibold">{property.door_code}</span></div>}
+          {property.auto_code && <div className="text-base"><span className="text-muted-foreground text-sm">{t('form.infoAuto')}</span> <span className="font-mono font-semibold">{property.auto_code}</span></div>}
+          {property.other_codes && <div className="text-sm whitespace-pre-line break-words">{property.other_codes}</div>}
+        </div>
+      )}
+      {hasWifi && (
+        <div className="px-3 py-2.5 space-y-1">
+          <div className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-primary font-medium">
+            <Wifi className="w-3.5 h-3.5" />
+            <span>{t('form.infoWifi')}</span>
+          </div>
+          <div className="text-base font-mono whitespace-pre-line break-words">{property.wifi_info}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PropertyInfoCard({ property, showAccess = true }: { property: PropertyRow; showAccess?: boolean }) {
   const { t } = useLocale('inspections')
   const [mapOpen, setMapOpen] = useState(false)
   const hasFilter = !!(property.filter_size || property.next_filter_due || property.last_filter_changed)
-  const hasCodes = !!(property.auto_code || property.door_code || property.other_codes)
-  const hasWifi = !!property.wifi_info
+  // When AccessInfoCard is shown at the top, don't repeat codes/Wi-Fi here.
+  const hasCodes = showAccess && !!(property.auto_code || property.door_code || property.other_codes)
+  const hasWifi = showAccess && !!property.wifi_info
   if (!hasFilter && !hasCodes && !hasWifi && !property.address) {
     return (
       <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">

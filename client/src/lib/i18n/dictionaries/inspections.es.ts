@@ -135,6 +135,7 @@ export const inspectionsEs: typeof inspectionsEn = {
     logInspection: 'Registrar Inspección',
     deleteInspection: 'Eliminar Inspección',
     noInfoOnFile: 'No hay información de filtro, acceso o Wi-Fi registrada para esta propiedad.',
+    noAccessOnFile: 'No hay códigos de acceso ni Wi-Fi registrados para esta propiedad.',
     infoAddress: 'Dirección',
     infoAcFilter: 'Filtro de A/C',
     infoChanged: 'Cambiado {{date}}',
