@@ -523,6 +523,51 @@ export const financialsEn = {
       metricAdded: 'Metric added',
       metricRemoved: 'Metric removed',
     },
+    tabs: {
+      scorecard: 'Scorecard',
+      quarterly: 'Quarterly Goals',
+    },
+    // Admin-only (RLS on `quarterly_goals`). `quarterly_goals.status` stays
+    // canonical English in the DB, displayed via slug lookup with raw fallback.
+    quarterly: {
+      adminOnly: 'Visible to admins only',
+      quarterLabel: 'Quarter',
+      statusLabel: 'Status',
+      ownerPrefix: 'Owner: {{name}}',
+      goalsHeading: 'Goals',
+      measuresHeading: 'To measure',
+      add: 'Add',
+      addGoal: 'Add Goal',
+      noneInSection: 'Nothing here yet.',
+      emptyTitle: 'No goals for this quarter',
+      emptyDescription: 'Add the goals from your quarterly meeting. Only admins can see them.',
+      loadFailed: 'Could not load quarterly goals',
+      deleteConfirm: 'Delete this item?',
+      status: {
+        not_started: 'Not started',
+        in_progress: 'In progress',
+        blocked: 'Blocked',
+        done: 'Done',
+      },
+      kind: {
+        goal: 'Goal',
+        measure: 'To measure',
+      },
+      dialog: {
+        addTitle: 'Add Goal',
+        editTitle: 'Edit Goal',
+        title: 'Title *',
+        detail: 'Details',
+        kind: 'Type',
+        owner: 'Owner',
+      },
+      toasts: {
+        added: 'Goal added',
+        updated: 'Goal updated',
+        removed: 'Goal removed',
+        saveFailed: 'Could not save',
+      },
+    },
     csv: {
       section: 'Section',
       metric: 'Metric',
