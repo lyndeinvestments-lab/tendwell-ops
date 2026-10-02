@@ -16,6 +16,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
 import { slugify } from '@/lib/issues'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { QuarterlyGoals } from '@/components/QuarterlyGoals'
 
 const STATUS_COLORS: Record<string, string> = {
   'Green': 'bg-green-500',
@@ -39,6 +41,11 @@ export default function NorthStarPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const canEdit = canEditView('north-star', effectiveUser)
+  // Quarterly goals are leadership-only: admins see the tab, and the
+  // `quarterly_goals` table's RLS enforces it regardless of what the UI shows.
+  const isAdmin = effectiveUser?.role === 'admin'
+  const [tab, setTab] = useState<'scorecard' | 'quarterly'>('scorecard')
+  const activeTab = isAdmin ? tab : 'scorecard'
 
   const [month, setMonth] = useState(() => {
     const now = new Date()
@@ -292,8 +299,8 @@ export default function NorthStarPage() {
     <PageContainer width="full" className="md:h-full md:flex md:flex-col md:overflow-auto">
       <PageHeader
         title={t('northStar.page.title', undefined, 'North Star')}
-        subtitle={t('northStar.page.subtitle', { month: monthLabel })}
-        actions={
+        subtitle={activeTab === 'scorecard' ? t('northStar.page.subtitle', { month: monthLabel }) : undefined}
+        actions={activeTab !== 'scorecard' ? undefined : (
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center gap-1">
               <Button variant="outline" size="sm" className="h-8 w-8 p-0" onClick={prevMonth} disabled={month <= MIN_MONTH}><ChevronLeft className="w-4 h-4" /></Button>
@@ -311,11 +318,22 @@ export default function NorthStarPage() {
               </Button>
             )}
           </div>
-        }
+        )}
       />
 
+      {isAdmin && (
+        <Tabs value={activeTab} onValueChange={v => setTab(v as 'scorecard' | 'quarterly')} className="mb-4">
+          <TabsList>
+            <TabsTrigger value="scorecard">{t('northStar.tabs.scorecard')}</TabsTrigger>
+            <TabsTrigger value="quarterly">{t('northStar.tabs.quarterly')}</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+
+      {activeTab === 'quarterly' && <QuarterlyGoals />}
+
       {/* Scorecard table */}
-      {metricsLoading ? (
+      {activeTab !== 'scorecard' ? null : metricsLoading ? (
         <Skeleton className="h-64 w-full" />
       ) : sections.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground text-sm">{t('northStar.table.noMetrics', { addMetric: t('northStar.page.addMetric') })}</div>
