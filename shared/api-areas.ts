@@ -36,7 +36,33 @@ export interface ApiArea {
   access: ApiAccess
   /** Optional clarifying note shown in the picker */
   note?: string
+  /**
+   * Column ALLOWLIST. When set, reads return only these columns (an explicit
+   * PostgREST `select=`), and list filters / ordering on any other column are
+   * rejected — otherwise `?ce_charged=150` or `?order=ce_charged.desc` would
+   * leak a hidden value by probing. Allowlist, not denylist, so a column added
+   * to the table later stays hidden until someone opts it in here.
+   */
+  columns?: string[]
 }
+
+// Operational property fields only: identity, layout, access codes, Wi-Fi,
+// AC filter, linen par levels, calendar/listing links. Deliberately NO pricing,
+// pay, cost, profit, margin or revenue columns, and no contact_id (client link).
+export const PROPERTY_OPS_COLUMNS: string[] = [
+  'id', 'name', 'address', 'stage_id',
+  'bedrooms', 'full_baths', 'half_baths', 'kitchens', 'guest_count', 'square_footage',
+  'number_of_beds', 'king_beds', 'queen_beds', 'full_beds', 'twin_beds', 'bed_sizes_text',
+  'hot_tub', 'pool', 'pet_friendly', 'check_in_time', 'check_out_time',
+  'door_code', 'auto_code', 'has_auto_code', 'other_codes', 'wifi_info',
+  'filter_size', 'last_filter_changed', 'next_filter_due',
+  'linen_program', 'bath_towels', 'hand_towels', 'washcloths', 'bathmats', 'pool_towels',
+  'target_par_sets', 'linen_notes',
+  'notes', 'cleaning_frequency', 'exempt_from_inspections',
+  'onboarding_date', 'offboarding_date', 'first_clean_date',
+  'ical_url', 'listing_url', 'trellis_id', 'breezeway_id', 'breezeway_name',
+  'archived_at', 'deleted_at', 'created_at', 'updated_at',
+]
 
 export const API_AREAS: ApiArea[] = [
   // ─── Sales ────────────────────────────────────────────────────────────────
@@ -46,7 +72,8 @@ export const API_AREAS: ApiArea[] = [
   { key: 'website-leads',     label: 'Website Leads',        group: 'Sales',       table: 'website_leads',          pk: 'id', access: 'read', note: '"Book a Call" form submissions from tendwellcleaningco.com. Read-only here \u2014 writes go through POST /api/leads/intake, which also creates the CRM contact. booked_at is NULL for anyone who filled the form but never picked a time.' },
 
   // ─── Operations ─────────────────────────────────────────────────────────────
-  { key: 'properties',        label: 'Properties',           group: 'Operations',  table: 'properties',             pk: 'id', access: 'rw', note: 'Includes access codes, AC filter size, bed sizes, and Wi-Fi (all property columns).' },
+  { key: 'properties',        label: 'Properties',           group: 'Operations',  table: 'properties',             pk: 'id', access: 'rw', note: 'ALL property columns \u2014 includes pricing, pay and profit. For an agent that must not see financials, grant "Properties (no financials)" instead.' },
+  { key: 'property-details',  label: 'Properties (no financials)', group: 'Operations', table: 'properties', pk: 'id', access: 'read', columns: PROPERTY_OPS_COLUMNS, note: 'Read-only. Access codes, Wi-Fi, bed sizes, AC filter, linen par levels. No pricing, pay, cost or profit columns.' },
   { key: 'property-notes',    label: 'Property Notes',       group: 'Operations',  table: 'property_notes',         pk: 'id', access: 'rw' },
   { key: 'property-supplies', label: 'Property Supplies',    group: 'Operations',  table: 'property_supplies',      pk: 'id', access: 'rw' },
   { key: 'inspections',       label: 'Inspections',          group: 'Operations',  table: 'inspections',            pk: 'id', access: 'rw' },
@@ -63,7 +90,7 @@ export const API_AREAS: ApiArea[] = [
   { key: 'cleaners',          label: 'Cleaners',             group: 'Management',  table: 'cleaners',               pk: 'id', access: 'rw' },
 
   // ─── Reports (view only) ─────────────────────────────────────────────────────
-  { key: 'property-list',     label: 'Property List',        group: 'Reports',     table: 'operational_properties', pk: 'id', access: 'read' },
+  { key: 'property-list',     label: 'Property List',        group: 'Reports',     table: 'operational_properties', pk: 'id', access: 'read', note: 'Includes pricing, cost and profit columns.' },
   { key: 'trellis-tasks',     label: 'Trellis Tasks',        group: 'Reports',     table: 'trellis_task_snapshot',  pk: 'id', access: 'read' },
   { key: 'pipeline-stages',   label: 'Pipeline Stages',      group: 'Reports',     table: 'pipeline_stages',        pk: 'id', access: 'read' },
   { key: 'stage-transitions', label: 'Stage Transitions',    group: 'Reports',     table: 'stage_transitions',      pk: 'id', access: 'read' },

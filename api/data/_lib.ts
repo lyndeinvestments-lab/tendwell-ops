@@ -69,6 +69,35 @@ export function buildListQuery(query: Record<string, string | string[] | undefin
   return params.toString()
 }
 
+// Explicit `select=` for an area with a column allowlist; `*` otherwise.
+export function selectClause(area: ApiArea): string {
+  return area.columns ? area.columns.join(',') : '*'
+}
+
+// Query params (filters + `order`) that name a column outside the area's
+// allowlist. Callers reject these with a 400: silently ignoring a filter would
+// return the whole table as if it matched, and honouring it would let a caller
+// probe hidden values (`?ce_charged=150`, `?order=ce_charged.desc`).
+export function forbiddenColumns(
+  query: Record<string, string | string[] | undefined>,
+  area: ApiArea,
+): string[] {
+  if (!area.columns) return []
+  const allowed = new Set(area.columns)
+  const bad: string[] = []
+  for (const [k, raw] of Object.entries(query)) {
+    if (k === 'order') {
+      const v = Array.isArray(raw) ? raw[0] : raw
+      const col = typeof v === 'string' ? v.split('.')[0] : ''
+      if (col && !allowed.has(col)) bad.push(col)
+      continue
+    }
+    if (RESERVED_QUERY.has(k) || !COLUMN_RE.test(k)) continue
+    if (!allowed.has(k)) bad.push(k)
+  }
+  return bad
+}
+
 export function clampLimit(raw: string | string[] | undefined): number {
   const v = Array.isArray(raw) ? raw[0] : raw
   const n = parseInt(typeof v === 'string' ? v : '', 10)
