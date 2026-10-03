@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildListQuery, clampLimit, sanitizeWrite } from './_lib.js'
-import { API_AREAS, allScopes, findArea } from '../../shared/api-areas.js'
+import { readFileSync } from 'node:fs'
+import { buildListQuery, clampLimit, forbiddenColumns, sanitizeWrite, selectClause } from './_lib.js'
+import { API_AREAS, PROPERTY_OPS_COLUMNS, allScopes, findArea } from '../../shared/api-areas.js'
 
 const clients = findArea('clients')!
 const props = findArea('properties')!
@@ -164,5 +165,64 @@ describe('API area registry', () => {
 
   it('still exposes properties as rw (unchanged by this work)', () => {
     expect(props.access).toBe('rw')
+  })
+})
+
+// An external agent that may see operations data but never money. The area is a
+// column ALLOWLIST over `properties`, so these tests pin both directions: every
+// listed column is real, and nothing financial can be added without failing here.
+describe('property-details (no financials)', () => {
+  const area = findArea('property-details')!
+  const FINANCIAL = [
+    'ce_charged', 'ce_per_sq', 'cleaner_pay', 'suggested_pay', 'custom_deep_clean_income',
+    'deep_clean_3x_ce', 'est_consumables', 'est_laundry', 'estimated_deep_clean_cost',
+    'estimated_profit', 'inspection_cost', 'linen_onboarding_fee', 'linen_program_cost',
+    'monthly_cost_estimate', 'monthly_profit_estimate', 'monthly_revenue_estimate',
+    'price_per_sq_foot', 'profit_deep_clean', 'profit_percentage', 'total_estimated_cost',
+    'trash_cost', 'exclude_from_financials', 'avg_cleans_per_month', 'contact_id',
+    'quote_owner_response', 'quote_responded_at', 'quote_sent_at',
+  ]
+
+  it('is a read-only view of the properties table with an allowlist', () => {
+    expect(area.table).toBe('properties')
+    expect(area.access).toBe('read')
+    expect(area.columns).toBe(PROPERTY_OPS_COLUMNS)
+  })
+
+  it('exposes access codes, Wi-Fi and linen pars', () => {
+    for (const c of ['door_code', 'auto_code', 'other_codes', 'wifi_info', 'bath_towels', 'filter_size']) {
+      expect(PROPERTY_OPS_COLUMNS, c).toContain(c)
+    }
+  })
+
+  it('contains no financial column', () => {
+    for (const c of FINANCIAL) expect(PROPERTY_OPS_COLUMNS, c).not.toContain(c)
+    // Belt and braces for a column added later under a money-ish name.
+    for (const c of PROPERTY_OPS_COLUMNS) {
+      expect(c, c).not.toMatch(/charge|pay|cost|profit|revenue|margin|price|fee|income|quote/)
+    }
+  })
+
+  it('only lists columns that really exist on properties', () => {
+    const types = readFileSync(new URL('../../shared/database.types.ts', import.meta.url), 'utf8')
+    const m = types.match(/\n      properties: \{\n        Row: \{([\s\S]*?)\n        \}/)
+    expect(m).not.toBeNull()
+    const real = new Set(m![1].trim().split('\n').map(l => l.trim().split(':')[0]))
+    for (const c of PROPERTY_OPS_COLUMNS) expect(real.has(c), c).toBe(true)
+  })
+
+  it('selects exactly the allowlist, and * for every other area', () => {
+    expect(selectClause(area)).toBe(PROPERTY_OPS_COLUMNS.join(','))
+    expect(selectClause(findArea('properties')!)).toBe('*')
+  })
+
+  it('rejects filtering or ordering on a hidden column (no probing)', () => {
+    expect(forbiddenColumns({ ce_charged: '150' }, area)).toEqual(['ce_charged'])
+    expect(forbiddenColumns({ order: 'cleaner_pay.desc' }, area)).toEqual(['cleaner_pay'])
+    expect(forbiddenColumns({ stage_id: '3', order: 'name.asc', limit: '10' }, area)).toEqual([])
+  })
+
+  it('does not restrict areas without an allowlist', () => {
+    expect(forbiddenColumns({ ce_charged: '150' }, findArea('properties')!)).toEqual([])
   })
 })

@@ -16,7 +16,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { authenticateApiKey, jsonError, sbFetch } from '../issues/_lib.js'
 import { findArea, scopeEdit, scopeView } from '../../shared/api-areas.js'
-import { buildListQuery, clampLimit, logApiWrite, sanitizeWrite } from './_lib.js'
+import { buildListQuery, clampLimit, forbiddenColumns, logApiWrite, sanitizeWrite, selectClause } from './_lib.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const resource = Array.isArray(req.query.resource) ? req.query.resource[0] : req.query.resource
@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (method === 'GET') {
       if (id) {
-        const rows = await sbFetch<unknown[]>(`${area.table}?${area.pk}=eq.${encodeURIComponent(id)}&limit=1`)
+        const rows = await sbFetch<unknown[]>(`${area.table}?select=${selectClause(area)}&${area.pk}=eq.${encodeURIComponent(id)}&limit=1`)
         const row = Array.isArray(rows) ? rows[0] : null
         if (!row) {
           jsonError(res, 404, 'Not found')
@@ -59,9 +59,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res.status(200).json({ data: row })
         return
       }
-      const qs = buildListQuery(req.query as Record<string, string | string[] | undefined>)
+      const query = req.query as Record<string, string | string[] | undefined>
+      const bad = forbiddenColumns(query, area)
+      if (bad.length) {
+        jsonError(res, 400, `"${area.key}" does not expose: ${bad.join(', ')}`)
+        return
+      }
+      const qs = buildListQuery(query)
       const limit = clampLimit(req.query.limit)
-      const path = `${area.table}?${qs ? `${qs}&` : ''}limit=${limit}`
+      const path = `${area.table}?select=${selectClause(area)}&${qs ? `${qs}&` : ''}limit=${limit}`
       const data = await sbFetch<unknown[]>(path)
       res.status(200).json({ data, count: Array.isArray(data) ? data.length : 0 })
       return
