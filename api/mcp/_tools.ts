@@ -18,6 +18,7 @@ import {
   matchObservationToTask,
   type AuxCategory,
 } from '../../shared/aux-tasks.js'
+import { suggestQuotePricing } from '../../shared/quote-pricing.js'
 import { getServiceClient, loadAuxSettings, loadAuxiliaryTasks } from '../invoices/_lib.js'
 import { resolveProperty, type AliasRow, type BillingChannel, type PropertyRates } from '../invoices/_engine.js'
 import {
@@ -536,6 +537,146 @@ const movePropertyStage: Tool = {
   },
 }
 
+const intArg = (v: unknown): number | undefined => {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v)
+  if (typeof v === 'string' && /^\d+(\.\d+)?$/.test(v.trim())) return Math.round(parseFloat(v))
+  return undefined
+}
+const numArg = (v: unknown): number | undefined => {
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (typeof v === 'string') {
+    const n = parseFloat(v.replace(/[$,\s]/g, ''))
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
+const usd2 = (n: unknown) =>
+  typeof n === 'number' || (typeof n === 'string' && n !== '')
+    ? `$${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : '—'
+
+const createQuoteProperty: Tool = {
+  name: 'crm_create_quote_property',
+  description:
+    'Add a NEW property to the Quote Sheet (property pipeline stage "Quote"), optionally creating its client. ' +
+    'Call this whenever someone asks for a cleaning quote on a property, or to "add this to the quote sheet" — ' +
+    'typically a Slack post listing an address, bedrooms, bathrooms, sleeps, bed sizes, hot tub / pool and a ' +
+    'listing link. Do NOT first ask a human to create the property; this tool creates it. ' +
+    'Name the property "<Owner name> <house number>" (e.g. "Michael Peralta 1563") unless the request names it. ' +
+    'Pass the owner as client_name (matched to an existing client by exact name, else created as a new lead); ' +
+    'use contact_id instead when crm_get_client already resolved them. Bed sizes go in king/queen/full/twin ' +
+    '(sleeper sofas and bunks under the nearest size); "Sleeps" is guest_count. ' +
+    'Pricing follows the Quote Sheet: client charge = square_footage × $0.14 and cleaner pay = 50% of that, ' +
+    'unless ce_charged / cleaner_pay are given — so pass square_footage whenever the message or listing ' +
+    'shows it. Pass the original request text as note. Safe to re-run: an existing live property with the ' +
+    'same name or street address is returned instead of duplicated.',
+  scope: 'crm:write',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Property name, e.g. "Michael Peralta 1563".' },
+      address: { type: 'string', description: 'Full street address, e.g. "1563 Grant Rd, Pigeon Forge, TN 37876".' },
+      client_name: { type: 'string', description: 'Owner / client name. Matched exactly to an existing client, else created at stage "new".' },
+      contact_id: { type: 'string', description: 'Existing client uuid, if already known (wins over client_name).' },
+      client_email: { type: 'string', description: 'Client email — matches an existing client before the name does.' },
+      client_phone: { type: 'string' },
+      bedrooms: { type: 'integer' },
+      full_baths: { type: 'integer', description: 'Full bathrooms. "3 bathrooms" with no detail = 3 full.' },
+      half_baths: { type: 'integer' },
+      kitchens: { type: 'integer', description: 'Defaults to 1.' },
+      guest_count: { type: 'integer', description: 'How many it sleeps.' },
+      king_beds: { type: 'integer' },
+      queen_beds: { type: 'integer' },
+      full_beds: { type: 'integer' },
+      twin_beds: { type: 'integer' },
+      hot_tub: { type: 'boolean' },
+      pool: { type: 'boolean', description: 'Pool (indoor or outdoor). "None" = false.' },
+      square_footage: { type: 'number', description: 'Heated sq ft. Drives the suggested price.' },
+      ce_charged: { type: 'number', description: 'Client charge per clean, if a price was stated. Overrides the sq ft suggestion.' },
+      cleaner_pay: { type: 'number', description: 'Cleaner pay per clean, if stated. Defaults to 50% of the client charge.' },
+      linen_program: { type: 'boolean', description: 'Only if the request says they want Tendwell linens.' },
+      listing_url: { type: 'string', description: 'Public listing link (Airbnb / VRBO / Zillow / Realtor).' },
+      note: { type: 'string', description: 'The original request text (e.g. the Slack post), saved on the property.' },
+    },
+    required: ['name'],
+    additionalProperties: false,
+  },
+  async handler(args, ctx) {
+    const name = str(args.name)
+    if (!name) return { text: 'name is required.', isError: true }
+    const bedrooms = intArg(args.bedrooms)
+    const sqft = numArg(args.square_footage)
+    const pricing = suggestQuotePricing({
+      squareFootage: sqft ?? null,
+      ceCharged: numArg(args.ce_charged) ?? null,
+      cleanerPay: numArg(args.cleaner_pay) ?? null,
+      bedrooms: bedrooms ?? null,
+    })
+
+    const out = await rpc<Record<string, any>>('crm_create_quote_property', {
+      p_name: name,
+      p_address: str(args.address) ?? null,
+      p_contact_id: str(args.contact_id) ?? null,
+      p_contact_name: str(args.client_name) ?? null,
+      p_contact_email: str(args.client_email) ?? null,
+      p_contact_phone: str(args.client_phone) ?? null,
+      p_bedrooms: bedrooms ?? null,
+      p_full_baths: intArg(args.full_baths) ?? null,
+      p_half_baths: intArg(args.half_baths) ?? null,
+      p_kitchens: intArg(args.kitchens) ?? null,
+      p_guest_count: intArg(args.guest_count) ?? null,
+      p_king_beds: intArg(args.king_beds) ?? null,
+      p_queen_beds: intArg(args.queen_beds) ?? null,
+      p_full_beds: intArg(args.full_beds) ?? null,
+      p_twin_beds: intArg(args.twin_beds) ?? null,
+      p_hot_tub: args.hot_tub === true,
+      p_pool: args.pool === true,
+      p_square_footage: sqft ?? null,
+      p_ce_charged: pricing.ceCharged,
+      p_cleaner_pay: pricing.cleanerPay,
+      p_linen_program: args.linen_program === true,
+      p_listing_url: str(args.listing_url) ?? null,
+      p_note: str(args.note) ?? null,
+      p_actor: ctx.subjectEmail,
+    })
+
+    if (out?.already_exists) {
+      return {
+        text:
+          `Not created — "${out.property_name}" already exists (matched on ${out.matched_on}, ` +
+          `stage ${out.stage ?? 'none'}, property #${out.property_id}${out.address ? `, ${out.address}` : ''}). ` +
+          'Use crm_move_property_stage if it should move to Quote.',
+        data: out,
+      }
+    }
+
+    const lines: string[] = []
+    lines.push(
+      `Added "${out.property_name}" to the Quote Sheet (property #${out.property_id})` +
+        (out.client_name ? ` for ${out.client_name}${out.created_contact ? ' (new client, stage "new")' : ''}` : ' with no client') +
+        '.',
+    )
+    if (pricing.ceCharged != null) {
+      const how = pricing.ceSource === 'sqft' ? ` ($0.14 × ${sqft} sq ft)` : ''
+      const payHow = pricing.paySource === 'ce_share' ? ' (50% of charge)' : ''
+      lines.push(
+        `Client charge ${usd2(out.ce_charged)}${how} · cleaner pay ${usd2(out.cleaner_pay)}${payHow} · ` +
+          `est. cost ${usd2(out.total_estimated_cost)} · profit ${usd2(out.estimated_profit)} (${out.profit_percentage ?? 0}%).`,
+      )
+    } else {
+      lines.push('No price set yet — no square footage or client charge was given. Set Client Charged on the Quote Sheet.')
+    }
+    if (pricing.belowCleanerMin) {
+      lines.push(`Warning: cleaner pay is below the ${bedrooms}-bedroom minimum of ${usd2(pricing.cleanerMin)}.`)
+    }
+    if (pricing.marginGuardCharge != null) {
+      lines.push(`Warning: cleaner pay is over 55% of the charge — consider charging ${usd2(pricing.marginGuardCharge)}.`)
+    }
+    lines.push('Review it on the Quote Sheet: https://app.tendwellcleaningco.com/quote-sheet')
+    return { text: lines.join('\n'), data: { ...out, pricing } }
+  },
+}
+
 // ─── Task audit tools (Cowork's daily Slack / Quo sweep) ────────────────────
 //
 // Busy Bee stopped billing auxiliary work (Jordan 2026-09-22): a hot tub
@@ -949,6 +1090,7 @@ export const TOOLS: Tool[] = [
   logInteraction,
   setClientStage,
   movePropertyStage,
+  createQuoteProperty,
   listBillableTasks,
   logTaskObservation,
   taskAuditSummary,
@@ -974,7 +1116,9 @@ const SERVER_INSTRUCTIONS =
   'Tendwell Ops CRM. Two independent stage axes: the CLIENT lifecycle on a contact ' +
   '(new → prospect → quoted → won, exits nurture / not_interested / churned) and the ' +
   'PROPERTY pipeline (Lead → Quote → Onboarding → Active → Offboarding → Offboarded). ' +
-  'Moving one never moves the other. Resolve people by name with crm_get_client before writing ' +
+  'Moving one never moves the other. To quote a new property (e.g. a Slack post asking for a ' +
+  'cleaning fee quote, or "add this to the quote sheet"), call crm_create_quote_property — it ' +
+  'creates the property and, if needed, the client. Resolve people by name with crm_get_client before writing ' +
   'against them. When logging meetings in bulk, always pass a stable external_id so re-runs are ' +
   'no-ops rather than duplicates. Task audit: auxiliary work (hot tub refreshes, trash pickups, ' +
   'deliveries, lockbox checks, touch-ups) bills the client only when a Breezeway/Trellis task exists; ' +
