@@ -96,6 +96,45 @@ function channelTone(channel: BillingChannel | null): StatusTone {
   return 'neutral'
 }
 
+/**
+ * Billing channel, editable in place on the line row. Expense / excluded
+ * lines are never invoiced, so they keep the read-only badge.
+ */
+function LineChannelSelect({
+  line,
+  disabled,
+  onChange,
+}: {
+  line: InvoiceLine
+  disabled?: boolean
+  onChange: (channel: BillingChannel) => void
+}) {
+  const current = (line.billing_channel ?? 'none') as BillingChannel
+  const neverBilled =
+    line.line_kind === 'operating_expense' || line.line_kind === 'excluded' || line.review_status === 'excluded'
+  if (neverBilled) {
+    return (
+      <StatusBadge tone={channelTone(line.billing_channel)}>
+        {BILLING_CHANNELS.find(c => c.id === line.billing_channel)?.label ?? '—'}
+      </StatusBadge>
+    )
+  }
+  return (
+    <Select value={current} onValueChange={v => v !== current && onChange(v as BillingChannel)} disabled={disabled}>
+      <SelectTrigger
+        className={cn('h-7 w-36 text-xs', current === 'none' && 'border-destructive/60 text-destructive')}
+        data-testid={`select-line-channel-${line.id}`}
+        aria-label="Billing channel"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {BILLING_CHANNELS.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
+  )
+}
+
 const SPLIT_ACCENTS = ['border-l-primary/50', 'border-l-info/50', 'border-l-warning/50', 'border-l-success/50']
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -824,6 +863,40 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     return Array.from(by.values()).sort((a, b) => a.date.localeCompare(b.date))
   }, [lines])
 
+  // One-click billing channel straight from the line row, no dialog. A blank
+  // client charge on a Reimbursement is filled with the invoiced amount
+  // (billed back at cost, the engine's courier rule) — otherwise the line
+  // would pass Approve and still drop out of the AR file, which skips
+  // null/zero charges.
+  const channelMutation = useGuardedMutation<void, Error, { line: InvoiceLine; channel: BillingChannel }>('invoicing', {
+    mutationFn: async ({ line, channel }) => {
+      const fillCharge =
+        channel !== 'none' &&
+        line.client_charge_amount == null &&
+        line.service_type === 'Reimbursement' &&
+        Number(line.raw_amount ?? 0) > 0
+      const { error } = await supabase
+        .from('invoice_lines')
+        .update({
+          billing_channel: channel,
+          flags: channel === 'none' ? line.flags : line.flags.filter(f => f !== 'no_billing_channel'),
+          ...(fillCharge ? { client_charge_amount: Number(line.raw_amount) } : {}),
+          resolved_by: userLabel,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', line.id)
+      if (error) throw error
+    },
+    onSuccess: (_d, { channel }) => {
+      toast({ title: `Billing channel set to ${BILLING_CHANNELS.find(c => c.id === channel)?.label ?? channel}` })
+      invalidate()
+    },
+    onError: (e: Error) => {
+      if (e.message === 'edit_blocked') return
+      toast({ title: 'Failed to set billing channel', description: e.message, variant: 'destructive' })
+    },
+  })
+
   const acceptMutation = useGuardedMutation<void, Error, InvoiceLine>('invoicing', {
     mutationFn: async (line: InvoiceLine) => {
       const { error } = await supabase
@@ -1283,9 +1356,11 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.client_charge_amount)}</td>
                         <td className="px-2 py-2">
-                          <StatusBadge tone={channelTone(line.billing_channel)}>
-                            {BILLING_CHANNELS.find(c => c.id === line.billing_channel)?.label ?? '—'}
-                          </StatusBadge>
+                          <LineChannelSelect
+                            line={line}
+                            disabled={channelMutation.isPending}
+                            onChange={channel => channelMutation.mutate({ line, channel })}
+                          />
                         </td>
                         <td className="px-2 py-2">
                           <div className="flex flex-wrap gap-1 max-w-52">
@@ -1397,6 +1472,11 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         <p key={msg} className="text-2xs text-destructive">Blocks approval: {msg}</p>
                       ))}
                     <div className="flex items-center gap-2 pt-1">
+                      <LineChannelSelect
+                        line={line}
+                        disabled={channelMutation.isPending}
+                        onChange={channel => channelMutation.mutate({ line, channel })}
+                      />
                       <Button size="sm" variant="outline" className="h-7 flex-1" onClick={() => onReview(line)}>
                         <Pencil className="w-3.5 h-3.5 mr-1.5" /> Review
                       </Button>
@@ -1836,9 +1916,11 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
       // to the client's default on property change, editable). Resolved rows
       // are preserved by reconcile, so 'none' here would leave the line off
       // BOTH AR exports (paid to vendor, never billed) — the Approve gate
-      // refuses that. Expense/excluded lines and property-less lines are
-      // never AR and carry no channel.
-      const billingChannelToSave: BillingChannel = isExpenseKind || propertyId == null ? 'none' : billingChannel
+      // refuses that. Expense/excluded lines are never AR and carry no
+      // channel. A property-less line keeps whatever was picked: QBO/Haven
+      // bills it without a property (courier reimbursements), and anything
+      // else is still stopped by the Approve gate's no-property guard.
+      const billingChannelToSave: BillingChannel = isExpenseKind ? 'none' : billingChannel
 
       // Drop the flags this resolution just addressed — a resolved Tendwell
       // expense showing "Unresolved property / No billing channel" reads as
@@ -2030,7 +2112,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
               Tendwell expense: paid to the vendor via Ramp, never invoiced to Haven or bill.com — no property needed.
             </p>
           )}
-          {!isExpenseKind && propertyId != null && (
+          {!isExpenseKind && (
             <div className="space-y-1.5">
               <Label>
                 Billing channel{' '}
@@ -2042,7 +2124,12 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
                   {BILLING_CHANNELS.map(c => <SelectItem key={c.id} value={c.id}>{c.label}</SelectItem>)}
                 </SelectContent>
               </Select>
-              {billingChannel === 'none' && (
+              {propertyId == null && billingChannel !== 'qbo_haven' && (
+                <p className="text-2xs text-warning">
+                  No property on this line — only QuickBooks (Haven) can bill it as-is. Pick a property for bill.com.
+                </p>
+              )}
+              {propertyId != null && billingChannel === 'none' && (
                 <p className="text-2xs text-warning">
                   {clientInfo?.full_name ?? 'This client'} has no billing channel yet. Pick one here or the invoice can’t be approved.
                 </p>
