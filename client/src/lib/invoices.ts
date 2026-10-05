@@ -211,8 +211,10 @@ export function lineIssues(l: InvoiceLine): string[] {
   if (billable && (l.billing_channel == null || l.billing_channel === 'none')) {
     out.push('No billing channel — would be paid to the vendor but never invoiced to a client')
   }
-  if (billable && l.property_id == null) {
-    out.push('No property assigned')
+  // A QBO/Haven line needs no property (Haven is the one QBO customer) —
+  // mirrors the exception in approve.ts.
+  if (billable && l.property_id == null && l.billing_channel !== 'qbo_haven') {
+    out.push('No property assigned (or bill it to QuickBooks / Haven)')
   }
   if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {
     out.push('No cleaner pay — would be missing from the Ramp export')

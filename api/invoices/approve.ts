@@ -133,6 +133,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Same class of leak via a different path: a billable line whose property
   // was cleared in review would export with a blank property name/class.
+  // Exception: a line routed to QBO/Haven. Haven is the single QBO customer,
+  // so the invoice knows who to bill without a property — the case is courier
+  // reimbursements (UPS/FedEx), whose vendor line names the carrier, not a
+  // cabin (Jordan, 2026-10-05, invoice 1261003821). bill.com still needs the
+  // property: its worksheet bills per client, and the client comes from it.
   let propertylessRows: BlockingLine[]
   try {
     propertylessRows = await fetchAllRows<BlockingLine>(
@@ -144,6 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .not('line_kind', 'in', '(operating_expense,excluded)')
         .neq('review_status', 'excluded')
         .is('property_id', null)
+        .or('billing_channel.is.null,billing_channel.neq.qbo_haven')
         .order('line_no'),
       'line_no',
     )
@@ -153,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (propertylessRows.length > 0) {
     res.status(400).json({
-      error: `Cannot approve: ${propertylessRows.length} billable line(s) have no property assigned. ${describeLines(propertylessRows)} Assign a property, or set the line kind to Tendwell expense if it isn't a property clean.`,
+      error: `Cannot approve: ${propertylessRows.length} billable line(s) have no property assigned. ${describeLines(propertylessRows)} Assign a property, bill it to QuickBooks (Haven) — the one channel that needs no property — or set the line kind to Tendwell expense if it isn't billed to a client.`,
       blocking_lines: propertylessRows,
     })
     return
