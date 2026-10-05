@@ -182,6 +182,14 @@ REVOKE EXECUTE ON FUNCTION public.crm_create_quote_property(
   INTEGER, INTEGER, INTEGER, INTEGER, BOOLEAN, BOOLEAN, NUMERIC, NUMERIC, NUMERIC,
   BOOLEAN, TEXT, TEXT, TEXT
 ) FROM PUBLIC;
+-- Supabase's default privileges grant anon directly (not via PUBLIC), so the
+-- PUBLIC revoke alone leaves it executable. The crm_caller_allowed() guard
+-- would refuse anon anyway; this keeps a write RPC off the anon role entirely.
+REVOKE EXECUTE ON FUNCTION public.crm_create_quote_property(
+  TEXT, TEXT, UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER,
+  INTEGER, INTEGER, INTEGER, INTEGER, BOOLEAN, BOOLEAN, NUMERIC, NUMERIC, NUMERIC,
+  BOOLEAN, TEXT, TEXT, TEXT
+) FROM anon;
 GRANT EXECUTE ON FUNCTION public.crm_create_quote_property(
   TEXT, TEXT, UUID, TEXT, TEXT, TEXT, INTEGER, INTEGER, INTEGER, INTEGER, INTEGER,
   INTEGER, INTEGER, INTEGER, INTEGER, BOOLEAN, BOOLEAN, NUMERIC, NUMERIC, NUMERIC,
