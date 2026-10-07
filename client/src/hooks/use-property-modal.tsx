@@ -21,11 +21,13 @@ export interface PropertyModalState {
   propertyId: string
   sourceContext?: string
   highlightFields?: string[]
+  /** Tab to land on instead of Overview (e.g. 'setup' for the Access tab). */
+  initialTab?: string
 }
 
 interface PropertyModalContextType {
   modalState: PropertyModalState | null
-  openPropertyModal: (propertyId: string, sourceContext?: string, highlightFields?: string[]) => void
+  openPropertyModal: (propertyId: string, sourceContext?: string, highlightFields?: string[], initialTab?: string) => void
   closePropertyModal: () => void
 }
 
@@ -41,8 +43,8 @@ export function PropertyModalProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  function openPropertyModal(propertyId: string, sourceContext?: string, highlightFields?: string[]) {
-    setModalState({ propertyId, sourceContext, highlightFields })
+  function openPropertyModal(propertyId: string, sourceContext?: string, highlightFields?: string[], initialTab?: string) {
+    setModalState({ propertyId, sourceContext, highlightFields, initialTab })
     syncUrlParam(propertyId)
     // Track recently viewed (#18)
     try {
