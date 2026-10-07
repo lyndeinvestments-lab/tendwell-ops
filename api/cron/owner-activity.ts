@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { requireAdminBearer } from '../qbo/_lib.js'
 import { getSupabaseConfig, notifyStaff } from '../notify/_lib.js'
-import { groupOwnerActivity, groupSubjectTarget, type OwnerActivityRow } from './_owner-activity.js'
+import { describeChange, groupOwnerActivity, groupSubjectTarget, type OwnerActivityRow } from './_owner-activity.js'
 
 // GET /api/cron/owner-activity
 //
@@ -136,44 +136,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     console.error('owner-activity sweep failed:', e)
     return res.status(500).json({ error: e.message || 'Sweep failed' })
   }
-}
-
-function describeChange(c: { field: string; from: string | null; to: string | null; action: string }): string {
-  const label = prettyField(c.field)
-  switch (c.action) {
-    case 'note_added':
-      return `Added a note: ${truncate(c.to ?? '', 200)}`
-    case 'quote_response':
-      return `${c.to === 'approved' ? 'Approved' : 'Declined'} their quote`
-    case 'referral_submitted':
-      return `Referred someone: ${truncate(c.to ?? '', 160)}`
-    case 'testimonial_submitted':
-      return `Left a testimonial: ${truncate(c.to ?? '', 160)}`
-    case 'feedback_submitted':
-      return `Left feedback (${label}): ${truncate(c.to ?? '', 160)}`
-    case 'photo_uploaded':
-      return 'Uploaded a photo'
-    default:
-      // Field edits carry both sides, which is the whole point of the email:
-      // you should be able to tell whether to act without opening the app.
-      return c.from
-        ? `${label}: ${truncate(c.from, 80)} → ${truncate(c.to ?? '(blank)', 80)}`
-        : `${label}: ${truncate(c.to ?? '(blank)', 80)}`
-  }
-}
-
-function prettyField(f: string): string {
-  return f
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, m => m.toUpperCase())
-    .replace(/\bWifi\b/i, 'Wi-Fi')
-    .replace(/\bIcal\b/i, 'iCal')
-    .replace(/\bAc\b/, 'A/C')
-}
-
-function truncate(s: string, n: number): string {
-  const t = s.trim()
-  return t.length > n ? `${t.slice(0, n - 1)}…` : t
 }
 
 // An owner whose auth user has signed in but who has never been reported as

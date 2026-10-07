@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  describeChange,
   groupOwnerActivity,
   groupSubjectTarget,
   ownerName,
@@ -173,5 +174,34 @@ describe('groupOwnerActivity', () => {
   it('falls back to a generic target when nothing is named', () => {
     const [g] = groupOwnerActivity([row({ entity_name: null })])
     expect(groupSubjectTarget(g)).toBe('their portal')
+  })
+})
+
+describe('describeChange', () => {
+  it('reads a quote request as "Requested a quote for <address>"', () => {
+    // owner_request_quote() logs action 'quote_requested' with the address in new_value.
+    const [g] = groupOwnerActivity([
+      row({
+        action: 'quote_requested',
+        field_name: null,
+        old_value: null,
+        new_value: '123 Main St, Gatlinburg, TN 37738',
+        entity_name: 'Robin Bulba 123',
+      }),
+    ])
+    expect(describeChange(g.records[0].changes[0])).toBe('Requested a quote for 123 Main St, Gatlinburg, TN 37738')
+  })
+
+  it('still reads when a quote request carries no address', () => {
+    expect(describeChange({ field: 'quote_requested', from: null, to: null, action: 'quote_requested' })).toBe(
+      'Requested a quote for another property',
+    )
+  })
+
+  it('keeps the existing wording for the other actions', () => {
+    expect(describeChange({ field: 'quote_response', from: null, to: 'approved', action: 'quote_response' })).toBe('Approved their quote')
+    expect(describeChange({ field: 'photo_uploaded', from: null, to: null, action: 'photo_uploaded' })).toBe('Uploaded a photo')
+    expect(describeChange({ field: 'wifi_info', from: 'old', to: 'new', action: 'update' })).toBe('Wi-Fi Info: old → new')
+    expect(describeChange({ field: 'pool', from: null, to: 'true', action: 'update' })).toBe('Pool: true')
   })
 })

@@ -10,6 +10,7 @@ export const onboardingEs: typeof onboardingEn = {
     success: {
       title: 'Enviado',
       body: 'Gracias. Hemos recibido la información de tu propiedad. Nuestro equipo la revisará y se pondrá en contacto pronto.',
+      backToPortal: 'Volver a tu portal',
     },
     sections: {
       contactProperty: 'Contacto y Propiedad',
@@ -84,6 +85,7 @@ export const onboardingEs: typeof onboardingEn = {
       none: 'Ninguno / enviar después',
       icalUrlLabel: 'URL de iCal',
       icalUrlPlaceholder: 'https://...',
+      icalUrlInvalid: 'Pega el enlace completo del calendario, que empiece con https://',
       clientIdLabel: 'ID de cliente / clave pública (opcional)',
       clientIdHint: 'Para servicios que proporcionan un ID de cliente o clave pública, pégalo aquí.',
       apiSecretLabel: 'Clave secreta de API / secreto de cliente / token',

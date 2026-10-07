@@ -668,6 +668,11 @@ export const financialsEn = {
       avgSuffix: '(avg)',
       avgTitle: 'Average profit %',
     },
+    ownerRequest: {
+      badge: 'Owner request',
+      requestedBy: 'Requested by {{owner}} on {{date}}',
+      anOwner: 'an owner',
+    },
     sendDialog: {
       title: 'Send quote to owner',
       bodyPrefix: 'Link an owner to',

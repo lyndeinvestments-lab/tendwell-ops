@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import type { Json } from '@shared/database.types'
@@ -8,32 +8,29 @@ import { usePageTitle } from '@/hooks/use-page-title'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, ExternalLink, Copy, Check, Download, PenLine, Plus, Eye, Image as ImageIcon } from 'lucide-react'
+import { Loader2, LogOut, Home, CalendarClock, ClipboardList, ChevronDown, Lock, ArrowLeft, Package, Gift, Quote, MessageSquare, FileText, Plus, Eye, Image as ImageIcon } from 'lucide-react'
 import { normalizeOwnerPermissions, changeOwnerEmail, type OwnerPermissions } from '@/lib/owners'
+import { normalizeCalendarUrl } from '@/lib/url-safety'
+import { PortalReadOnlyContext, usePortalReadOnly } from '@/components/owner/portal-context'
+import { Field } from '@/components/owner/Field'
+import { formatDate } from '@/components/owner/format'
+import { AgreementSection } from '@/components/owner/AgreementSection'
+import { TrellisPortalCard } from '@/components/owner/TrellisPortalCard'
+import { OnboardingGuide } from '@/components/owner/OnboardingGuide'
+import { useOnboardingGuide } from '@/components/owner/useOnboardingGuide'
+import { RequestQuoteCard } from '@/components/owner/RequestQuoteCard'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
 import { thumbUrl } from '@/lib/image'
 import { resizeImageFile } from '@/lib/resize-image'
-import { signAgreement, downloadAgreementPdf } from '@/lib/agreements'
-import { SignaturePad } from '@/components/SignaturePad'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
 import { LanguageToggle } from '@/components/LanguageToggle'
-
-type DateFormatFn = (date: Date | number, pattern: string) => string
-
-// ─── Read-only preview (admin owner emulation) ────────────────────────────────
-// True while an admin is previewing this portal as a specific owner. Every
-// section reads it to hide/disable its write affordances; the DB refuses the
-// owner write RPCs while emulating regardless, so this is UX, not the guard.
-const PortalReadOnlyContext = createContext(false)
-const usePortalReadOnly = () => useContext(PortalReadOnlyContext)
 
 // A property as returned by the get_owner_properties() RPC. The RPC omits any
 // field the owner can't see (visibility enforced in the DB), so every value
@@ -96,21 +93,6 @@ function initialForm(p: OwnerProperty): FormState {
 
 // ─── Tasks ────────────────────────────────────────────────────────────────────
 type OwnerTask = { source: string; title: string; task_date: string | null; status: string | null }
-
-function formatDate(iso: string | null, format: DateFormatFn): string {
-  if (!iso) return '—'
-  // Date-only strings (YYYY-MM-DD) must be constructed in local time to avoid
-  // UTC-midnight anchoring rolling them back a day in Eastern/other western TZs.
-  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-    const [y, m, d] = iso.split('-').map(Number)
-    const dt = new Date(y, m - 1, d)
-    if (isNaN(dt.getTime())) return '—'
-    return format(dt, 'MMM d, yyyy')
-  }
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return '—'
-  return format(d, 'MMM d, yyyy')
-}
 
 function TasksSection({ propertyId }: { propertyId: number }) {
   const { t } = useLocale('ownerPortal')
@@ -345,14 +327,30 @@ function ReadOnlyValue({ value }: { value: string | number | null | undefined })
 }
 
 // ─── Per-property editable card ────────────────────────────────────────────────
-function PropertyCard({ property }: { property: OwnerProperty }) {
+function PropertyCard({ property, focusSignal }: { property: OwnerProperty; focusSignal?: number }) {
   const { t } = useLocale('ownerPortal')
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<FormState>(() => initialForm(property))
   const [open, setOpen] = useState(false)
+  // True after a save skipped the calendar link because it is not a full link.
+  const [icalInvalid, setIcalInvalid] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
 
-  const readOnly = usePortalReadOnly()
+  // "Edit details in your property card" in the Getting started guide: open this card and
+  // bring it into view. The signal is a counter so pressing it twice still re-focuses.
+  useEffect(() => {
+    if (!focusSignal) return
+    setOpen(true)
+    cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [focusSignal])
+
+  const previewReadOnly = usePortalReadOnly()
+  // A Lead/Quote-stage property is being quoted from the details on file (the price comes from
+  // its square footage), so owners cannot edit it; owner_update_property refuses it too. Notes
+  // stay open: that is how they tell us something changed.
+  const quoting = property.stage === 'Quote' || property.stage === 'Lead'
+  const readOnly = previewReadOnly || quoting
   const perms = property.permissions
   // In read-only preview every field renders through its existing "view only"
   // path, so the admin still sees exactly what the owner sees.
@@ -395,7 +393,22 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
         if (!can(key as keyof OwnerPermissions).editable) continue
         for (const c of cols) payload[c] = form[c] ?? null
       }
-      if (Object.keys(payload).length === 0) return
+      // The database refuses any calendar link that is not http(s)/webcal. Check it here so
+      // one bad optional field cannot make the server reject every other change: an invalid
+      // link is left out of this save (it stays in the field, with an error), the rest saves.
+      let skippedIcal = false
+      if ('ical_url' in payload) {
+        const ical = normalizeCalendarUrl(payload.ical_url as string | null)
+        if (ical === 'invalid') {
+          delete payload.ical_url
+          skippedIcal = true
+        } else {
+          payload.ical_url = ical
+        }
+      }
+      setIcalInvalid(skippedIcal)
+      const ical = 'ical_url' in payload ? (payload.ical_url as string | null) : undefined
+      if (Object.keys(payload).length === 0) return { skippedIcal, saved: false, ical }
       // Owners have no direct read/write on `properties` (it holds team notes and
       // financials). owner_update_property applies only owner-editable columns,
       // and the guard trigger re-checks per-field permissions.
@@ -404,16 +417,29 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
         p_changes: payload as Json,
       })
       if (error) throw error
+      return { skippedIcal, saved: true, ical }
     },
-    onSuccess: () => {
-      toast({ title: t('properties.saved'), description: t('properties.savedDescription', { name: property.name }) })
+    onSuccess: res => {
+      // webcal:// was rewritten to https:// on the way out; show what is actually stored.
+      if (res?.saved && res.ical !== undefined) set('ical_url', res.ical)
+      if (res?.skippedIcal) {
+        toast({
+          title: res.saved ? t('properties.savedExceptCalendar') : t('properties.icalNotSaved'),
+          description: t('properties.icalInvalid'),
+        })
+      } else {
+        toast({ title: t('properties.saved'), description: t('properties.savedDescription', { name: property.name }) })
+      }
       // Owner edits shared property columns (address/beds/sqft/codes/wifi) — the
       // shared helper refreshes the owner's own list and, if a staff view is
       // open, every staff property cache too.
       invalidateAllPropertyQueries(queryClient)
     },
     onError: (e: unknown) => {
-      toast({ title: t('properties.saveFailedTitle'), description: e instanceof Error ? e.message : t('properties.saveFailedDefault'), variant: 'destructive' })
+      // The RPC raises friendly messages (counts out of range, etc.); show them as written.
+      // PostgrestError extends Error, but fall back to a plain { message } object too.
+      const message = e instanceof Error ? e.message : (e as { message?: string } | null)?.message
+      toast({ title: t('properties.saveFailedTitle'), description: message || t('properties.saveFailedDefault'), variant: 'destructive' })
     },
   })
 
@@ -441,7 +467,7 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
   const showDetails = detailKeys.some(k => can(k).visible)
 
   return (
-    <Card className="rounded-2xl shadow-sm overflow-hidden">
+    <Card ref={cardRef} id={`property-${property.id}`} className="rounded-2xl shadow-sm overflow-hidden scroll-mt-20">
       <CardHeader className="flex flex-row items-center justify-between gap-2 py-4">
         <div className="flex items-center gap-2 min-w-0">
           <Home className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -466,6 +492,12 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
 
       {open && (
         <CardContent className="space-y-6 pb-6">
+          {quoting && (
+            <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/40 p-3 text-sm text-muted-foreground" data-testid={`text-quoting-note-${property.id}`}>
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{t('properties.quotingNote')}</span>
+            </p>
+          )}
           {/* Property details */}
           {showDetails && (
           <section className="space-y-4">
@@ -618,12 +650,25 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
                 <Input value={(form.filter_size as string) ?? ''} onChange={e => set('filter_size', e.target.value || null)} placeholder={t('fields.filterSizePlaceholder')} />
               ))}
               {renderField('ical_url', t('fields.icalUrl'), 'ical_url', () => (
-                <Input
-                  type="url"
-                  value={(form.ical_url as string) ?? ''}
-                  onChange={e => set('ical_url', e.target.value || null)}
-                  placeholder={t('fields.icalUrlPlaceholder')}
-                />
+                <>
+                  <Input
+                    type="url"
+                    value={(form.ical_url as string) ?? ''}
+                    onChange={e => {
+                      set('ical_url', e.target.value || null)
+                      setIcalInvalid(false)
+                    }}
+                    placeholder={t('fields.icalUrlPlaceholder')}
+                    aria-invalid={icalInvalid || undefined}
+                    aria-describedby={icalInvalid ? `ical-error-${property.id}` : undefined}
+                    data-testid={`input-ical-url-${property.id}`}
+                  />
+                  {icalInvalid && (
+                    <p id={`ical-error-${property.id}`} role="alert" className="text-xs text-destructive" data-testid={`text-ical-error-${property.id}`}>
+                      {t('properties.icalInvalid')}
+                    </p>
+                  )}
+                </>
               ), 'sm:col-span-2')}
             </div>
           </section>
@@ -655,19 +700,6 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
         </CardContent>
       )}
     </Card>
-  )
-}
-
-function Field({ label, children, className, locked }: { label: string; children: React.ReactNode; className?: string; locked?: boolean }) {
-  const { t } = useLocale('ownerPortal')
-  return (
-    <div className={`space-y-1.5 ${className ?? ''}`}>
-      <Label className="text-xs text-muted-foreground flex items-center gap-1">
-        {label}
-        {locked && <span className="text-2xs text-muted-foreground/70">{t('properties.viewOnly')}</span>}
-      </Label>
-      {children}
-    </div>
   )
 }
 
@@ -1141,37 +1173,6 @@ function FeedbackSection({ ownerId }: { ownerId: string }) {
   )
 }
 
-// ─── Onboarding ───────────────────────────────────────────────────────────────
-function OnboardingSection({ properties }: { properties: OwnerProperty[] }) {
-  const { t } = useLocale('ownerPortal')
-  const onboarding = properties.filter(p => p.stage === 'Onboarding')
-  if (onboarding.length === 0) return null
-  return (
-    <Card className="rounded-2xl shadow-sm overflow-hidden">
-      <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <ClipboardList className="w-4 h-4 text-muted-foreground" /> {t('onboarding.title')}
-        </h2>
-      </CardHeader>
-      <CardContent className="space-y-3 pb-5">
-        <p className="text-sm text-muted-foreground">
-          {onboarding.length === 1 ? t('onboarding.messageSingular') : t('onboarding.messagePlural')}
-        </p>
-        <ul className="space-y-1">
-          {onboarding.map(p => (
-            <li key={p.id} className="text-sm font-medium text-foreground flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" /> {p.name}
-            </li>
-          ))}
-        </ul>
-        <a href="/onboarding" className="inline-block text-sm font-medium text-primary hover:underline">
-          {t('onboarding.startHere')}
-        </a>
-      </CardContent>
-    </Card>
-  )
-}
-
 // ─── Quotes ───────────────────────────────────────────────────────────────────
 type OwnerQuote = {
   id: number
@@ -1284,368 +1285,6 @@ function QuotesSection() {
             </div>
           )
         })}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ─── Agreement section ─────────────────────────────────────────────────────────
-type OwnerAgreement = {
-  id: string
-  status: 'sent' | 'signed' | 'void'
-  owner_name: string | null
-  entity: string | null
-  mailing_address: string | null
-  property_addresses: string | null
-  email: string | null
-  phone: string | null
-  owner_signed_at: string | null
-}
-
-function AgreementSection() {
-  const { t } = useLocale('ownerPortal')
-  const { format } = useDateFormat()
-  const readOnly = usePortalReadOnly()
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-
-  const { data: rpcData, isLoading, isError, refetch } = useQuery({
-    queryKey: ['owner-agreement'],
-    queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_owner_agreement')
-      if (error) throw error
-      return data as OwnerAgreement[] | null
-    },
-  })
-
-  // get_owner_agreement returns a SETOF (jsonb array); at most 1 element.
-  // An empty array means the owner has no agreement assigned.
-  const a = (rpcData as any)?.[0] as OwnerAgreement | undefined
-
-  // Form state for party fields + signing fields
-  const [ownerName, setOwnerName] = useState('')
-  const [entity, setEntity] = useState('')
-  const [mailingAddress, setMailingAddress] = useState('')
-  const [propertyAddresses, setPropertyAddresses] = useState('')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [ownerPrintedName, setOwnerPrintedName] = useState('')
-  const [ownerTitle, setOwnerTitle] = useState('')
-  const [sig, setSig] = useState<string | null>(null)
-  const [consent, setConsent] = useState(false)
-  const [isPending, setIsPending] = useState(false)
-
-  // Pre-fill form when agreement data arrives
-  useEffect(() => {
-    if (a) {
-      setOwnerName(a.owner_name ?? '')
-      setEntity(a.entity ?? '')
-      setMailingAddress(a.mailing_address ?? '')
-      setPropertyAddresses(a.property_addresses ?? '')
-      setEmail(a.email ?? '')
-      setPhone(a.phone ?? '')
-    }
-  }, [a?.id])
-
-  if (isLoading) return <Skeleton className="h-28 rounded-2xl" />
-  if (isError) return <ErrorState onRetry={() => refetch()} title={t('agreements.loadFailedTitle')} description={t('agreements.loadFailedDescription')} />
-
-  // No agreement assigned for this owner.
-  if (!a) return null
-  // void agreements are hidden.
-  if (a.status === 'void') return null
-
-  if (a.status === 'signed') {
-    return (
-      <Card className="rounded-2xl shadow-sm overflow-hidden">
-        <CardHeader className="py-4">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <FileText className="w-4 h-4 text-muted-foreground" /> {t('agreements.signedTitle')}
-          </h2>
-        </CardHeader>
-        <CardContent className="space-y-4 pb-5">
-          <p className="text-sm text-muted-foreground">
-            {t('agreements.signedOn', { date: formatDate(a.owner_signed_at, format) })}
-          </p>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={async () => {
-              const result = await downloadAgreementPdf(a.id)
-              if (!result.ok) {
-                toast({ title: t('agreements.downloadFailedTitle'), description: result.error ?? t('agreements.downloadFailedDefault'), variant: 'destructive' })
-              }
-            }}
-            data-testid="button-download-agreement"
-          >
-            <Download className="w-4 h-4" />
-            {t('agreements.downloadButton')}
-          </Button>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  // status === 'sent'
-  // Read-only preview: an emulating admin sees THAT an agreement is pending,
-  // never the signing flow (signing must come from the owner's own session —
-  // the sign endpoint enforces this server-side too).
-  if (readOnly) {
-    return (
-      <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/40">
-        <CardHeader className="py-4">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <FileText className="w-4 h-4 text-muted-foreground" /> {t('agreements.previewSentTitle')}
-          </h2>
-        </CardHeader>
-        <CardContent className="pb-5">
-          <p className="text-sm text-muted-foreground">{t('agreements.previewSentBody')}</p>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const today = format(new Date(), 'MMMM d, yyyy')
-
-  async function handleSign() {
-    if (!sig || !consent || !ownerPrintedName.trim() || isPending) return
-    setIsPending(true)
-    const result = await signAgreement({
-      agreementId: a!.id,
-      signatureDataUrl: sig,
-      ownerName: ownerName.trim(),
-      entity: entity.trim(),
-      mailingAddress: mailingAddress.trim(),
-      propertyAddresses: propertyAddresses.trim(),
-      email: email.trim(),
-      phone: phone.trim(),
-      ownerPrintedName: ownerPrintedName.trim(),
-      ownerTitle: ownerTitle.trim(),
-      consent: true,
-    })
-    setIsPending(false)
-    if (result.ok) {
-      toast({ title: t('agreements.signedToast') })
-      queryClient.invalidateQueries({ queryKey: ['owner-agreement'] })
-    } else {
-      toast({ title: t('agreements.signFailedTitle'), description: result.error ?? t('agreements.signFailedDefault'), variant: 'destructive' })
-    }
-  }
-
-  return (
-    <Card className="rounded-2xl shadow-sm overflow-hidden border-primary/40">
-      <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <PenLine className="w-4 h-4 text-primary" />
-          {t('agreements.actionNeededTitle')}
-        </h2>
-      </CardHeader>
-      <CardContent className="space-y-6 pb-6">
-        {/* Open agreement */}
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            {t('agreements.intro')}
-          </p>
-          <a
-            href="/agreements/service-agreement-v1.pdf"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            data-testid="link-open-agreement"
-          >
-            <ExternalLink className="w-4 h-4" />
-            {t('agreements.openAgreement')}
-          </a>
-        </div>
-
-        {/* Party fields */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">{t('agreements.yourInformation')}</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label={t('agreements.ownerName')}>
-              <Input
-                className="text-base sm:text-sm"
-                value={ownerName}
-                onChange={e => setOwnerName(e.target.value)}
-                data-testid="input-agreement-owner-name"
-              />
-            </Field>
-            <Field label={t('agreements.entityOptional')}>
-              <Input
-                className="text-base sm:text-sm"
-                value={entity}
-                onChange={e => setEntity(e.target.value)}
-                placeholder={t('agreements.entityPlaceholder')}
-                data-testid="input-agreement-entity"
-              />
-            </Field>
-            <Field label={t('agreements.mailingAddress')} className="sm:col-span-2">
-              <Input
-                className="text-base sm:text-sm"
-                value={mailingAddress}
-                onChange={e => setMailingAddress(e.target.value)}
-                data-testid="input-agreement-mailing-address"
-              />
-            </Field>
-            <Field label={t('agreements.propertyAddresses')} className="sm:col-span-2">
-              <Textarea
-                className="text-base sm:text-sm"
-                rows={2}
-                value={propertyAddresses}
-                onChange={e => setPropertyAddresses(e.target.value)}
-                placeholder={t('agreements.propertyAddressesPlaceholder')}
-                data-testid="textarea-agreement-property-addresses"
-              />
-            </Field>
-            <Field label={t('agreements.email')}>
-              <Input
-                type="email"
-                className="text-base sm:text-sm"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                data-testid="input-agreement-email"
-              />
-            </Field>
-            <Field label={t('agreements.phone')}>
-              <Input
-                className="text-base sm:text-sm"
-                value={phone}
-                onChange={e => setPhone(e.target.value)}
-                data-testid="input-agreement-phone"
-              />
-            </Field>
-          </div>
-        </section>
-
-        {/* Signature block */}
-        <section className="space-y-4">
-          <h3 className="text-sm font-semibold text-foreground">{t('agreements.yourSignature')}</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label={t('agreements.printedName')}>
-              <Input
-                className="text-base sm:text-sm"
-                value={ownerPrintedName}
-                onChange={e => setOwnerPrintedName(e.target.value)}
-                placeholder={t('agreements.printedNamePlaceholder')}
-                data-testid="input-agreement-printed-name"
-              />
-            </Field>
-            <Field label={t('agreements.titleOrCapacity')}>
-              <Input
-                className="text-base sm:text-sm"
-                value={ownerTitle}
-                onChange={e => setOwnerTitle(e.target.value)}
-                placeholder={t('agreements.titleOrCapacityPlaceholder')}
-                data-testid="input-agreement-title"
-              />
-            </Field>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            {t('agreements.date')}: <span className="font-medium text-foreground">{today}</span>
-          </div>
-          <Field label={t('agreements.signatureLabel')}>
-            <SignaturePad onChange={setSig} data-testid="signature-pad" />
-          </Field>
-        </section>
-
-        {/* Consent */}
-        <label className="flex items-start gap-3 cursor-pointer min-h-[44px]">
-          <input
-            type="checkbox"
-            className="mt-0.5 h-4 w-4 shrink-0 rounded border border-border accent-primary"
-            checked={consent}
-            onChange={e => setConsent(e.target.checked)}
-            data-testid="checkbox-agreement-consent"
-          />
-          <span className="text-sm text-foreground leading-snug">
-            {t('agreements.consentText')}
-          </span>
-        </label>
-
-        {/* Sign button */}
-        <Button
-          className="w-full"
-          size="lg"
-          disabled={!sig || !consent || !ownerPrintedName.trim() || isPending}
-          onClick={handleSign}
-          data-testid="button-sign-agreement"
-        >
-          {isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-          {t('agreements.signButton')}
-        </Button>
-      </CardContent>
-    </Card>
-  )
-}
-
-// ─── Trellis portal card ───────────────────────────────────────────────────────
-function TrellisPortalCard() {
-  const { t } = useLocale('ownerPortal')
-  const { toast } = useToast()
-  const [copied, setCopied] = useState(false)
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['owner-trellis-url'],
-    queryFn: async () => {
-      const { data: oid } = await supabase.rpc('current_owner_id')
-      const { data, error } = await supabase
-        .from('property_owners')
-        .select('trellis_portal_url')
-        .eq('id', (oid as any) ?? '')
-        .maybeSingle()
-      if (error) throw error
-      return data?.trellis_portal_url ?? null
-    },
-  })
-
-  const url = typeof data === 'string' ? data.trim() : null
-
-  if (isLoading || !url) return null
-
-  const isOpenable = url.startsWith('http')
-
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(url!)
-      setCopied(true)
-      toast({ title: t('trellis.linkCopied') })
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      toast({ title: t('trellis.copyFailedTitle'), description: t('trellis.copyFailedDescription'), variant: 'destructive' })
-    }
-  }
-
-  return (
-    <Card className="rounded-2xl shadow-sm overflow-hidden">
-      <CardHeader className="py-4">
-        <h2 className="text-base font-semibold text-foreground">{t('trellis.title')}</h2>
-      </CardHeader>
-      <CardContent className="space-y-4 pb-5">
-        <p className="text-sm text-muted-foreground">
-          {t('trellis.description')}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {isOpenable && (
-            <a
-              href={url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-              data-testid="link-open-trellis"
-            >
-              <ExternalLink className="w-4 h-4" />
-              {t('trellis.open')}
-            </a>
-          )}
-          <button
-            onClick={handleCopy}
-            className="inline-flex items-center gap-2 rounded-md border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted/50 transition-colors"
-            data-testid="button-copy-trellis-link"
-          >
-            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
-            {copied ? t('trellis.copied') : t('trellis.copyLink')}
-          </button>
-        </div>
       </CardContent>
     </Card>
   )
@@ -1854,6 +1493,17 @@ export default function OwnerPortalPage() {
     },
   })
 
+  // Guided onboarding. `guideExpanded` is the open stepper (not the folded "all set" line).
+  const { guide, ready: guideReady } = useOnboardingGuide(data)
+  const guideActive = !!guide?.show
+  // "You're all set" folds the guide to one line; once the owner unfolds it the steps contain the
+  // agreement and Trellis cards, so the page must not render them a second time.
+  const [guideShowAll, setGuideShowAll] = useState(false)
+  const guideExpanded = guideActive && (!guide!.allDone || guideShowAll)
+  const hasOnboardingProperty = (data ?? []).some(p => p.stage === 'Onboarding')
+  // Which property card the guide asked us to open (nonce lets the same one be re-focused).
+  const [focusProperty, setFocusProperty] = useState<{ id: number; nonce: number } | null>(null)
+
   return (
     <div className="min-h-dvh bg-background flex flex-col">
       <header className="border-b border-border/60 bg-gradient-to-r from-primary/10 via-background to-background sticky top-0 z-10 backdrop-blur">
@@ -1913,11 +1563,22 @@ export default function OwnerPortalPage() {
 
       <main className="flex-1 w-full max-w-3xl mx-auto p-4 sm:p-7 space-y-5">
        <PortalReadOnlyContext.Provider value={readOnly}>
+        {/* Getting started: a stepper while the owner has a property in onboarding or an
+            unsigned agreement. While it is open it covers the agreement and the Trellis link
+            (steps 1 and 3), so those cards are not rendered a second time below. */}
+        {ownerId && !guideReady && <Skeleton className="h-28 rounded-2xl" />}
+        {ownerId && guideActive && (
+          <OnboardingGuide
+            guide={guide!}
+            showAll={guideShowAll}
+            onShowAllChange={setGuideShowAll}
+            onEditProperty={id => setFocusProperty(prev => ({ id, nonce: (prev?.nonce ?? 0) + 1 }))}
+          />
+        )}
         {ownerId && <QuotesSection />}
-        {!isLoading && !isError && data && <OnboardingSection properties={data} />}
         {ownerId && <ContactPaymentCard />}
-        {ownerId && <TrellisPortalCard />}
-        {ownerId && <AgreementSection />}
+        {ownerId && guideReady && !guideExpanded && <TrellisPortalCard showPlaceholder={hasOnboardingProperty} />}
+        {ownerId && guideReady && !guideExpanded && <AgreementSection />}
         <div>
           <h1 className="text-lg font-semibold text-foreground">{t('properties.heading')}</h1>
           <p className="text-sm text-muted-foreground">
@@ -1943,9 +1604,17 @@ export default function OwnerPortalPage() {
 
         {!isLoading && !isError && (data?.length ?? 0) > 0 && (
           <div className="space-y-4">
-            {data!.map(p => <PropertyCard key={p.id} property={p} />)}
+            {data!.map(p => (
+              <PropertyCard key={p.id} property={p} focusSignal={focusProperty?.id === p.id ? focusProperty.nonce : undefined} />
+            ))}
           </div>
         )}
+
+        {/* DRAFT, not live for real owners: shown to staff in Owner view, and disabled in an
+            admin's read-only preview. owner_request_quote() refuses real owners until
+            app_settings.owner_quote_request_enabled = 1. TO GO LIVE: set that setting AND
+            replace this condition with `ownerId`. See supabase/migrations/20261007_owner_onboarding_guided.sql. */}
+        {ownerId && (canActAsOwner || emulatedOwner) && <RequestQuoteCard previewOnly={readOnly} />}
 
         <ShipmentsSection />
         {ownerId && <ReferralsSection ownerId={ownerId} />}
