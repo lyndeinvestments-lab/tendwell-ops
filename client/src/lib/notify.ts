@@ -39,11 +39,11 @@ export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   list_added: 'tasks',
   issue_logged: 'issues',
   verification_due: 'property-verifications',
-  onboarding_submitted: 'master-list',
+  onboarding_submitted: 'onboarding-queue',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
   contact_note_mention: 'contacts',
-  onboarding_intake_submitted: 'master-list',
+  onboarding_intake_submitted: 'onboarding-queue',
 }
 
 export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
