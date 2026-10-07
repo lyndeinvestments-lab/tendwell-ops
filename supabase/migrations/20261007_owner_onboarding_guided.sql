@@ -18,6 +18,11 @@
 --           condition around <RequestQuoteCard />).
 --      Rollback is the same insert with value '0'.
 --
+-- 3. owner_update_property gains a stage guard: an owner cannot edit a Lead/Quote-stage property
+--    (the quote price is computed from the square footage and would go stale), and the
+--    onboarding_submissions INSERT policies pin status/approval fields so nobody can post a
+--    pre-approved or already-converted row.
+--
 -- Pricing constants below (v_ce_per_sqft, v_pay_share) MUST equal CE_PER_SQFT and PAY_SHARE_OF_CE in
 -- shared/quote-pricing.ts. shared/owner-quote-request.test.ts reads this file and fails the build if
 -- they drift, and checks the rounding against suggestQuotePricing().
@@ -41,7 +46,7 @@ returns table(property_id bigint, status text, submitted_at timestamptz)
 language plpgsql
 stable
 security definer
-set search_path to 'public'
+set search_path to 'public', 'pg_temp'
 as $function$
 DECLARE
   v_owner uuid := public.current_owner_id();
@@ -74,15 +79,16 @@ $function$;
 revoke all on function public.get_owner_onboarding_status() from public, anon;
 grant execute on function public.get_owner_onboarding_status() to authenticated;
 
--- ── 3. Input helper for owner_request_quote ────────────────────────────────────────────────
--- Strict numeric reader: a missing/blank key is NULL, anything that is not a plain non-negative
--- number (max 2 decimals) or is outside [lo, hi] is rejected instead of being cast blindly.
--- Internal: only the SECURITY DEFINER caller needs it, so no role gets EXECUTE.
+-- ── 3. Input helpers for owner_request_quote ───────────────────────────────────────────────
+-- Strict whole-number reader: a missing/blank key is NULL; anything that is not a plain
+-- non-negative whole number (2.7 bedrooms is rejected, not rounded) or is outside [lo, hi] is
+-- rejected instead of being cast blindly. Internal: only the SECURITY DEFINER caller needs it,
+-- so no role gets EXECUTE.
 create or replace function public.owner_quote_request_num(p jsonb, k text, lo numeric, hi numeric)
 returns numeric
 language plpgsql
 immutable
-set search_path to 'public'
+set search_path to 'public', 'pg_temp'
 as $function$
 DECLARE
   raw text := nullif(btrim(p ->> k), '');
@@ -91,19 +97,44 @@ BEGIN
   IF raw IS NULL THEN
     RETURN NULL;
   END IF;
-  IF raw !~ '^[0-9]{1,9}(\.[0-9]{1,2})?$' THEN
-    RAISE EXCEPTION 'Invalid value for %', k USING ERRCODE = '22023';
+  IF raw !~ '^[0-9]{1,9}$' THEN
+    RAISE EXCEPTION 'Please enter a whole number for %', replace(k, '_', ' ') USING ERRCODE = '22023';
   END IF;
   n := raw::numeric;
   IF n < lo OR n > hi THEN
-    RAISE EXCEPTION '% is out of range', k USING ERRCODE = '22023';
+    RAISE EXCEPTION '% is out of range', replace(k, '_', ' ') USING ERRCODE = '22023';
   END IF;
   RETURN n;
 END
 $function$;
 revoke all on function public.owner_quote_request_num(jsonb, text, numeric, numeric) from public, anon, authenticated;
 
+-- Unit key of an address: the unit/apt/suite/lot/# designators, lowercased, sorted and joined.
+-- tendwell_normalize_street() (properties.address_norm) deliberately DROPS units, so on its own
+-- "541 Johnson Ln Unit 3" would match "541 Johnson Ln". The duplicate guard compares address_norm
+-- AND this key. Internal, same as above.
+create or replace function public.owner_quote_unit_key(addr text)
+returns text
+language sql
+immutable
+set search_path to 'public', 'pg_temp'
+as $function$
+  SELECT COALESCE(string_agg(u, '-' ORDER BY u), '')
+  FROM (
+    SELECT DISTINCT lower(m[2]) AS u
+    FROM regexp_matches(
+           lower(COALESCE(addr, '')),
+           '(?:\m(unit|apt|apartment|lot|suite|ste)\M\.?\s*#?\s*|#\s*)([a-z0-9]+)',
+           'g') AS r(m)
+  ) t
+$function$;
+revoke all on function public.owner_quote_unit_key(text) from public, anon, authenticated;
+
 -- ── 4. owner_request_quote(p jsonb) ────────────────────────────────────────────────────────
+-- Returns {created: true} for a new request AND for an address that matches another account's
+-- property (the owner cannot tell which), or {created: false, property_id} when the address or
+-- name is one of the caller's own properties/requests.
+--
 -- Accepted keys: property_name, address (required), bedrooms, full_baths, half_baths,
 -- square_footage, guest_count, king_beds, queen_beds, full_beds, twin_beds, hot_tub, pool,
 -- linen_program, notes. Anything else, including any price, is ignored: ce_charged and
@@ -120,7 +151,7 @@ create or replace function public.owner_request_quote(p jsonb)
 returns jsonb
 language plpgsql
 security definer
-set search_path to 'public'
+set search_path to 'public', 'pg_temp'
 as $function$
 DECLARE
   -- Keep in lockstep with shared/quote-pricing.ts (CE_PER_SQFT, PAY_SHARE_OF_CE).
@@ -157,6 +188,7 @@ DECLARE
   v_linen        boolean;
   v_quote_stage  int;
   v_dup          record;
+  v_unit_key     text;
   v_mine         boolean;
   v_pid          bigint;
   v_n            int := 1;
@@ -215,29 +247,46 @@ BEGIN
     RAISE EXCEPTION 'Quote pipeline stage not found';
   END IF;
 
-  -- Duplicate guard #1: the same street address on any live property. Only hand the id back when
-  -- the caller already owns it or filed it; otherwise say nothing about whose it is, but still tell
-  -- staff (activity_log feeds the owner-activity email) so the request is not silently lost.
+  -- Throttle FIRST, and count every attempt: each path below (new property, duplicate of the
+  -- caller's own, duplicate of someone else's) writes one quote_requested activity_log row
+  -- carrying the owner id, so the cap cannot be used to probe addresses for free.
+  IF (SELECT count(*) FROM public.activity_log a
+      WHERE a.action = 'quote_requested'
+        AND a.metadata ->> 'owner_id' = v_owner::text
+        AND a.created_at > now() - interval '24 hours') >= v_daily_cap THEN
+    RAISE EXCEPTION 'Too many quote requests today. Please contact Tendwell.';
+  END IF;
+
+  -- Duplicate guard #1: the same street address AND the same unit on any live property.
+  -- address_norm drops units on purpose, so the unit key is compared too: "541 Johnson Ln Unit 3"
+  -- is a different property from "541 Johnson Ln".
+  -- The owner is never told whose property a match is. A match on the caller's own property (owned
+  -- or previously requested) returns its id; a match on anyone else's looks to the caller exactly
+  -- like a new request ({created: true}). Either way staff get an activity_log row.
   v_addr_norm := public.tendwell_normalize_street(v_address);
   IF COALESCE(v_addr_norm, '') <> '' THEN
+    v_unit_key := public.owner_quote_unit_key(v_address);
     SELECT p2.id, p2.name, p2.requested_by_owner_id INTO v_dup
     FROM public.properties p2
     WHERE p2.archived_at IS NULL AND p2.deleted_at IS NULL
       AND p2.address_norm = v_addr_norm
+      AND public.owner_quote_unit_key(p2.address) = v_unit_key
     ORDER BY p2.id
     LIMIT 1;
     IF FOUND THEN
       v_mine := COALESCE(v_dup.requested_by_owner_id = v_owner, false)
              OR EXISTS (SELECT 1 FROM public.owner_properties op
                         WHERE op.owner_id = v_owner AND op.property_id = v_dup.id);
-      IF NOT v_mine THEN
-        INSERT INTO public.activity_log (entity_type, entity_id, entity_name, action, field_name,
-                                         old_value, new_value, changed_by, metadata)
-        VALUES ('property', v_dup.id::text, v_dup.name, 'quote_requested', NULL, NULL,
-                v_address || ' (already on file)', v_actor,
-                jsonb_build_object('owner_id', v_owner, 'duplicate_of', v_dup.id));
+      INSERT INTO public.activity_log (entity_type, entity_id, entity_name, action, field_name,
+                                       old_value, new_value, changed_by, metadata)
+      VALUES ('property', v_dup.id::text, v_dup.name, 'quote_requested', NULL, NULL,
+              v_address || CASE WHEN v_mine THEN ' (matches their existing property)' ELSE ' (already on file)' END,
+              v_actor,
+              jsonb_build_object('owner_id', v_owner, 'duplicate_of', v_dup.id, 'mine', v_mine));
+      IF v_mine THEN
+        RETURN jsonb_build_object('created', false, 'property_id', v_dup.id);
       END IF;
-      RETURN jsonb_build_object('property_id', CASE WHEN v_mine THEN v_dup.id ELSE NULL END, 'created', false);
+      RETURN jsonb_build_object('created', true);
     END IF;
   END IF;
 
@@ -255,7 +304,7 @@ BEGIN
   -- A name that merely matches someone else's property is not a duplicate of anything the caller
   -- can know about, so it is disambiguated below rather than returned.
   IF v_name_given THEN
-    SELECT p2.id INTO v_dup
+    SELECT p2.id, p2.name INTO v_dup
     FROM public.properties p2
     WHERE p2.archived_at IS NULL AND p2.deleted_at IS NULL
       AND lower(p2.name) = lower(v_name)
@@ -265,15 +314,13 @@ BEGIN
     ORDER BY p2.id
     LIMIT 1;
     IF FOUND THEN
-      RETURN jsonb_build_object('property_id', v_dup.id, 'created', false);
+      INSERT INTO public.activity_log (entity_type, entity_id, entity_name, action, field_name,
+                                       old_value, new_value, changed_by, metadata)
+      VALUES ('property', v_dup.id::text, v_dup.name, 'quote_requested', NULL, NULL,
+              v_address || ' (matches their existing property)', v_actor,
+              jsonb_build_object('owner_id', v_owner, 'duplicate_of', v_dup.id, 'mine', true));
+      RETURN jsonb_build_object('created', false, 'property_id', v_dup.id);
     END IF;
-  END IF;
-
-  -- Throttle: a draft form on a live table gets a daily cap per owner.
-  IF (SELECT count(*) FROM public.properties q
-      WHERE q.requested_by_owner_id = v_owner
-        AND q.quote_requested_at > now() - interval '24 hours') >= v_daily_cap THEN
-    RAISE EXCEPTION 'Too many quote requests today. Please contact Tendwell.';
   END IF;
 
   v_base_name := v_name;
@@ -313,7 +360,9 @@ BEGIN
   VALUES ('property', v_pid::text, v_name, 'quote_requested', NULL, NULL, v_address, v_actor,
           jsonb_build_object('owner_id', v_owner, 'property_id', v_pid));
 
-  RETURN jsonb_build_object('property_id', v_pid, 'created', true);
+  -- Deliberately no property_id: the response to "created" must look the same as the response to
+  -- "matched someone else's address" (see above), and the caller does not need the new id.
+  RETURN jsonb_build_object('created', true);
 END
 $function$;
 revoke all on function public.owner_request_quote(jsonb) from public, anon;
@@ -321,3 +370,108 @@ grant execute on function public.owner_request_quote(jsonb) to authenticated;
 
 comment on function public.owner_request_quote(jsonb) is
   'Owner asks for a quote on another property. DRAFT: staff only until app_settings.owner_quote_request_enabled = 1 (see migration header for go-live).';
+
+-- ── 5. owner_update_property: no edits while a property is still being quoted ───────────────
+-- Org co-owners are linked to a Quote-stage request by trg_properties_org_grant_portals, and the
+-- quote price is computed from the requested square footage; letting them edit it would leave a
+-- stale price. Body is the live definition from 20261007b_security_followups.sql (same column
+-- whitelist and input bounds) plus the stage guard, and pg_temp last on the search_path.
+create or replace function public.owner_update_property(p_property_id bigint, p_changes jsonb)
+returns void
+language plpgsql
+security definer
+set search_path to 'public', 'pg_temp'
+as $function$
+DECLARE
+  c jsonb := coalesce(p_changes, '{}'::jsonb);
+  k text;
+BEGIN
+  IF public.current_owner_id() IS NULL THEN
+    RAISE EXCEPTION 'Not an owner' USING ERRCODE = '42501';
+  END IF;
+  IF public.is_owner_emulating() THEN
+    RAISE EXCEPTION 'Owner preview is read-only' USING ERRCODE = '42501';
+  END IF;
+  IF NOT public.owner_owns_property(p_property_id) THEN
+    RAISE EXCEPTION 'Property not found' USING ERRCODE = '42501';
+  END IF;
+  IF EXISTS (SELECT 1
+             FROM public.properties q
+             JOIN public.pipeline_stages st ON st.id = q.stage_id
+             WHERE q.id = p_property_id AND st.slug IN ('lead', 'quote')) THEN
+    RAISE EXCEPTION 'This property is still being quoted. Message us if details changed.' USING ERRCODE = '42501';
+  END IF;
+  IF jsonb_typeof(c) <> 'object' THEN
+    RAISE EXCEPTION 'Changes must be an object';
+  END IF;
+
+  FOREACH k IN ARRAY array['king_beds','queen_beds','full_beds','twin_beds','bedrooms','full_baths','half_baths'] LOOP
+    IF c ? k AND jsonb_typeof(c->k) <> 'null' AND ((c->>k)::numeric < 0 OR (c->>k)::numeric > 50) THEN
+      RAISE EXCEPTION 'Please enter a number between 0 and 50 for %', replace(k, '_', ' ') USING ERRCODE = '22023';
+    END IF;
+  END LOOP;
+  IF c ? 'square_footage' AND jsonb_typeof(c->'square_footage') <> 'null' AND ((c->>'square_footage')::numeric < 0 OR (c->>'square_footage')::numeric > 100000) THEN
+    RAISE EXCEPTION 'Please enter a square footage between 0 and 100,000' USING ERRCODE = '22023';
+  END IF;
+  FOREACH k IN ARRAY array['address','door_code','other_codes','wifi_info','check_in_time','check_out_time','filter_size','ical_url'] LOOP
+    IF c ? k AND length(coalesce(c->>k, '')) > 2000 THEN RAISE EXCEPTION 'That entry is too long' USING ERRCODE = '22023'; END IF;
+  END LOOP;
+
+  UPDATE public.properties p SET
+    address = CASE WHEN c ? 'address' THEN c->>'address' ELSE p.address END,
+    king_beds = CASE WHEN c ? 'king_beds' THEN (c->>'king_beds')::int ELSE p.king_beds END,
+    queen_beds = CASE WHEN c ? 'queen_beds' THEN (c->>'queen_beds')::int ELSE p.queen_beds END,
+    full_beds = CASE WHEN c ? 'full_beds' THEN (c->>'full_beds')::int ELSE p.full_beds END,
+    twin_beds = CASE WHEN c ? 'twin_beds' THEN (c->>'twin_beds')::int ELSE p.twin_beds END,
+    square_footage = CASE WHEN c ? 'square_footage' THEN (c->>'square_footage')::numeric ELSE p.square_footage END,
+    door_code = CASE WHEN c ? 'door_code' THEN c->>'door_code' ELSE p.door_code END,
+    other_codes = CASE WHEN c ? 'other_codes' THEN c->>'other_codes' ELSE p.other_codes END,
+    wifi_info = CASE WHEN c ? 'wifi_info' THEN c->>'wifi_info' ELSE p.wifi_info END,
+    bedrooms = CASE WHEN c ? 'bedrooms' THEN (c->>'bedrooms')::int ELSE p.bedrooms END,
+    full_baths = CASE WHEN c ? 'full_baths' THEN (c->>'full_baths')::int ELSE p.full_baths END,
+    half_baths = CASE WHEN c ? 'half_baths' THEN (c->>'half_baths')::int ELSE p.half_baths END,
+    hot_tub = CASE WHEN c ? 'hot_tub' THEN (c->>'hot_tub')::boolean ELSE p.hot_tub END,
+    pool = CASE WHEN c ? 'pool' THEN (c->>'pool')::boolean ELSE p.pool END,
+    check_in_time = CASE WHEN c ? 'check_in_time' THEN c->>'check_in_time' ELSE p.check_in_time END,
+    check_out_time = CASE WHEN c ? 'check_out_time' THEN c->>'check_out_time' ELSE p.check_out_time END,
+    filter_size = CASE WHEN c ? 'filter_size' THEN c->>'filter_size' ELSE p.filter_size END,
+    ical_url = CASE WHEN c ? 'ical_url' THEN c->>'ical_url' ELSE p.ical_url END
+  WHERE p.id = p_property_id;
+END; $function$;
+revoke all on function public.owner_update_property(bigint, jsonb) from public, anon;
+grant execute on function public.owner_update_property(bigint, jsonb) to authenticated;
+
+-- ── 6. onboarding_submissions: pin the fields a submitter must not choose ────────────────────
+-- Both INSERT policies let the submitter pick every column, including status and the approval
+-- fields, so a row could be posted already 'converted' / approved. Staff review is the only way
+-- a submission leaves 'pending'. The anon policy was `true`; it now also requires the shapes the
+-- two anonymous forms actually send (public form: source 'public'; legacy link: source 'token'),
+-- with no owner and no property attached, so an anonymous row can never claim to belong to an
+-- owner or to an existing property. The owner policy keeps every check it had.
+drop policy if exists onboarding_submissions_anon_insert on public.onboarding_submissions;
+create policy onboarding_submissions_anon_insert on public.onboarding_submissions
+  for insert to anon
+  with check (
+    status = 'pending'
+    and approved_at is null
+    and approved_by is null
+    and owner_id is null
+    and property_id is null
+    and source in ('public', 'token')
+  );
+
+drop policy if exists onboarding_submissions_owner_insert on public.onboarding_submissions;
+create policy onboarding_submissions_owner_insert on public.onboarding_submissions
+  for insert to authenticated
+  with check (
+    source = 'owner'
+    and owner_id is not null
+    and owner_id = public.current_owner_id()
+    and (property_id is null
+         or exists (select 1 from public.owner_properties op
+                    where op.owner_id = public.current_owner_id()
+                      and op.property_id = onboarding_submissions.property_id))
+    and status = 'pending'
+    and approved_at is null
+    and approved_by is null
+  );

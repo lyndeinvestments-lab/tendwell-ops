@@ -41,16 +41,26 @@ describe('deriveOnboardingGuide: when to show', () => {
   })
 })
 
-describe('deriveOnboardingGuide: no agreement yet', () => {
+describe('deriveOnboardingGuide: no agreement row at all', () => {
   const g = deriveOnboardingGuide(base())
 
-  it('waits on Tendwell for step 1 and keeps step 2 locked with the preparing reason', () => {
-    expect(stateOf(g, 'agreement')).toMatchObject({ state: 'waiting', reason: 'agreement_preparing' })
-    expect(stateOf(g, 'property')).toMatchObject({ state: 'locked', reason: 'agreement_preparing' })
+  it('waits on Tendwell for step 1 but does NOT lock step 2: the owner can always fill the form', () => {
+    expect(stateOf(g, 'agreement')).toMatchObject({ state: 'waiting', reason: 'agreement_not_sent' })
+    expect(stateOf(g, 'property')).toMatchObject({ state: 'current', reason: null })
   })
 
-  it('expands step 1 by default so the "being prepared" message is visible', () => {
-    expect(g.activeKey).toBe('agreement')
+  it('opens step 2 by default so the intake form link is visible, and marks it as the current step', () => {
+    expect(g.activeKey).toBe('property')
+    expect(g.perProperty).toHaveLength(1)
+  })
+
+  it('shows step 2 as done when the form was already submitted, and moves on to the Trellis step', () => {
+    const done = deriveOnboardingGuide(
+      base({ submissions: [{ property_id: 582, status: 'under_review', submitted_at: '2026-10-01T12:00:00Z' }] }),
+    )
+    expect(stateOf(done, 'property').state).toBe('done')
+    expect(stateOf(done, 'agreement').state).toBe('waiting')
+    expect(done.activeKey).toBe('agreement')
   })
 
   it('treats a void agreement exactly like none', () => {

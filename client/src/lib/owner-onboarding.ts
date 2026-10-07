@@ -41,7 +41,7 @@ export type StepKey = 'agreement' | 'property' | 'trellis'
 export type StepState = 'done' | 'current' | 'waiting' | 'locked'
 
 /** Why a step is waiting or locked. Maps one-to-one to copy in the dictionaries. */
-export type StepReason = 'agreement_preparing' | 'agreement_unsigned' | 'no_onboarding_property' | 'trellis_pending'
+export type StepReason = 'agreement_not_sent' | 'agreement_unsigned' | 'no_onboarding_property' | 'trellis_pending'
 
 export interface GuideStep {
   key: StepKey
@@ -113,10 +113,13 @@ export function isSubmitted(s: PropertySubmission): boolean {
  *
  * Rules worth knowing:
  *  - The guide shows while any property is in Onboarding OR the agreement is sent and unsigned.
- *  - Step 2 is locked until the agreement is signed, EXCEPT when every onboarding property was
- *    already submitted (an owner who filled the form before signing): that is done, not locked,
- *    so they are never asked to repeat it.
+ *  - Step 2 is locked ONLY while an agreement exists and is unsigned ('sent'). With no agreement
+ *    row at all the owner is never locked out: Tendwell may not have sent one yet, and they must
+ *    always have a path to the intake form for a property that is already in onboarding. (An
+ *    owner who submitted the form before signing sees step 2 as done, not locked.)
  *  - Step 3 is never the owner's turn: it is done once staff set the Trellis URL, waiting before.
+ *  - The step to open by default is the first one that is the owner's turn, else the first one
+ *    that is not done.
  */
 export function deriveOnboardingGuide(input: OnboardingGuideInput): OnboardingGuide {
   const agreement = normalizeAgreementStatus(input.agreementStatus)
@@ -130,19 +133,15 @@ export function deriveOnboardingGuide(input: OnboardingGuideInput): OnboardingGu
       ? { key: 'agreement', state: 'done', reason: null }
       : agreement === 'sent'
         ? { key: 'agreement', state: 'current', reason: null }
-        : { key: 'agreement', state: 'waiting', reason: 'agreement_preparing' }
+        : { key: 'agreement', state: 'waiting', reason: 'agreement_not_sent' }
 
   // Step 2: property details
   const allSubmitted = hasOnboarding && perProperty.every(isSubmitted)
   let propertyStep: GuideStep
   if (allSubmitted) {
     propertyStep = { key: 'property', state: 'done', reason: null }
-  } else if (agreement !== 'signed') {
-    propertyStep = {
-      key: 'property',
-      state: 'locked',
-      reason: agreement === 'sent' ? 'agreement_unsigned' : 'agreement_preparing',
-    }
+  } else if (agreement === 'sent') {
+    propertyStep = { key: 'property', state: 'locked', reason: 'agreement_unsigned' }
   } else if (!hasOnboarding) {
     propertyStep = { key: 'property', state: 'waiting', reason: 'no_onboarding_property' }
   } else {
@@ -158,7 +157,7 @@ export function deriveOnboardingGuide(input: OnboardingGuideInput): OnboardingGu
   const steps = [agreementStep, propertyStep, trellisStep]
   const doneCount = steps.filter(s => s.state === 'done').length
   const allDone = doneCount === steps.length
-  const activeKey = steps.find(s => s.state !== 'done')?.key ?? null
+  const activeKey = (steps.find(s => s.state === 'current') ?? steps.find(s => s.state !== 'done'))?.key ?? null
 
   return { show, steps, perProperty, doneCount, allDone, activeKey }
 }

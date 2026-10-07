@@ -41,6 +41,7 @@ export const ownerPortalEs: typeof ownerPortalEn = {
     savedExceptCalendar: 'Guardado, excepto el enlace del calendario',
     icalNotSaved: 'No se guardó el enlace del calendario',
     icalInvalid: 'Pega el enlace completo del calendario, que empiece con https://',
+    quotingNote: 'Esta propiedad todavía se está cotizando. Escríbenos si cambió algún detalle.',
   },
   fields: {
     sectionTitle: 'Detalles de la propiedad',
@@ -204,11 +205,10 @@ export const ownerPortalEs: typeof ownerPortalEn = {
       summaryCurrent: 'Revísalo y fírmalo para continuar.',
       summaryDone: 'Firmado el {{date}}.',
       summarySigned: 'Firmado.',
-      preparing: 'Estamos preparando tu contrato. Te enviaremos un correo cuando esté listo.',
+      notSent: 'Tu contrato aparecerá aquí cuando nuestro equipo lo envíe.',
     },
     property: {
       title: 'Agrega los detalles de tu propiedad',
-      lockedPreparing: 'Este paso se abre cuando firmes tu contrato de servicio. Todavía lo estamos preparando.',
       lockedUnsigned: 'Este paso se abre cuando firmes tu contrato de servicio. Termina primero el paso 1.',
       goToAgreement: 'Ir al paso 1',
       noProperty: 'Todavía no hay ninguna propiedad en incorporación. Cuando la haya, agregarás sus detalles aquí.',
@@ -245,7 +245,6 @@ export const ownerPortalEs: typeof ownerPortalEn = {
     submit: 'Solicitar cotización',
     received: 'Solicitud recibida. Te enviaremos tu cotización aquí.',
     alreadyYours: 'Esta propiedad ya está en tu cuenta o tiene una solicitud abierta. Nuestro equipo te contactará.',
-    receivedGeneric: 'Solicitud recibida. Nuestro equipo la revisará y te contactará.',
     another: 'Solicitar otra cotización',
     errors: {
       addressRequired: 'Ingresa la dirección de la propiedad.',

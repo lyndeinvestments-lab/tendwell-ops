@@ -16,8 +16,9 @@
 export function normalizeCalendarUrl(input: string | null | undefined): string | null | 'invalid' {
   const raw = (input ?? '').trim()
   if (raw === '') return null
-  // No whitespace anywhere inside a link, and the scheme must be one we accept.
-  if (/\s/.test(raw)) return 'invalid'
+  // No whitespace and no control characters (NUL, DEL, C1) anywhere inside a link, and the
+  // scheme must be one we accept.
+  if (/[\s\u0000-\u001f\u007f-\u009f]/.test(raw)) return 'invalid'
   const m = /^(https?|webcal):\/\/(.*)$/i.exec(raw)
   // `https:///path` parses to host "path" under the WHATWG rules; a link must name its host.
   if (!m || m[2]!.startsWith('/')) return 'invalid'

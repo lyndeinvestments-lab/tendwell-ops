@@ -345,7 +345,12 @@ function PropertyCard({ property, focusSignal }: { property: OwnerProperty; focu
     cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [focusSignal])
 
-  const readOnly = usePortalReadOnly()
+  const previewReadOnly = usePortalReadOnly()
+  // A Lead/Quote-stage property is being quoted from the details on file (the price comes from
+  // its square footage), so owners cannot edit it; owner_update_property refuses it too. Notes
+  // stay open: that is how they tell us something changed.
+  const quoting = property.stage === 'Quote' || property.stage === 'Lead'
+  const readOnly = previewReadOnly || quoting
   const perms = property.permissions
   // In read-only preview every field renders through its existing "view only"
   // path, so the admin still sees exactly what the owner sees.
@@ -487,6 +492,12 @@ function PropertyCard({ property, focusSignal }: { property: OwnerProperty; focu
 
       {open && (
         <CardContent className="space-y-6 pb-6">
+          {quoting && (
+            <p className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/40 p-3 text-sm text-muted-foreground" data-testid={`text-quoting-note-${property.id}`}>
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>{t('properties.quotingNote')}</span>
+            </p>
+          )}
           {/* Property details */}
           {showDetails && (
           <section className="space-y-4">
@@ -1485,7 +1496,10 @@ export default function OwnerPortalPage() {
   // Guided onboarding. `guideExpanded` is the open stepper (not the folded "all set" line).
   const { guide, ready: guideReady } = useOnboardingGuide(data)
   const guideActive = !!guide?.show
-  const guideExpanded = guideActive && !guide!.allDone
+  // "You're all set" folds the guide to one line; once the owner unfolds it the steps contain the
+  // agreement and Trellis cards, so the page must not render them a second time.
+  const [guideShowAll, setGuideShowAll] = useState(false)
+  const guideExpanded = guideActive && (!guide!.allDone || guideShowAll)
   const hasOnboardingProperty = (data ?? []).some(p => p.stage === 'Onboarding')
   // Which property card the guide asked us to open (nonce lets the same one be re-focused).
   const [focusProperty, setFocusProperty] = useState<{ id: number; nonce: number } | null>(null)
@@ -1556,6 +1570,8 @@ export default function OwnerPortalPage() {
         {ownerId && guideActive && (
           <OnboardingGuide
             guide={guide!}
+            showAll={guideShowAll}
+            onShowAllChange={setGuideShowAll}
             onEditProperty={id => setFocusProperty(prev => ({ id, nonce: (prev?.nonce ?? 0) + 1 }))}
           />
         )}

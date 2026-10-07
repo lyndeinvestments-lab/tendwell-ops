@@ -45,6 +45,7 @@ export const ownerPortalEn = {
     savedExceptCalendar: 'Saved, except the calendar link',
     icalNotSaved: 'Calendar link not saved',
     icalInvalid: 'Paste the full calendar link, starting with https://',
+    quotingNote: 'This property is still being quoted. Message us if details changed.',
   },
   fields: {
     sectionTitle: 'Property details',
@@ -207,11 +208,10 @@ export const ownerPortalEn = {
       summaryCurrent: 'Review and sign to continue.',
       summaryDone: 'Signed {{date}}.',
       summarySigned: 'Signed.',
-      preparing: "Your agreement is being prepared. We'll email you when it's ready.",
+      notSent: 'Your agreement will appear here once our team sends it.',
     },
     property: {
       title: 'Add your property details',
-      lockedPreparing: "This step opens after you sign your service agreement. We're still preparing it.",
       lockedUnsigned: 'This step opens after you sign your service agreement. Finish step 1 first.',
       goToAgreement: 'Go to step 1',
       noProperty: 'No property is in onboarding yet. When one is, you will add its details here.',
@@ -248,7 +248,6 @@ export const ownerPortalEn = {
     submit: 'Request quote',
     received: "Request received. We'll send your quote here.",
     alreadyYours: 'This property is already on your account or has an open request. Our team will follow up.',
-    receivedGeneric: 'Request received. Our team will review it and follow up.',
     another: 'Request another quote',
     errors: {
       addressRequired: 'Enter the property address.',

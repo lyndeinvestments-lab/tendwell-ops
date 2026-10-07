@@ -28,7 +28,7 @@ const STATE_TONE: Record<StepState, StatusTone> = {
 }
 
 const REASON_KEY: Record<StepReason, string> = {
-  agreement_preparing: 'guide.property.lockedPreparing',
+  agreement_not_sent: 'guide.agreement.notSent',
   agreement_unsigned: 'guide.property.lockedUnsigned',
   no_onboarding_property: 'guide.property.noProperty',
   trellis_pending: 'trellis.placeholder',
@@ -73,10 +73,19 @@ function StepIcon({ state, index }: { state: StepState; index: number }) {
 export function OnboardingGuide({
   guide,
   onEditProperty,
+  showAll,
+  onShowAllChange,
 }: {
   guide: OnboardingGuideModel
   /** Opens the owner's property card for this property and scrolls to it. */
   onEditProperty: (propertyId: number) => void
+  /**
+   * When every step is done the guide folds to one line. Whether it is unfolded again is owned
+   * by the page: while it is unfolded the page hides its own agreement and Trellis cards, which
+   * the unfolded steps already contain.
+   */
+  showAll: boolean
+  onShowAllChange: (next: boolean) => void
 }) {
   const { t } = useLocale('ownerPortal')
   const { format } = useDateFormat()
@@ -97,7 +106,6 @@ export function OnboardingGuide({
   }, [expanded])
 
   // Once everything is done the stepper folds into one line, with a way back in.
-  const [showAll, setShowAll] = useState(false)
   if (guide.allDone && !showAll) {
     return (
       <Card className="rounded-2xl shadow-sm overflow-hidden" data-testid="card-guide-all-set">
@@ -107,7 +115,7 @@ export function OnboardingGuide({
             <span className="font-medium">{t('guide.allSetTitle')}</span>
             <span className="hidden truncate text-muted-foreground sm:inline">{t('guide.allSetBody')}</span>
           </p>
-          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => setShowAll(true)} data-testid="button-guide-show-steps">
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={() => onShowAllChange(true)} data-testid="button-guide-show-steps">
             {t('guide.showSteps')}
           </Button>
         </CardContent>
@@ -129,7 +137,7 @@ export function OnboardingGuide({
           : t('guide.agreement.summarySigned')
       }
       if (step.state === 'current') return t('guide.agreement.summaryCurrent')
-      return t('guide.agreement.preparing')
+      return t('guide.agreement.notSent')
     }
     if (step.key === 'property') {
       if (step.reason) return t(REASON_KEY[step.reason])
@@ -168,7 +176,7 @@ export function OnboardingGuide({
   function renderBody(step: GuideStep) {
     if (step.key === 'agreement') {
       if (step.state === 'waiting') {
-        return <p className="text-sm text-muted-foreground" data-testid="text-agreement-preparing">{t('guide.agreement.preparing')}</p>
+        return <p className="text-sm text-muted-foreground" data-testid="text-agreement-not-sent">{t('guide.agreement.notSent')}</p>
       }
       return <AgreementSection variant="embedded" />
     }
@@ -270,7 +278,7 @@ export function OnboardingGuide({
                     id={buttonId}
                     type="button"
                     aria-expanded={isOpen}
-                    aria-controls={panelId}
+                    aria-controls={isOpen || visited[step.key] ? panelId : undefined}
                     onClick={() => setPicked(isOpen ? 'none' : step.key)}
                     className="flex min-h-[44px] w-full items-start gap-3 rounded-xl p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-4"
                     data-testid={`button-step-${step.key}`}
@@ -303,7 +311,7 @@ export function OnboardingGuide({
         </ol>
         {guide.allDone && (
           <div className="flex justify-end pt-1">
-            <Button variant="ghost" size="sm" onClick={() => setShowAll(false)}>
+            <Button variant="ghost" size="sm" onClick={() => onShowAllChange(false)}>
               {t('guide.hideSteps')}
             </Button>
           </div>

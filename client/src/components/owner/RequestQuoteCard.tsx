@@ -52,7 +52,7 @@ const emptyForm = (): FormState => ({
   property_name: '', address: '', counts: emptyCounts(), hot_tub: false, pool: false, linen_program: false, notes: '',
 })
 
-type Outcome = 'created' | 'already_yours' | 'received' | null
+type Outcome = 'created' | 'already_yours' | null
 
 export function RequestQuoteCard({ previewOnly }: { previewOnly: boolean }) {
   const { t } = useLocale('ownerPortal')
@@ -82,14 +82,16 @@ export function RequestQuoteCard({ previewOnly }: { previewOnly: boolean }) {
 
       const { data, error } = await supabase.rpc('owner_request_quote', { p: p as Json })
       if (error) throw error
-      return data as { property_id: number | null; created: boolean } | null
+      return data as { created: boolean; property_id?: number } | null
     },
     onSuccess: res => {
+      // {created: true} is also what a match on another account looks like, by design: the
+      // owner is never told whether an address is already on file for someone else.
       if (res?.created) {
         setOutcome('created')
         setForm(emptyForm())
       } else {
-        setOutcome(res?.property_id ? 'already_yours' : 'received')
+        setOutcome('already_yours')
       }
       setError(null)
       queryClient.invalidateQueries({ queryKey: ['owner-quotes'] })
@@ -161,11 +163,7 @@ export function RequestQuoteCard({ previewOnly }: { previewOnly: boolean }) {
             <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden="true" />
             <div className="space-y-2">
               <p className="text-sm font-medium text-foreground">
-                {outcome === 'created'
-                  ? t('quoteRequest.received')
-                  : outcome === 'already_yours'
-                    ? t('quoteRequest.alreadyYours')
-                    : t('quoteRequest.receivedGeneric')}
+                {outcome === 'created' ? t('quoteRequest.received') : t('quoteRequest.alreadyYours')}
               </p>
               <Button variant="outline" size="sm" onClick={() => setOutcome(null)} data-testid="button-quote-request-another">
                 {t('quoteRequest.another')}

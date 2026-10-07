@@ -37,6 +37,21 @@ describe('normalizeCalendarUrl', () => {
     expect(normalizeCalendarUrl('mailto:me@example.com')).toBe('invalid')
   })
 
+  it('rejects control characters anywhere in the link, including NUL', () => {
+    expect(normalizeCalendarUrl('https://example.com/\u0000cal.ics')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://exa\u0000mple.com/cal.ics')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://example.com/cal.ics\u0000')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://example.com/a\u0007b')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://example.com/a\u007fb')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://example.com/a\u0085b')).toBe('invalid')
+    expect(normalizeCalendarUrl('https://example.com/a\nb')).toBe('invalid')
+    expect(normalizeCalendarUrl('\u0000')).toBe('invalid')
+  })
+
+  it('keeps a leading or trailing newline harmless by trimming it first', () => {
+    expect(normalizeCalendarUrl('\nhttps://example.com/cal.ics\n')).toBe('https://example.com/cal.ics')
+  })
+
   it('rejects a scheme with no host and links containing spaces', () => {
     expect(normalizeCalendarUrl('https://')).toBe('invalid')
     expect(normalizeCalendarUrl('https:///path')).toBe('invalid')
