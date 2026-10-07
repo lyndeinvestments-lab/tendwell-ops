@@ -49,7 +49,7 @@ export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
   { field: 'notify_list_added',            label: 'Added to a task list',         view: 'tasks' },
   { field: 'notify_issue_logged',          label: 'New issue logged',             view: 'issues' },
   { field: 'notify_verification_due',      label: 'Verification due',             view: 'property-verifications' },
-  { field: 'notify_onboarding_submitted',  label: 'Onboarding submitted',         view: 'master-list' },
+  { field: 'notify_onboarding_submitted',  label: 'Onboarding submitted',         view: 'onboarding-queue' },
   { field: 'notify_follow_up_due',         label: 'Follow-up due',                view: 'contacts' },
   { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
   { field: 'notify_contact_note_mention',  label: 'Mentioned in a contact note',  view: 'contacts' },

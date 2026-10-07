@@ -33,6 +33,7 @@ import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
 import { slugify } from '@/lib/issues'
+import { isHttpUrl, normalizeUrlInput, safeHref } from '@/lib/onboarding'
 
 // Recharts is heavy — load it only when a chart actually renders inside the
 // modal instead of bundling it with the always-mounted modal shell.
@@ -761,6 +762,7 @@ function buildFormFromProperty(property: any): Record<string, any> {
   const form: Record<string, any> = {
     address: property.address || '',
     listing_url: property.listing_url || '',
+    ical_url: property.ical_url || '',
     bedrooms: property.bedrooms ?? '',
     full_baths: property.full_baths ?? '',
     half_baths: property.half_baths ?? '',
@@ -769,6 +771,8 @@ function buildFormFromProperty(property: any): Record<string, any> {
     number_of_beds: property.number_of_beds ?? '',
     kitchens: property.kitchens ?? '',
     hot_tub: !!property.hot_tub,
+    // Tri-state: null means "not answered", which is different from "no pool".
+    pool: property.pool == null ? null : !!property.pool,
     check_in_time: property.check_in_time ?? '',
     check_out_time: property.check_out_time ?? '',
     ce_charged: property.ce_charged ?? '',
@@ -911,7 +915,8 @@ export function PropertyDetailModal() {
   // Reset to Overview each time the modal opens (or switches property), so a
   // reopened modal doesn't resume on a stale tab.
   useEffect(() => {
-    setActiveTab('overview')
+    setActiveTab(modalState?.initialTab ?? 'overview')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 
   const { mutate: saveEdits, isPending: saving } = useMutation({
@@ -922,6 +927,9 @@ export function PropertyDetailModal() {
         if (canEditProperty) {
           out.address = src.address || null
           out.listing_url = src.listing_url || null
+          // Calendar feed. webcal:// is normalised to https:// so it validates.
+          out.ical_url = src.ical_url ? normalizeUrlInput(src.ical_url) : null
+          out.pool = src.pool == null ? null : !!src.pool
           out.bedrooms = src.bedrooms !== '' ? parseFloat(String(src.bedrooms)) : null
           out.full_baths = src.full_baths !== '' ? parseFloat(String(src.full_baths)) : null
           out.half_baths = src.half_baths !== '' ? parseFloat(String(src.half_baths)) : null
@@ -975,6 +983,7 @@ export function PropertyDetailModal() {
         }
       }
       if (Object.keys(updates).length === 0) return null
+      if (updates.ical_url && !isHttpUrl(String(updates.ical_url))) throw new Error(t('overview.icalUrlInvalid'))
       const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { row: data, written: Object.keys(updates) }
@@ -1066,6 +1075,30 @@ export function PropertyDetailModal() {
       )
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       toast({ title: next ? t('toasts.hotTubYes') : t('toasts.hotTubNo') })
+    },
+    onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
+  })
+
+  // Pool is tri-state (null = never answered), so a click on an unanswered chip
+  // answers "yes" and every later click flips it.
+  const { mutate: togglePool } = useMutation({
+    mutationFn: async (next: boolean) => {
+      const { data, error } = await supabase.from('properties').update({ pool: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      if (error) throw error
+      return { next, row: data }
+    },
+    onSuccess: ({ next, row }) => {
+      if (row) qc.setQueryData(['/supabase/property-detail', propertyId], row)
+      logPropertyEdit(
+        propertyId!,
+        'pool',
+        property?.pool == null ? null : String(property.pool),
+        String(next),
+        property?.name ?? null,
+        user?.label ?? null,
+      )
+      invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
+      toast({ title: next ? t('toasts.poolYes') : t('toasts.poolNo') })
     },
     onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
   })
@@ -1177,6 +1210,21 @@ export function PropertyDetailModal() {
         return
       }
       saveInlineField({ field, value: trimmed })
+      return
+    }
+    if (field === 'ical_url') {
+      // The calendar feed is read by schedulers, so it must be a real link.
+      // webcal:// is the calendar-app spelling of https:// and is accepted.
+      const normalized = normalizeUrlInput(value)
+      if (normalized && !isHttpUrl(normalized)) {
+        toast({ title: t('overview.icalUrlInvalid'), variant: 'destructive' })
+        return
+      }
+      if (normalized === (property?.ical_url ?? '')) {
+        setInlineField(null)
+        return
+      }
+      saveInlineField({ field, value: normalized })
       return
     }
     saveInlineField({ field, value })
@@ -1328,6 +1376,94 @@ export function PropertyDetailModal() {
     const base = 'h-7 text-xs'
     if (highlightFields.includes(field) && isEditing) return `${base} ring-2 ring-destructive`
     return base
+  }
+
+  // One URL field in the Overview tab (listing link, iCal feed). Read mode shows
+  // a real link with a pencil; an empty value shows an "Add" prompt; editing is
+  // either the inline click-to-edit input or the Edit-mode form input.
+  function renderUrlRow(o: {
+    field: 'listing_url' | 'ical_url'
+    testKey: 'listing' | 'ical'
+    label: string
+    placeholder: string
+    openLabel: string
+    addLabel: string
+  }) {
+    const { field } = o
+    const value: string | null = property?.[field] ?? null
+    return (
+      <div>
+        <Label className="text-xs text-muted-foreground">{o.label}</Label>
+        {isEditing && canEditProperty ? (
+          <Input
+            type="url"
+            inputMode="url"
+            placeholder={o.placeholder}
+            value={form[field] ?? ''}
+            onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+            className={`mt-0.5 ${fieldCls(field)}`}
+            data-testid={`modal-input-${field}`}
+          />
+        ) : inlineField === field ? (
+          <Input
+            autoFocus
+            type="url"
+            inputMode="url"
+            placeholder={o.placeholder}
+            value={inlineValue}
+            onChange={e => setInlineValue(e.target.value)}
+            onBlur={() => commitInlineEdit(field)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitInlineEdit(field)
+              if (e.key === 'Escape') setInlineField(null)
+            }}
+            className="mt-0.5 h-7 text-xs"
+          />
+        ) : value ? (
+          <div className="flex items-center gap-1 mt-0.5">
+            {/* These columns are writable by owners and by public forms, so the
+                value is untrusted: only a real http(s) URL becomes a link
+                (javascript:, data: and friends render as plain text). */}
+            {safeHref(value) ? (
+              <>
+                <a
+                  href={safeHref(value)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
+                  title={value}
+                  data-testid={`modal-${o.testKey}-link`}
+                >
+                  {o.openLabel}
+                </a>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              </>
+            ) : (
+              <span className="text-sm truncate min-w-0 flex-1" title={value} data-testid={`modal-${o.testKey}-text`}>{value}</span>
+            )}
+            {canEditProperty && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => startInlineEdit(field, value, canEditProperty)}
+                data-testid={`modal-${o.testKey}-edit`}
+              >
+                <Pencil className="w-3 h-3" />
+              </Button>
+            )}
+          </div>
+        ) : (
+          <p
+            className={`text-sm mt-0.5 ${canEditProperty ? 'text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : 'text-muted-foreground'}`}
+            onClick={() => canEditProperty && startInlineEdit(field, '', canEditProperty)}
+            data-testid={`modal-${o.testKey}-add`}
+          >
+            {canEditProperty ? o.addLabel : '—'}
+          </p>
+        )}
+      </div>
+    )
   }
 
   // Navigate to source context (e.g. pipeline column scroll)
@@ -1747,72 +1883,14 @@ export function PropertyDetailModal() {
                   )}
                 </div>
               </div>
-              {/* Listing link — the public Airbnb/VRBO/Zillow page. Read mode
-                  renders it as a link (never a bare URL, which wraps badly and
-                  reads as noise); editing follows the same inline/edit-mode
-                  pattern as every other Overview field. */}
-              <div className="grid grid-cols-1 gap-2">
-                <div>
-                  <Label className="text-xs text-muted-foreground">{t('overview.listingUrl')}</Label>
-                  {isEditing && canEditProperty ? (
-                    <Input
-                      type="url"
-                      inputMode="url"
-                      placeholder={t('overview.listingUrlPlaceholder')}
-                      value={form.listing_url ?? ''}
-                      onChange={e => setForm(f => ({ ...f, listing_url: e.target.value }))}
-                      className={`mt-0.5 ${fieldCls('listing_url')}`}
-                      data-testid="modal-input-listing_url"
-                    />
-                  ) : inlineField === 'listing_url' ? (
-                    <Input
-                      autoFocus
-                      type="url"
-                      inputMode="url"
-                      placeholder={t('overview.listingUrlPlaceholder')}
-                      value={inlineValue}
-                      onChange={e => setInlineValue(e.target.value)}
-                      onBlur={() => commitInlineEdit('listing_url')}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') commitInlineEdit('listing_url')
-                        if (e.key === 'Escape') setInlineField(null)
-                      }}
-                      className="mt-0.5 h-7 text-xs"
-                    />
-                  ) : property.listing_url ? (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <a
-                        href={property.listing_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
-                        title={property.listing_url}
-                        data-testid="modal-listing-link"
-                      >
-                        {t('overview.listingUrlOpen')}
-                      </a>
-                      <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-                      {canEditProperty && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => startInlineEdit('listing_url', property.listing_url, canEditProperty)}
-                          data-testid="modal-listing-edit"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </Button>
-                      )}
-                    </div>
-                  ) : (
-                    <p
-                      className={`text-sm mt-0.5 ${canEditProperty ? 'text-muted-foreground cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1 transition-colors' : 'text-muted-foreground'}`}
-                      onClick={() => canEditProperty && startInlineEdit('listing_url', '', canEditProperty)}
-                    >
-                      {canEditProperty ? t('overview.listingUrlAdd') : '—'}
-                    </p>
-                  )}
-                </div>
+              {/* Listing link (the public Airbnb/VRBO/Zillow page) and the iCal feed
+                  (what Trellis/Breezeway read to schedule cleans). Read mode renders
+                  a real link, never a bare URL, which wraps badly and reads as noise;
+                  editing follows the same inline/edit-mode pattern as every other
+                  Overview field. */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {renderUrlRow({ field: 'listing_url', testKey: 'listing', label: t('overview.listingUrl'), placeholder: t('overview.listingUrlPlaceholder'), openLabel: t('overview.listingUrlOpen'), addLabel: t('overview.listingUrlAdd') })}
+                {renderUrlRow({ field: 'ical_url', testKey: 'ical', label: t('overview.icalUrl'), placeholder: t('overview.icalUrlPlaceholder'), openLabel: t('overview.icalUrlOpen'), addLabel: t('overview.icalUrlAdd') })}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {([
@@ -1941,6 +2019,18 @@ export function PropertyDetailModal() {
                   <span>{t('overview.hotTubCheckboxLabel')}</span>
                 </label>
               )}
+              {isEditing && canEditProperty && (
+                <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={form.pool === true}
+                    onChange={e => setForm(f => ({ ...f, pool: e.target.checked }))}
+                    className="h-4 w-4"
+                    data-testid="modal-input-pool"
+                  />
+                  <span>{t('overview.poolCheckboxLabel')}</span>
+                </label>
+              )}
               {/* Hot tub toggle chip (click to flip) + follow-up indicator.
                   Beds/Kitchens/Check-in/Check-out chips were removed because
                   the same fields are now click-to-edit in the grid above. */}
@@ -1958,6 +2048,19 @@ export function PropertyDetailModal() {
                     data-testid="chip-toggle-hot_tub"
                   >
                     {t('overview.hotTubChipLabel')} <span className="tabular-nums">{property.hot_tub ? t('common.actions.yes') : t('common.actions.no')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canEditProperty}
+                    onClick={() => canEditProperty && togglePool(property.pool !== true)}
+                    className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                      property.pool
+                        ? 'bg-primary/10 text-primary hover:bg-primary/20'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/70'
+                    } ${canEditProperty ? 'cursor-pointer' : 'cursor-default'}`}
+                    data-testid="chip-toggle-pool"
+                  >
+                    {t('overview.poolChipLabel')} <span className="tabular-nums">{property.pool == null ? t('overview.poolUnknown') : property.pool ? t('common.actions.yes') : t('common.actions.no')}</span>
                   </button>
                   <button
                     type="button"

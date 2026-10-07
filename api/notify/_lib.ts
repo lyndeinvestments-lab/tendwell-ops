@@ -14,13 +14,14 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   list_added: 'tasks',
   issue_logged: 'issues',
   verification_due: 'property-verifications',
-  onboarding_submitted: 'master-list',
+  onboarding_submitted: 'onboarding-queue',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
   contact_note_mention: 'contacts',
-  // Public onboarding-intake form. Shares the master-list audience + the
-  // "Onboarding submitted" preference toggle (notify_onboarding_submitted).
-  onboarding_intake_submitted: 'master-list',
+  // Public onboarding-intake form. Shares the onboarding-queue audience (the
+  // page the email links to) + the "Onboarding submitted" preference toggle
+  // (notify_onboarding_submitted).
+  onboarding_intake_submitted: 'onboarding-queue',
   // Owner signed their service agreement (sent server-side from
   // api/agreements/sign.ts). Settings view = admin audience.
   agreement_signed: 'settings',
@@ -116,8 +117,8 @@ export async function getStaffRole(sb: SupabaseClient, email: string): Promise<s
 
 // Resolve user's allowed views (matches auth.tsx logic)
 const ROLE_VIEWS_FALLBACK: Record<string, string[]> = {
-  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics'],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics'],
+  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'onboarding-queue'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: ['dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list', 'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'revenue-report', 'property-verifications', 'inspections', 'alerts', 'activity', 'financial-dashboard'],
 }

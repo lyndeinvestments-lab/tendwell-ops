@@ -58,6 +58,8 @@ const PROPERTY_QUERY_KEY_PREFIXES = [
   '/supabase/owner-assigned-props',    // Settings → Owners assigned list
   '/supabase/owner-props-for-agreements',      // Settings → Agreements picker
   '/onboarding_submissions/merge-candidates',  // Onboarding queue merge picker
+  '/supabase/onboarding-readiness',            // Onboarding hub: "Properties in onboarding" checklist
+  '/supabase/onboarding-linked-properties',    // Onboarding hub: property names on submission rows
   // Owner portal's own property list (RPC get_owner_properties). Note: no
   // '/supabase/' prefix — the startsWith predicate handles it either way.
   'owner-properties',
