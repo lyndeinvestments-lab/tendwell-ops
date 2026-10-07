@@ -33,7 +33,7 @@ import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
 import { slugify } from '@/lib/issues'
-import { isHttpUrl, normalizeUrlInput } from '@/lib/onboarding'
+import { isHttpUrl, normalizeUrlInput, safeHref } from '@/lib/onboarding'
 
 // Recharts is heavy — load it only when a chart actually renders inside the
 // modal instead of bundling it with the always-mounted modal shell.
@@ -1421,17 +1421,26 @@ export function PropertyDetailModal() {
           />
         ) : value ? (
           <div className="flex items-center gap-1 mt-0.5">
-            <a
-              href={value}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
-              title={value}
-              data-testid={`modal-${o.testKey}-link`}
-            >
-              {o.openLabel}
-            </a>
-            <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+            {/* These columns are writable by owners and by public forms, so the
+                value is untrusted: only a real http(s) URL becomes a link
+                (javascript:, data: and friends render as plain text). */}
+            {safeHref(value) ? (
+              <>
+                <a
+                  href={safeHref(value)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-primary hover:underline truncate min-w-0 flex-1"
+                  title={value}
+                  data-testid={`modal-${o.testKey}-link`}
+                >
+                  {o.openLabel}
+                </a>
+                <ExternalLink className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              </>
+            ) : (
+              <span className="text-sm truncate min-w-0 flex-1" title={value} data-testid={`modal-${o.testKey}-text`}>{value}</span>
+            )}
             {canEditProperty && (
               <Button
                 variant="ghost"

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Eye, EyeOff, Link2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
-import { submissionExtras, type OnboardingSubmission } from '@/lib/onboarding'
+import { safeHref, submissionExtras, type OnboardingSubmission } from '@/lib/onboarding'
 
 /** Small read-only building blocks shared by the queue rows and the review dialog. */
 
@@ -129,7 +129,11 @@ export function IcalLinks({
       <ul className="space-y-1.5">
         {urls.map(u => (
           <li key={u} className="flex items-center gap-2 text-xs">
-            <a href={u} target="_blank" rel="noreferrer" className="text-primary hover:underline break-all min-w-0 flex-1">{u}</a>
+            {safeHref(u) ? (
+              <a href={safeHref(u)!} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all min-w-0 flex-1">{u}</a>
+            ) : (
+              <span className="break-all min-w-0 flex-1">{u}</span>
+            )}
             {onUse && (
               inUse === u ? (
                 <span className="shrink-0 text-success font-medium">{t('ical.inUse')}</span>

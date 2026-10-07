@@ -9,11 +9,13 @@ import {
   extractIcalUrls,
   initialCreateValues,
   isHttpUrl,
+  isSimpleEmail,
   noteAlreadyExists,
   normalizeUrlInput,
   onboardingReadiness,
   parseBeds,
   planPhotoInserts,
+  safeHref,
   sortReadiness,
   sourceLabel,
   statusLabel,
@@ -78,6 +80,55 @@ describe('URL validation', () => {
     expect(urlProblem('webcal://example.com/a.ics')).toBeNull()
     expect(urlProblem('')).toBeNull()
     expect(urlProblem('not a url')).toBe('invalid_url')
+  })
+})
+
+describe('safeHref (the only value allowed in an href)', () => {
+  it('turns a real http(s) or webcal URL into a canonical link target', () => {
+    expect(safeHref('https://www.airbnb.com/calendar/ical/1.ics?s=abc')).toBe('https://www.airbnb.com/calendar/ical/1.ics?s=abc')
+    expect(safeHref('  http://example.com/feed.ics ')).toBe('http://example.com/feed.ics')
+    expect(safeHref('webcal://example.com/a.ics')).toBe('https://example.com/a.ics')
+    expect(safeHref('HTTPS://Example.com/A')).toBe('https://example.com/A')
+  })
+
+  it('refuses script-bearing and non-web schemes, however they are dressed up', () => {
+    for (const bad of [
+      'javascript:alert(1)',
+      'JaVaScRiPt:alert(document.cookie)',
+      '  javascript:alert(1)',
+      '\tjavascript:alert(1)',
+      'java\nscript:alert(1)',
+      'javascript://example.com/%0Aalert(1)',
+      'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==',
+      'vbscript:msgbox(1)',
+      'file:///etc/passwd',
+      'ftp://example.com/a.ics',
+      '//evil.example.com/a.ics',
+      '/relative/path.ics',
+      'example.com/a.ics',
+      'https://',
+      'https://localhost',
+      '',
+      '   ',
+    ]) {
+      expect(safeHref(bad), JSON.stringify(bad)).toBeNull()
+    }
+    expect(safeHref(null)).toBeNull()
+    expect(safeHref(undefined)).toBeNull()
+  })
+})
+
+describe('isSimpleEmail (gate before an email goes into a pattern match)', () => {
+  it('accepts an ordinary address', () => {
+    expect(isSimpleEmail('mike@example.com')).toBe(true)
+    expect(isSimpleEmail('  Mike.O_Brien+tag@mail.example.co  ')).toBe(true)
+  })
+
+  it('rejects wildcards, filter syntax, whitespace and malformed shapes', () => {
+    for (const bad of ['*@example.com', '%@example.com', 'a%b@example.com', 'a,b@example.com', 'a(b)@example.com', 'a b@example.com', 'a\\b@example.com', 'mike@example', 'mike@', '@example.com', 'mike', '', 'a@b@c.com']) {
+      expect(isSimpleEmail(bad), JSON.stringify(bad)).toBe(false)
+    }
+    expect(isSimpleEmail(null)).toBe(false)
   })
 })
 

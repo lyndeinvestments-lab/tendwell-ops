@@ -86,6 +86,34 @@ export function isHttpUrl(v: string | null | undefined): boolean {
   }
 }
 
+/**
+ * The only value that may ever be put in an `href`. Submitted and owner-editable
+ * text is untrusted: `javascript:`, `data:`, `vbscript:`, relative and
+ * protocol-relative values all return null, and the caller renders plain text
+ * instead of a link. Accepts http(s) and webcal:// (normalised to https://) and
+ * returns the parsed, canonical URL.
+ */
+export function safeHref(v: string | null | undefined): string | null {
+  const s = normalizeUrlInput(v)
+  if (!isHttpUrl(s)) return null
+  try {
+    return new URL(s).href
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A plain `name@host.tld` shape. Used before an email goes into a database
+ * pattern match: PostgREST treats `*` and `%` as wildcards and `,` `(` `)` as
+ * filter syntax, so anything containing them (or whitespace, or a backslash) is
+ * refused rather than escaped.
+ */
+export function isSimpleEmail(v: string | null | undefined): boolean {
+  const e = (v ?? '').trim()
+  return /^[^\s@,()%*\\]+@[^\s@,()%*\\]+\.[^\s@,()%*\\]+$/.test(e)
+}
+
 const URL_RE = /(?:https?|webcal):\/\/[^\s<>"'`]+/gi
 
 /**
