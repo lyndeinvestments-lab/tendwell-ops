@@ -1,77 +1,49 @@
-import { useState, useEffect } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase, logPropertyEdit } from '@/lib/supabase'
+import { useState, useEffect, useMemo } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { supabase } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/hooks/use-toast'
+import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { SUBMISSIONS_KEY, useSubmissionContactMatch, useSubmissionLookups } from '@/hooks/use-onboarding'
+import {
+  BED_COLS,
+  SUBMISSION_FIELDS,
+  defaultChoices,
+  defaultHasAutoCode,
+  extractIcalUrls,
+  initialCreateValues,
+  isBlank,
+  isImagePath,
+  normalizeUrlInput,
+  parseBeds,
+  sourceLabel,
+  submissionExtras,
+  submittedValue,
+  urlProblem,
+  visibleFields,
+  type Beds,
+  type FieldType,
+  type OnboardingSubmission,
+  type Pick,
+} from '@/lib/onboarding'
+import { applySubmission, ApplyError, onboardingPhotoUrl, type ApplyResult, type ContactAction } from '@/lib/onboarding-apply'
+import { ExtrasList, IcalLinks } from '@/components/onboarding/shared'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Bed } from 'lucide-react'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Bed, ExternalLink } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import type { TFunc } from '@/lib/i18n/t'
 
-const ONBOARDING_STAGE_ID = 3
+type ContactKind = 'use' | 'create' | 'update' | 'none'
 
-// Fields the questionnaire collects that map 1:1 onto a properties column.
-// `key` is the submission field, `prop` is the properties column. `labelKey`
-// resolves under the `onboarding.review.fields.*` dictionary namespace.
-type FieldType = 'text' | 'number' | 'bool'
-const FIELDS: { key: string; prop: string; labelKey: string; type: FieldType }[] = [
-  { key: 'property_name', prop: 'name', labelKey: 'propertyName', type: 'text' },
-  { key: 'address', prop: 'address', labelKey: 'address', type: 'text' },
-  { key: 'bedrooms', prop: 'bedrooms', labelKey: 'bedrooms', type: 'number' },
-  { key: 'number_of_beds', prop: 'number_of_beds', labelKey: 'numberOfBeds', type: 'number' },
-  { key: 'full_baths', prop: 'full_baths', labelKey: 'fullBaths', type: 'number' },
-  { key: 'half_baths', prop: 'half_baths', labelKey: 'halfBaths', type: 'number' },
-  { key: 'square_footage', prop: 'square_footage', labelKey: 'squareFootage', type: 'number' },
-  { key: 'hot_tub', prop: 'hot_tub', labelKey: 'hotTub', type: 'bool' },
-  { key: 'linen_program', prop: 'linen_program', labelKey: 'linenProgram', type: 'bool' },
-  { key: 'door_code', prop: 'door_code', labelKey: 'frontDoorCode', type: 'text' },
-  { key: 'other_codes', prop: 'other_codes', labelKey: 'otherCodes', type: 'text' },
-  { key: 'wifi_info', prop: 'wifi_info', labelKey: 'wifi', type: 'text' },
-  { key: 'filter_size', prop: 'filter_size', labelKey: 'acFilterSize', type: 'text' },
-  { key: 'check_in_time', prop: 'check_in_time', labelKey: 'checkInTime', type: 'text' },
-  { key: 'check_out_time', prop: 'check_out_time', labelKey: 'checkOutTime', type: 'text' },
-]
-
-const BED_COLS = [
-  { key: 'king', col: 'king_beds', labelKey: 'king' },
-  { key: 'queen', col: 'queen_beds', labelKey: 'queen' },
-  { key: 'full', col: 'full_beds', labelKey: 'full' },
-  { key: 'twin', col: 'twin_beds', labelKey: 'twin' },
-] as const
-
-type Beds = { king: number; queen: number; full: number; twin: number }
-
-const isBlank = (v: any) => v == null || v === ''
-
-function fmt(v: any, type: FieldType, t: TFunc): string {
+function fmt(v: unknown, type: FieldType, t: TFunc): string {
   if (type === 'bool') return v === true ? t('common.actions.yes') : v === false ? t('common.actions.no') : '—'
   return isBlank(v) ? '—' : String(v)
-}
-
-// Best-effort parse of the free-text bed sizes string into structured counts,
-// as a starting suggestion the admin can correct. Captures an optional leading
-// quantity right before each keyword ("2 Twins" -> 2, "King" -> 1). Room numbers
-// ("Bedroom 3") are ignored because they aren't adjacent to a bed keyword.
-function parseBeds(text: string | null | undefined): Beds {
-  const res: Beds = { king: 0, queen: 0, full: 0, twin: 0 }
-  if (!text) return res
-  const tally = (words: string) => {
-    const re = new RegExp(`(?:(\\d+)\\s*)?\\b(?:${words})s?\\b`, 'gi')
-    let total = 0
-    let m: RegExpExecArray | null
-    while ((m = re.exec(text))) total += m[1] ? parseInt(m[1], 10) : 1
-    return total
-  }
-  res.king = tally('king')
-  res.queen = tally('queen')
-  res.full = tally('full|double')
-  res.twin = tally('twin|single')
-  return res
 }
 
 export function OnboardingReviewDialog({
@@ -80,20 +52,27 @@ export function OnboardingReviewDialog({
   onClose,
   onDone,
 }: {
-  submission: any | null
+  submission: OnboardingSubmission | null
   propertyId: number | null // null = create new property
   onClose: () => void
   onDone: () => void
 }) {
-  const { t } = useLocale('onboarding')
+  const { t: tt, locale } = useLocale() // unscoped: field labels carry their full dictionary path
+  const { t: to } = useLocale('onboarding')
+  const { t: ta } = useLocale('onboardingAdmin')
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
   const isMerge = propertyId != null
+  const isReapply = isMerge && !!submission && submission.status !== 'pending'
 
+  // gcTime 0: always read the property fresh when the dialog opens, so the
+  // "current listing" column and the default picks never come from a cache.
   const { data: existing, isLoading: existingLoading } = useQuery({
     queryKey: ['/onboarding-review/property', propertyId],
     enabled: isMerge && !!submission,
+    gcTime: 0,
+    staleTime: 0,
     queryFn: async () => {
       const { data, error } = await supabase.from('properties').select('*').eq('id', propertyId!).single()
       if (error) throw error
@@ -101,9 +80,11 @@ export function OnboardingReviewDialog({
     },
   })
 
-  const { data: existingContact } = useQuery({
+  const { data: existingContact, isLoading: existingContactLoading } = useQuery({
     queryKey: ['/onboarding-review/contact', existing?.contact_id],
     enabled: isMerge && !!existing?.contact_id,
+    gcTime: 0,
+    staleTime: 0,
     queryFn: async () => {
       const { data, error } = await supabase.from('contacts').select('id, full_name, email, phone').eq('id', existing!.contact_id).single()
       if (error) throw error
@@ -111,17 +92,31 @@ export function OnboardingReviewDialog({
     },
   })
 
+  // Reuse the client this person already is instead of creating a duplicate.
+  const { data: contactMatch, isLoading: matchLoading } = useSubmissionContactMatch(submission, !!submission)
+  const { owners } = useSubmissionLookups(submission ? [submission] : undefined)
+  const ownerName = submission?.owner_id ? (owners?.get(submission.owner_id)?.name || owners?.get(submission.owner_id)?.email || null) : null
+
   // Per-field choice for merge mode: 'current' keeps the listing, 'submitted'
   // takes the questionnaire value.
-  const [choices, setChoices] = useState<Record<string, 'current' | 'submitted'>>({})
+  const [choices, setChoices] = useState<Record<string, Pick>>({})
+  // Submitted values the admin swapped in (an iCal link found in the notes).
+  const [overrides, setOverrides] = useState<Record<string, unknown>>({})
   // Editable field values for create mode (prefilled from the submission).
   const [createVals, setCreateVals] = useState<Record<string, any>>({})
   const [beds, setBeds] = useState<Beds>({ king: 0, queen: 0, full: 0, twin: 0 })
   const [hasAutoCode, setHasAutoCode] = useState(false)
-  const [linkContact, setLinkContact] = useState(true)
+  const [copyPhotos, setCopyPhotos] = useState(true)
+  const [contactKind, setContactKind] = useState<ContactKind>('none')
   const [contactName, setContactName] = useState('')
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
+  const [contactInit, setContactInit] = useState<string | null>(null)
+
+  const noteIcalUrls = useMemo(() => extractIcalUrls(submission?.notes), [submission?.notes])
+  const photos = submission?.photos ?? []
+  const imagePhotos = photos.filter(isImagePath)
+  const fields = submission ? visibleFields(submission, isMerge ? existing ?? null : null) : []
 
   const ready = !!submission && (!isMerge || (!existingLoading && !!existing))
 
@@ -130,192 +125,212 @@ export function OnboardingReviewDialog({
   useEffect(() => {
     if (!submission) return
     if (isMerge && !existing) return
-
+    setOverrides({})
+    setCopyPhotos(true)
     if (isMerge) {
-      const next: Record<string, 'current' | 'submitted'> = {}
-      for (const f of FIELDS) {
-        const cur = existing[f.prop]
-        const sub = submission[f.key]
-        // Default to the submitted value only when the listing has nothing yet.
-        next[f.prop] = isBlank(cur) && !isBlank(sub) ? 'submitted' : 'current'
-      }
-      setChoices(next)
+      setChoices(defaultChoices(existing, submission))
       // Prefill bed counts from the existing structured columns; if the listing
       // has none recorded, seed from a parse of the typed bed sizes.
       const hasStructured = BED_COLS.some(b => (existing[b.col] ?? 0) > 0)
       setBeds(hasStructured
         ? { king: existing.king_beds ?? 0, queen: existing.queen_beds ?? 0, full: existing.full_beds ?? 0, twin: existing.twin_beds ?? 0 }
         : parseBeds(submission.bed_sizes))
-      setHasAutoCode(!!existing.has_auto_code)
+      setHasAutoCode(defaultHasAutoCode(submission, existing))
+    } else {
+      setCreateVals(initialCreateValues(submission))
+      setBeds(parseBeds(submission.bed_sizes))
+      setHasAutoCode(defaultHasAutoCode(submission, null))
+    }
+  }, [submission?.id, existing?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Decide the client choice once everything it depends on has loaded.
+  useEffect(() => {
+    if (!submission) { setContactInit(null); return }
+    if (contactInit === submission.id) return
+    if (matchLoading) return
+    if (isMerge && (!existing || (existing.contact_id && existingContactLoading))) return
+    if (isMerge && existing.contact_id) {
+      setContactKind('update')
       setContactName(existingContact?.full_name ?? submission.client_name ?? '')
       setContactEmail(existingContact?.email ?? submission.contact_email ?? '')
       setContactPhone(existingContact?.phone ?? submission.contact_phone ?? '')
     } else {
-      const vals: Record<string, any> = {}
-      for (const f of FIELDS) vals[f.prop] = submission[f.key]
-      setCreateVals(vals)
-      setBeds(parseBeds(submission.bed_sizes))
-      setHasAutoCode(false)
+      setContactKind(contactMatch ? 'use' : submission.client_name?.trim() ? 'create' : 'none')
       setContactName(submission.client_name ?? '')
       setContactEmail(submission.contact_email ?? '')
       setContactPhone(submission.contact_phone ?? '')
     }
-  }, [submission?.id, existing?.id, existingContact?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setContactInit(submission.id)
+  }, [submission?.id, existing?.id, existingContact?.id, existingContactLoading, matchLoading, contactMatch?.id, contactInit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changedBy = user?.label || (user as any)?.google_email || 'admin'
 
-  const markConverted = async (pid: number) => {
-    const { error } = await supabase.from('onboarding_submissions').update({
-      status: 'converted',
-      approved_at: new Date().toISOString(),
-      approved_by: changedBy,
-      property_id: pid,
-    }).eq('id', submission.id)
-    if (error) throw error
+  // The iCal link that would be saved right now (and whether it is a real link).
+  const icalDef = SUBMISSION_FIELDS.find(f => f.prop === 'ical_url')!
+  const icalValue = isMerge
+    ? (choices.ical_url === 'submitted' ? submittedValue(icalDef, submission ?? {}, overrides) : null)
+    : createVals.ical_url
+  const icalProblem = urlProblem(icalValue)
+  const icalInUse = isBlank(icalValue) ? null : normalizeUrlInput(String(icalValue))
+
+  function useIcalFromNotes(url: string) {
+    if (isMerge) {
+      setOverrides(p => ({ ...p, ical_url: url }))
+      setChoices(p => ({ ...p, ical_url: 'submitted' }))
+    } else {
+      setCreateVals(p => ({ ...p, ical_url: url }))
+    }
   }
 
-  const apply = useMutation({
-    mutationFn: async () => {
-      if (!isMerge) {
-        // CREATE NEW PROPERTY
-        let contactId: string | null = null
-        if (linkContact && contactName.trim()) {
-          const { data: c, error } = await supabase.from('contacts')
-            .insert({ full_name: contactName.trim(), email: contactEmail || null, phone: contactPhone || null, source: 'Onboarding' } as any)
-            .select('id').single()
-          if (error) throw error
-          contactId = c.id
-        }
-        const payload: Record<string, any> = {
-          name: createVals.name || submission.property_name || submission.address || submission.client_name || 'New Property',
-          stage_id: ONBOARDING_STAGE_ID,
-          king_beds: beds.king, queen_beds: beds.queen, full_beds: beds.full, twin_beds: beds.twin,
-          bed_sizes_text: submission.bed_sizes ?? null,
-          has_auto_code: hasAutoCode,
-        }
-        for (const f of FIELDS) {
-          if (f.prop === 'name') continue
-          payload[f.prop] = createVals[f.prop]
-        }
-        if (contactId) payload.contact_id = contactId
-        // Strip nulls so NOT NULL columns (check_in_time/check_out_time) fall
-        // back to their defaults.
-        for (const k of Object.keys(payload)) if (payload[k] == null) delete payload[k]
-        const { data: np, error } = await supabase.from('properties').insert(payload as any).select('id').single()
-        if (error) throw error
-        await markConverted(np.id)
-        return { propertyId: np.id, mode: 'create' as const, filled: 0 }
+  const apply = useGuardedMutation('onboarding-queue', {
+    mutationFn: async (): Promise<ApplyResult> => {
+      let contact: ContactAction = { kind: 'none' }
+      if (contactKind === 'use' && contactMatch) contact = { kind: 'use', contactId: contactMatch.id }
+      else if (contactKind === 'create' && contactName.trim()) contact = { kind: 'create', name: contactName, email: contactEmail, phone: contactPhone }
+      else if (contactKind === 'update' && existing?.contact_id && contactName.trim()) {
+        contact = { kind: 'update', contactId: existing.contact_id, name: contactName, email: contactEmail, phone: contactPhone }
       }
-
-      // MERGE INTO EXISTING PROPERTY
-      const patch: Record<string, any> = {}
-      for (const f of FIELDS) {
-        if (choices[f.prop] === 'submitted') {
-          const v = submission[f.key]
-          if (v !== existing[f.prop]) patch[f.prop] = v
-        }
-      }
-      // Structured beds always come from the admin-entered inputs.
-      for (const b of BED_COLS) {
-        if ((existing[b.col] ?? 0) !== beds[b.key]) patch[b.col] = beds[b.key]
-      }
-      if (submission.bed_sizes && existing.bed_sizes_text !== submission.bed_sizes) {
-        patch.bed_sizes_text = submission.bed_sizes
-      }
-      if ((existing.has_auto_code ?? false) !== hasAutoCode) patch.has_auto_code = hasAutoCode
-
-      if (linkContact && contactName.trim()) {
-        if (existing.contact_id) {
-          const { error } = await supabase.from('contacts')
-            .update({ full_name: contactName.trim(), email: contactEmail || null, phone: contactPhone || null, updated_at: new Date().toISOString() } as any)
-            .eq('id', existing.contact_id)
-          if (error) throw error
-        } else {
-          const { data: c, error } = await supabase.from('contacts')
-            .insert({ full_name: contactName.trim(), email: contactEmail || null, phone: contactPhone || null, source: 'Onboarding' } as any)
-            .select('id').single()
-          if (error) throw error
-          patch.contact_id = c.id
-        }
-      }
-
-      if (Object.keys(patch).length > 0) {
-        const { error } = await supabase.from('properties').update(patch as any).eq('id', propertyId!)
-        if (error) throw error
-        for (const [field, newValue] of Object.entries(patch)) {
-          await logPropertyEdit(propertyId!, field, existing[field] ?? null, newValue ?? null, existing.name ?? null, `${changedBy} (onboarding merge)`)
-        }
-      }
-      await markConverted(propertyId!)
-      return { propertyId: propertyId!, mode: 'merge' as const, filled: Object.keys(patch).length }
+      return applySubmission({
+        submission: submission!,
+        propertyId,
+        existing: isMerge ? existing : null,
+        values: createVals,
+        choices,
+        overrides,
+        beds,
+        hasAutoCode,
+        contact,
+        copyPhotos,
+        changedBy,
+        staff: { id: user?.id ? Number(user.id) : null, label: user?.label ?? null },
+      })
     },
     onSuccess: (res) => {
-      toast({
-        title: res.mode === 'create' ? t('toasts.propertyCreated') : t('toasts.merged'),
-        description: res.mode === 'create'
-          ? t('toasts.createdDescription', { id: res.propertyId })
-          : t('toasts.mergedDescription', {
-              count: res.filled,
-              fieldWord: t(res.filled === 1 ? 'toasts.fieldSingular' : 'toasts.fieldPlural'),
-              id: res.propertyId,
-            }),
-      })
-      qc.invalidateQueries({ queryKey: ['/onboarding_submissions'] })
-      // Newly created/merged property — refresh every property-derived view
-      // (quote sheet, master list, pipeline, pro-forma, dashboards, …).
-      invalidateAllPropertyQueries(qc)
+      const parts: string[] = []
+      if (res.mode === 'create') parts.push(to('toasts.createdDescription', { id: res.propertyId }))
+      else if (res.filled === 0 && !res.noteAdded && res.photosAdded === 0) parts.push(ta('toasts.nothingNew', { id: res.propertyId }))
+      else {
+        parts.push(to('toasts.mergedDescription', {
+          count: res.filled,
+          fieldWord: to(res.filled === 1 ? 'toasts.fieldSingular' : 'toasts.fieldPlural'),
+          id: res.propertyId,
+        }))
+      }
+      if (res.noteAdded) parts.push(ta('toasts.noteAdded'))
+      if (res.photosAdded > 0) parts.push(ta('toasts.photosAdded', { count: res.photosAdded }))
+      if (res.ownerLinked) parts.push(ta('toasts.ownerLinked'))
+      toast({ title: res.mode === 'create' ? to('toasts.propertyCreated') : to('toasts.merged'), description: parts.join(' ') })
+      if (res.warnings.length > 0) {
+        toast({
+          title: ta('toasts.warningsTitle'),
+          description: res.warnings.map(w => ta(`warnings.${w.code}`)).join(' '),
+          variant: 'destructive',
+        })
+      }
+      refreshAfterWrite()
       onDone()
     },
-    onError: (e: any) => toast({ title: t('toasts.saveFailed'), description: e?.message || t('toasts.tryAgain'), variant: 'destructive' }),
+    onError: (e: any) => {
+      if (e?.message === 'edit_blocked') return
+      if (e instanceof ApplyError) {
+        // The property exists; only the "applied" marker failed. Say exactly what to do.
+        toast({
+          title: to('toasts.saveFailed'),
+          description: ta(e.mode === 'create' ? 'toasts.markFailedCreate' : 'toasts.markFailedMerge', { id: e.propertyId, error: e.detail }),
+          variant: 'destructive',
+        })
+        refreshAfterWrite()
+        return
+      }
+      toast({ title: to('toasts.saveFailed'), description: e?.message || to('toasts.tryAgain'), variant: 'destructive' })
+    },
   })
 
+  function refreshAfterWrite() {
+    qc.invalidateQueries({ queryKey: [SUBMISSIONS_KEY] })
+    // Newly created/merged property: refresh every property-derived view
+    // (quote sheet, master list, pipeline, pro-forma, dashboards, readiness, ...).
+    invalidateAllPropertyQueries(qc)
+    qc.invalidateQueries({ queryKey: ['/supabase/property-photos'] })
+    qc.invalidateQueries({ queryKey: ['/supabase/owner-assigned-props'] })
+  }
+
   const open = !!submission
+  const needsName = (contactKind === 'create' || contactKind === 'update') && !contactName.trim()
+  const targetName = existing?.name ?? ''
+
+  const titleKey = !isMerge ? 'create' : isReapply ? 'reapply' : 'apply'
+  const saveLabel = apply.isPending
+    ? to('review.actions.saving')
+    : ta(`dialog.actions.${titleKey}`)
+
+  const matchHow = contactMatch ? ta(contactMatch.how === 'owner' ? 'contact.matchOwner' : 'contact.matchEmail') : ''
+
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o && !apply.isPending) onClose() }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isMerge ? t('review.title.merge') : t('review.title.create')}</DialogTitle>
-          <DialogDescription>
-            {isMerge ? t('review.description.merge') : t('review.description.create')}
-          </DialogDescription>
+          <DialogTitle>{ta(`dialog.title.${titleKey}`, { name: targetName })}</DialogTitle>
+          <DialogDescription>{ta(`dialog.description.${titleKey}`)}</DialogDescription>
         </DialogHeader>
 
-        {!ready ? (
+        {!ready || !submission ? (
           <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
         ) : (
           <div className="space-y-4">
+            {/* Who sent this, and where it is going */}
+            <div className="rounded-md border border-border bg-muted/30 p-3 text-xs space-y-0.5" data-testid="review-summary">
+              <p>
+                <span className="font-medium">{submission.client_name || to('queue.row.unknownClient')}</span>
+                {' · '}{ta(`submissions.source.${sourceLabel(submission.source)}`)}
+                {' · '}{ta('dialog.submittedOn', { date: new Date(submission.submitted_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') })}
+              </p>
+              {submission.owner_id && <p className="text-muted-foreground">{ta('dialog.ownerLogin', { name: ownerName ?? '—' })}</p>}
+              {isMerge && <p className="text-muted-foreground">{ta('dialog.applyingTo', { name: targetName, id: propertyId! })}</p>}
+            </div>
+
+            {/* Calendar links the client buried in the notes */}
+            <IcalLinks urls={noteIcalUrls} inUse={icalInUse} onUse={useIcalFromNotes} />
+
             {/* Field-by-field */}
             <div className="rounded-lg border border-border overflow-hidden">
               {isMerge && (
-                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-muted/60 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  <span>{t('review.table.field')}</span><span>{t('review.table.currentListing')}</span><span>{t('review.table.submitted')}</span>
+                <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 px-3 py-1.5 bg-muted/60 text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <span>{to('review.table.field')}</span><span>{to('review.table.currentListing')}</span><span>{to('review.table.submitted')}</span>
                 </div>
               )}
-              {FIELDS.map((f, idx) => {
-                const subVal = submission[f.key]
-                const fieldLabel = t(`review.fields.${f.labelKey}`)
+              {fields.map((f, idx) => {
+                const subVal = submittedValue(f, submission, overrides)
+                const fieldLabel = tt(f.labelKey)
+                const rowError = f.url
+                  ? (isMerge ? (choices[f.prop] === 'submitted' ? urlProblem(subVal) : null) : urlProblem(createVals[f.prop]))
+                  : null
                 if (!isMerge) {
                   return (
-                    <div key={f.prop} className={`grid grid-cols-[1fr_2fr] gap-2 items-center px-3 py-1.5 ${idx % 2 ? 'bg-muted/10' : ''}`}>
-                      <label className="text-xs text-muted-foreground">{fieldLabel}</label>
-                      {f.type === 'bool' ? (
-                        <div className="flex gap-1">
-                          {[{ v: true, l: t('common.actions.yes') }, { v: false, l: t('common.actions.no') }].map(o => (
-                            <button key={String(o.v)} type="button"
-                              onClick={() => setCreateVals(p => ({ ...p, [f.prop]: o.v }))}
-                              className={`h-7 px-3 text-xs rounded border ${createVals[f.prop] === o.v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-input hover:bg-muted'}`}>
-                              {o.l}
-                            </button>
-                          ))}
-                        </div>
-                      ) : (
-                        <Input
-                          type={f.type === 'number' ? 'number' : 'text'}
-                          value={createVals[f.prop] ?? ''}
-                          onChange={e => setCreateVals(p => ({ ...p, [f.prop]: f.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value }))}
-                          className="h-7 text-xs"
-                        />
-                      )}
+                    <div key={f.prop} className={`px-3 py-1.5 ${idx % 2 ? 'bg-muted/10' : ''}`}>
+                      <div className="grid grid-cols-[1fr_2fr] gap-2 items-center">
+                        <label className="text-xs text-muted-foreground">{fieldLabel}</label>
+                        {f.type === 'bool' ? (
+                          <div className="flex gap-1">
+                            {[{ v: true, l: tt('common.actions.yes') }, { v: false, l: tt('common.actions.no') }].map(o => (
+                              <button key={String(o.v)} type="button"
+                                onClick={() => setCreateVals(p => ({ ...p, [f.prop]: o.v }))}
+                                className={`h-7 px-3 text-xs rounded border ${createVals[f.prop] === o.v ? 'bg-primary text-primary-foreground border-primary' : 'bg-background border-input hover:bg-muted'}`}>
+                                {o.l}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <Input
+                            type={f.type === 'number' ? 'number' : 'text'}
+                            value={createVals[f.prop] ?? ''}
+                            onChange={e => setCreateVals(p => ({ ...p, [f.prop]: f.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value }))}
+                            className="h-7 text-xs"
+                            data-testid={`field-${f.prop}`}
+                          />
+                        )}
+                      </div>
+                      {rowError && <p className="text-xs text-destructive mt-1 sm:ml-[33%]">{ta('ical.invalid')}</p>}
                     </div>
                   )
                 }
@@ -325,84 +340,169 @@ export function OnboardingReviewDialog({
                   : (!isBlank(curVal) && !isBlank(subVal) && String(curVal) !== String(subVal))
                 const choice = choices[f.prop] ?? 'current'
                 return (
-                  <div key={f.prop} className={`grid grid-cols-[1fr_1fr_1fr] gap-2 items-start px-3 py-2 border-t border-border ${conflict ? 'bg-amber-50/40 dark:bg-amber-900/10' : idx % 2 ? 'bg-muted/10' : ''}`}>
-                    <span className="text-xs text-muted-foreground">{fieldLabel}{conflict && <span className="ml-1 text-amber-600 dark:text-amber-400" title={t('review.table.valuesDiffer')}>⚠</span>}</span>
-                    <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'current' }))}
-                      className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'current' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
-                      {fmt(curVal, f.type, t)}
-                    </button>
-                    <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'submitted' }))}
-                      className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'submitted' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
-                      {fmt(subVal, f.type, t)}
-                    </button>
+                  <div key={f.prop} className={`border-t border-border ${conflict ? 'bg-warning/10' : idx % 2 ? 'bg-muted/10' : ''}`}>
+                    <div className="grid grid-cols-[1fr_1fr_1fr] gap-2 items-start px-3 py-2">
+                      <span className="text-xs text-muted-foreground">{fieldLabel}{conflict && <span className="ml-1 text-warning" title={to('review.table.valuesDiffer')}>⚠</span>}</span>
+                      <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'current' }))}
+                        className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'current' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
+                        {fmt(curVal, f.type, tt)}
+                      </button>
+                      <button type="button" onClick={() => setChoices(p => ({ ...p, [f.prop]: 'submitted' }))}
+                        className={`text-left text-xs rounded border px-2 py-1 break-words ${choice === 'submitted' ? 'border-primary bg-primary/5 font-medium' : 'border-transparent hover:bg-muted/50'}`}>
+                        {fmt(subVal, f.type, tt)}
+                      </button>
+                    </div>
+                    {rowError && <p className="text-xs text-destructive px-3 pb-2">{ta('ical.invalid')}</p>}
                   </div>
                 )
               })}
             </div>
 
-            {/* Bed sizes — free text in, structured out */}
+            {/* Bed sizes: free text in, structured out */}
             <div className="rounded-lg border border-border p-3 space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold"><Bed className="w-3.5 h-3.5" /> {t('review.bedSection.title')}</div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold"><Bed className="w-3.5 h-3.5" /> {to('review.bedSection.title')}</div>
               {submission.bed_sizes && (
                 <p className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{t('review.bedSection.clientTyped')}</span> {submission.bed_sizes}
+                  <span className="font-medium text-foreground">{to('review.bedSection.clientTyped')}</span> {submission.bed_sizes}
                 </p>
               )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {BED_COLS.map(b => (
                   <div key={b.key}>
-                    <label className="text-[11px] text-muted-foreground">{t(`review.bedSizes.${b.labelKey}`)}</label>
+                    <label className="text-2xs text-muted-foreground">{to(`review.bedSizes.${b.labelKey}`)}</label>
                     <Input type="number" min={0} value={beds[b.key]}
                       onChange={e => setBeds(p => ({ ...p, [b.key]: e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)) }))}
                       className="h-7 text-xs mt-0.5" data-testid={`bed-${b.key}`} />
                   </div>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground">{t('review.bedSection.hint')}</p>
+              <p className="text-2xs text-muted-foreground">{to('review.bedSection.hint')}</p>
             </div>
 
-            {/* Auto code (smart lock) — admin sets; the code value lives in Settings */}
+            {/* Auto code (smart lock): pre-checked when the client entered one */}
             <label className="flex items-start gap-2 rounded-lg border border-border p-3 cursor-pointer hover:bg-muted/30">
               <Checkbox checked={hasAutoCode} onCheckedChange={(v) => setHasAutoCode(!!v)} className="mt-0.5" />
               <div className="text-xs flex-1">
-                <div className="font-medium">{t('review.autoCode.label')}</div>
-                <div className="text-muted-foreground">{t('review.autoCode.hint')}</div>
+                <div className="font-medium">{to('review.autoCode.label')}</div>
+                <div className="text-muted-foreground">{to('review.autoCode.hint')}</div>
+                {!isBlank(submission.auto_code) && (
+                  <div className="mt-1 text-foreground">{ta('dialog.autoCodeSubmitted', { code: submission.auto_code!.trim() })}</div>
+                )}
               </div>
             </label>
 
-            {/* Contact */}
+            {/* Client (contact) */}
             <div className="rounded-lg border border-border p-3 space-y-2">
-              <label className="flex items-center gap-2 text-xs font-semibold">
-                <Checkbox checked={linkContact} onCheckedChange={(v) => setLinkContact(!!v)} />
-                {isMerge && existing?.contact_id ? t('review.contact.updateLinked') : t('review.contact.saveNew')}
-              </label>
-              {linkContact && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <p className="text-xs font-semibold">{ta('contact.title')}</p>
+              <RadioGroup value={contactKind} onValueChange={(v) => setContactKind(v as ContactKind)} className="gap-1.5">
+                {isMerge && existing?.contact_id ? (
+                  <>
+                    <ContactOption value="update" label={to('review.contact.updateLinked')} />
+                    <ContactOption value="none" label={ta('contact.leaveLinked')} />
+                  </>
+                ) : (
+                  <>
+                    {contactMatch && (
+                      <ContactOption
+                        value="use"
+                        label={ta('contact.useExisting', { name: contactMatch.full_name || contactMatch.email || '' })}
+                        hint={[matchHow, contactMatch.email, contactMatch.phone].filter(Boolean).join(' · ')}
+                      />
+                    )}
+                    <ContactOption value="create" label={ta('contact.createNew')} />
+                    <ContactOption value="none" label={ta('contact.none')} />
+                  </>
+                )}
+              </RadioGroup>
+              {(contactKind === 'create' || contactKind === 'update') && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                   <div>
-                    <label className="text-[11px] text-muted-foreground">{t('common.labels.name')}</label>
+                    <label className="text-2xs text-muted-foreground">{tt('common.labels.name')}</label>
                     <Input value={contactName} onChange={e => setContactName(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                   <div>
-                    <label className="text-[11px] text-muted-foreground">{t('common.labels.email')}</label>
+                    <label className="text-2xs text-muted-foreground">{tt('common.labels.email')}</label>
                     <Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                   <div>
-                    <label className="text-[11px] text-muted-foreground">{t('common.labels.phone')}</label>
+                    <label className="text-2xs text-muted-foreground">{tt('common.labels.phone')}</label>
                     <Input value={contactPhone} onChange={e => setContactPhone(e.target.value)} className="h-7 text-xs mt-0.5" />
                   </div>
                 </div>
               )}
             </div>
+
+            {/* Notes: saved as a property note */}
+            {!isBlank(submission.notes) && (
+              <div className="rounded-lg border border-border p-3 space-y-1.5">
+                <p className="text-xs font-semibold">{ta('dialog.notesTitle')}</p>
+                <div className="whitespace-pre-wrap text-sm bg-muted/30 rounded p-2 break-words">{submission.notes}</div>
+                <p className="text-2xs text-muted-foreground">{ta('dialog.notesHint')}</p>
+              </div>
+            )}
+
+            {/* Photos */}
+            {photos.length > 0 && (
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                {imagePhotos.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs font-semibold cursor-pointer">
+                    <Checkbox checked={copyPhotos} onCheckedChange={(v) => setCopyPhotos(!!v)} data-testid="checkbox-copy-photos" />
+                    {ta('dialog.copyPhotos', { count: imagePhotos.length })}
+                  </label>
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  {photos.slice(0, 8).map(p => {
+                    const url = onboardingPhotoUrl(p)
+                    return (
+                      <a key={p} href={url} target="_blank" rel="noreferrer" className="block w-14 h-14 rounded border border-border overflow-hidden bg-muted/30 hover:opacity-80">
+                        {isImagePath(p) ? <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" /> : (
+                          <div className="w-full h-full flex items-center justify-center text-muted-foreground"><ExternalLink className="w-4 h-4" /></div>
+                        )}
+                      </a>
+                    )
+                  })}
+                </div>
+                {photos.length > imagePhotos.length && (
+                  <p className="text-2xs text-muted-foreground">{ta('dialog.pdfsHint', { count: photos.length - imagePhotos.length })}</p>
+                )}
+              </div>
+            )}
+
+            {/* Everything with no home on the property */}
+            <div className="rounded-lg border border-border p-3 space-y-2">
+              <p className="text-xs font-semibold">{ta('extras.title')}</p>
+              <p className="text-2xs text-muted-foreground">{ta('extras.intro')}</p>
+              {submissionExtras(submission).length > 0
+                ? <ExtrasList submission={submission} />
+                : <p className="text-sm text-muted-foreground">{ta('extras.none')}</p>}
+            </div>
           </div>
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={apply.isPending}>{t('common.actions.cancel')}</Button>
-          <Button onClick={() => apply.mutate()} disabled={!ready || apply.isPending || (linkContact && !contactName.trim())}>
-            {apply.isPending ? t('review.actions.saving') : isMerge ? t('review.actions.saveMerge') : t('review.actions.createProperty')}
+          <Button variant="outline" onClick={onClose} disabled={apply.isPending}>{tt('common.actions.cancel')}</Button>
+          <Button
+            onClick={() => apply.mutate()}
+            disabled={!ready || apply.isPending || needsName || (!!icalProblem)}
+            data-testid="button-apply-submission"
+          >
+            {saveLabel}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ContactOption({ value, label, hint }: { value: ContactKind; label: string; hint?: string }) {
+  const id = `contact-kind-${value}`
+  return (
+    <div className="flex items-start gap-2">
+      <RadioGroupItem value={value} id={id} className="mt-0.5" />
+      <label htmlFor={id} className="text-xs cursor-pointer">
+        <span>{label}</span>
+        {hint && <span className="block text-2xs text-muted-foreground">{hint}</span>}
+      </label>
+    </div>
   )
 }

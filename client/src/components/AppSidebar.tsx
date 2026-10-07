@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
+import { usePendingSubmissionCount } from '@/hooks/use-onboarding'
 
 interface NavItem {
   title: string
@@ -61,7 +62,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Lost Items', href: '/lost-items', view: 'lost-items', icon: PackageSearch },
       { title: 'Incoming Shipments', href: '/incoming-shipments', view: 'incoming-shipments', icon: PackagePlus },
       { title: 'Laundry Weigh-Ins', href: '/laundry-weigh-ins', view: 'laundry-weigh-ins', icon: Scale },
-      { title: 'Onboarding Queue', href: '/onboarding-queue', view: 'onboarding-queue', icon: ClipboardCheck },
+      { title: 'Onboarding', href: '/onboarding-queue', view: 'onboarding-queue', icon: ClipboardCheck },
     ],
   },
   {
@@ -130,6 +131,8 @@ export function AppSidebar() {
   const { theme, setTheme } = useTheme()
   const { isMobile, setOpenMobile } = useSidebar()
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadCollapsedState())
+  // Submissions waiting for review: a head-only count, fetched only for staff who can open the page.
+  const { data: pendingOnboarding } = usePendingSubmissionCount(!!user && canAccessView('onboarding-queue', effectiveUser))
 
   useEffect(() => {
     try {
@@ -208,6 +211,15 @@ export function AppSidebar() {
                             >
                               <item.icon className="w-4 h-4 flex-shrink-0" />
                               <span className="text-sm">{title}</span>
+                              {viewKey === 'onboarding-queue' && (pendingOnboarding ?? 0) > 0 && (
+                                <span
+                                  className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-primary text-primary-foreground text-2xs font-semibold flex items-center justify-center tabular-nums"
+                                  data-testid="badge-onboarding-pending"
+                                  aria-label={`${pendingOnboarding} ${t('onboardingAdmin.submissions.status.new')}`}
+                                >
+                                  {pendingOnboarding! > 99 ? '99+' : pendingOnboarding}
+                                </span>
+                              )}
                             </Link>
                           </SidebarMenuButton>
                         </SidebarMenuItem>

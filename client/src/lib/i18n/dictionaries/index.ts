@@ -56,6 +56,8 @@ import { authPagesEn } from './authPages.en'
 import { authPagesEs } from './authPages.es'
 import { onboardingEn } from './onboarding.en'
 import { onboardingEs } from './onboarding.es'
+import { onboardingAdminEn } from './onboardingAdmin.en'
+import { onboardingAdminEs } from './onboardingAdmin.es'
 
 /**
  * App-wide dictionary registry. Each feature area owns one namespace
@@ -100,6 +102,7 @@ export const dictionaryEn = {
   shortcuts: paletteEn.shortcuts,
   authPages: authPagesEn,
   onboarding: onboardingEn,
+  onboardingAdmin: onboardingAdminEn,
 }
 
 export const dictionaryEs: typeof dictionaryEn = {
@@ -134,4 +137,5 @@ export const dictionaryEs: typeof dictionaryEn = {
   shortcuts: paletteEs.shortcuts,
   authPages: authPagesEs,
   onboarding: onboardingEs,
+  onboardingAdmin: onboardingAdminEs,
 }

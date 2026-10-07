@@ -25,7 +25,7 @@ export const commonEs: typeof commonEn = {
     'lost-items': 'Objetos Perdidos',
     'incoming-shipments': 'Envíos Entrantes',
     'laundry-weigh-ins': 'Pesajes de Lavandería',
-    'onboarding-queue': 'Cola de Incorporación',
+    'onboarding-queue': 'Incorporación',
     'tasks': 'Tareas',
     'issues': 'Incidencias',
     'cleaners': 'Personal de Limpieza', // REVIEW: team may prefer "Limpiadores"

@@ -26,7 +26,7 @@ export const commonEn = {
     'lost-items': 'Lost Items',
     'incoming-shipments': 'Incoming Shipments',
     'laundry-weigh-ins': 'Laundry Weigh-Ins',
-    'onboarding-queue': 'Onboarding Queue',
+    'onboarding-queue': 'Onboarding',
     'tasks': 'Tasks',
     'issues': 'Issues',
     'cleaners': 'Cleaners',
