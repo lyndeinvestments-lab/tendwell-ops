@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
+import type { Json } from '@shared/database.types'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { useAuth } from '@/lib/auth'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -395,7 +396,13 @@ function PropertyCard({ property }: { property: OwnerProperty }) {
         for (const c of cols) payload[c] = form[c] ?? null
       }
       if (Object.keys(payload).length === 0) return
-      const { error } = await supabase.from('properties').update(payload as any).eq('id', property.id)
+      // Owners have no direct read/write on `properties` (it holds team notes and
+      // financials). owner_update_property applies only owner-editable columns,
+      // and the guard trigger re-checks per-field permissions.
+      const { error } = await supabase.rpc('owner_update_property', {
+        p_property_id: property.id,
+        p_changes: payload as Json,
+      })
       if (error) throw error
     },
     onSuccess: () => {
@@ -1171,7 +1178,6 @@ type OwnerQuote = {
   name: string
   ce_charged: number | null
   deep_clean_3x_ce: number | null
-  estimated_deep_clean_cost: number | null
   linen_program: boolean | null
   linen_program_cost: number | null
   bedrooms: number | null
