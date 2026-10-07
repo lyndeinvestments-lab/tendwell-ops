@@ -17,6 +17,7 @@ import {
   isImagePath,
   normalizeUrlInput,
   parseBeds,
+  safeHref,
   sourceLabel,
   submissionExtras,
   submittedValue,
@@ -63,24 +64,29 @@ export function OnboardingReviewDialog({
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const isMerge = propertyId != null
+  // After a create whose "mark applied" write failed, the property exists but the
+  // submission is still pending. Switch this dialog to apply-to-that-property so
+  // pressing Apply again cannot insert a second one.
+  const [retargetId, setRetargetId] = useState<number | null>(null)
+  const targetId = retargetId ?? propertyId
+  const isMerge = targetId != null
   const isReapply = isMerge && !!submission && submission.status !== 'pending'
 
   // gcTime 0: always read the property fresh when the dialog opens, so the
   // "current listing" column and the default picks never come from a cache.
   const { data: existing, isLoading: existingLoading } = useQuery({
-    queryKey: ['/onboarding-review/property', propertyId],
+    queryKey: ['/onboarding-review/property', targetId],
     enabled: isMerge && !!submission,
     gcTime: 0,
     staleTime: 0,
     queryFn: async () => {
-      const { data, error } = await supabase.from('properties').select('*').eq('id', propertyId!).single()
+      const { data, error } = await supabase.from('properties').select('*').eq('id', targetId!).single()
       if (error) throw error
       return data as any
     },
   })
 
-  const { data: existingContact, isLoading: existingContactLoading } = useQuery({
+  const { data: existingContact, isLoading: existingContactLoading, isError: existingContactError } = useQuery({
     queryKey: ['/onboarding-review/contact', existing?.contact_id],
     enabled: isMerge && !!existing?.contact_id,
     gcTime: 0,
@@ -112,6 +118,8 @@ export function OnboardingReviewDialog({
   const [contactEmail, setContactEmail] = useState('')
   const [contactPhone, setContactPhone] = useState('')
   const [contactInit, setContactInit] = useState<string | null>(null)
+
+  useEffect(() => { setRetargetId(null) }, [submission?.id])
 
   const noteIcalUrls = useMemo(() => extractIcalUrls(submission?.notes), [submission?.notes])
   const photos = submission?.photos ?? []
@@ -150,18 +158,26 @@ export function OnboardingReviewDialog({
     if (matchLoading) return
     if (isMerge && (!existing || (existing.contact_id && existingContactLoading))) return
     if (isMerge && existing.contact_id) {
-      setContactKind('update')
-      setContactName(existingContact?.full_name ?? submission.client_name ?? '')
-      setContactEmail(existingContact?.email ?? submission.contact_email ?? '')
-      setContactPhone(existingContact?.phone ?? submission.contact_phone ?? '')
+      if (existingContactError || !existingContact) {
+        // Could not read the linked client. Never fall back to overwriting it with
+        // the submitter's details: leave it alone and say so.
+        setContactKind('none')
+      } else {
+        setContactKind('update')
+        setContactName(existingContact.full_name ?? submission.client_name ?? '')
+        setContactEmail(existingContact.email ?? submission.contact_email ?? '')
+        setContactPhone(existingContact.phone ?? submission.contact_phone ?? '')
+      }
     } else {
-      setContactKind(contactMatch ? 'use' : submission.client_name?.trim() ? 'create' : 'none')
+      // Only the owner's own linked client is pre-selected. An email match is
+      // shown as a suggestion the staff member has to choose.
+      setContactKind(contactMatch?.how === 'owner' ? 'use' : submission.client_name?.trim() ? 'create' : 'none')
       setContactName(submission.client_name ?? '')
       setContactEmail(submission.contact_email ?? '')
       setContactPhone(submission.contact_phone ?? '')
     }
     setContactInit(submission.id)
-  }, [submission?.id, existing?.id, existingContact?.id, existingContactLoading, matchLoading, contactMatch?.id, contactInit]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [submission?.id, existing?.id, existingContact?.id, existingContactLoading, existingContactError, matchLoading, contactMatch?.id, contactInit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changedBy = user?.label || (user as any)?.google_email || 'admin'
 
@@ -187,12 +203,12 @@ export function OnboardingReviewDialog({
       let contact: ContactAction = { kind: 'none' }
       if (contactKind === 'use' && contactMatch) contact = { kind: 'use', contactId: contactMatch.id }
       else if (contactKind === 'create' && contactName.trim()) contact = { kind: 'create', name: contactName, email: contactEmail, phone: contactPhone }
-      else if (contactKind === 'update' && existing?.contact_id && contactName.trim()) {
+      else if (contactKind === 'update' && existing?.contact_id && existingContact && contactName.trim()) {
         contact = { kind: 'update', contactId: existing.contact_id, name: contactName, email: contactEmail, phone: contactPhone }
       }
       return applySubmission({
         submission: submission!,
-        propertyId,
+        propertyId: targetId,
         existing: isMerge ? existing : null,
         values: createVals,
         choices,
@@ -233,12 +249,28 @@ export function OnboardingReviewDialog({
     onError: (e: any) => {
       if (e?.message === 'edit_blocked') return
       if (e instanceof ApplyError) {
-        // The property exists; only the "applied" marker failed. Say exactly what to do.
+        if (e.code === 'already_applied') {
+          // Someone else got there first. Refresh and close; do not write again.
+          toast({
+            title: to('toasts.saveFailed'),
+            description: ta(e.propertyId == null ? 'toasts.alreadyApplied' : 'toasts.alreadyAppliedAfterWrite', { id: e.propertyId ?? '' }),
+            variant: 'destructive',
+          })
+          refreshAfterWrite()
+          onDone()
+          return
+        }
+        // The property exists; only the "applied" marker failed. Retarget this
+        // dialog at it so Apply can no longer create a second property.
         toast({
           title: to('toasts.saveFailed'),
-          description: ta(e.mode === 'create' ? 'toasts.markFailedCreate' : 'toasts.markFailedMerge', { id: e.propertyId, error: e.detail }),
+          description: ta(e.mode === 'create' ? 'toasts.markFailedCreate' : 'toasts.markFailedMerge', { id: e.propertyId ?? '', error: e.detail }),
           variant: 'destructive',
         })
+        if (e.mode === 'create' && e.propertyId != null) {
+          setRetargetId(e.propertyId)
+          setContactInit(null)
+        }
         refreshAfterWrite()
         return
       }
@@ -286,7 +318,7 @@ export function OnboardingReviewDialog({
                 {' · '}{ta('dialog.submittedOn', { date: new Date(submission.submitted_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') })}
               </p>
               {submission.owner_id && <p className="text-muted-foreground">{ta('dialog.ownerLogin', { name: ownerName ?? '—' })}</p>}
-              {isMerge && <p className="text-muted-foreground">{ta('dialog.applyingTo', { name: targetName, id: propertyId! })}</p>}
+              {isMerge && <p className="text-muted-foreground">{ta('dialog.applyingTo', { name: targetName, id: targetId! })}</p>}
             </div>
 
             {/* Calendar links the client buried in the notes */}
@@ -397,7 +429,7 @@ export function OnboardingReviewDialog({
               <RadioGroup value={contactKind} onValueChange={(v) => setContactKind(v as ContactKind)} className="gap-1.5">
                 {isMerge && existing?.contact_id ? (
                   <>
-                    <ContactOption value="update" label={to('review.contact.updateLinked')} />
+                    {existingContact && !existingContactError && <ContactOption value="update" label={to('review.contact.updateLinked')} />}
                     <ContactOption value="none" label={ta('contact.leaveLinked')} />
                   </>
                 ) : (
@@ -405,7 +437,7 @@ export function OnboardingReviewDialog({
                     {contactMatch && (
                       <ContactOption
                         value="use"
-                        label={ta('contact.useExisting', { name: contactMatch.full_name || contactMatch.email || '' })}
+                        label={ta(contactMatch.how === 'owner' ? 'contact.useExisting' : 'contact.useSuggested', { name: contactMatch.full_name || contactMatch.email || '' })}
                         hint={[matchHow, contactMatch.email, contactMatch.phone].filter(Boolean).join(' · ')}
                       />
                     )}
@@ -414,6 +446,12 @@ export function OnboardingReviewDialog({
                   </>
                 )}
               </RadioGroup>
+              {contactMatch?.how === 'email' && contactKind === 'create' && (
+                <p className="text-xs text-warning" data-testid="contact-duplicate-warning">{ta('contact.duplicateWarning')}</p>
+              )}
+              {isMerge && existing?.contact_id && !existingContactLoading && (existingContactError || !existingContact) && (
+                <p className="text-xs text-destructive" data-testid="contact-load-failed">{ta('contact.loadFailed')}</p>
+              )}
               {(contactKind === 'create' || contactKind === 'update') && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
                   <div>
@@ -454,7 +492,7 @@ export function OnboardingReviewDialog({
                   {photos.slice(0, 8).map(p => {
                     const url = onboardingPhotoUrl(p)
                     return (
-                      <a key={p} href={url} target="_blank" rel="noreferrer" className="block w-14 h-14 rounded border border-border overflow-hidden bg-muted/30 hover:opacity-80">
+                      <a key={p} href={safeHref(url) ?? undefined} target="_blank" rel="noopener noreferrer" className="block w-14 h-14 rounded border border-border overflow-hidden bg-muted/30 hover:opacity-80">
                         {isImagePath(p) ? <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" /> : (
                           <div className="w-full h-full flex items-center justify-center text-muted-foreground"><ExternalLink className="w-4 h-4" /></div>
                         )}

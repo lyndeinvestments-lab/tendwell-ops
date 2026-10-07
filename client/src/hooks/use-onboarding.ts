@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import {
   ONBOARDING_STAGE_ID,
   daysSince,
+  isSimpleEmail,
   normalizeEmail,
   onboardingReadiness,
   sortReadiness,
@@ -144,8 +145,11 @@ export function useSubmissionContactMatch(submission: OnboardingSubmission | nul
           if (c) return { ...(c as any), how: 'owner' as const }
         }
       }
+      // Only a plain name@host.tld goes into the pattern match (no wildcards, no
+      // filter syntax), then the match is exact and case-insensitive. The result
+      // is a suggestion: the dialog never links it without the staff member choosing it.
       const email = normalizeEmail(sub.contact_email)
-      if (!email) return null
+      if (!email || !isSimpleEmail(email)) return null
       const { data } = await supabase
         .from('contacts')
         .select('id,full_name,email,phone')
@@ -195,7 +199,9 @@ export function useOnboardingProperties() {
       const [ownerLinks, subs, apiSubs, transitions] = await Promise.all([
         supabase.from('owner_properties').select('owner_id,property_id').in('property_id', ids),
         supabase.from('onboarding_submissions').select('id,property_id,status,source,submitted_at').in('property_id', ids),
-        supabase.from('onboarding_submissions').select('property_id').in('property_id', ids).not('api_key', 'is', null),
+        // Only an APPLIED submission's API key counts toward "calendar": a pending or
+        // rejected form has not been accepted onto the property.
+        supabase.from('onboarding_submissions').select('property_id').in('property_id', ids).in('status', ['converted', 'approved']).not('api_key', 'is', null),
         supabase
           .from('stage_transitions')
           .select('property_id,created_at')

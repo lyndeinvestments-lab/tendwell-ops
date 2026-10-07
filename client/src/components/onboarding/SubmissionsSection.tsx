@@ -9,7 +9,7 @@ import { SUBMISSIONS_KEY, useSubmissionCounts, useSubmissionLookups, type Linked
 import { OnboardingReviewDialog } from '@/components/OnboardingReviewDialog'
 import { Section, KV, ExtrasList, IcalLinks } from '@/components/onboarding/shared'
 import { onboardingPhotoUrl } from '@/lib/onboarding-apply'
-import { extractIcalUrls, isImagePath, sourceLabel, statusLabel, type OnboardingSubmission } from '@/lib/onboarding'
+import { extractIcalUrls, isImagePath, safeHref, sourceLabel, statusLabel, type OnboardingSubmission } from '@/lib/onboarding'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -93,6 +93,8 @@ export function SubmissionsSection({
     onSuccess: () => {
       toast({ title: to('toasts.submissionRejected') })
       qc.invalidateQueries({ queryKey: [SUBMISSIONS_KEY] })
+      // A rejected intake form no longer blocks "Ready to activate".
+      qc.invalidateQueries({ queryKey: ['/supabase/onboarding-readiness'] })
       setRejectFor(null)
     },
     onError: (e: any) => {
@@ -278,7 +280,12 @@ export function SubmissionRow({
             <div className="sm:col-span-2">
               <p className="text-2xs text-muted-foreground">{to('queue.kv.icalUrl')}</p>
               {r.ical_url ? (
-                <a href={r.ical_url} target="_blank" rel="noreferrer" className="text-sm text-primary hover:underline break-all">{r.ical_url}</a>
+                // Submitted text is untrusted: only a real http(s) link becomes an anchor.
+                safeHref(r.ical_url) ? (
+                  <a href={safeHref(r.ical_url)!} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline break-all">{r.ical_url}</a>
+                ) : (
+                  <p className="text-sm break-all" data-testid="ical-not-a-link">{r.ical_url}</p>
+                )
               ) : (
                 <p className="text-sm">—</p>
               )}
@@ -296,7 +303,7 @@ export function SubmissionRow({
                 {r.photos.map(p => {
                   const url = onboardingPhotoUrl(p)
                   return (
-                    <a key={p} href={url} target="_blank" rel="noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30 hover:opacity-80 transition-opacity">
+                    <a key={p} href={safeHref(url) ?? undefined} target="_blank" rel="noopener noreferrer" className="block aspect-square rounded-md border border-border overflow-hidden bg-muted/30 hover:opacity-80 transition-opacity">
                       {isImagePath(p) ? (
                         <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
                       ) : (

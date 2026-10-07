@@ -52,7 +52,7 @@ export interface ApplyArgs {
   staff: { id: number | null; label: string | null }
 }
 
-export type ApplyWarningCode = 'stage_history' | 'note' | 'photos' | 'owner_link'
+export type ApplyWarningCode = 'stage_history' | 'note' | 'legacy_note' | 'photos' | 'owner_link'
 export interface ApplyWarning {
   code: ApplyWarningCode
   detail?: string
@@ -69,9 +69,18 @@ export interface ApplyResult {
   warnings: ApplyWarning[]
 }
 
-/** The property was written but the submission could not be marked applied; retrying a create would duplicate it. */
+/**
+ * `mark_failed`: the property was written but the submission could not be marked applied, so a
+ * retry of a *create* would duplicate it. `already_applied`: somebody else applied or rejected
+ * this submission first (`propertyId` is null when we noticed before writing anything).
+ */
 export class ApplyError extends Error {
-  constructor(public code: 'mark_failed', public propertyId: number, public detail: string, public mode: 'create' | 'merge') {
+  constructor(
+    public code: 'mark_failed' | 'already_applied',
+    public propertyId: number | null,
+    public detail: string,
+    public mode: 'create' | 'merge',
+  ) {
     super(detail)
     this.name = 'ApplyError'
   }
@@ -89,8 +98,13 @@ async function createContact(c: { name: string; email: string; phone: string }):
   return data.id as string
 }
 
+/**
+ * Claims the submission. The `status = 'pending'` filter is the lock: if another
+ * staff member applied or rejected it first, zero rows update and we say so
+ * instead of converting it twice.
+ */
 async function markApplied(sub: OnboardingSubmission, propertyId: number, changedBy: string, mode: 'create' | 'merge') {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('onboarding_submissions')
     .update({
       status: 'converted',
@@ -99,7 +113,24 @@ async function markApplied(sub: OnboardingSubmission, propertyId: number, change
       property_id: propertyId,
     })
     .eq('id', sub.id)
+    .eq('status', 'pending')
+    .select('id')
   if (error) throw new ApplyError('mark_failed', propertyId, error.message, mode)
+  if (!data || data.length === 0) throw new ApplyError('already_applied', propertyId, '', mode)
+}
+
+/** Fresh read before any write, so a stale list row cannot create a second property for the same submission. */
+async function assertStillPending(sub: OnboardingSubmission, mode: 'create' | 'merge') {
+  if (sub.status !== 'pending') return // re-applying an applied row: nothing to claim
+  const { data, error } = await supabase.from('onboarding_submissions').select('status').eq('id', sub.id).single()
+  if (error) throw error
+  if ((data as { status?: string } | null)?.status !== 'pending') throw new ApplyError('already_applied', null, '', mode)
+}
+
+/** Removes a client row this apply just inserted when the write it was for failed. Best effort. */
+async function discardContact(id: string | null) {
+  if (!id) return
+  try { await supabase.from('contacts').delete().eq('id', id) } catch { /* nothing more to do */ }
 }
 
 export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
@@ -111,15 +142,22 @@ export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
   let filled = 0
   let legacyNotesBlank = true
 
+  await assertStillPending(sub, isMerge ? 'merge' : 'create')
+
   if (!isMerge) {
     // ── Create ────────────────────────────────────────────────────────────
     let contactId: string | null = null
+    let createdContactId: string | null = null
     if (a.contact.kind === 'use') contactId = a.contact.contactId
-    else if (a.contact.kind === 'create') contactId = await createContact(a.contact)
+    else if (a.contact.kind === 'create') contactId = createdContactId = await createContact(a.contact)
 
     const payload = buildCreatePayload({ submission: sub, values: a.values, beds: a.beds, hasAutoCode: a.hasAutoCode, contactId })
     const { data: np, error } = await supabase.from('properties').insert(payload as any).select('id,name').single()
-    if (error) throw error
+    if (error) {
+      // No property was made, so do not leave the client row we just inserted behind.
+      await discardContact(createdContactId)
+      throw error
+    }
     propertyId = Number(np.id)
     propertyName = np.name ?? null
     await markApplied(sub, propertyId, a.changedBy, 'create')
@@ -155,6 +193,7 @@ export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
     const existing = a.existing!
     propertyName = existing.name ?? null
     legacyNotesBlank = isBlank(existing.notes)
+    let createdContactId: string | null = null
     const patch = buildMergePatch({
       submission: sub,
       existing,
@@ -173,12 +212,15 @@ export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
     } else if (a.contact.kind === 'use') {
       patch.contact_id = a.contact.contactId
     } else if (a.contact.kind === 'create') {
-      patch.contact_id = await createContact(a.contact)
+      patch.contact_id = createdContactId = await createContact(a.contact)
     }
 
     if (Object.keys(patch).length > 0) {
       const { error } = await supabase.from('properties').update(patch as any).eq('id', propertyId)
-      if (error) throw error
+      if (error) {
+        await discardContact(createdContactId)
+        throw error
+      }
       for (const [field, newValue] of Object.entries(patch)) {
         await logPropertyEdit(propertyId, field, existing[field] ?? null, newValue ?? null, propertyName, `${a.changedBy} (onboarding merge)`)
       }
@@ -211,7 +253,10 @@ export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
         noteAdded = true
         // Keep the legacy list-preview column in step, like the Notes tab does,
         // but never overwrite text staff already put there.
-        if (legacyNotesBlank) await supabase.from('properties').update({ notes: note.content }).eq('id', propertyId)
+        if (legacyNotesBlank) {
+          const { error: legacyErr } = await supabase.from('properties').update({ notes: note.content }).eq('id', propertyId)
+          if (legacyErr) warnings.push({ code: 'legacy_note', detail: legacyErr.message })
+        }
       }
     }
   } catch (e) {
@@ -239,14 +284,19 @@ export async function applySubmission(a: ApplyArgs): Promise<ApplyResult> {
   }
 
   // The owner who filed this form gets portal access to the property their
-  // submission just created. owner_properties writes are admin-only, so this
-  // goes through the narrow RPC; an older deployment without it falls back to a
-  // direct insert (works for admins, reported as a warning for anyone else).
+  // submission created. owner_properties writes are admin-only, so this goes
+  // through the narrow RPC. It is idempotent and guarded (the submission must be
+  // an owner-portal one, applied within the last 30 days, onto an Onboarding
+  // property nobody owns yet; or the owner is already linked), so it runs on
+  // every apply, Re-apply included: that is what repairs a link that failed the
+  // first time. A deployment without the RPC falls back to a direct insert
+  // (admins only); any other failure is reported as a warning.
   let ownerLinked = false
-  if (!isMerge && sub.owner_id) {
+  if (sub.owner_id) {
     try {
       const { data, error } = await supabase.rpc('onboarding_link_owner_property' as never, { p_submission_id: sub.id } as never)
       if (error) {
+        if (error.code !== 'PGRST202' && error.code !== '42883') throw error
         const { error: insErr } = await supabase.from('owner_properties').insert({ owner_id: sub.owner_id, property_id: propertyId })
         if (insErr && insErr.code !== '23505') throw insErr
         ownerLinked = true

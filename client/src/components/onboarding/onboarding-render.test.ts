@@ -164,6 +164,16 @@ describe('SubmissionRow', () => {
     expect(html).not.toContain('onboardingAdmin.')
   })
 
+  it('never turns a submitted javascript: / data: value into a link (stored-XSS guard)', () => {
+    for (const evil of ['javascript:alert(document.cookie)', 'JaVaScRiPt:alert(1)', 'data:text/html;base64,PHNjcmlwdD4=']) {
+      const html = row({ ...base, ical_url: evil, notes: null })
+      expect(html).not.toMatch(/href="\s*(javascript|data):/i)
+      expect(html).toContain('data-testid="ical-not-a-link"')
+    }
+    // ...while a real link in the same slot still renders as one.
+    expect(row(base)).toContain('href="https://www.airbnb.com/calendar/ical/1.ics?s=abc"')
+  })
+
   it('makes "Apply to <property>" the primary action for an owner submission that names its property', () => {
     const html = row(
       { ...base, source: 'owner', owner_id: 'o1', property_id: 652 },
