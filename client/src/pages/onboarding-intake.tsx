@@ -13,6 +13,8 @@ import { LanguageToggle } from '@/components/LanguageToggle'
 import { useAuth } from '@/lib/auth'
 import { supabase } from '@/lib/supabase'
 import { boolToYesNo, formatWifi, numToStr, parseWifi, type YesNo } from '@/lib/onboarding-prefill'
+import { parsePropertyParam, pickInitialIntakeChoice } from '@/lib/owner-onboarding'
+import { normalizeCalendarUrl } from '@/lib/url-safety'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -106,6 +108,9 @@ export default function OnboardingIntakePage() {
 
   const [integrationKind, setIntegrationKind] = useState<IntegrationKind>('')
   const [icalUrl, setIcalUrl] = useState('')
+  // The database only accepts http(s)/webcal links. Checked before submitting so a
+  // typed non-link is an inline error on this one field instead of a failed submission.
+  const [icalInvalid, setIcalInvalid] = useState(false)
   const [apiClientId, setApiClientId] = useState('')
   const [apiKey, setApiKey] = useState('')
 
@@ -167,14 +172,14 @@ export default function OnboardingIntakePage() {
   const properties = useMemo(() => ownerProperties.data ?? [], [ownerProperties.data])
   const [choice, setChoice] = useState<PropertyChoice | null>(null)
 
-  // Default selection. The portal's entry point sits in the "Onboarding in
-  // progress" card, so when exactly one property is mid-onboarding that's
-  // overwhelmingly the one they came to fill in. With none — or several — we
-  // can't guess, so start on "a new property" and let them pick.
+  // Default selection. The portal's "Getting started" guide links here with
+  // ?property=<id>, so that wins when it is one of the owner's own properties
+  // (an id that is not theirs is ignored). Otherwise, when exactly one property
+  // is mid-onboarding that's overwhelmingly the one they came to fill in. With
+  // none — or several — we can't guess, so start on "a new property".
   useEffect(() => {
     if (!ownerMode || choice !== null || !ownerProperties.isSuccess) return
-    const onboarding = properties.filter(p => p.stage === 'Onboarding')
-    setChoice(onboarding.length === 1 ? onboarding[0]!.id : NEW_PROPERTY)
+    setChoice(pickInitialIntakeChoice(properties, parsePropertyParam(window.location.search)))
   }, [ownerMode, choice, ownerProperties.isSuccess, properties])
 
   const selected = useMemo(
@@ -283,6 +288,19 @@ export default function OnboardingIntakePage() {
     if (!address.trim()) { setError(t('intake.errors.addressRequired')); return }
     const bedTotal = BED_SIZE_KEYS.reduce((sum, k) => sum + (parseInt(bedCounts[k]) || 0), 0)
     if (bedTotal === 0) { setError(t('intake.errors.bedCountRequired')); return }
+    // Optional calendar link: trimmed, webcal:// rewritten to https://. Anything that is
+    // not a link stops the submit here with an inline error; every other answer stays as typed.
+    let icalValue: string | null = null
+    if (integrationKind === 'ical') {
+      const normalized = normalizeCalendarUrl(icalUrl)
+      if (normalized === 'invalid') {
+        setIcalInvalid(true)
+        setError(t('intake.booking.icalUrlInvalid'))
+        document.getElementById('input-ical-url')?.focus()
+        return
+      }
+      icalValue = normalized
+    }
 
     setSaving(true)
     // Free text stored in `bed_sizes` is consumed by the staff-only review
@@ -335,7 +353,7 @@ export default function OnboardingIntakePage() {
       filter_size: filterSize.trim() || null,
       check_in_time: checkInTime.trim() || null,
       check_out_time: checkOutTime.trim() || null,
-      ical_url: integrationKind === 'ical' ? icalUrl.trim() || null : null,
+      ical_url: icalValue,
       api_client_id: integrationKind === 'api_key' ? apiClientId.trim() || null : null,
       api_key: integrationKind === 'api_key' ? apiKey.trim() || null : null,
       notes: notes.trim() || null,
@@ -377,6 +395,16 @@ export default function OnboardingIntakePage() {
             <p className="text-sm text-muted-foreground">
               {t('intake.success.body')}
             </p>
+            {/* An owner submitted from inside their portal, so the success screen must lead
+                back to it. A full navigation (not a router link) reloads the portal, whose
+                "Getting started" guide then shows the submission. */}
+            {ownerMode && (
+              <Button asChild className="w-full sm:w-auto" data-testid="link-back-to-portal-success">
+                <a href="/">
+                  <ArrowLeft className="w-4 h-4" /> {t('intake.success.backToPortal')}
+                </a>
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -680,7 +708,21 @@ export default function OnboardingIntakePage() {
             {integrationKind === 'ical' && (
               <div>
                 <label className={labelCls}>{t('intake.booking.icalUrlLabel')}</label>
-                <Input value={icalUrl} onChange={e => setIcalUrl(e.target.value)} className={inputCls} placeholder={t('intake.booking.icalUrlPlaceholder')} data-testid="input-ical-url" />
+                <Input
+                  id="input-ical-url"
+                  value={icalUrl}
+                  onChange={e => { setIcalUrl(e.target.value); setIcalInvalid(false) }}
+                  className={inputCls}
+                  placeholder={t('intake.booking.icalUrlPlaceholder')}
+                  aria-invalid={icalInvalid || undefined}
+                  aria-describedby={icalInvalid ? 'ical-url-error' : undefined}
+                  data-testid="input-ical-url"
+                />
+                {icalInvalid && (
+                  <p id="ical-url-error" role="alert" className="text-xs text-destructive mt-1" data-testid="text-ical-url-error">
+                    {t('intake.booking.icalUrlInvalid')}
+                  </p>
+                )}
               </div>
             )}
             {integrationKind === 'api_key' && (

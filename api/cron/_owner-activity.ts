@@ -125,6 +125,50 @@ export function ownerName(changedBy: string | null | undefined): string | null {
   return name ? name : null
 }
 
+/**
+ * One readable line for one change, as it appears in the email body.
+ * Field edits carry both sides, which is the whole point of the email: you
+ * should be able to tell whether to act without opening the app.
+ */
+export function describeChange(c: { field: string; from: string | null; to: string | null; action: string }): string {
+  const label = prettyField(c.field)
+  switch (c.action) {
+    case 'note_added':
+      return `Added a note: ${clip(c.to ?? '', 200)}`
+    case 'quote_response':
+      return `${c.to === 'approved' ? 'Approved' : 'Declined'} their quote`
+    case 'quote_requested':
+      // new_value carries the requested address; the record heading carries the property.
+      return c.to ? `Requested a quote for ${clip(c.to, 160)}` : 'Requested a quote for another property'
+    case 'referral_submitted':
+      return `Referred someone: ${clip(c.to ?? '', 160)}`
+    case 'testimonial_submitted':
+      return `Left a testimonial: ${clip(c.to ?? '', 160)}`
+    case 'feedback_submitted':
+      return `Left feedback (${label}): ${clip(c.to ?? '', 160)}`
+    case 'photo_uploaded':
+      return 'Uploaded a photo'
+    default:
+      return c.from
+        ? `${label}: ${clip(c.from, 80)} → ${clip(c.to ?? '(blank)', 80)}`
+        : `${label}: ${clip(c.to ?? '(blank)', 80)}`
+  }
+}
+
+function prettyField(f: string): string {
+  return f
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, m => m.toUpperCase())
+    .replace(/\bWifi\b/i, 'Wi-Fi')
+    .replace(/\bIcal\b/i, 'iCal')
+    .replace(/\bAc\b/, 'A/C')
+}
+
+function clip(s: string, n: number): string {
+  const t = s.trim()
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t
+}
+
 /** What the subject line calls the thing they touched. */
 export function groupSubjectTarget(g: OwnerActivityGroup): string {
   const named = g.records.filter(r => r.entityName)

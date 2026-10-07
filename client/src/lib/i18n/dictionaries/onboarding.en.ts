@@ -15,6 +15,7 @@ export const onboardingEn = {
     success: {
       title: 'Submitted',
       body: "Thank you! We've received your property information. Our team will review it and follow up shortly.",
+      backToPortal: 'Back to your portal',
     },
     sections: {
       contactProperty: 'Contact & Property',
@@ -90,6 +91,7 @@ export const onboardingEn = {
       none: 'None / send later',
       icalUrlLabel: 'iCal URL',
       icalUrlPlaceholder: 'https://...',
+      icalUrlInvalid: 'Paste the full calendar link, starting with https://',
       clientIdLabel: 'Client ID / public key (optional)',
       clientIdHint: 'For services that provide a client ID or public key, paste it here.',
       apiSecretLabel: 'API secret / client secret / token',

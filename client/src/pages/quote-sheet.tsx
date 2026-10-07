@@ -19,6 +19,7 @@ import { usePipelineStages } from '@/hooks/use-pipeline-stages'
 import { useContacts, CONTACTS_QUERY_KEY } from '@/hooks/use-contacts'
 import { Plus, ArrowRight, Loader2, Copy, Printer, FileSpreadsheet, Search, X, ArrowUpDown, ArrowUp, ArrowDown, Download, FileText, TrendingUp, Clock, Send } from 'lucide-react'
 import { EmptyState } from '@/components/EmptyState'
+import { StatusBadge } from '@/components/StatusBadge'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -579,6 +580,12 @@ export default function QuoteSheetPage() {
     },
   })
 
+  // For the "Owner request" badge: who asked for a quote (properties.requested_by_owner_id).
+  const ownerNameById = useMemo(
+    () => new Map((portalOwners ?? []).map(o => [o.id, (o.name || o.email) as string])),
+    [portalOwners],
+  )
+
   const { mutate: sendQuoteToOwner, isPending: sendPending } = useGuardedMutation('quote-sheet', {
     mutationFn: async () => {
       if (!sendingQuote || !sendOwnerId) throw new Error('Select an owner')
@@ -905,6 +912,17 @@ export default function QuoteSheetPage() {
                   <tr key={p.id} data-testid={`row-quote-${p.id}`} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="py-2 px-3 font-medium text-xs sticky left-0 z-10 bg-background">
                       <button onClick={() => openPropertyModal(p.id)} className="text-primary hover:underline text-left">{p.name}</button>
+                      {p.requested_by_owner_id && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5 font-normal" data-testid={`owner-request-${p.id}`}>
+                          <StatusBadge tone="info">{t('quoteSheet.ownerRequest.badge')}</StatusBadge>
+                          <span className="text-2xs text-muted-foreground">
+                            {t('quoteSheet.ownerRequest.requestedBy', {
+                              owner: ownerNameById.get(p.requested_by_owner_id) ?? t('quoteSheet.ownerRequest.anOwner'),
+                              date: p.quote_requested_at ? new Date(p.quote_requested_at).toLocaleDateString() : '',
+                            })}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 px-3 text-xs text-muted-foreground truncate max-w-[14rem]" title={p.contact_id ? contactById.get(String(p.contact_id)) ?? '' : ''}>
                       {p.contact_id ? contactById.get(String(p.contact_id)) ?? '—' : '—'}
@@ -1017,7 +1035,7 @@ export default function QuoteSheetPage() {
                               size="sm"
                               variant="ghost"
                               className="h-6 text-xs gap-1 hover:text-primary px-2"
-                              onClick={(e) => { e.stopPropagation(); setSendingQuote(p); setSendOwnerId('') }}
+                              onClick={(e) => { e.stopPropagation(); setSendingQuote(p); setSendOwnerId(p.requested_by_owner_id ?? '') }}
                               data-testid={`button-send-owner-${p.id}`}
                               title={p.quote_sent_at ? t('quoteSheet.send.titleSent', { response: sendResponseLabel(p.quote_owner_response, true) }) : t('quoteSheet.send.titleDefault')}
                             >

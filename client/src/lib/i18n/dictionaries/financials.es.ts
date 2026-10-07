@@ -647,6 +647,11 @@ export const financialsEs: typeof financialsEn = {
       avgSuffix: '(prom.)',
       avgTitle: '% de ganancia promedio',
     },
+    ownerRequest: {
+      badge: 'Solicitud del propietario',
+      requestedBy: 'Solicitado por {{owner}} el {{date}}',
+      anOwner: 'un propietario',
+    },
     sendDialog: {
       title: 'Enviar cotización al propietario',
       bodyPrefix: 'Vincula un propietario a',

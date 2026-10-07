@@ -4156,8 +4156,10 @@ export type Database = {
           profit_percentage: number | null
           queen_beds: number | null
           quote_owner_response: string | null
+          quote_requested_at: string | null
           quote_responded_at: string | null
           quote_sent_at: string | null
+          requested_by_owner_id: string | null
           square_footage: number | null
           stage_id: number | null
           suggested_pay: number | null
@@ -4245,8 +4247,10 @@ export type Database = {
           profit_percentage?: number | null
           queen_beds?: number | null
           quote_owner_response?: string | null
+          quote_requested_at?: string | null
           quote_responded_at?: string | null
           quote_sent_at?: string | null
+          requested_by_owner_id?: string | null
           square_footage?: number | null
           stage_id?: number | null
           suggested_pay?: number | null
@@ -4334,8 +4338,10 @@ export type Database = {
           profit_percentage?: number | null
           queen_beds?: number | null
           quote_owner_response?: string | null
+          quote_requested_at?: string | null
           quote_responded_at?: string | null
           quote_sent_at?: string | null
+          requested_by_owner_id?: string | null
           square_footage?: number | null
           stage_id?: number | null
           suggested_pay?: number | null
@@ -4354,6 +4360,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "properties_requested_by_owner_id_fkey"
+            columns: ["requested_by_owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
             referencedColumns: ["id"]
           },
           {
@@ -6569,6 +6582,14 @@ export type Database = {
       current_user_role: { Args: never; Returns: string }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
       get_owner_agreement: { Args: never; Returns: Json[] }
+      get_owner_onboarding_status: {
+        Args: never
+        Returns: {
+          property_id: number
+          status: string
+          submitted_at: string
+        }[]
+      }
       grant_org_properties_to_owner: {
         Args: { p_organization_id: string; p_owner_id: string }
         Returns: number
@@ -6633,6 +6654,7 @@ export type Database = {
         Args: { p_owner_id: string; p_property_id: number }
         Returns: Json
       }
+      owner_request_quote: { Args: { p: Json }; Returns: Json }
       owner_respond_to_quote: {
         Args: { p_property_id: number; p_response: string }
         Returns: undefined
