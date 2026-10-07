@@ -194,11 +194,13 @@ export default function CleanersPage() {
       if (error) throw error
       // Create app_users entry so they can sign in immediately
       if (newForm.email.trim()) {
-        await supabase.rpc('add_cleaner_app_user', {
+        const { error: loginError } = await supabase.rpc('add_cleaner_app_user', {
           p_email: newForm.email.trim(),
           p_name: newForm.full_name.trim(),
           p_role: newForm.app_role,
         })
+        // The cleaner row is saved either way; say so instead of claiming the login exists.
+        if (loginError) throw new Error(`Cleaner saved, but their sign-in could not be created: ${loginError.message}`)
       }
     },
     onSuccess: () => {
@@ -214,7 +216,11 @@ export default function CleanersPage() {
       setAddOpen(false)
       setNewForm({ full_name: '', phone: '', email: '', pay_rate: '', notes: '', app_role: 'cleaning' })
     },
-    onError: (error: any) => toast({ title: t('toasts.addCleanerFailed'), description: error?.message, variant: 'destructive' }),
+    onError: (error: any) => {
+      // The cleaner row may have been saved before the sign-in step failed.
+      qc.invalidateQueries({ queryKey: CLEANERS_QUERY_KEY })
+      toast({ title: t('toasts.addCleanerFailed'), description: error?.message, variant: 'destructive' })
+    },
   })
 
   const { mutate: renameCleaner } = useGuardedMutation('cleaners', {

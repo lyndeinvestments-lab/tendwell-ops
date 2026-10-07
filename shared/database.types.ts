@@ -6593,7 +6593,6 @@ export type Database = {
           bedrooms: number
           ce_charged: number
           deep_clean_3x_ce: number
-          estimated_deep_clean_cost: number
           full_baths: number
           half_baths: number
           id: number
@@ -6623,6 +6622,7 @@ export type Database = {
       get_property_names_for_weigh_in: { Args: never; Returns: string[] }
       is_current_user_admin: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
+      is_staff_or_server: { Args: never; Returns: boolean }
       owner_add_property_note: {
         Args: { p_content: string; p_property_id: number }
         Returns: Json
@@ -6635,6 +6635,10 @@ export type Database = {
       }
       owner_respond_to_quote: {
         Args: { p_property_id: number; p_response: string }
+        Returns: undefined
+      }
+      owner_update_property: {
+        Args: { p_changes: Json; p_property_id: number }
         Returns: undefined
       }
       owner_update_self_contact: {
