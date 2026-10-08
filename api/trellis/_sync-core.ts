@@ -339,6 +339,24 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
       `Pulling Workspace B tasks… (member ${membersDone}/${rosterMap.size})`)
     await checkCancel()
   }
+  // Completed work must survive in the snapshot: invoicing reconciles every
+  // vendor clean against a COMPLETED task (Haven's rule, 2026-10-06). The
+  // assignee queries above miss a task once it is completed by a crew member
+  // outside the Tendwell roster or reassigned at completion, and the prune
+  // below then deleted it — on invoice 1096 that hid real completed cleans
+  // (Kelly Armsworth 511 9/27 + 10/4, Ramesh Kumar 772 9/30, Lewis Anderson
+  // 2691 9/30). Nightly full sync: also pull every COMPLETED Workspace B task
+  // from the last 30 days. Best-effort — never fail the sync over it.
+  if (!opts.tasksOnly) {
+    try {
+      const doneFilter = { status: 'COMPLETED', scheduled_date: { gte: windowStart, lte: isoOffset(0) } }
+      for (const t of await queryAll(B, 'tasks', TASK_SELECT, doneFilter, 50)) {
+        if (t.id && !bTasks.has(t.id)) bTasks.set(t.id, t)
+      }
+    } catch (e) {
+      await emit('tasks_b', Math.round(processed), estimatedTotal, `Completed-task backfill skipped: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+    }
+  }
   await upsert(supabase, 'trellis_task_snapshot', [...bTasks.values()].map(t => taskRow(t, 'B')), 'trellis_task_id')
   processed = Math.round(processed)
   estimatedTotal = processed + 10
@@ -348,7 +366,10 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
   // ── Prune stale B tasks ──────────────────────────────────────────────────
   await emit('pruning', processed, estimatedTotal, 'Pruning stale Workspace B tasks…')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Never prune a COMPLETED task: it is the record that a clean happened, and
+  // the hourly tasks-only sync doesn't re-fetch the nightly completed backfill.
   await (supabase as any).from('trellis_task_snapshot').delete().eq('workspace', 'B').lt('synced_at', runStartIso)
+    .neq('status', 'COMPLETED')
 
   // Auto-activate pre-Active properties that now have a turn/departure clean
   // scheduled. Best-effort: never fail the sync over it.

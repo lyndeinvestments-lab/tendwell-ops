@@ -18,6 +18,10 @@ export interface ExportRun {
   invoiceDate: string | null // yyyy-mm-dd
   dueDate: string | null // yyyy-mm-dd (Due On Receipt → same as invoice date)
   qboInvoiceNo: number | null // OUR sequential AR invoice number
+  // One AR invoice number per service month ("2026-09" → 1096). Haven books
+  // every vendor by month and rejects an invoice mixing two (Jo, 2026-10-06).
+  // Absent → every row uses qboInvoiceNo (single-month runs, old runs).
+  qboInvoiceNos?: Readonly<Record<string, number>> | null
   periodEnd: string | null
 }
 
@@ -38,6 +42,58 @@ export interface ExportLine {
   reviewNote?: string | null // human review note — doubles as the stated reason
   reviewStatus: string
   splitGroup?: number | null // links base+extra rows split from one vendor line
+  flags?: string[] | null
+}
+
+// ─── Month split ──────────────────────────────────────────────────────────────
+
+export function serviceMonth(l: Pick<ExportLine, 'serviceDate'>, fallback: string | null): string {
+  return (l.serviceDate ?? fallback ?? '').slice(0, 7)
+}
+
+/** Last calendar day of a yyyy-mm month. */
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m, 0))
+  return d.toISOString().slice(0, 10)
+}
+
+/** Invoice date for one month's slice of a run: the run's invoice date, but
+ *  never later than the end of the service month — September's cleans are
+ *  dated in September so they land in September's books (cf. Inv 1090, which
+ *  Haven had to move into August by hand). */
+export function invoiceDateForMonth(runInvoiceDate: string | null, month: string): string | null {
+  if (!month) return runInvoiceDate
+  const end = monthEnd(month)
+  if (!runInvoiceDate) return end
+  return runInvoiceDate < end ? runInvoiceDate : end
+}
+
+/** The distinct service months among a set of lines, ascending. */
+export function monthsOf(lines: ExportLine[], fallback: string | null): string[] {
+  return [...new Set(lines.map(l => serviceMonth(l, fallback)).filter(Boolean))].sort()
+}
+
+function invoiceNoFor(run: ExportRun, month: string): string {
+  const n = run.qboInvoiceNos?.[month] ?? run.qboInvoiceNo
+  return n != null ? String(n) : ''
+}
+
+/** Client-facing description: the property, plus what makes this line
+ *  different from a plain clean — an owner stay (owner charge, not Haven's)
+ *  or the reason an onboarding fee applies. Haven's AP bot copies this text
+ *  straight into Ramp, so it has to be right on its own. */
+export function clientDescription(l: ExportLine): string {
+  const prop = l.propertyName ?? ''
+  const extras: string[] = []
+  if (l.flags?.includes('owner_stay')) extras.push('Owner Stay')
+  // Mid-stay trash is an OWNER charge; trash left at checkout is the guest's
+  // (Jordan, 2026-07-15). Haven needs to tell them apart to bill the right party.
+  if (l.serviceType === 'Excessive Trash Pickup' && /mid.?stay/i.test(l.note ?? '')) extras.push('Mid-Stay pickup')
+  if (l.serviceType === 'Onboarding Clean' && l.lineKind === 'extra' && /first tendwell clean/i.test(l.note ?? '')) {
+    extras.push('onboarding fee, first Tendwell clean')
+  }
+  return [prop, ...extras].filter(Boolean).join(' – ')
 }
 
 // Line-item splits exist for QBO only (Jordan 2026-08-18): the vendor billed
@@ -216,12 +272,20 @@ const RAMP_HEADERS = [
 
 export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<QboClassRef>): string {
   const collapsed = collapseSplits(lines, l => l.cleanerPayAmount, (l, total) => ({ ...l, cleanerPayAmount: total }))
-  const rows = collapsed.filter(isApLine).map(l => ({
+  const ap = collapsed.filter(isApLine)
+  // A run spanning two months becomes one Ramp bill per month (invoice
+  // number suffixed with the month) so each month's cost lands in that
+  // month's books. Labor/expense lines carry the run's date → its month.
+  const multiMonth = monthsOf(ap, run.invoiceDate).length > 1
+  const rows = ap.map(l => {
+    const month = serviceMonth(l, run.invoiceDate)
+    const acctDate = multiMonth ? invoiceDateForMonth(run.invoiceDate, month) ?? '' : run.invoiceDate ?? ''
+    return {
     'Vendor name': s(run.vendorName),
-    'Description (optional)': `Cleaning services${run.periodEnd ? ` — week ending ${run.periodEnd}` : ''}`,
-    'Invoice number': s(run.vendorInvoiceNumber ?? ''),
+    'Description (optional)': `Cleaning services${run.periodEnd ? ` — week ending ${run.periodEnd}` : ''}${multiMonth ? ` (${month} services)` : ''}`,
+    'Invoice number': s(multiMonth ? `${run.vendorInvoiceNumber ?? ''}-${month}` : run.vendorInvoiceNumber ?? ''),
     'Invoice date': run.invoiceDate ?? '',
-    'Accounting date (optional)': run.invoiceDate ?? '',
+    'Accounting date (optional)': acctDate,
     'Due date': run.dueDate ?? run.invoiceDate ?? '',
     'Currency': 'USD',
     'Line item amount': (l.cleanerPayAmount ?? 0).toFixed(2),
@@ -245,7 +309,7 @@ export function toRampCsv(run: ExportRun, lines: ExportLine[], knownClasses?: Re
     'QuickBooks Inventory Item (optional)': '',
     'Vendor memo (optional)': '',
     'Payment method (optional)': '',
-  }))
+  }})
   return Papa.unparse({ fields: RAMP_HEADERS, data: rows.map(r => RAMP_HEADERS.map(h => (r as Record<string, string>)[h])) }, { newline: '\r\n' })
 }
 
@@ -263,19 +327,21 @@ const QBO_FLAT_HEADERS = [
 ]
 
 export function toQboFlatCsv(run: ExportRun, lines: ExportLine[], knownClasses?: ReadonlyArray<QboClassRef>): string {
-  const invoiceDate = fmtUsDate(run.invoiceDate)
-  const dueDate = fmtUsDate(run.dueDate ?? run.invoiceDate)
-  const rows = lines.filter(l => isArLine(l, 'qbo_haven')).map(l => [
-    s(serviceTitle(l)),
-    fmtUsDate(l.serviceDate),
-    s(l.propertyName ?? ''),
-    fmtUsd(l.clientChargeAmount ?? 0),
-    s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
-    run.qboInvoiceNo != null ? String(run.qboInvoiceNo) : '',
-    'Haven',
-    invoiceDate,
-    dueDate,
-  ])
+  const rows = lines.filter(l => isArLine(l, 'qbo_haven')).map(l => {
+    const month = serviceMonth(l, run.invoiceDate)
+    const invDate = fmtUsDate(invoiceDateForMonth(run.invoiceDate, month))
+    return [
+      s(serviceTitle(l)),
+      fmtUsDate(l.serviceDate),
+      s(clientDescription(l)),
+      fmtUsd(l.clientChargeAmount ?? 0),
+      s(qboClassFor(l.propertyName, l.propertyId ?? null, knownClasses)),
+      invoiceNoFor(run, month),
+      'Haven',
+      invDate,
+      invDate,
+    ]
+  })
   return Papa.unparse({ fields: QBO_FLAT_HEADERS, data: rows }, { newline: '\r\n' })
 }
 
@@ -300,31 +366,37 @@ const QBO_ML_HEADERS = [
 
 export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
   const arLines = lines.filter(l => isArLine(l, 'qbo_haven'))
-  const invNo = run.qboInvoiceNo != null ? String(run.qboInvoiceNo) : ''
-  const rows = arLines.map((l, i) => [
-    invNo,
-    i === 0 ? 'Haven' : '',
-    i === 0 ? fmtUsDate(run.invoiceDate) : '',
-    i === 0 ? fmtUsDate(run.dueDate ?? run.invoiceDate) : '',
-    i === 0 ? 'Due on receipt' : '',
-    '',
-    i === 0 ? s(`${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim()) : '',
-    s(l.serviceType ?? ''),
-    // Client-facing description: property only. Vendor notes are internal
-    // pricing chatter ("Regular clean plus 205") — the ONLY note that belongs
-    // on the client invoice is a reason-required extra's reason. Note-only
-    // lines (no property/service) still surface the note.
-    withNote(
-      l.propertyName ?? '',
-      l.serviceType && REASON_REQUIRED_EXTRAS.has(l.serviceType)
-        ? l.reviewNote?.trim() || extraReasonFromNote(l.note, l.serviceType)
-        : (!l.propertyName && !l.serviceType ? l.note : null),
-    ),
-    '1',
-    (l.clientChargeAmount ?? 0).toFixed(2),
-    (l.clientChargeAmount ?? 0).toFixed(2),
-    fmtUsDate(l.serviceDate),
-  ])
+  // One invoice per service month, months in order, lines in run order.
+  const months = monthsOf(arLines, run.invoiceDate)
+  const rows: string[][] = []
+  for (const month of months) {
+    const group = arLines.filter(l => serviceMonth(l, run.invoiceDate) === month)
+    const invDate = fmtUsDate(invoiceDateForMonth(run.invoiceDate, month))
+    group.forEach((l, i) => rows.push([
+      invoiceNoFor(run, month),
+      i === 0 ? 'Haven' : '',
+      i === 0 ? invDate : '',
+      i === 0 ? invDate : '',
+      i === 0 ? 'Due on receipt' : '',
+      '',
+      i === 0 ? s(`${run.vendorName} ${run.vendorInvoiceNumber ?? ''}`.trim()) : '',
+      s(l.serviceType ?? ''),
+      // Client-facing description: property (+ owner stay / onboarding
+      // reason). Vendor notes are internal pricing chatter ("Regular clean
+      // plus 205") — the ONLY note that belongs on the client invoice is a
+      // reason-required extra's reason. Note-only lines still surface the note.
+      withNote(
+        clientDescription(l),
+        l.serviceType && REASON_REQUIRED_EXTRAS.has(l.serviceType)
+          ? l.reviewNote?.trim() || extraReasonFromNote(l.note, l.serviceType)
+          : (!l.propertyName && !l.serviceType ? l.note : null),
+      ),
+      '1',
+      (l.clientChargeAmount ?? 0).toFixed(2),
+      (l.clientChargeAmount ?? 0).toFixed(2),
+      fmtUsDate(l.serviceDate),
+    ]))
+  }
   return Papa.unparse({ fields: QBO_ML_HEADERS, data: rows }, { newline: '\r\n' })
 }
 
@@ -348,11 +420,14 @@ export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
   const collapsed = collapseSplits(lines, l => l.clientChargeAmount, (l, total) => ({ ...l, clientChargeAmount: total }))
   const rows = collapsed
     .filter(l => isArLine(l, 'bill_com'))
-    .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') || (a.serviceDate ?? '').localeCompare(b.serviceDate ?? ''))
+    // Client, then MONTH (one bill.com invoice per client per month), then date.
+    .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') ||
+      serviceMonth(a, run.invoiceDate).localeCompare(serviceMonth(b, run.invoiceDate)) ||
+      (a.serviceDate ?? '').localeCompare(b.serviceDate ?? ''))
     .map(l => [
       s(l.clientName ?? ''),
-      fmtUsDate(run.invoiceDate),
-      fmtUsDate(run.dueDate ?? run.invoiceDate),
+      fmtUsDate(invoiceDateForMonth(run.invoiceDate, serviceMonth(l, run.invoiceDate))),
+      fmtUsDate(invoiceDateForMonth(run.invoiceDate, serviceMonth(l, run.invoiceDate))),
       s(serviceTitle(l)),
       fmtUsDate(l.serviceDate),
       s(l.propertyName ?? ''),

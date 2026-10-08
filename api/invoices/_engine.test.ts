@@ -530,8 +530,8 @@ describe('reconcile — money rules', () => {
     expect(base.cleanerPayAmount).toBe(100)
     expect(base.clientChargeAmount).toBe(150)
     expect(extra.serviceType).toBe('Onboarding Clean')
-    expect(extra.cleanerPayAmount).toBe(60) // 160 − 100
-    expect(extra.clientChargeAmount).toBe(60)
+    expect(extra.cleanerPayAmount).toBe(60) // 160 − 100: we pay what they billed
+    expect(extra.clientChargeAmount).toBe(50) // the client fee is the flat $50 (2026-10-08)
     expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
   })
 
@@ -748,7 +748,12 @@ describe('real Busy Bee invoice I260810795', () => {
     expect(bbc.clientChargeAmount).toBe(560) // billed at Client Charged
     expect(bbc.billingChannel).toBe('bill_com')
     expect(bbc.matchedTaskId).toBe('bbc-1') // note date 7/27 → task 7/29 (±3d)
-    expect(bbc.reviewStatus).toBe('ok')
+    // Two days apart is no longer silently accepted (2026-10-08): Haven
+    // reconciles every line against BW/Trellis by date, and a 2-day gap is
+    // how a mis-dated line (Kelly Armsworth 511, inv 1096) slipped through
+    // and would have been billed again the next week under its real date.
+    expect(bbc.flags).toContain(FLAGS.DATE_MISMATCH)
+    expect(bbc.reviewStatus).toBe('needs_review')
   })
 
   it('routes the taskless deep clean to review instead of silently billing $780', () => {
@@ -1457,5 +1462,153 @@ describe('detectMisdatedBlocks', () => {
       })
     }
     expect(detectMisdatedBlocks(lines as any, tasks as any)).toEqual([])
+  })
+})
+
+// ─── Invoice 1096 (Haven review, 2026-10-06/08) ──────────────────────────────
+
+describe('invoice 1096 fixes — labels, onboarding, duplicates', () => {
+  const P: PropertyRates[] = [
+    { id: 468, name: 'John Bryan 4144', ceCharged: 460, cleanerPay: 240, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 434, name: 'Nicole Allison 3690', ceCharged: 205, cleanerPay: 100, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 50, name: 'Kim Mills 2222', ceCharged: 175, cleanerPay: 90, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 511, name: 'Kelly Armsworth 511', ceCharged: 490, cleanerPay: 245, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 624, name: 'HPM-714 Pinecrest Drive', ceCharged: 255, cleanerPay: 140, deepClean3xCe: null, billingChannel: 'bill_com' },
+    { id: 159, name: 'Daryl Nelson 159', ceCharged: 600, cleanerPay: 350, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+  ]
+  const T = (id: string, pid: number, d: string, title: string, completed = true, source: 'breezeway' | 'trellis' = 'breezeway'): TaskRow =>
+    ({ externalId: id, propertyId: pid, dueDate: d, title, isClean: true, isDeepClean: false, totalCostRef: null, completed, source })
+  const line = (lineNo: number, prop: string, d: string, amt: number, note: string | null = null): RawLine =>
+    ({ lineNo, source: 'vendor', rawPropertyText: prop, rawNoteText: note, rawAmount: amt, rawDateMentioned: d })
+  const run = (lines: RawLine[], tasks: TaskRow[], extra: Partial<EngineInput> = {}) =>
+    reconcile({ vendorId: 'busybee', lines, aliases: [], properties: P, tasks, periodStart: '2026-09-27', periodEnd: '2026-10-03', ...extra })
+
+  it('labels from the COMPLETED task, never the stale ghost row (Kim Mills 2222)', () => {
+    const { lines } = run(
+      [line(4, 'Kim Mills 2222', '2026-09-27', 90, 'Departure clean')],
+      [T('ghost', 50, '2026-09-27', 'Departure Clean', false), T('real', 50, '2026-09-27', 'Turn Clean', true)],
+    )
+    expect(lines[0].serviceType).toBe('Turn Clean')
+    expect(lines[0].matchedTaskId).toBe('real')
+    expect(lines[0].flags).toContain(FLAGS.LABEL_FROM_TASK)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('does not bill onboarding when Tendwell already cleaned the property (John Bryan 4144)', () => {
+    const { lines } = run(
+      [line(146, 'John Bryan 4144', '2026-09-28', 290, 'Regular clean plus onboarding')],
+      [T('dep', 468, '2026-09-28', 'Departure Clean')],
+      { firstCleanByProperty: new Map([[468, '2026-09-07']]) },
+    )
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    const ob = lines.find(l => l.lineKind === 'extra')!
+    expect(base.serviceType).toBe('Departure Clean')
+    expect(base.clientChargeAmount).toBe(460)
+    expect(base.cleanerPayAmount).toBe(240)
+    expect(ob.clientChargeAmount).toBe(0)
+    expect(ob.cleanerPayAmount).toBe(0)
+    expect(ob.flags).toContain(FLAGS.ONBOARDING_NOT_FIRST_CLEAN)
+    expect(ob.engineNote).toContain('2026-09-07')
+    // AR total for the line is the clean only; nothing labeled Onboarding bills.
+    expect(lines.reduce((a, l) => a + (l.clientChargeAmount ?? 0), 0)).toBe(460)
+  })
+
+  it('bills onboarding on the first Tendwell clean, labeled by the task type (Nicole Allison 3690)', () => {
+    const { lines } = run(
+      [line(231, 'Nicole Allison 3690', '2026-10-02', 150, 'Regular clean plus onboarding')],
+      [T('dep', 434, '2026-10-02', 'Departure Clean')],
+      { firstCleanByProperty: new Map() },
+    )
+    const base = lines.find(l => l.lineKind === 'combined_split')!
+    const ob = lines.find(l => l.lineKind === 'extra')!
+    expect(base.serviceType).toBe('Departure Clean')
+    expect(ob.serviceType).toBe('Onboarding Clean')
+    expect(ob.clientChargeAmount).toBe(50)
+    expect(ob.rawNoteText).toBe('Onboarding fee — first Tendwell clean')
+  })
+
+  it('allows only the first of two onboardings in one run (HPM-714 Pinecrest)', () => {
+    const { lines } = run(
+      [
+        line(283, 'HPM-714 Pinecrest Drive', '2026-10-03', 190, 'Regular clean plus onboarding'),
+        line(88, 'HPM-714 Pinecrest Drive', '2026-09-28', 190, 'Regular clean plus onboarding'),
+      ],
+      [T('a', 624, '2026-09-28', 'Departure Clean', true, 'trellis'), T('b', 624, '2026-10-03', 'Departure Clean', true, 'trellis')],
+    )
+    const ob = lines.filter(l => l.lineKind === 'extra')
+    expect(ob.find(l => l.lineNo === 88)!.clientChargeAmount).toBe(50)
+    expect(ob.find(l => l.lineNo === 283)!.clientChargeAmount).toBe(0)
+    expect(ob.find(l => l.lineNo === 283)!.flags).toContain(FLAGS.ONBOARDING_NOT_FIRST_CLEAN)
+  })
+
+  it('a line two days off its only clean goes to review, not silently billed (Kelly Armsworth 511)', () => {
+    const { lines } = run(
+      [line(245, 'Kelly Armsworth 511', '2026-10-02', 245)],
+      [T('t104', 511, '2026-10-04', 'Turn Clean')],
+    )
+    expect(lines[0].flags).toContain(FLAGS.DATE_MISMATCH)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('one clean backs one line: a second line on the same task is flagged', () => {
+    const { lines } = run(
+      [line(1, 'Kim Mills 2222', '2026-09-27', 90), line(2, 'Kim Mills 2222', '2026-09-27', 90)],
+      [T('only', 50, '2026-09-27', 'Turn Clean')],
+    )
+    expect(lines[0].reviewStatus).toBe('ok')
+    expect(lines[1].reviewStatus).toBe('needs_review')
+    expect(lines[1].engineNote).toContain('already billed')
+  })
+
+  it('flags a clean already billed on a prior invoice', () => {
+    const { lines } = run(
+      [line(1, 'Kim Mills 2222', '2026-09-27', 90)],
+      [T('x', 50, '2026-09-27', 'Turn Clean')],
+      { billedCleans: [{ propertyId: 50, date: '2026-09-27', taskId: null, ref: 'invoice 1095 line 3' }] },
+    )
+    expect(lines[0].flags).toContain(FLAGS.ALREADY_BILLED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('an open (never completed) task is not evidence of a clean', () => {
+    const { lines } = run(
+      [line(1, 'Kim Mills 2222', '2026-09-29', 90)],
+      [T('open', 50, '2026-09-29', 'Departure Clean', false)],
+    )
+    expect(lines[0].flags).toContain(FLAGS.TASK_NOT_COMPLETED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+  })
+
+  it('labels a Last Clean & Linen Pull from the task, not "Departure" (Daryl Nelson 159)', () => {
+    const { lines } = run(
+      [line(287, 'Daryl Nelson 159', '2026-10-03', 350)],
+      [T('ghost', 159, '2026-10-03', 'Departure Clean', false), T('last', 159, '2026-10-03', 'Last Clean & Linen Pull', true, 'trellis')],
+    )
+    expect(lines[0].serviceType).toBe('Last Clean & Linen Pull')
+    expect(lines[0].clientChargeAmount).toBe(600)
+  })
+
+  it('marks owner-stay cleans so Haven can class them as owner charges', () => {
+    const { lines } = run(
+      [line(1, 'Kim Mills 2222', '2026-09-30', 90)],
+      [T('os', 50, '2026-09-30', 'Post-Owner Stay Clean - HT')],
+    )
+    expect(lines[0].serviceType).toBe('Departure Clean')
+    expect(lines[0].flags).toContain(FLAGS.OWNER_STAY)
+  })
+
+  it('a date written in the note beats the block header date', () => {
+    const { lines } = run(
+      [line(329, 'Kim Mills 2222', '2026-10-03', 30, 'Trash pickup done for Nikol on 9/28/26')],
+      [T('c', 50, '2026-10-01', 'Turn Clean')],
+    )
+    expect(lines[0].serviceDate).toBe('2026-09-28')
+    expect(lines[0].serviceType).toBe('Excessive Trash Pickup')
+  })
+
+  it('service date snaps to the task day when the vendor is one day off', () => {
+    const { lines } = run([line(1, 'Kim Mills 2222', '2026-09-30', 90)], [T('t', 50, '2026-10-01', 'Turn Clean')])
+    expect(lines[0].serviceDate).toBe('2026-10-01')
+    expect(lines[0].reviewStatus).toBe('ok')
   })
 })

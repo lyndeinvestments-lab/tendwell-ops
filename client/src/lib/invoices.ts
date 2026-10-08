@@ -213,8 +213,18 @@ export function lineIssues(l: InvoiceLine): string[] {
   }
   // A QBO/Haven line needs no property (Haven is the one QBO customer) —
   // mirrors the exception in approve.ts.
-  if (billable && l.property_id == null && l.billing_channel !== 'qbo_haven') {
-    out.push('No property assigned (or bill it to QuickBooks / Haven)')
+  const isReimb = l.service_type === 'Reimbursement'
+  if (billable && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
+    out.push(isReimb
+      ? 'Reimbursement needs the property it was for (Haven bills it back to that guest/owner)'
+      : 'No property assigned (or bill it to QuickBooks / Haven)')
+  }
+  // Mirrors reimbursementDetailOk in api/invoices/approve.ts — keep in sync.
+  if (billable && isReimb && !l.matched_task_id && Number(l.client_charge_amount ?? 0) > 0) {
+    const n = (l.review_note ?? '').trim()
+    if (!(n.length >= 15 && /https?:\/\//i.test(n) && /\b(guest|reservation|res\b|owner|booking|stay)\b/i.test(n))) {
+      out.push('Reimbursement needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link')
+    }
   }
   if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {
     out.push('No cleaner pay — would be missing from the Ramp export')

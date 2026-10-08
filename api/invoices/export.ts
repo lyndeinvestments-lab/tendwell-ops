@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
-import { toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
+import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
@@ -56,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: run, error: runErr } = await supabase
     .from('invoice_runs')
-    .select('id, status, vendor_id, invoice_number, invoice_date, period_end, qbo_invoice_no, vendors(name)')
+    .select('id, status, vendor_id, invoice_number, invoice_date, period_end, qbo_invoice_no, qbo_invoice_nos, vendors(name)')
     .eq('id', runId)
     .single()
   if (runErr || !run) {
@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'invoice_lines',
       () => supabase
         .from('invoice_lines')
-        .select('line_kind, service_type, raw_date_mentioned, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
+        .select('line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
         .eq('run_id', runId)
         .order('line_no'),
       'line_no',
@@ -87,32 +87,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // Assign our sequential QBO invoice number on first QBO export.
-  let qboInvoiceNo = run.qbo_invoice_no as number | null
-  // Never allocate on preview: the counter is shared with live QBO (Nina's
-  // real numbering), so peeking at the file would burn AR invoice numbers and
-  // leave gaps in the sequence.
-  if (!preview && (format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null) {
-    try {
-      qboInvoiceNo = await nextQboInvoiceNo(supabase)
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
-      return
-    }
-    await supabase.from('invoice_runs').update({ qbo_invoice_no: qboInvoiceNo }).eq('id', runId)
-  }
-
   const vendorRel = (run as unknown as { vendors: { name: string } | Array<{ name: string }> | null }).vendors
   const vendorName = Array.isArray(vendorRel) ? vendorRel[0]?.name ?? 'Vendor' : vendorRel?.name ?? 'Vendor'
-
-  const exportRun: ExportRun = {
-    vendorName,
-    vendorInvoiceNumber: run.invoice_number,
-    invoiceDate: run.invoice_date,
-    dueDate: run.invoice_date, // Due On Receipt
-    qboInvoiceNo,
-    periodEnd: run.period_end,
-  }
 
   const lines: ExportLine[] = ((lineRows ?? []) as Array<Record<string, any>>).map(r => {
     const prop = Array.isArray(r.properties) ? r.properties[0] : r.properties
@@ -120,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return {
       lineKind: r.line_kind as LineKind,
       serviceType: r.service_type,
-      serviceDate: r.raw_date_mentioned,
+      serviceDate: r.service_date ?? r.raw_date_mentioned,
       propertyName: prop?.name ?? null,
       rawPropertyText: r.raw_property_text ?? null,
       propertyId: r.property_id != null ? Number(r.property_id) : null,
@@ -132,8 +108,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reviewNote: r.review_note,
       reviewStatus: r.review_status,
       splitGroup: r.split_group != null ? Number(r.split_group) : null,
+      flags: Array.isArray(r.flags) ? r.flags : [],
     }
   })
+
+  // One QBO invoice number per SERVICE MONTH of the Haven lines (Haven books
+  // by month and rejected 1096 for mixing Sept + Oct). Numbers already
+  // assigned are kept; missing months are allocated on the first real QBO
+  // export only — never on preview, the counter is shared with live QBO.
+  const qboMonths = monthsOf(
+    lines.filter(l => l.billingChannel === 'qbo_haven' && l.lineKind !== 'excluded' && l.reviewStatus !== 'excluded' &&
+      l.lineKind !== 'operating_expense' && l.clientChargeAmount != null && l.clientChargeAmount !== 0),
+    run.invoice_date,
+  )
+  const qboInvoiceNos: Record<string, number> = { ...((run.qbo_invoice_nos as Record<string, number> | null) ?? {}) }
+  let qboInvoiceNo = run.qbo_invoice_no as number | null
+  // A run numbered before the month split keeps its number for its first month.
+  if (qboInvoiceNo != null && qboMonths.length > 0 && !Object.values(qboInvoiceNos).includes(qboInvoiceNo) && qboInvoiceNos[qboMonths[0]] == null) {
+    qboInvoiceNos[qboMonths[0]] = qboInvoiceNo
+  }
+  const missing = qboMonths.filter(m => qboInvoiceNos[m] == null)
+  if (!preview && (format === 'qbo_flat' || format === 'qbo_multiline') && missing.length > 0) {
+    try {
+      for (const m of missing) qboInvoiceNos[m] = await nextQboInvoiceNo(supabase)
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
+      return
+    }
+    qboInvoiceNo = qboInvoiceNos[qboMonths[0]] ?? qboInvoiceNo
+    await supabase.from('invoice_runs').update({ qbo_invoice_no: qboInvoiceNo, qbo_invoice_nos: qboInvoiceNos }).eq('id', runId)
+  }
+
+  const exportRun: ExportRun = {
+    vendorName,
+    vendorInvoiceNumber: run.invoice_number,
+    invoiceDate: run.invoice_date,
+    dueDate: run.invoice_date, // Due On Receipt
+    qboInvoiceNo,
+    qboInvoiceNos,
+    periodEnd: run.period_end,
+  }
 
   // Known QBO classes (nightly qbo-classes-sync snapshot) with any manual
   // property links from the API Sync → QuickBooks tab. Empty/absent →
@@ -163,10 +177,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       csv,
       line_count: lines.length,
       qbo_invoice_no: qboInvoiceNo,
+      qbo_invoice_nos: qboInvoiceNos,
       // True when this format prints an invoice number and the run hasn't been
       // assigned one yet — the real export will fill that blank cell in.
       invoice_number_pending:
-        (format === 'qbo_flat' || format === 'qbo_multiline') && qboInvoiceNo == null,
+        (format === 'qbo_flat' || format === 'qbo_multiline') && qboMonths.some(m => qboInvoiceNos[m] == null),
     })
     return
   }

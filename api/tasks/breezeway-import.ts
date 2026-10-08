@@ -250,34 +250,70 @@ interface PropertyMatcher {
 }
 
 async function buildPropertyMatcher(supabase: SupabaseClient): Promise<PropertyMatcher> {
-  const { data, error } = await supabase.from('properties').select('id, name, address')
+  const { data, error } = await supabase
+    .from('properties')
+    .select('id, name, address')
+    .is('deleted_at', null)
+    .order('id')
   if (error || !data) return { byName: () => null, byAddress: () => null }
-  const byNameIdx = new Map<string, number>()
-  const byAddrIdx = new Map<string, number>()
-  for (const p of data as Array<{ id: number; name: string | null; address: string | null }>) {
+  return buildPropertyMatcherFrom(data as Array<{ id: number; name: string | null; address: string | null }>)
+}
+
+/** Pure, so the ambiguity rules are testable.
+ *
+ *  Both indexes only ever return a UNIQUE match. Before 2026-10-08 the address
+ *  fallback returned the first stored address that merely CONTAINED the
+ *  Breezeway one, in whatever order Postgres returned rows — so
+ *  "Eric Fleming 1260-6203 … 1260 Ski View Drive" (no unit) landed on
+ *  Stephanie Keegan 1260-5307 on some days and on Eric Fleming on others, and
+ *  Mike Gunter 2691-8's tasks landed on Lewis Anderson 2691. A wrong property
+ *  here bills one owner for another owner's clean, so an ambiguous match is
+ *  left NULL for the resolution queue instead. */
+export function buildPropertyMatcherFrom(
+  rows: Array<{ id: number; name: string | null; address: string | null }>,
+): PropertyMatcher {
+  const byNameIdx = new Map<string, number | null>() // null = ambiguous
+  const byAddrIdx = new Map<string, number | null>()
+  const names: Array<{ key: string; id: number }> = []
+  for (const p of rows) {
     if (p.name) {
       const k = normalizePropertyName(p.name)
-      if (k && !byNameIdx.has(k)) byNameIdx.set(k, p.id)
+      if (k) {
+        byNameIdx.set(k, byNameIdx.has(k) && byNameIdx.get(k) !== p.id ? null : p.id)
+        names.push({ key: k, id: p.id })
+      }
     }
     if (p.address) {
       const norm = normalizeAddress(p.address)
-      if (norm && !byAddrIdx.has(norm)) byAddrIdx.set(norm, p.id)
+      if (norm) byAddrIdx.set(norm, byAddrIdx.has(norm) && byAddrIdx.get(norm) !== p.id ? null : p.id)
     }
+  }
+  const unique = (ids: number[]): number | null => {
+    const set = new Set(ids)
+    return set.size === 1 ? [...set][0] : null
   }
   return {
     byName: (nickname) => {
       if (!nickname) return null
       const k = normalizePropertyName(nickname)
-      return byNameIdx.get(k) ?? null
+      if (!k) return null
+      if (byNameIdx.has(k)) return byNameIdx.get(k) ?? null
+      // "Eric Fleming 1260-6203" vs Ops "Eric Fleming 1260": the Ops name is a
+      // whole-token prefix of the Breezeway one. Accept only when exactly one
+      // Ops name is such a prefix (and it carries a number, so a bare owner
+      // name with several cabins can never match).
+      const prefixes = names.filter(n => /\d/.test(n.key) && k.startsWith(`${n.key} `)).map(n => n.id)
+      return unique(prefixes)
     },
     byAddress: (addr) => {
       const needle = normalizeAddress(addr)
       if (!needle) return null
-      if (byAddrIdx.has(needle)) return byAddrIdx.get(needle)!
+      if (byAddrIdx.has(needle)) return byAddrIdx.get(needle) ?? null
+      const hits: number[] = []
       for (const [stored, id] of byAddrIdx.entries()) {
-        if (stored.includes(needle) || needle.includes(stored)) return id
+        if (id != null && (stored.includes(needle) || needle.includes(stored))) hits.push(id)
       }
-      return null
+      return unique(hits)
     },
   }
 }

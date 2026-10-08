@@ -479,3 +479,47 @@ describe('toBillComCsv', () => {
     expect(csv).not.toContain('Haven Vacation Rentals')
   })
 })
+
+describe('month split (Haven, invoice 1096: never mix two months on one invoice)', () => {
+  const run: ExportRun = { ...RUN, vendorInvoiceNumber: '1261003821', invoiceDate: '2026-10-03', dueDate: '2026-10-03', qboInvoiceNo: 1096, qboInvoiceNos: { '2026-09': 1096, '2026-10': 1097 }, periodEnd: '2026-10-03' }
+  const mk = (d: string, prop: string, amt: number, extra: Partial<ExportLine> = {}): ExportLine => ({
+    lineKind: 'clean', serviceType: 'Turn Clean', serviceDate: d, propertyName: prop, clientName: 'Haven Vacation Rentals',
+    billingChannel: 'qbo_haven', cleanerPayAmount: amt / 2, clientChargeAmount: amt, note: null, reviewStatus: 'ok', ...extra,
+  })
+  const lines = [
+    mk('2026-09-30', 'Kim Mills 2222', 175),
+    mk('2026-10-01', 'Hali Hoag 2140', 200, { flags: ['owner_stay'], serviceType: 'Departure Clean' }),
+    mk('2026-10-02', 'Nicole Allison 3690', 50, { lineKind: 'extra', serviceType: 'Onboarding Clean', note: 'Onboarding fee — first Tendwell clean' }),
+  ]
+  const parse = (csv: string) => Papa.parse<string[]>(csv, { skipEmptyLines: true }).data
+
+  it('QBO flat: September rows get 1096 dated 9/30, October rows get 1097', () => {
+    const rows = parse(toQboFlatCsv(run, lines))
+    expect(rows[1][5]).toBe('1096')
+    expect(rows[1][7]).toBe('09/30/2026')
+    expect(rows[2][5]).toBe('1097')
+    expect(rows[2][7]).toBe('10/03/2026')
+  })
+  it('QBO flat: owner stay and onboarding reason ride in the description', () => {
+    const rows = parse(toQboFlatCsv(run, lines))
+    expect(rows[2][2]).toBe('Hali Hoag 2140 – Owner Stay')
+    expect(rows[3][2]).toBe('Nicole Allison 3690 – onboarding fee, first Tendwell clean')
+  })
+  it('QBO multiline: one header block per month', () => {
+    const rows = parse(toQboMultilineCsv(run, lines))
+    expect(rows.slice(1).map(r => r[0])).toEqual(['1096', '1097', '1097'])
+    expect(rows[1][1]).toBe('Haven')
+    expect(rows[2][1]).toBe('Haven')
+    expect(rows[3][1]).toBe('')
+  })
+  it('Ramp: one bill per month, suffixed invoice number and month accounting date', () => {
+    const rows = parse(toRampCsv(run, lines))
+    expect(rows[1][2]).toBe('1261003821-2026-09')
+    expect(rows[1][4]).toBe('2026-09-30')
+    expect(rows[2][2]).toBe('1261003821-2026-10')
+  })
+  it('a single-month run keeps the plain vendor invoice number', () => {
+    const rows = parse(toRampCsv(run, [lines[1]]))
+    expect(rows[1][2]).toBe('1261003821')
+  })
+})

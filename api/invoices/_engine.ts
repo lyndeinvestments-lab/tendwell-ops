@@ -44,6 +44,26 @@ export interface TaskRow {
   isClean: boolean
   isDeepClean: boolean
   totalCostRef: number | null // Breezeway raw "Total cost" — reference only, never authoritative
+  // Did the work actually happen? Breezeway Closed/Finished/completed_date,
+  // Trellis COMPLETED. Absent = treated as completed (older fixtures / drafts).
+  // A not-completed task is never evidence that a clean was done: the
+  // Breezeway export re-keys a task whenever its title or due date changes,
+  // so the old "Departure Clean — Created" row lingers forever next to the
+  // real "Turn Clean — Closed" one. Matching the ghost is how ~30 Turn Cleans
+  // went out labeled Departure on invoice 1096 (Haven, 2026-10-06).
+  completed?: boolean
+  source?: 'breezeway' | 'trellis'
+}
+
+/** A clean already billed to the client on an approved/exported run. Used to
+ *  stop the same clean being billed twice across weekly invoices (real case:
+ *  Busy Bee dated Kelly Armsworth 511's 10/4 turn as 10/2 on invoice 1096 —
+ *  it would have been billed again the next week under its real date). */
+export interface BilledClean {
+  propertyId: number
+  date: string // yyyy-mm-dd service date as billed
+  taskId: string | null
+  ref: string // human label, e.g. "invoice 1095 line 198"
 }
 
 export interface RawLine {
@@ -83,6 +103,11 @@ export interface EngineLine extends RawLine {
   // know every property's rate by heart. First writer wins — the most specific
   // classification message beats the generic channel fallback.
   engineNote: string | null
+  // The date the work actually happened: the matched task's date when the
+  // vendor's date is off by a day, else the vendor's date. This — not the
+  // vendor's header date — is what prints on the client invoice and decides
+  // which month's invoice the line belongs to.
+  serviceDate?: string | null
 }
 
 export interface RunSummary {
@@ -103,6 +128,15 @@ export interface EngineInput {
   periodStart: string | null
   periodEnd: string | null
   fuzzyThreshold?: number // default FUZZY_CONFIRM_THRESHOLD
+  // Earliest date Tendwell is known to have cleaned each property (completed
+  // Tendwell/Busy Bee tasks + cleans billed on approved/exported runs). An
+  // onboarding charge is only valid on the FIRST Tendwell clean (Jordan
+  // 2026-10-08): Busy Bee writes "plus onboarding" on properties we've cleaned
+  // for weeks (John Bryan 4144, first cleaned 9/7, billed onboarding 9/28).
+  // Absent = no history available → onboarding judged on this run alone.
+  firstCleanByProperty?: ReadonlyMap<number, string>
+  // Cleans already billed on other approved/exported runs (see BilledClean).
+  billedCleans?: ReadonlyArray<BilledClean>
 }
 
 // ─── Flag taxonomy (client renders badges from these) ───────────────────────
@@ -144,6 +178,21 @@ export const FLAGS = {
   // bill (Busy Bee stopped invoicing auxiliary work, Jordan 2026-09-22): it
   // is charged to the client and paid to nobody. See _aux.ts.
   AUX_TASK: 'aux_task',
+  // Vendor billed onboarding on a property Tendwell had already cleaned. Not
+  // invoiced to the client and not paid to the vendor (Jordan 2026-10-08).
+  ONBOARDING_NOT_FIRST_CLEAN: 'onboarding_not_first_clean',
+  // The only task near the billed date was never completed.
+  TASK_NOT_COMPLETED: 'task_not_completed',
+  // No completed clean on the billed date; the nearest one is 2–3 days off.
+  DATE_MISMATCH: 'date_mismatch',
+  // This clean was already billed on another invoice (or earlier on this one).
+  ALREADY_BILLED: 'already_billed',
+  // The billed service type came from the matched task, not the vendor's word
+  // (informational — explains why "Departure" became "Turn").
+  LABEL_FROM_TASK: 'label_from_task',
+  // Post-owner-stay clean: an owner charge, not a Haven expense (Christine,
+  // 2026-10-08). Exported as "<property> – Owner Stay".
+  OWNER_STAY: 'owner_stay',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -266,6 +315,10 @@ const TITLE_RULES: TitleRule[] = [
   { re: /linen\s*pull/i, title: 'Linen Pull' },
   { re: /last\s*clean/i, title: 'Last Clean' },
   { re: /pre.?owner\s*stay/i, title: 'Pre-Owner Stay Inspection' },
+  // "Post-Owner Stay Clean - HT" (live Breezeway title) is a departure clean
+  // after the OWNER's stay — billed as Departure Clean with the owner-stay
+  // marker so Haven classes it as an owner charge (see isOwnerStayTitle).
+  { re: /post.?owner\s*stay\s*clean/i, title: 'Departure Clean' },
   { re: /cleaning\s*inspection/i, title: 'Cleaning Inspection' },
   { re: /departure\s*clean/i, title: 'Departure Clean' },
   { re: /(turn\s*clean|same\s*day\s*turn|arrival\s*clean)/i, title: 'Turn Clean' },
@@ -317,6 +370,12 @@ const EXTRA_RULES: TitleRule[] = [
   { re: /touch\s*up/i, title: 'Vacancy Clean / Touch Up Clean' },
   { re: /\bextra\b/i, title: 'Extra Cleaning' },
 ]
+
+/** Owner-stay cleans are an OWNER charge, not a Haven expense (Christine,
+ *  2026-10-08). Read from the task title, never the vendor's note. */
+export function isOwnerStayTitle(text: string | null | undefined): boolean {
+  return !!text && /owner\s*stay/i.test(text) && !/pre.?owner\s*stay/i.test(text)
+}
 
 export function isExcludedTitle(text: string | null): boolean {
   if (!text) return false
@@ -674,30 +733,67 @@ export function matchToTask(
   tasks: TaskRow[],
   preferDeep: boolean,
 ): TaskRow | null {
+  return pickCleanTask(propertyId, targetDate, tasks, { preferDeep })?.task ?? null
+}
+
+export interface TaskPick {
+  task: TaskRow
+  dateGap: number // whole days between the billed date and the task date
+}
+
+const isDone = (t: TaskRow) => t.completed !== false
+
+/** The task a vendor clean line is evidence of.
+ *
+ *  A COMPLETED task always beats an open one, even one a day or two further
+ *  away: an open task next to a completed one is almost always a ghost of the
+ *  same clean (Breezeway re-keys a task when its title/date changes, and the
+ *  old row never goes away). Same-day beats near-day among completed tasks.
+ *  Tasks already claimed by another line (`claimed`) are skipped so one clean
+ *  can never back two invoice lines. */
+export function pickCleanTask(
+  propertyId: number | null,
+  targetDate: string | null,
+  tasks: TaskRow[],
+  opts: { preferDeep?: boolean; claimed?: ReadonlySet<string>; billedDays?: ReadonlySet<string> } = {},
+): TaskPick | null {
   if (propertyId == null) return null
-  const forProperty = tasks.filter(t => t.propertyId === propertyId && (t.isClean || t.isDeepClean))
-  if (forProperty.length === 0) return null
-  const scored = forProperty
+  const claimed = opts.claimed
+  const scored = tasks
+    .filter(t => t.propertyId === propertyId && (t.isClean || t.isDeepClean))
+    .filter(t => !claimed || !claimed.has(t.externalId))
     .map(t => {
       let dateGap = Number.MAX_SAFE_INTEGER
       if (targetDate && t.dueDate) {
-        dateGap = Math.abs(
-          (Date.parse(t.dueDate) - Date.parse(targetDate)) / 86_400_000,
-        )
+        dateGap = Math.round(Math.abs((Date.parse(t.dueDate) - Date.parse(targetDate)) / 86_400_000))
       } else if (!targetDate) {
         dateGap = 0 // no date to compare — any task in the window is a candidate
       }
-      return { t, dateGap }
+      return { task: t, dateGap }
     })
     .filter(s => s.dateGap <= 3)
     .sort((a, b) => {
+      const ad = isDone(a.task) ? 0 : 1
+      const bd = isDone(b.task) ? 0 : 1
+      if (ad !== bd) return ad - bd
       if (a.dateGap !== b.dateGap) return a.dateGap - b.dateGap
+      // Equal distance: prefer a day that hasn't already been billed.
+      if (opts.billedDays) {
+        const ab = opts.billedDays.has(`${propertyId}|${a.task.dueDate}`) ? 1 : 0
+        const bb = opts.billedDays.has(`${propertyId}|${b.task.dueDate}`) ? 1 : 0
+        if (ab !== bb) return ab - bb
+      }
       // Same-day tie: prefer the deep clean when the note says deep.
-      const aDeep = a.t.isDeepClean ? 1 : 0
-      const bDeep = b.t.isDeepClean ? 1 : 0
-      return preferDeep ? bDeep - aDeep : aDeep - bDeep
+      const aDeep = a.task.isDeepClean ? 1 : 0
+      const bDeep = b.task.isDeepClean ? 1 : 0
+      if (aDeep !== bDeep) return opts.preferDeep ? bDeep - aDeep : aDeep - bDeep
+      // Then Breezeway over Trellis (system of record), then stable id order.
+      const as = a.task.source === 'trellis' ? 1 : 0
+      const bs = b.task.source === 'trellis' ? 1 : 0
+      if (as !== bs) return as - bs
+      return a.task.externalId.localeCompare(b.task.externalId)
     })
-  return scored[0]?.t ?? null
+  return scored[0] ?? null
 }
 
 // ─── AP amount ────────────────────────────────────────────────────────────────
@@ -834,6 +930,14 @@ function withChannel(line: EngineLine, property: PropertyRates | null): EngineLi
   return out
 }
 
+/** Whether an onboarding charge is legitimate on this line: only on
+ *  Tendwell's FIRST clean of the property (Jordan 2026-10-08). `firstClean`
+ *  is the earliest earlier clean we know of, for the explanation. */
+export interface OnboardingVerdict {
+  allowed: boolean
+  firstClean: string | null
+}
+
 // Classify one resolved vendor line into 1–2 output lines. `splitSeq` supplies
 // the split_group id when a combined line splits into base + extra.
 export function classifyLine(
@@ -842,6 +946,7 @@ export function classifyLine(
   property: PropertyRates | null,
   matchedTask: TaskRow | null,
   splitSeq: () => number,
+  onboarding: OnboardingVerdict = { allowed: true, firstClean: null },
 ): EngineLine[] {
   let line = baseLine(raw)
   line.propertyId = resolution.propertyId
@@ -882,7 +987,7 @@ export function classifyLine(
       line.clientChargeAmount = null // set once we know whose shipment it was
       line = withNote(
         line,
-        `Courier charge of ${usd(raw.rawAmount)} — this is REIMBURSABLE, not a Tendwell expense. Assign the property it was shipped for so it can be billed back to that client.`,
+        `Courier charge of ${usd(raw.rawAmount)} — REIMBURSABLE, not a Tendwell expense. Assign the property it was shipped from, and in the review note say what was shipped, for which guest/reservation, and paste the Slack/Quo link — so it can be billed back to the guest or owner.`,
       )
       return [withChannel(needsReview(line, FLAGS.UNRESOLVED_PROPERTY), null)]
     }
@@ -919,10 +1024,18 @@ export function classifyLine(
   }
 
   // Service title: task title wins (property+date matched), else note text.
-  const std =
+  let std =
     (matchedTask ? standardizeTitle(matchedTask.title) : null) ??
     standardizeTitle(raw.rawNoteText) ??
     standardizeTitle(raw.rawPropertyText)
+  // An onboarding that isn't Tendwell's first clean is just a clean. If the
+  // "Onboarding" label came from the VENDOR (not the task), drop it — the
+  // task's own type, or a plain Turn Clean, is the truth.
+  if (!onboarding.allowed && std?.title === 'Onboarding Clean' &&
+      !(matchedTask && /onboarding/i.test(matchedTask.title))) {
+    std = matchedTask ? standardizeTitle(matchedTask.title) : null
+    if (std?.title === 'Onboarding Clean') std = null
+  }
   const noteExtra = extraTitleFromNote(noteText)
   if (!matchedTask && line.lineKind !== 'operating_expense') {
     line = flag(line, FLAGS.UNMATCHED_TASK)
@@ -937,7 +1050,9 @@ export function classifyLine(
   const deepConflict = matchedTask != null && !taskSaysDeep && noteSaysDeep
   const isDeep = matchedTask ? taskSaysDeep : noteSaysDeep
   const isDouble = /double\s*clean/i.test(text)
-  const isOnboarding = std?.title === 'Onboarding Clean'
+  // A task titled "Onboarding Clean" keeps its label (Haven: follow BW), but
+  // the $50 surcharge only applies on Tendwell's first clean.
+  const isOnboarding = std?.title === 'Onboarding Clean' && onboarding.allowed
 
   // Deep / Double / Onboarding: billed whole, never split.
   if (isDeep || deepConflict || isDouble || isOnboarding) {
@@ -1012,7 +1127,7 @@ export function classifyLine(
         lineKind: 'extra',
         serviceType: 'Onboarding Clean',
         rawAmount: 0,
-        rawNoteText: 'Onboarding surcharge',
+        rawNoteText: 'Onboarding fee — first Tendwell clean',
         cleanerPayAmount: surchargeBilled ? 50 : null,
         clientChargeAmount: 50,
         flags: [FLAGS.COMBINED_SPLIT],
@@ -1108,6 +1223,44 @@ export function classifyLine(
 
   // Overage WITH an explaining note → combined line: split into base @ Client
   // Charged + extra = invoiced − Cleaner Pay.
+  if (diff > 0 && noteExtra === 'Onboarding Clean' && !onboarding.allowed) {
+    // Busy Bee billed "Regular clean plus onboarding" on a property Tendwell
+    // had already cleaned. The clean is real and billed normally; the
+    // onboarding add-on is neither billed to the client nor paid out. It stays
+    // on the run as a $0 row so the dispute is visible and the vendor line
+    // still reconciles to the penny.
+    const group = splitSeq()
+    const why = `Busy Bee billed ${usd(diff)} for onboarding, but Tendwell already cleaned this property on ${onboarding.firstClean ?? 'an earlier date'} — onboarding only applies to Tendwell's first clean. Not billed to the client and not paid; raise it with Busy Bee.`
+    const base: EngineLine = withNote({
+      ...line,
+      splitGroup: group,
+      lineKind: 'combined_split',
+      cleanerPayAmount: round2(cleanerPay),
+      clientChargeAmount: round2(ceCharged),
+      flags: [...line.flags, FLAGS.COMBINED_SPLIT, FLAGS.ONBOARDING_NOT_FIRST_CLEAN],
+    }, why)
+    const disputed: EngineLine = {
+      ...baseLine(raw),
+      splitGroup: group,
+      propertyId: line.propertyId,
+      aliasConfidence: line.aliasConfidence,
+      matchedTaskId: line.matchedTaskId,
+      lineKind: 'extra',
+      serviceType: 'Onboarding Clean',
+      // 0, not the disputed amount: the base row already carries the vendor's
+      // full raw amount for the penny gate, and a non-zero raw with zero pay
+      // would (rightly) block Approve as "unpaid".
+      rawAmount: 0,
+      rawNoteText: `Onboarding fee ${usd(diff)} — NOT VALID (not first Tendwell clean)`,
+      cleanerPayAmount: 0,
+      clientChargeAmount: 0,
+      flags: [FLAGS.COMBINED_SPLIT, FLAGS.ONBOARDING_NOT_FIRST_CLEAN],
+      reviewStatus: 'ok',
+      engineNote: why,
+    }
+    return [withChannel(base, property), withChannel(disputed, property)]
+  }
+
   if (diff > 0 && noteExtra != null) {
     const group = splitSeq()
     const base: EngineLine = {
@@ -1127,8 +1280,15 @@ export function classifyLine(
       lineKind: 'extra',
       serviceType: noteExtra,
       rawAmount: diff,
+      // The onboarding add-on gets an explicit client-facing reason: Haven
+      // flags any "Onboarding" line whose task isn't an onboarding task, so
+      // say WHY it is one (Tendwell's first clean of the property).
+      rawNoteText: noteExtra === 'Onboarding Clean' ? 'Onboarding fee — first Tendwell clean' : raw.rawNoteText,
       cleanerPayAmount: diff,
-      clientChargeAmount: diff,
+      // The client-side onboarding fee is the flat $50 (Finance rule, PR
+      // #508) whatever the vendor's add-on was ($30, $49.85…); other extras
+      // still pass the vendor's overage through.
+      clientChargeAmount: noteExtra === 'Onboarding Clean' ? 50 : diff,
       flags: [FLAGS.COMBINED_SPLIT],
       reviewStatus: 'ok',
     }
@@ -1198,7 +1358,8 @@ export function generateDraftLines(
   const out: RawLine[] = []
   let lineNo = 1
   const sorted = [...tasks]
-    .filter(t => (t.isClean || t.isDeepClean) && t.propertyId != null)
+    // Only completed work becomes a draft line — an open/ghost task is not a clean.
+    .filter(t => (t.isClean || t.isDeepClean) && t.propertyId != null && t.completed !== false)
     .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '') || (a.propertyId! - b.propertyId!))
   for (const t of sorted) {
     const p = propertiesById.get(t.propertyId!)
@@ -1340,14 +1501,112 @@ export function detectMisdatedBlocks(lines: EngineLine[], tasks: TaskRow[]): Mis
   return out.sort((a, b) => a.statedDate.localeCompare(b.statedDate))
 }
 
+/** The vendor line's service date. An explicit date in the note ("Trash
+ *  pickup done for Nikol on 9/28/26") is the date of THAT work and beats the
+ *  date-header block it was typed under (real case, invoice 1096: dated 10/3
+ *  by its block, done 9/28 — and billed twice because the 9/28 task line
+ *  didn't recognise it). */
+function lineDate(raw: RawLine): string | null {
+  const fromNote = extractDateFromText(effectiveNoteText(raw)) ?? extractDateFromText(raw.rawPropertyText)
+  if (fromNote && raw.rawDateMentioned) {
+    const gap = Math.abs(Date.parse(fromNote) - Date.parse(raw.rawDateMentioned)) / 86_400_000
+    if (gap <= 14) return fromNote
+  }
+  return raw.rawDateMentioned ?? fromNote
+}
+
+interface EvidenceCtx {
+  raw: RawLine
+  task: TaskRow | null
+  pick: TaskPick | null
+  noteDate: string | null
+  claimedBy: ReadonlyMap<string, string>
+  billedDay: ReadonlyMap<string, string>
+  hasCoverage: boolean
+  tasksForProperty: TaskRow[]
+}
+
+/** Haven's rule (Jo, 2026-10-06): "strictly follow what's written in
+ *  BW/Trellis". A clean line must be backed by ONE completed clean task on
+ *  the billed day (±1), not already billed elsewhere. Anything else is a
+ *  question for a human before it reaches the client. Applies to the base
+ *  clean row and its split rows alike (they share the evidence). */
+function applyEvidenceRules(line: EngineLine, c: EvidenceCtx): EngineLine {
+  let l = line
+  const { task, pick } = c
+  if (task && isOwnerStayTitle(task.title)) l = flag(l, FLAGS.OWNER_STAY)
+  // Label came from the task where the vendor said something else.
+  if (task && l.lineKind !== 'extra') {
+    const vendorStd = standardizeTitle(c.raw.rawNoteText) ?? standardizeTitle(c.raw.rawPropertyText)
+    if (vendorStd && l.serviceType && vendorStd.title !== l.serviceType && !vendorStd.isExtra) l = flag(l, FLAGS.LABEL_FROM_TASK)
+  }
+  if (l.lineKind === 'extra' && l.splitGroup != null) return l // the base row carries the review
+  if (task && !isDone(task)) {
+    l = withNote(needsReview(l, FLAGS.TASK_NOT_COMPLETED),
+      `The only ${task.title} near ${c.noteDate ?? 'this date'} (${task.dueDate}) was never completed in Breezeway/Trellis — don't bill a clean that isn't marked done.`)
+  } else if (task && pick && pick.dateGap >= 2) {
+    l = withNote(needsReview(l, FLAGS.DATE_MISMATCH),
+      `No completed clean on ${c.noteDate}. The nearest is the ${task.title} on ${task.dueDate} — probably that clean with the wrong date. Fix the date (and make sure it isn't billed again on the next invoice) or remove the line.`)
+  } else if (!task && l.propertyId != null && c.hasCoverage && c.noteDate) {
+    const near = c.tasksForProperty
+      .filter(t => isDone(t) && t.dueDate && Math.abs(Date.parse(t.dueDate) - Date.parse(c.noteDate!)) / 86_400_000 <= 3)
+      .map(t => `${t.title} ${t.dueDate}${c.claimedBy.has(t.externalId) ? ` (already billed: ${c.claimedBy.get(t.externalId)})` : ''}`)
+    l = withNote(needsReview(l, FLAGS.UNMATCHED_TASK),
+      near.length
+        ? `No unbilled completed clean on ${c.noteDate}: ${near.join('; ')}. Likely a duplicate or mis-dated line — remove it or correct it.`
+        : `No completed clean in Breezeway/Trellis on or near ${c.noteDate} — confirm the clean happened (an inspection or a deleted task is not a clean) before billing it.`)
+  }
+  const day = task && isDone(task) && pick && pick.dateGap <= 1 ? task.dueDate : c.noteDate
+  const prior = l.propertyId != null && day ? c.billedDay.get(`${l.propertyId}|${day}`) : undefined
+  if (prior && !l.flags.includes(FLAGS.ALREADY_BILLED)) {
+    l = withNote(needsReview(l, FLAGS.ALREADY_BILLED), `A clean at this property on ${day} was already billed (${prior}). Remove this line unless it is a genuine second clean that day.`)
+  }
+  return l
+}
+
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
   const threshold = input.fuzzyThreshold ?? FUZZY_CONFIRM_THRESHOLD
   const propsById = new Map(input.properties.map(p => [p.id, p]))
   let splitCounter = 0
   const splitSeq = () => ++splitCounter
 
-  const outLines: EngineLine[] = []
-  for (const raw of input.lines) {
+  // One clean backs at most one invoice line: tasks claimed by an earlier
+  // clean line in this run (or billed on another run) are skipped.
+  const claimed = new Set<string>()
+  const claimedBy = new Map<string, string>()
+  for (const b of input.billedCleans ?? []) {
+    if (b.taskId) { claimed.add(b.taskId); claimedBy.set(b.taskId, b.ref) }
+  }
+  const billedDay = new Map<string, string>()
+  for (const b of input.billedCleans ?? []) billedDay.set(`${b.propertyId}|${b.date}`, b.ref)
+  // Earliest Tendwell clean per property, extended by cleans earlier in THIS
+  // run (so a second "onboarding" in the same week is caught too).
+  const firstClean = new Map<number, string>(input.firstCleanByProperty ?? [])
+  const tasksByProperty = new Map<number, TaskRow[]>()
+  for (const t of input.tasks) {
+    if (t.propertyId == null || !(t.isClean || t.isDeepClean)) continue
+    const arr = tasksByProperty.get(t.propertyId)
+    if (arr) arr.push(t)
+    else tasksByProperty.set(t.propertyId, [t])
+  }
+
+  // Claim order: lines with a completed clean on EXACTLY their date go first
+  // (in date order), then the rest. Otherwise a mis-dated line processed
+  // early can grab the neighbouring day's clean and push the real line for
+  // that day into a false mismatch (Stephanie Keegan 1260-5307: a bogus 9/27
+  // line took the 9/28 departure). Output keeps the vendor's line order.
+  const exactDay = (raw: RawLine): boolean => {
+    const r = resolveProperty(raw.rawPropertyText, input.aliases, input.properties, input.vendorId, threshold)
+    const d = lineDate(raw)
+    return r.propertyId != null && d != null &&
+      input.tasks.some(t => t.propertyId === r.propertyId && t.dueDate === d && (t.isClean || t.isDeepClean) && isDone(t))
+  }
+  const order = input.lines
+    .map((raw, i) => ({ raw, i, d: lineDate(raw) ?? '9999-12-31', x: exactDay(raw) ? 0 : 1 }))
+    .sort((a, b) => a.x - b.x || a.d.localeCompare(b.d) || a.i - b.i)
+
+  const outByIndex = new Map<number, EngineLine[]>()
+  for (const { raw, i } of order) {
     const resolution = resolveProperty(
       raw.rawPropertyText,
       input.aliases,
@@ -1357,17 +1616,54 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
     )
     const property = resolution.propertyId != null ? propsById.get(resolution.propertyId) ?? null : null
     const noteText = effectiveNoteText(raw)
-    const noteDate = raw.rawDateMentioned ?? extractDateFromText(noteText)
+    const noteDate = lineDate(raw)
     const preferDeep = /deep\s*clean/i.test(noteText ?? '')
-    const task = matchToTask(resolution.propertyId, noteDate ?? null, input.tasks, preferDeep)
-    let classified = classifyLine({ ...raw, rawDateMentioned: noteDate }, resolution, property, task, splitSeq)
+    const pick = pickCleanTask(resolution.propertyId, noteDate ?? null, input.tasks, { preferDeep, claimed, billedDays: new Set(billedDay.keys()) })
+    const task = pick?.task ?? null
+
+    // Onboarding verdict: valid only when no Tendwell clean predates this one.
+    const pid = resolution.propertyId
+    const evDate = task && isDone(task) && pick!.dateGap <= 1 ? task.dueDate : noteDate
+    const prior = pid != null ? firstClean.get(pid) ?? null : null
+    const onboarding: OnboardingVerdict = {
+      allowed: !(prior != null && evDate != null && prior < evDate),
+      firstClean: prior,
+    }
+
+    let classified = classifyLine({ ...raw, rawDateMentioned: noteDate }, resolution, property, task, splitSeq, onboarding)
     if (raw.source === 'generated') {
       classified = classified.map(l =>
         l.lineKind === 'deep_clean' ? { ...l, flags: [...l.flags, FLAGS.DEEP_RATE_ASSUMED] } : l,
       )
     }
-    outLines.push(...classified)
+
+    const base = classified.find(l => l.splitGroup == null || l.lineKind !== 'extra') ?? classified[0]
+    const isCleanLine = base != null && base.propertyId != null &&
+      (base.lineKind === 'clean' || base.lineKind === 'combined_split' || base.lineKind === 'deep_clean' ||
+        (base.lineKind === 'extra' && base.serviceType === 'Onboarding Clean'))
+
+    let serviceDate = noteDate ?? null
+    if (isCleanLine) {
+      classified = classified.map(l => applyEvidenceRules(l, {
+        raw, task, pick, noteDate, claimedBy, billedDay,
+        hasCoverage: (tasksByProperty.get(base.propertyId!)?.length ?? 0) > 0,
+        tasksForProperty: tasksByProperty.get(base.propertyId!) ?? [],
+      }))
+      if (task && isDone(task) && pick!.dateGap <= 1) {
+        serviceDate = task.dueDate
+        claimed.add(task.externalId)
+        claimedBy.set(task.externalId, `line ${raw.lineNo} of this invoice`)
+      }
+      const d = serviceDate ?? noteDate
+      if (base.propertyId != null && d && base.reviewStatus !== 'excluded') {
+        const cur = firstClean.get(base.propertyId)
+        if (!cur || d < cur) firstClean.set(base.propertyId, d)
+      }
+    }
+    outByIndex.set(i, classified.map(l => ({ ...l, serviceDate })))
   }
+  const outLines: EngineLine[] = []
+  for (let i = 0; i < input.lines.length; i++) outLines.push(...(outByIndex.get(i) ?? []))
 
   for (const w of detectMisdatedBlocks(outLines, input.tasks)) {
     for (const l of outLines) {
