@@ -50,7 +50,13 @@ const PAGES: Record<string, string[]> = {
   supervisor: ['/property-list', '/linen-tracker', '/linen-inventory', '/damaged-linens', '/access-codes', '/ac-filters',
     '/property-verifications', '/inspections', '/lost-items', '/incoming-shipments', '/laundry-weigh-ins', '/tasks',
     '/issues', '/cleaners', '/cleaner-metrics', '/alerts', '/vendor-invoicing', '/account'],
+  // Control group: finance staff must keep EVERYTHING (money pages load, the
+  // modal shows money). Forbidden-read checks don't apply to this role.
+  operations: ['/property-list', '/pipeline', '/contacts', '/quote-sheet', '/master-list', '/dashboard', '/alerts',
+    '/linen-tracker', '/access-codes', '/inspections', '/invoicing'],
 }
+const FINANCE_ROLES = new Set(['operations'])
+const ROLES = (process.env.ROLES ?? Object.keys(PAGES).join(',')).split(',')
 
 let failures = 0
 function fail(msg: string) { console.log(`FAIL  ${msg}`); failures++ }
@@ -63,7 +69,7 @@ async function sweep(role: string, page: Page, propertyId: number) {
     const m = /\/rest\/v1\/([a-z_]+)/.exec(url)
     if (m && res.request().method() === 'GET') {
       reads.push(m[1])
-      if (FORBIDDEN.has(m[1]) && !ALLOWED_FORBIDDEN_READ(m[1], url)) fail(`${role}: browser read finance-only "${m[1]}" (${new URL(url).pathname}${new URL(url).search.slice(0, 120)})`)
+      if (!FINANCE_ROLES.has(role) && FORBIDDEN.has(m[1]) && !ALLOWED_FORBIDDEN_READ(m[1], url)) fail(`${role}: browser read finance-only "${m[1]}" (${new URL(url).pathname}${new URL(url).search.slice(0, 120)})`)
     }
     if ((m || /\/api\//.test(url)) && res.status() >= 400 && !/\/api\/vendor-invoices\/runs/.test(url)) {
       errors.push(`${res.status()} ${res.request().method()} ${new URL(url).pathname}`)
@@ -81,9 +87,11 @@ async function sweep(role: string, page: Page, propertyId: number) {
   await page.goto(`${BASE}${role === 'supervisor' ? '/property-list' : '/access-codes'}?property=${propertyId}`, { waitUntil: 'networkidle', timeout: 60_000 }).catch(() => {})
   await page.waitForTimeout(2500)
   const modal = await page.locator('[role="dialog"]').innerText().catch(() => '')
+  const showsMoney = /Client Charged|Profit|Cobrado al cliente|Ganancia/i.test(modal)
   if (!modal) fail(`${role}: property modal did not open`)
-  else if (/Client Charged|Profit|Cobrado al cliente|Ganancia/i.test(modal)) fail(`${role}: property modal shows money`)
-  else console.log(`  ${role} property modal ok`)
+  else if (!FINANCE_ROLES.has(role) && showsMoney) fail(`${role}: property modal shows money`)
+  else if (FINANCE_ROLES.has(role) && !showsMoney) fail(`${role}: finance staff lost the money in the property modal`)
+  else console.log(`  ${role} property modal ok (${showsMoney ? 'shows money' : 'no money'})`)
   // The command palette (Cmd+K) searches properties.
   await page.keyboard.press('Meta+k')
   await page.waitForTimeout(1500)
@@ -98,7 +106,7 @@ const created: Array<{ id: string; email: string }> = []
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
 try {
   const { data: prop } = await admin.from('properties').select('id').is('deleted_at', null).not('stage_id', 'is', null).limit(1).single()
-  for (const role of Object.keys(PAGES)) {
+  for (const role of ROLES) {
     const email = `zz-crew-${role}-${stamp}@example.com`
     const password = `Crew-${stamp}-${Math.random().toString(36).slice(2)}`
     const { data: u, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true })
