@@ -28,6 +28,8 @@ import { PageHeader } from '@/components/PageHeader'
 import { StatusBadge } from '@/components/StatusBadge'
 import { TablePagination } from '@/components/TablePagination'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { PermanentDeleteDialog } from '@/components/PermanentDeleteDialog'
+import type { DeleteTarget } from '@/lib/permanent-delete'
 import { useAuth } from '@/lib/auth'
 import Papa from 'papaparse'
 import { profitTier, profitColorClass, PROFIT_THRESHOLDS } from '@/lib/profit-colors'
@@ -942,6 +944,7 @@ export default function CostTrackingPage() {
   // (deleted_at IS NULL) policy. Recoverable for 30 days from the Master List
   // archive panel.
   const [confirmArchiveId, setConfirmArchiveId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const { mutate: archiveProperty, isPending: archivePending } = useGuardedMutation('master-list', {
     mutationFn: async (id: string) => {
       const { error } = await supabase
@@ -1879,10 +1882,9 @@ export default function CostTrackingPage() {
         </div>
       )}
 
-      {/* Admin archive confirmation. Soft-delete sets deleted_at; the row stays
-          recoverable for 30 days from the Master List archive panel and is then
-          purged by the scheduled cleanup. Hard delete is intentionally not
-          exposed here - admins must use the archive panel. */}
+      {/* Admin archive confirmation. Soft-delete sets deleted_at; the row is purged
+          by the scheduled cleanup after 30 days. For duplicates, the dialog also
+          offers an immediate permanent delete through PermanentDeleteDialog. */}
       <Dialog
         open={!!confirmArchiveId}
         onOpenChange={v => { if (!v && !archivePending) setConfirmArchiveId(null) }}
@@ -1902,7 +1904,22 @@ export default function CostTrackingPage() {
                 <p className="text-xs text-muted-foreground">
                   {t('archiveDialog.note')}
                 </p>
-                <div className="flex justify-end gap-2 pt-2">
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                  {isAdmin && target ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-transparent hover:underline underline-offset-4 px-0 mr-auto"
+                      onClick={() => {
+                        setDeleteTarget({ kind: 'property', id: target.id, name: target.name })
+                        setConfirmArchiveId(null)
+                      }}
+                      disabled={archivePending}
+                      data-testid="button-archive-or-delete"
+                    >
+                      {t('common.permanentDelete.orDelete')}
+                    </Button>
+                  ) : null}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1927,6 +1944,8 @@ export default function CostTrackingPage() {
           })()}
         </DialogContent>
       </Dialog>
+
+      <PermanentDeleteDialog target={deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)} />
     </PageContainer>
   )
 }

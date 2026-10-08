@@ -25,7 +25,9 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore, MapPin, Link2 } from 'lucide-react'
+import { Pencil, X, Loader2, Copy, Check, Users, ExternalLink, Plus, ChevronDown, Archive, ArchiveRestore, MapPin, Link2, Trash2 } from 'lucide-react'
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '@/components/PermanentDeleteDialog'
+import type { DeleteTarget } from '@/lib/permanent-delete'
 import { propertyDeepLink } from '@/hooks/use-property-modal'
 import { PropertyNotesFeed } from '@/components/PropertyNotesFeed'
 import { AddressAutocomplete } from '@/components/AddressAutocomplete'
@@ -1280,6 +1282,8 @@ export function PropertyDetailModal() {
   const [stagePopoverOpen, setStagePopoverOpen] = useState(false)
   const [archiveOpen, setArchiveOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const canPermanentlyDelete = useCanPermanentlyDelete()
   const { mutate: changeStage, isPending: changingStagePending } = useMutation({
     mutationFn: async (toStage: { id: string; name: string }) => {
       const fromStage = property?.pipeline_stages
@@ -1588,6 +1592,16 @@ export function PropertyDetailModal() {
                   data-testid="modal-restore-btn"
                 >
                   {restorePending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArchiveRestore className="w-4 h-4" />}
+                </button>
+              )}
+              {!isLoading && property && canPermanentlyDelete && isArchived && (
+                <button
+                  onClick={() => setDeleteTarget({ kind: 'property', id: property.id, name: property.name })}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                  title={t('common.permanentDelete.buttonTooltip')}
+                  data-testid="modal-permanent-delete-btn"
+                >
+                  <Trash2 className="w-4 h-4" />
                 </button>
               )}
               {!isLoading && property && !isEditing && (
@@ -2723,7 +2737,22 @@ export function PropertyDetailModal() {
               {t('archive.reasonHelper')}</p>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter className="sm:items-center">
+          {canPermanentlyDelete && property ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive hover:bg-transparent hover:underline underline-offset-4 px-0 sm:mr-auto"
+              onClick={() => {
+                setDeleteTarget({ kind: 'property', id: property.id, name: property.name })
+                setArchiveOpen(false)
+              }}
+              disabled={archivePending}
+              data-testid="modal-archive-or-delete"
+            >
+              {t('common.permanentDelete.orDelete')}
+            </Button>
+          ) : null}
           <Button variant="outline" size="sm" onClick={() => setArchiveOpen(false)} disabled={archivePending}>
             {t('common.actions.cancel')}
           </Button>
@@ -2738,6 +2767,12 @@ export function PropertyDetailModal() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <PermanentDeleteDialog
+      target={deleteTarget}
+      onOpenChange={v => !v && setDeleteTarget(null)}
+      onDeleted={() => closePropertyModal()}
+    />
 
     <MapPickerDialog
       open={mapPickerOpen}
