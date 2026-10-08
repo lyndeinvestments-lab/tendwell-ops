@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchAllRows, loadEngineContext, reconcileRun, describeLineInsertError, withRunLease } from '../invoices/_lib.js'
 import { validatePeriod } from '../../shared/vendor-invoice.js'
+import { getSupabaseConfig, notifyStaff } from '../notify/_lib.js'
 import { archivedDuplicateMap, buildPortalDraft, dayKey, type DraftProperty, type SkippedDay } from './_draft.js'
 import {
   blockedDaysFor,
@@ -110,6 +111,39 @@ export async function populateDraft(supabase: SupabaseClient, run: RunRow): Prom
     .eq('id', run.id)
   if (metaErr) throw new Error(`Failed to save draft summary: ${metaErr.message}`)
   return { added: draft.lines.length, skipped: draft.skipped }
+}
+
+const money = (n: number | null | undefined) =>
+  n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+
+/** Email the admins who keep "Vendor invoice submitted" on. Never throws
+ *  (notifyStaff swallows and logs failures): a mail outage must not stop an
+ *  invoice from being submitted. */
+async function notifySubmitted(
+  actor: VendorActor,
+  run: RunRow,
+  detail: Awaited<ReturnType<typeof runDetail>>,
+  needsReview: boolean,
+): Promise<void> {
+  const active = detail.lines.filter(l => !l.removed)
+  const cleans = active.filter(l => l.category === 'clean').length
+  const items = active.length - cleans
+  const vendor = actor.vendorName || 'A vendor'
+  await notifyStaff(getSupabaseConfig(), {
+    eventType: 'vendor_invoice_submitted',
+    subject: `${vendor} submitted an invoice for ${run.period_start} – ${run.period_end}`,
+    lines: [
+      `<strong>${vendor}</strong> submitted their invoice for <strong>${run.period_start} – ${run.period_end}</strong>${run.vendor_reference ? ` (their #${run.vendor_reference})` : ''}.`,
+      `Total ${money(detail.run.total)} · ${cleans} clean${cleans === 1 ? '' : 's'} · ${items} added item${items === 1 ? '' : 's'}.`,
+      needsReview
+        ? `${detail.in_review_count} line${detail.in_review_count === 1 ? '' : 's'} need review before it can be approved.`
+        : 'Nothing is flagged — it is ready to approve.',
+      `Submitted by ${actor.email}.`,
+    ],
+    ctaUrl: 'https://app.tendwellcleaningco.com/invoicing',
+    ctaLabel: 'Review & approve',
+    meta: { run_id: run.id, vendor_id: actor.vendorId, total: detail.run.total },
+  })
 }
 
 export async function runDetail(supabase: SupabaseClient, run: RunRow) {
@@ -289,7 +323,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (updErr) throw new Error(updErr.message)
         if (!updated?.length) return { status: 409, body: { error: 'not_draft' } }
         const fresh = await loadVendorRun(supabase, cur.id, actor.vendorId)
-        return { status: 200, body: await runDetail(supabase, fresh!) }
+        const detail = await runDetail(supabase, fresh!)
+        await notifySubmitted(actor, fresh!, detail, (count ?? 0) > 0)
+        return { status: 200, body: detail }
       }
 
       // delete — only a never-submitted draft

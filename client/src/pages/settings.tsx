@@ -26,7 +26,7 @@ import {
   BUILD_PR_NUMBER, BUILD_PR_URL, BUILD_SHA_SHORT, BUILD_COMMIT_URL,
   BUILD_COMMIT_REF, BUILD_COMMIT_TITLE, BUILD_TIME, IS_LOCAL_BUILD,
 } from '@/lib/version'
-import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS } from '@/lib/notif-prefs'
+import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS, notifEventAvailable } from '@/lib/notif-prefs'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useLocation, Link } from 'wouter'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
@@ -1647,7 +1647,7 @@ function NotificationsSection() {
                         )}
                         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>
                           {EVENT_DEFS.map(ev => {
-                            const hasAccess = allowedViews.includes(ev.view)
+                            const hasAccess = notifEventAvailable(ev, u.role, allowedViews)
                             const checked = !!prefs[ev.field]
                             const active = emailActive && hasAccess
                             return (

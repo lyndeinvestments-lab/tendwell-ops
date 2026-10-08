@@ -29,6 +29,7 @@ export const DEFAULT_NOTIF_PREFS = {
   notify_feedback_unacknowledged: true,
   notify_web_lead: true,
   notify_owner_portal_activity: true,
+  notify_vendor_invoice_submitted: true,
 } as const
 
 // Each notification event maps to the view a user must have access to for the
@@ -39,6 +40,16 @@ export interface NotifEventDef {
   field: string
   label: string
   view: string
+  /** Only these roles ever receive the event (server: EVENT_ROLE_REQUIREMENT). */
+  roles?: readonly string[]
+}
+
+/** Whether a user can receive an event at all: the view, and the role where
+ *  the event is role-restricted. Mirrors filterRecipients in api/notify/_lib.ts. */
+export function notifEventAvailable(ev: NotifEventDef, role: string | null | undefined, allowedViews: readonly string[]): boolean {
+  if (!allowedViews.includes(ev.view)) return false
+  if (ev.roles && !ev.roles.includes(role ?? '')) return false
+  return true
 }
 
 export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
@@ -58,4 +69,5 @@ export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
   { field: 'notify_feedback_unacknowledged', label: 'Unacknowledged guest feedback (daily digest)', view: 'issues' },
   { field: 'notify_web_lead',                label: 'New website lead',                             view: 'contacts' },
   { field: 'notify_owner_portal_activity',   label: 'Owner portal activity',                        view: 'settings' },
+  { field: 'notify_vendor_invoice_submitted', label: 'Vendor invoice submitted',                    view: 'invoicing', roles: ['admin'] },
 ]
