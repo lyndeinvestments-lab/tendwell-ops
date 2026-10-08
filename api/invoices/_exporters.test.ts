@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import Papa from 'papaparse'
-import { fmtUsd, fmtUsDate, qboClassFor, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
+import { cleanReason, clientDescription, fmtUsd, fmtUsDate, qboClassFor, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 
 const RUN: ExportRun = {
   vendorName: 'Busy Bee Cleaning',
@@ -500,10 +500,18 @@ describe('month split (Haven, invoice 1096: never mix two months on one invoice)
     expect(rows[2][5]).toBe('1097')
     expect(rows[2][7]).toBe('10/03/2026')
   })
-  it('QBO flat: owner stay and onboarding reason ride in the description', () => {
+  it('QBO flat: owner stay leads title AND description; onboarding reason rides in the description', () => {
+    // Christine, 2026-10-08: "Owner Stay - Departure Clean" so QBO Class
+    // rules book it to the owner instead of as a Haven expense.
     const rows = parse(toQboFlatCsv(run, lines))
-    expect(rows[2][2]).toBe('Hali Hoag 2140 – Owner Stay')
+    expect(rows[2][0]).toBe('Owner Stay - Departure Clean')
+    expect(rows[2][2]).toBe('Owner Stay - Departure Clean – Hali Hoag 2140')
     expect(rows[3][2]).toBe('Nicole Allison 3690 – onboarding fee, first Tendwell clean')
+  })
+  it('QBO multiline: the Item stays canonical, the description carries "Owner Stay - Turn Clean"', () => {
+    const ml = parse(toQboMultilineCsv(run, [mk('2026-10-01', 'Hali Hoag 2140', 200, { flags: ['owner_stay'] })]))
+    expect(ml[1][7]).toBe('Turn Clean')
+    expect(ml[1][8]).toBe('Owner Stay - Turn Clean – Hali Hoag 2140')
   })
   it('QBO multiline: one header block per month', () => {
     const rows = parse(toQboMultilineCsv(run, lines))
@@ -521,5 +529,33 @@ describe('month split (Haven, invoice 1096: never mix two months on one invoice)
   it('a single-month run keeps the plain vendor invoice number', () => {
     const rows = parse(toRampCsv(run, [lines[1]]))
     expect(rows[1][2]).toBe('1261003821')
+  })
+})
+
+describe('Haven 1097 feedback (Christine, 2026-10-08)', () => {
+  const base = {
+    lineKind: 'extra' as const, serviceDate: '2026-10-02', clientName: 'Haven Vacation Rentals',
+    billingChannel: 'qbo_haven' as const, cleanerPayAmount: 20, clientChargeAmount: 50, reviewStatus: 'ok',
+  }
+  it('a towel delivery is "Trip Fee (reason) – property", never "Delivery"', () => {
+    const l: ExportLine = { ...base, serviceType: 'Trip Fee', propertyName: 'John Bryan 4144', note: 'Towel delivery (orig: Deliver towel)', reviewNote: null }
+    expect(serviceTitle(l)).toBe('Trip Fee (Towel delivery) – John Bryan 4144')
+  })
+  it('an owner-stay trip leads with "Owner Stay - "', () => {
+    const l: ExportLine = { ...base, serviceType: 'Trip Fee', propertyName: 'John Bryan 4144', note: 'Deliver towel', flags: ['owner_stay'],
+      reviewNote: 'Extra towels + 4 bath rugs delivered for the owner stay. https://havenvacationrentals.slack.com/archives/C08V5RCALJF/p1790949842297229' }
+    expect(serviceTitle(l)).toBe('Owner Stay - Trip Fee (Extra towels + 4 bath rugs delivered for the owner stay) – John Bryan 4144')
+    // The evidence link goes in the description, not the title.
+    expect(clientDescription(l)).toBe('Owner Stay - Trip Fee – John Bryan 4144 – https://havenvacationrentals.slack.com/archives/C08V5RCALJF/p1790949842297229')
+  })
+  it('a reimbursement names its reason and property; our bookkeeping never reaches the client', () => {
+    const l: ExportLine = { ...base, serviceType: 'Reimbursement', propertyName: 'Kim Mills 2222', note: 'UPS delivery 9/28/26',
+      reviewNote: 'UPS shipping of guest Jane Doe\'s left charger (Jordan, 2026-10-05) https://x.slack.com/archives/C1/p2' }
+    expect(serviceTitle(l)).toBe("Reimbursement (UPS shipping of guest Jane Doe's left charger) – Kim Mills 2222")
+    expect(cleanReason('Towel delivery (orig: Deliver towel)')).toBe('Towel delivery')
+  })
+  it('a reason that already names the property does not repeat it', () => {
+    const l: ExportLine = { ...base, serviceType: 'Reimbursement', propertyName: 'Kim Mills 2222', note: null, reviewNote: 'Propane for Kim Mills 2222' }
+    expect(serviceTitle(l)).toBe('Reimbursement (Propane for Kim Mills 2222)')
   })
 })

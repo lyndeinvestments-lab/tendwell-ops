@@ -30,9 +30,11 @@ import {
   FLAGS,
   REASON_REQUIRED_EXTRAS,
   extraReasonFromNote,
+  ownerStayDuring,
   round2,
   type BillingChannel,
   type PropertyRates,
+  type StayRow,
 } from './_engine.js'
 
 /** One completed-or-not task from either source, already property-resolved. */
@@ -104,6 +106,9 @@ export interface BuildTaskLinesInput {
   periodStart: string
   periodEnd: string
   nextLineNo: number
+  /** Reservations (owner blocks included) — work done during an owner's stay
+   *  is flagged as an owner charge. Absent = never flagged. */
+  stays?: ReadonlyArray<StayRow>
 }
 
 const usd = (n: number) => `$${round2(n).toFixed(2)}`
@@ -199,6 +204,12 @@ export function buildTaskLines(input: BuildTaskLinesInput): BuildTaskLinesResult
       flags.push(FLAGS.REASON_REQUIRED)
       reviewStatus = 'needs_review'
       notes.push(`${serviceType} needs a reason in the invoice title — add one in the review note.`)
+    }
+
+    const ownerStay = input.stays?.length ? ownerStayDuring(t.propertyId, t.date, input.stays) : null
+    if (ownerStay) {
+      flags.push(FLAGS.OWNER_STAY)
+      notes.push(`Done during the owner's stay (${ownerStay.guestName ?? 'owner block'}, ${ownerStay.checkin} → ${ownerStay.checkout}) — an owner charge.`)
     }
 
     const channel: BillingChannel | null = property?.billingChannel ?? null

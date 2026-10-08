@@ -135,11 +135,19 @@ async function queryAll(
   for (;;) {
     const args: Record<string, unknown> = { view, select, limit: pageSize, offset }
     if (filters) args.filters = filters
-    const r = await callTool(apiKey, 'trellisql_query', args) as { rows?: Array<Record<string, unknown>>; pagination?: { has_more: boolean } }
+    const r = await callTool(apiKey, 'trellisql_query', args) as {
+      rows?: Array<Record<string, unknown>>
+      pagination?: { has_more: boolean; next_offset?: number }
+    }
     const rows = r.rows || []
     out.push(...rows)
     if (!r.pagination?.has_more || rows.length === 0) break
-    offset += pageSize
+    // Trellis can return FEWER rows than asked when a page hits its result
+    // budget (it says so with next_offset). Advancing by pageSize would skip
+    // the rows in between, so follow next_offset, else what actually came back.
+    offset = typeof r.pagination.next_offset === 'number' && r.pagination.next_offset > offset
+      ? r.pagination.next_offset
+      : offset + rows.length
   }
   return out
 }
@@ -164,12 +172,23 @@ async function upsert(
 
 const TASK_SELECT = ['id', 'title', 'property_id', 'property_name', 'department_name', 'status', 'priority', 'assigned_to_id', 'assigned_to_name', 'scheduled_date', 'completed_at']
 const PROP_SELECT = ['id', 'name', 'status', 'city']
+const RESERVATION_SELECT = ['id', 'property_id', 'property_name', 'guest_name', 'checkin_date', 'checkout_date', 'status', 'source', 'total_amount']
 
 const now = () => new Date().toISOString()
 const isoOffset = (days: number) => new Date(Date.now() + days * 86400000).toISOString().slice(0, 10)
 
 const propRow = (p: Record<string, unknown>, ws: string) => ({
   trellis_id: p.id, workspace: ws, name: p.name ?? '(unnamed)', status: p.status ?? null, city: p.city ?? null, synced_at: now(),
+})
+const num = (v: unknown): number | null => {
+  const n = typeof v === 'string' ? Number(v) : typeof v === 'number' ? v : NaN
+  return Number.isFinite(n) ? n : null
+}
+const reservationRow = (r: Record<string, unknown>, ws: string) => ({
+  trellis_reservation_id: r.id, workspace: ws, trellis_property_id: r.property_id ?? null,
+  property_name: r.property_name ?? null, guest_name: r.guest_name ?? null,
+  checkin_date: r.checkin_date ?? null, checkout_date: r.checkout_date ?? null,
+  status: r.status ?? null, source: r.source ?? null, total_amount: num(r.total_amount), synced_at: now(),
 })
 const taskRow = (t: Record<string, unknown>, ws: string) => ({
   trellis_task_id: t.id, workspace: ws, trellis_property_id: t.property_id ?? null,
@@ -315,6 +334,37 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     processed += propsB.length
     estimatedTotal = Math.max(estimatedTotal, processed + 400)
     await emit('props_b', processed, estimatedTotal, `Workspace B properties done (${propsB.length})`)
+    await checkCancel()
+  }
+
+  // ── Workspace B: Reservations (nightly) ──────────────────────────────────
+  // Haven's reservation calendar, so invoicing can tell an owner's stay from a
+  // guest's: the first clean after an owner block checks out is an OWNER
+  // charge ("Owner Stay - Departure Clean", Christine 2026-10-08). Window is
+  // wide enough to re-reconcile a month-old invoice. Best-effort: a failure
+  // here only means owner stays aren't auto-detected until the next night.
+  if (!opts.tasksOnly) {
+    try {
+      await emit('reservations', processed, estimatedTotal, 'Pulling Haven reservations…')
+      await checkCancel()
+      const resStart = isoOffset(-75)
+      const resEnd = isoOffset(45)
+      const res = dedupeById(await queryAll(B, 'reservations', RESERVATION_SELECT, {
+        status: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'],
+        checkout_date: { gte: resStart, lte: resEnd },
+      }, 100))
+      await upsert(supabase, 'trellis_reservation_snapshot', res.map(r => reservationRow(r, 'B')), 'trellis_reservation_id')
+      // A reservation cancelled since the last sync drops out of the query —
+      // remove what this run did not see inside the window it covered.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('trellis_reservation_snapshot').delete()
+        .eq('workspace', 'B').lt('synced_at', runStartIso)
+        .gte('checkout_date', resStart).lte('checkout_date', resEnd)
+      await emit('reservations', processed, estimatedTotal, `Reservations done (${res.length})`)
+    } catch (e) {
+      if (e instanceof SyncCanceledError) throw e
+      await emit('reservations', processed, estimatedTotal, `Reservation sync skipped: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+    }
     await checkCancel()
   }
 

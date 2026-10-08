@@ -129,6 +129,11 @@ const VOCABULARY: Array<[string, AuxCategory]> = [
   ['Pillow Stain', 'unclassified'],
   ['The shower curtain is missing', 'unclassified'],
   ['Need 3 plastic shower curtain', 'delivery'],
+  // Shipping a guest's things back is NOT a delivery trip (Haven, 2026-10-08):
+  // it has its own title so a towel run is never read as mailed items.
+  ['Mail left items to guest', 'mailed_items'],
+  ['Ship back left behind items', 'mailed_items'],
+  ['Guest left items - mailed', 'mailed_items'],
   ['Broken a small trash can', 'unclassified'],
   ['Upstairs bathroom is leaking', 'unclassified'],
   ['Install toilet paper holder — upstairs bathroom', 'unclassified'],
@@ -154,23 +159,25 @@ describe('classifyAuxTask — the live vocabulary', () => {
 })
 
 describe('billability & pricing settings', () => {
-  it('defaults: the eight billable categories bill, the rest do not', () => {
+  it('defaults: the nine billable categories bill, the rest do not', () => {
     const s = resolveAuxSettings()
     const billable = (Object.keys(AUX_CATEGORIES) as AuxCategory[]).filter(c => isBillableCategory(c, s))
     expect(billable.sort()).toEqual(
-      ['delivery', 'extra_cleaning', 'hot_tub', 'linen_pull', 'lockbox', 'pet', 'touch_up', 'trash'],
+      ['delivery', 'extra_cleaning', 'hot_tub', 'linen_pull', 'lockbox', 'mailed_items', 'pet', 'touch_up', 'trash'],
     )
   })
 
-  it('default prices mirror the engine standard pricing and leave Trip Fee / Extra Cleaning unpriced', () => {
+  it('default prices mirror the engine standard pricing and leave Extra Cleaning / Mailed Left Items unpriced', () => {
     const s = resolveAuxSettings()
     expect(auxCharge('Hot Tub Refresh Requested by Guest', s)).toBe(50)
     expect(auxCharge('Excessive Trash Pickup', s)).toBe(50)
     expect(auxCharge('Vacancy Clean / Touch Up Clean', s)).toBe(50)
     expect(auxCharge('Vacancy Clean / Touch Up Clean', s, { hotTub: true })).toBe(65)
-    expect(auxCharge('Trip Fee', s)).toBeNull()
+    // Deliveries became Trip Fees (Haven, 2026-10-08) at the $50 they billed at before.
+    expect(auxCharge('Trip Fee', s)).toBe(50)
     expect(auxCharge('Extra Cleaning', s)).toBeNull()
-    expect(Object.keys(DEFAULT_EXTRA_PRICING)).toHaveLength(6)
+    expect(auxCharge('Mailed Left Items by the Guest', s)).toBeNull()
+    expect(Object.keys(DEFAULT_EXTRA_PRICING)).toHaveLength(7)
   })
 
   it('stored JSON overrides win, malformed values are ignored, null clears a default', () => {
@@ -210,7 +217,7 @@ describe('billability & pricing settings', () => {
     expect(auxPrice('Pet Fee', s, { hotTub: true, feeOverrides })).toEqual({ charge: 30, source: 'client' })
     expect(auxPrice('Linen Pull', s, { feeOverrides })).toEqual({ charge: 50, source: 'standard' })
     // No standard price → the override does not invent one.
-    expect(auxPrice('Trip Fee', s, { feeOverrides: { 'Trip Fee': { charge: 35, hotTubCharge: null } } })).toBeNull()
+    expect(auxPrice('Extra Cleaning', s, { feeOverrides: { 'Extra Cleaning': { charge: 35, hotTubCharge: null } } })).toBeNull()
   })
 
   it('feeOverridesByContact groups rows by client and drops bad prices', () => {
