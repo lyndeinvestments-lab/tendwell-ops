@@ -607,6 +607,14 @@ export interface TaskLineSyncResult {
   needsReviewCount: number
 }
 
+/** What a reconcile will do to a run's task lines — computed, not applied
+ *  (reconcileRun applies everything in one transaction). */
+export interface TaskLinePlan {
+  deleteIds: string[]
+  inserts: Array<Record<string, unknown>>
+  result: TaskLineSyncResult
+}
+
 /**
  * Bring a run's `source='task'` lines in step with the completed billable
  * tasks in its period. Human-touched task rows (dismissed / resolved / edited)
@@ -615,7 +623,7 @@ export interface TaskLineSyncResult {
  * Untouched task rows are deleted and rebuilt so a settings change (price,
  * billability) or a late-arriving task lands without anyone doing anything.
  */
-export async function syncTaskLines(
+export async function planTaskLines(
   supabase: SupabaseClient,
   runId: string,
   input: {
@@ -630,14 +638,9 @@ export async function syncTaskLines(
     nextLineNo: number
     stays?: StayRow[]
   },
-): Promise<TaskLineSyncResult> {
+): Promise<TaskLinePlan> {
   const kept = input.taskRows.filter(isHumanTouchedTaskLine)
   const stale = input.taskRows.filter(r => !isHumanTouchedTaskLine(r))
-  for (let i = 0; i < stale.length; i += 200) {
-    const ids = stale.slice(i, i + 200).map(r => r.id as string)
-    const { error } = await supabase.from('invoice_lines').delete().in('id', ids)
-    if (error) throw new Error(`Failed to clear task lines: ${error.message}`)
-  }
 
   const [settings, tasks, dismissedObs] = await Promise.all([
     loadAuxSettings(supabase),
@@ -691,15 +694,9 @@ export async function syncTaskLines(
     nextLineNo: input.nextLineNo,
     stays: input.stays,
   })
-  if (built.inserts.length > 0) {
-    const { error } = await supabase
-      .from('invoice_lines')
-      .insert(built.inserts.map(l => ({ ...l, run_id: runId })))
-    if (error) throw new Error(`Failed to insert task lines: ${error.message}`)
-  }
 
   const keptActive = kept.filter(r => r.line_kind !== 'excluded' && r.review_status !== 'excluded')
-  return {
+  const result: TaskLineSyncResult = {
     inserted: built.inserts.length,
     kept: kept.length,
     totalClientCharge: round2(
@@ -707,6 +704,7 @@ export async function syncTaskLines(
     ),
     needsReviewCount: built.needsReviewCount + kept.filter(r => r.review_status === 'needs_review').length,
   }
+  return { deleteIds: stale.map(r => r.id as string), inserts: built.inserts.map(l => ({ ...l, run_id: runId })), result }
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -907,7 +905,7 @@ export async function reconcileRun(
     'line_no',
   )
   // Task-derived rows (billable Breezeway/Trellis tasks, source='task') never
-  // enter the engine — syncTaskLines rebuilds them from the task tables once
+  // enter the engine — planTaskLines rebuilds them from the task tables once
   // the vendor lines are settled — so they sit outside both buckets here.
   const taskRows = rows.filter(r => r.source === 'task')
   const taskLineNos = taskRows.map(r => Number(r.line_no))
@@ -980,25 +978,13 @@ export async function reconcileRun(
     ? lines.map(l => (l.splitGroup != null ? { ...l, splitGroup: l.splitGroup + maxPreservedGroup } : l))
     : lines
 
-  // Replace rebuilt rows atomically-ish: delete then insert (staff-only table,
-  // single-writer workflow — a lost race here just means re-running reconcile).
-  if (rebuild.length > 0) {
-    const keepLineNos = [...preservedLineNos, ...taskLineNos]
-    const { error: delErr } = await supabase
-      .from('invoice_lines')
-      .delete()
-      .eq('run_id', runId)
-      .not('line_no', 'in', `(${keepLineNos.length ? keepLineNos.join(',') : '-1'})`)
-    if (delErr) throw new Error(`Failed to clear lines: ${delErr.message}`)
-  }
-  if (lines.length > 0) {
-    const inserts = toLineInserts(runId, offsetLines.filter(l => !preservedLineNos.has(l.lineNo)))
-      .map(ins => withVendorCarry(ins, vendorCarry.get(ins.line_no), isPortalRun))
-    if (inserts.length > 0) {
-      const { error: insErr } = await supabase.from('invoice_lines').insert(inserts)
-      if (insErr) throw new Error(describeLineInsertError(insErr))
-    }
-  }
+  // Rebuilt rows replace the rows they came from. Nothing is written yet:
+  // the whole change set (these, the task lines and the run's totals) is
+  // applied by invoice_apply_reconcile in ONE transaction below, so a
+  // function killed half-way can never leave a run with rows deleted and
+  // nothing put back (it used to: a vendor-added extra could vanish).
+  const engineInserts = toLineInserts(runId, offsetLines.filter(l => !preservedLineNos.has(l.lineNo)))
+    .map(ins => withVendorCarry(ins, vendorCarry.get(ins.line_no), isPortalRun))
 
   // Billable auxiliary tasks the vendor did not invoice (hot tub refreshes,
   // trash pickups… — see _aux.ts). Runs after the vendor lines are settled so
@@ -1009,7 +995,7 @@ export async function reconcileRun(
     source: string; propertyId: number | null; serviceType: string | null
     date: string | null; matchedTaskId: string | null; lineKind: string; reviewStatus: string
   }): ExistingLineRef => l
-  const taskSync = await syncTaskLines(supabase, runId, {
+  const taskPlan = await planTaskLines(supabase, runId, {
     periodStart,
     periodEnd,
     properties: ctx.properties,
@@ -1040,6 +1026,7 @@ export async function reconcileRun(
     ],
     nextLineNo: maxLineNo + 1,
   })
+  const taskSync = taskPlan.result
   summary.totalClientCharge = round2(summary.totalClientCharge + taskSync.totalClientCharge)
   summary.needsReviewCount += taskSync.needsReviewCount
 
@@ -1075,20 +1062,12 @@ export async function reconcileRun(
         .reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0),
   )
 
-  // Preserved rows never see the engine's channel lookup — pick up any client
-  // channel fixed since they were resolved (see refreshBillingChannels).
-  await refreshBillingChannels(supabase, runId)
-
   if (isPortalRun) {
     // The portal post-processing (withVendorCarry) can send rows to review
-    // that the engine passed, so count the queue from what was stored.
-    const { count, error: cntErr } = await supabase
-      .from('invoice_lines')
-      .select('id', { count: 'exact', head: true })
-      .eq('run_id', runId)
-      .eq('review_status', 'needs_review')
-    if (cntErr) throw new Error(`Failed to count review queue: ${cntErr.message}`)
-    summary.needsReviewCount = count ?? 0
+    // that the engine passed, so count the queue over the final row set.
+    const keptTask = taskRows.filter(r => !taskPlan.deleteIds.includes(r.id))
+    summary.needsReviewCount = [...preserved, ...keptTask, ...engineInserts, ...taskPlan.inserts]
+      .filter(r => (r as Record<string, unknown>).review_status === 'needs_review').length
   }
 
   const stated = run.stated_subtotal != null ? Number(run.stated_subtotal) : null
@@ -1096,15 +1075,23 @@ export async function reconcileRun(
   const needsReview = summary.needsReviewCount > 0 || !subtotalOk
   const status: ReconcileResult['status'] = needsReview ? 'review_needed' : 'reconciled'
 
-  // A vendor's draft stays a draft: only submitting it moves it into the
-  // admin review queue (api/vendor-invoices/runs.ts → submit).
-  const { error: updErr } = await supabase
-    .from('invoice_runs')
-    .update(run.status === 'draft'
+  // Apply everything at once. A vendor's draft stays a draft: only submitting
+  // it moves it into the admin review queue (api/vendor-invoices/runs.ts).
+  const { error: applyErr } = await supabase.rpc('invoice_apply_reconcile', {
+    p_run_id: runId,
+    p_delete_ids: [...rebuild.map(r => r.id as string), ...taskPlan.deleteIds],
+    p_rows: [...engineInserts, ...taskPlan.inserts],
+    p_run: run.status === 'draft'
       ? { computed_subtotal: summary.totalInvoiced }
-      : { status, computed_subtotal: summary.totalInvoiced })
-    .eq('id', runId)
-  if (updErr) throw new Error(`Failed to update run: ${updErr.message}`)
+      : { status, computed_subtotal: summary.totalInvoiced },
+  })
+  if (applyErr) throw new Error(describeLineInsertError(applyErr))
+
+  // Preserved rows never see the engine's channel lookup — pick up any client
+  // channel fixed since they were resolved (see refreshBillingChannels).
+  // Idempotent and only ever fills a missing channel, so it is safe outside
+  // the transaction: if it fails, the next reconcile or approve repeats it.
+  await refreshBillingChannels(supabase, runId)
 
   return { summary, status, taskLines: taskSync }
 }
