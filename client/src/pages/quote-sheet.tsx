@@ -8,6 +8,8 @@ import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '@/components/PermanentDeleteDialog'
+import type { DeleteTarget } from '@/lib/permanent-delete'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useToast } from '@/hooks/use-toast'
@@ -237,6 +239,8 @@ export default function QuoteSheetPage() {
   // 'archived' to see + restore them, or 'all' to audit both at once.
   const [viewMode, setViewMode] = useState<'active' | 'archived' | 'all'>('active')
   const [archivingTarget, setArchivingTarget] = useState<any>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const canPermanentlyDelete = useCanPermanentlyDelete()
   const [archiveReason, setArchiveReason] = useState('')
   // Default to newest-first by quote date so a just-added quote lands at the
   // top of the list where people look for it. Alphabetical-by-name (the old
@@ -1020,7 +1024,20 @@ export default function QuoteSheetPage() {
                           >
                             {t('quoteSheet.rowActions.restore')}
                           </Button>
-                        ) : (
+                        ) : null}
+                        {p.archived_at && canPermanentlyDelete ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs gap-1 hover:text-destructive text-muted-foreground px-2"
+                            onClick={(e) => { e.stopPropagation(); setDeleteTarget({ kind: 'property', id: p.id, name: p.name }) }}
+                            data-testid={`button-permanent-delete-${p.id}`}
+                            title={t('common.permanentDelete.buttonTooltip')}
+                          >
+                            {t('common.permanentDelete.button')}
+                          </Button>
+                        ) : null}
+                        {p.archived_at ? null : (
                           <>
                             <Button
                               size="sm"
@@ -1589,7 +1606,22 @@ export default function QuoteSheetPage() {
               </p>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="sm:items-center">
+            {canPermanentlyDelete && archivingTarget ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive hover:bg-transparent hover:underline underline-offset-4 px-0 sm:mr-auto"
+                onClick={() => {
+                  setDeleteTarget({ kind: 'property', id: archivingTarget.id, name: archivingTarget.name })
+                  setArchivingTarget(null)
+                }}
+                disabled={archivePending}
+                data-testid="button-archive-or-delete"
+              >
+                {t('common.permanentDelete.orDelete')}
+              </Button>
+            ) : null}
             <Button variant="outline" size="sm" onClick={() => setArchivingTarget(null)} disabled={archivePending}>
               {t('common.actions.cancel')}
             </Button>
@@ -1604,6 +1636,8 @@ export default function QuoteSheetPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <PermanentDeleteDialog target={deleteTarget} onOpenChange={v => !v && setDeleteTarget(null)} />
 
       {/* New-client mini dialog (opens over the Add Quote dialog). Fields
           mirror the contacts table minimum: name required, email + phone

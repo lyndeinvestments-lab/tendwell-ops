@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
+import { PermanentDeleteDialog, useCanPermanentlyDelete } from '@/components/PermanentDeleteDialog'
+import type { DeleteTarget } from '@/lib/permanent-delete'
 import { Phone, Mail, Calendar, StickyNote, MessageSquare, ExternalLink, Loader2, X, Send, Plus } from 'lucide-react'
 import { format } from 'date-fns'
 import { ContactNotesFeed } from '@/components/ContactNotesFeed'
@@ -109,6 +111,8 @@ function SelectField({
 
 export function ContactModal({ contactId, open, onClose, mode }: ContactModalProps) {
   const { t } = useLocale('contacts')
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
+  const canPermanentlyDelete = useCanPermanentlyDelete()
   const { format: formatDate, formatDistanceToNow } = useDateFormat()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -548,6 +552,22 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
                   >
                     {t('modal.deactivateButton')}
                   </Button>
+                  {canPermanentlyDelete && contactId && contact ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
+                      title={t('common.permanentDelete.buttonTooltip')}
+                      onClick={() => setDeleteTarget({
+                        kind: 'contact',
+                        id: contactId,
+                        name: contact.full_name || contact.company || contact.email || '',
+                      })}
+                      data-testid="button-contact-permanent-delete"
+                    >
+                      {t('common.permanentDelete.button')}
+                    </Button>
+                  ) : null}
                   <Button variant="outline" size="sm" onClick={onClose} className="ml-auto">{t('common.actions.close')}</Button>
                 </div>
               )}
@@ -693,6 +713,11 @@ export function ContactModal({ contactId, open, onClose, mode }: ContactModalPro
         )}
       </SheetContent>
     </Sheet>
+    <PermanentDeleteDialog
+      target={deleteTarget}
+      onOpenChange={v => !v && setDeleteTarget(null)}
+      onDeleted={() => onClose()}
+    />
     <OrganizationModal
       open={orgModalOpen}
       onClose={() => setOrgModalOpen(false)}
