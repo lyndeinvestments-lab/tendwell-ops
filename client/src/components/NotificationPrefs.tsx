@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import { sendTestEmail } from '@/lib/notify'
-import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS } from '@/lib/notif-prefs'
+import { DEFAULT_NOTIF_PREFS, NOTIF_EVENT_DEFS, notifEventAvailable } from '@/lib/notif-prefs'
 import { Bell, Lock, Mail } from 'lucide-react'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 
@@ -137,7 +137,7 @@ export function NotificationPrefs() {
             )}
             <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 ${emailActive ? '' : 'opacity-50'}`}>
               {NOTIF_EVENT_DEFS.map(ev => {
-                const hasAccess = allowedViews.includes(ev.view as any)
+                const hasAccess = notifEventAvailable(ev, user?.role, allowedViews as string[])
                 const checked = !!(prefs as any)[ev.field]
                 const active = emailActive && hasAccess
                 return (

@@ -70,5 +70,6 @@ export const accountEn = {
     notify_feedback_unacknowledged: 'Unacknowledged guest feedback (daily digest)',
     notify_web_lead: 'New website lead',
     notify_owner_portal_activity: 'Owner portal activity',
+    notify_vendor_invoice_submitted: 'Vendor invoice submitted',
   },
 }

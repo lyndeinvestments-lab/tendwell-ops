@@ -34,6 +34,16 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   // time. Swept by api/cron/owner-activity.ts. Owner administration lives in
   // Settings, so that is the audience.
   owner_portal_activity: 'settings',
+  // A cleaning company submitted its invoice from Operations → Invoicing
+  // (api/vendor-invoices/runs.ts). The email links to Invoice Reconciliation.
+  vendor_invoice_submitted: 'invoicing',
+}
+
+// Events only some ROLES may receive, on top of the view requirement.
+// Vendor-submitted invoices go to admins only (Jordan, 2026-10-08), even
+// though operations also holds the invoicing view.
+export const EVENT_ROLE_REQUIREMENT: Record<string, readonly string[]> = {
+  vendor_invoice_submitted: ['admin'],
 }
 
 export const EVENT_PREF_FIELD: Record<string, string> = {
@@ -55,6 +65,7 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   web_lead_received: 'notify_web_lead',
   web_lead_booked: 'notify_web_lead',
   owner_portal_activity: 'notify_owner_portal_activity',
+  vendor_invoice_submitted: 'notify_vendor_invoice_submitted',
 }
 
 export interface SupabaseClient {
@@ -175,6 +186,7 @@ export interface NotifPrefs {
   notify_feedback_unacknowledged: boolean
   notify_web_lead: boolean
   notify_owner_portal_activity: boolean
+  notify_vendor_invoice_submitted: boolean
   digest_frequency: 'instant' | 'daily' | 'off'
 }
 
@@ -200,6 +212,7 @@ export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   notify_feedback_unacknowledged: true,
   notify_web_lead: true,
   notify_owner_portal_activity: true,
+  notify_vendor_invoice_submitted: true,
   digest_frequency: 'instant',
 }
 
@@ -276,6 +289,8 @@ export function filterRecipients(
     if (!u.google_email) return false
     if (opts.onlyUserIds && !opts.onlyUserIds.has(u.id)) return false
     if (!u.allowedViews.includes(requiredView)) return false
+    const roles = EVENT_ROLE_REQUIREMENT[eventType]
+    if (roles && !roles.includes(u.role)) return false
     // Cleaning / cleaner roles default to NO email notifications. They only
     // opt IN if they have an explicit preferences row with email_enabled=true.
     const explicit = prefsByUser.get(u.id)

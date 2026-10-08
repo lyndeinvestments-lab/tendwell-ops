@@ -65,5 +65,6 @@ export const accountEs: typeof accountEn = {
     notify_feedback_unacknowledged: 'Comentarios de huéspedes sin confirmar (resumen diario)',
     notify_web_lead: 'Nuevo contacto del sitio web',
     notify_owner_portal_activity: 'Actividad en el portal del propietario',
+    notify_vendor_invoice_submitted: 'Factura de proveedor enviada',
   },
 }
