@@ -80,8 +80,21 @@ async function resolveUser(supabase: SupabaseClient, token: string): Promise<Res
   const role = (data.role as string) ?? 'viewer'
   const customViews = Array.isArray(data.custom_views) ? data.custom_views as string[] : []
   // custom_views, when present, replace the role default entirely (matches
-  // the chatbot's auth shape so admins can scope individual users).
-  const resolvedViews = customViews.length > 0 ? customViews : (ROLE_DEFAULT_VIEWS[role] ?? [])
+  // the chatbot's auth shape so admins can scope individual users). Otherwise
+  // the role's grant in Settings → Roles (app_settings.role_permissions) wins,
+  // exactly as in the app's own auth — the hard-coded defaults alone had no
+  // inspector / supervisor entry, so those roles got 403 on a page they are
+  // granted. ROLE_DEFAULT_VIEWS stays the last-resort fallback.
+  let resolvedViews = customViews.length > 0 ? customViews : (ROLE_DEFAULT_VIEWS[role] ?? [])
+  if (customViews.length === 0) {
+    const { data: perms } = await supabase.from('app_settings').select('value').eq('key', 'role_permissions').maybeSingle()
+    try {
+      const views = perms?.value ? (JSON.parse(perms.value)?.[role]?.views as unknown) : null
+      if (Array.isArray(views)) resolvedViews = views.filter((v): v is string => typeof v === 'string')
+    } catch {
+      // Malformed setting — keep the defaults.
+    }
+  }
   return {
     id: data.id,
     role,
