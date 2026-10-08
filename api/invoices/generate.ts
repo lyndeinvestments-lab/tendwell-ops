@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { generateDraftLines } from './_engine.js'
 import { getServiceClient, loadEngineContext, reconcileRun, requireInvoicingBearer, toLineInserts } from './_lib.js'
 import { reconcile } from './_engine.js'
+import { isFullCleanTask } from '../vendor-invoices/_draft.js'
 
 // POST /api/invoices/generate
 // Body: { vendor_id: string, period_start: 'yyyy-mm-dd', period_end: 'yyyy-mm-dd' }
@@ -39,9 +40,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ctx = await loadEngineContext(supabase, periodStart, periodEnd)
     // Draft only from tasks strictly inside the requested period (the context
     // window is padded for matching, not for generation).
-    const inPeriod = ctx.tasks.filter(
-      t => t.dueDate != null && t.dueDate >= periodStart && t.dueDate <= periodEnd,
-    )
+    // Only full cleans (never a vacancy clean, touch-up or an inspection whose
+    // title mentions a clean), and one per property-day: Breezeway re-keys a
+    // task when a property is renamed, so the same clean can exist twice
+    // (Raman Gurai 1118 on 10/4 and Derek Trainer 1687 on 10/7 were each
+    // drafted twice). Same rules as the vendor portal's buildPortalDraft.
+    const seenDays = new Set<string>()
+    const inPeriod = ctx.tasks
+      .filter(t => t.dueDate != null && t.dueDate >= periodStart && t.dueDate <= periodEnd)
+      .filter(t => isFullCleanTask(t) && t.completed !== false)
+      .sort((a, b) => (a.isDeepClean === b.isDeepClean ? (a.source === 'trellis' ? 1 : 0) - (b.source === 'trellis' ? 1 : 0) : a.isDeepClean ? -1 : 1))
+      .filter(t => {
+        const k = `${t.propertyId}|${t.dueDate}`
+        if (seenDays.has(k)) return false
+        seenDays.add(k)
+        return true
+      })
     const propsById = new Map(ctx.properties.map(p => [p.id, p]))
     const rawLines = generateDraftLines(inPeriod, propsById)
     // No cleans is not necessarily no work: reconcileRun also appends the

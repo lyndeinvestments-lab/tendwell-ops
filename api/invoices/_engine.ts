@@ -53,6 +53,11 @@ export interface TaskRow {
   // went out labeled Departure on invoice 1096 (Haven, 2026-10-06).
   completed?: boolean
   source?: 'breezeway' | 'trellis'
+  // yyyy-mm-dd the task was marked done, when known. A task closed days away
+  // from its due date was usually rescheduled (Derek Trainer 1687: due 10/7,
+  // closed 10/3, replaced by a new task closed 10/7) — the vendor portal sends
+  // such a line to review instead of trusting either date.
+  completedOn?: string | null
 }
 
 /** A clean already billed to the client on an approved/exported run. Used to
@@ -87,6 +92,15 @@ export interface RawLine {
   rawNoteText: string | null
   rawAmount: number
   rawDateMentioned: string | null
+  // Vendor-portal lines know their property and service up front (they were
+  // built from an Ops property id, never typed text), so the engine must not
+  // re-resolve them by name: three Ops rows share "Kelly Armsworth 3634", and
+  // fuzzy text matching is for vendor CSVs. Absent on CSV / generated lines.
+  presetPropertyId?: number | null
+  // A vendor-portal EXTRA picked from the approved list. Bypasses keyword
+  // detection on the free-text reason ("Pet Fee - dog hair and trash" must not
+  // become Excessive Trash Pickup) and is never split off a base clean.
+  presetServiceType?: string | null
 }
 
 export type LineKind =
@@ -258,6 +272,10 @@ export const APPROVED_EXTRA_SERVICES = [
   'Hot Tub Refresh Requested by Guest',
   'Pet Fee',
 ] as const
+
+// Base services a vendor may also bill on their own, without a clean, from the
+// vendor portal's extras list (priced from STANDARD_EXTRA_PRICING).
+export const PRESET_STANDALONE_EXTRAS = ['Vacancy Clean / Touch Up Clean', 'Linen Pull'] as const
 
 // Task titles that are never owner-billable (unless mislabeled — see
 // RELABEL_TOLERANCE above).
@@ -1105,6 +1123,26 @@ export function classifyLine(
   const cleanerPay = property.cleanerPay ?? null
   const ceCharged = property.ceCharged ?? null
 
+  // Vendor-portal extra with a pinned service type: always a standalone extra
+  // at the vendor's amount, priced from the fee list like any other extra. It
+  // never borrows the day's clean task (that belongs to the clean line) and
+  // never splits into base + extra, so it cannot manufacture a second clean.
+  if (raw.presetServiceType && (APPROVED_EXTRA_SERVICES as readonly string[]).concat(PRESET_STANDALONE_EXTRAS).includes(raw.presetServiceType)) {
+    line.matchedTaskId = null
+    line.flags = line.flags.filter(f => f !== FLAGS.UNMATCHED_TASK)
+    line.lineKind = 'extra'
+    line.serviceType = raw.presetServiceType
+    line.cleanerPayAmount = round2(raw.rawAmount)
+    if (line.serviceType === 'Double Clean') {
+      line.clientChargeAmount = round2(raw.rawAmount)
+      return [withChannel(requireReason(flag(line, FLAGS.BILLED_WHOLE), noteText), property)]
+    }
+    line = priceStandaloneExtra(line, raw.rawAmount, property)
+      ?? { ...line, clientChargeAmount: round2(raw.rawAmount) }
+    return [withChannel(requireReason(line, noteText), property)]
+  }
+
+
   // Excluded task types — unless the amount is within $5 of the property's
   // clean rate (mislabeled real clean on the same date).
   const excludedText = isExcludedTitle(raw.rawNoteText) || isExcludedTitle(raw.rawPropertyText) ||
@@ -1723,8 +1761,12 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
   // early can grab the neighbouring day's clean and push the real line for
   // that day into a false mismatch (Stephanie Keegan 1260-5307: a bogus 9/27
   // line took the 9/28 departure). Output keeps the vendor's line order.
+  const resolveFor = (raw: RawLine): PropertyResolution =>
+    raw.presetPropertyId != null && propsById.has(raw.presetPropertyId)
+      ? { propertyId: raw.presetPropertyId, confidence: 1, via: 'exact' }
+      : resolveProperty(raw.rawPropertyText, input.aliases, input.properties, input.vendorId, threshold)
   const exactDay = (raw: RawLine): boolean => {
-    const r = resolveProperty(raw.rawPropertyText, input.aliases, input.properties, input.vendorId, threshold)
+    const r = resolveFor(raw)
     const d = lineDate(raw)
     return r.propertyId != null && d != null &&
       input.tasks.some(t => t.propertyId === r.propertyId && t.dueDate === d && (t.isClean || t.isDeepClean) && isDone(t))
@@ -1735,13 +1777,7 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
 
   const outByIndex = new Map<number, EngineLine[]>()
   for (const { raw, i } of order) {
-    const resolution = resolveProperty(
-      raw.rawPropertyText,
-      input.aliases,
-      input.properties,
-      input.vendorId,
-      threshold,
-    )
+    const resolution = resolveFor(raw)
     const property = resolution.propertyId != null ? propsById.get(resolution.propertyId) ?? null : null
     const noteText = effectiveNoteText(raw)
     const noteDate = lineDate(raw)

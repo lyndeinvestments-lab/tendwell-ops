@@ -39,6 +39,67 @@ export function reimbursementDetailOk(note: string | null | undefined): boolean 
   return hasLink && hasWho
 }
 
+const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
+
+/** Clean lines on this run whose property-day is billed twice: twice within
+ *  the run, or already on another approved/exported (non-archived) run. */
+export async function duplicateCleanLines(
+  supabase: NonNullable<ReturnType<typeof getServiceClient>>,
+  runId: string,
+): Promise<BlockingLine[]> {
+  const mine = await fetchAllRows<BlockingLine & { property_id: number; service_date: string | null; raw_date_mentioned: string | null; split_group: number | null; line_kind: string }>(
+    'invoice_lines (cleans on run)',
+    () => supabase
+      .from('invoice_lines')
+      .select('line_no, raw_property_text, raw_amount, property_id, service_date, raw_date_mentioned, split_group, line_kind')
+      .eq('run_id', runId)
+      .in('line_kind', CLEAN_KINDS)
+      .neq('review_status', 'excluded')
+      .not('property_id', 'is', null)
+      .order('line_no'),
+    'line_no',
+  )
+  const dayOf = (r: { property_id: number; service_date: string | null; raw_date_mentioned: string | null }) => {
+    const d = r.service_date ?? r.raw_date_mentioned
+    return d ? `${r.property_id}|${d}` : null
+  }
+  const dates = mine.map(r => r.service_date ?? r.raw_date_mentioned).filter((d): d is string => !!d).sort()
+  if (dates.length === 0) return []
+  const lo = dates[0]
+  const hi = dates[dates.length - 1]
+  const others = await fetchAllRows<{ id: string; property_id: number; service_date: string | null; raw_date_mentioned: string | null }>(
+    'invoice_lines (billed cleans)',
+    () => supabase
+      .from('invoice_lines')
+      .select('id, property_id, service_date, raw_date_mentioned, invoice_runs!inner(status, archived_at)')
+      .neq('run_id', runId)
+      .in('line_kind', CLEAN_KINDS)
+      .neq('review_status', 'excluded')
+      .not('property_id', 'is', null)
+      .in('invoice_runs.status', ['approved', 'exported'])
+      .is('invoice_runs.archived_at', null)
+      .or(`and(service_date.gte.${lo},service_date.lte.${hi}),and(service_date.is.null,raw_date_mentioned.gte.${lo},raw_date_mentioned.lte.${hi})`)
+      .order('id') as any,
+    'id',
+  )
+  const billedElsewhere = new Set(others.map(dayOf).filter((k): k is string => !!k))
+  const seen = new Set<string>()
+  const seenLineNos = new Set<number>()
+  const out: BlockingLine[] = []
+  for (const r of mine) {
+    const k = dayOf(r)
+    if (!k) continue
+    // Rows sharing a line_no are ONE vendor line split for the client
+    // invoice (base clean + onboarding surcharge, Paladino 4420 on 1096) —
+    // not a second clean.
+    if (seenLineNos.has(r.line_no)) continue
+    seenLineNos.add(r.line_no)
+    if (billedElsewhere.has(k) || seen.has(k)) out.push({ line_no: r.line_no, raw_property_text: r.raw_property_text, raw_amount: r.raw_amount })
+    seen.add(k)
+  }
+  return out
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
@@ -71,6 +132,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(200).json({ ok: true, run_id: runId, status: run.status, already: true })
     return
   }
+  if (run.status === 'draft') {
+    // A vendor-portal invoice the vendor hasn't submitted (or that Tendwell
+    // returned to them) is still being written — never approve it from under them.
+    res.status(400).json({ error: 'This invoice is still a draft with the vendor — it can be approved once they submit it' })
+    return
+  }
   if (run.status === 'void' || run.status === 'ingested') {
     res.status(400).json({ error: `Run is ${run.status} — reconcile it first` })
     return
@@ -99,6 +166,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if ((count ?? 0) > 0) {
     res.status(400).json({ error: `Cannot approve: ${count} line(s) still need review` })
+    return
+  }
+
+  // Hard guard: one clean per property per day, ever. The engine flags
+  // `already_billed` at reconcile time, but that is a review flag a human can
+  // resolve, it only looks at runs approved BEFORE that reconcile, and two
+  // runs for the same week (an uploaded CSV and a vendor-portal invoice, or a
+  // re-upload) could each pass review alone. Checked here, at the last gate,
+  // against this run itself and every approved/exported run. A genuine
+  // second clean that day is billed as a Double Clean extra, not a clean.
+  try {
+    const dupes = await duplicateCleanLines(supabase, runId)
+    if (dupes.length > 0) {
+      res.status(400).json({
+        error: `Cannot approve: ${dupes.length} clean line(s) bill a property-day that is already billed (on this invoice or an approved one). ${describeLines(dupes)} Exclude the duplicate, or bill a genuine second clean as a Double Clean.`,
+        blocking_lines: dupes,
+      })
+      return
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check for duplicate cleans', detail: e instanceof Error ? e.message : String(e) })
     return
   }
 

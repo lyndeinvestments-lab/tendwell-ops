@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
+import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -31,7 +32,7 @@ import { cn } from '@/lib/utils'
 import { StatusTone } from '@/lib/status-colors'
 import {
   Receipt, Plus, Upload, Download, RefreshCw, CheckCircle2, AlertTriangle,
-  ArrowLeft, Pencil, Ban, Loader2, FileText, Archive, ArchiveRestore,
+  ArrowLeft, Pencil, Ban, Loader2, FileText, Archive, ArchiveRestore, Users,
 } from 'lucide-react'
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
@@ -79,7 +80,7 @@ function sum(nums: Array<number | null | undefined>): number {
 function runStatusTone(status: string): StatusTone {
   if (status === 'review_needed') return 'warning'
   if (status === 'approved' || status === 'exported') return 'success'
-  if (status === 'void') return 'neutral'
+  if (status === 'void' || status === 'draft') return 'neutral'
   return 'info' // ingested | reconciled
 }
 
@@ -140,7 +141,7 @@ const SPLIT_ACCENTS = ['border-l-primary/50', 'border-l-info/50', 'border-l-warn
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function InvoicingPage() {
-  usePageTitle('Invoicing')
+  usePageTitle('Invoice Reconciliation')
   const { effectiveUser } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
@@ -148,6 +149,7 @@ export default function InvoicingPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [generateOpen, setGenerateOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [vendorAccessOpen, setVendorAccessOpen] = useState(false)
   const [reviewLine, setReviewLine] = useState<InvoiceLine | null>(null)
   // Runs = the vendor-invoice workflow. Task audit = billable work that is
   // NOT on the vendor invoice (completed Breezeway/Trellis tasks, Slack/Quo
@@ -174,7 +176,7 @@ export default function InvoicingPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoice_runs')
-        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, vendors(name)')
+        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, vendor_reference, vendor_total, vendors(name)')
         .order('created_at', { ascending: false })
         .limit(200)
       if (error) throw error
@@ -297,10 +299,10 @@ export default function InvoicingPage() {
       ) : (
         <>
           <PageHeader
-            title="Invoicing"
+            title="Invoice Reconciliation"
             subtitle={view === 'audit'
               ? 'Billable work that is not on the vendor invoice: completed tasks, what was seen in Slack / Quo, and what still needs billing.'
-              : 'Reconcile vendor cleaning invoices, review flagged lines, and export to Ramp / QBO / bill.com.'}
+              : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
             beneath={
               <div className="flex items-center gap-1" data-testid="invoicing-view-toggle">
                 {([['runs', 'Invoice runs'], ['audit', 'Task audit']] as const).map(([id, label]) => (
@@ -319,6 +321,9 @@ export default function InvoicingPage() {
             }
             actions={
               <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setVendorAccessOpen(true)} data-testid="button-vendor-access">
+                  <Users className="w-4 h-4 mr-1.5" /> Vendor access
+                </Button>
                 <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} data-testid="button-upload-invoice">
                   <Upload className="w-4 h-4 mr-1.5" /> Upload vendor CSV
                 </Button>
@@ -333,6 +338,7 @@ export default function InvoicingPage() {
             <TaskAudit userLabel={userLabel} isAdmin={isAdmin} />
           ) : (
           <>
+          <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -409,8 +415,8 @@ export default function InvoicingPage() {
                         >
                           <td className="px-3 py-2 font-medium max-w-56 truncate">{vendorNameOf(run)}</td>
                           <td className="px-3 py-2">
-                            <StatusBadge tone={run.source === 'generated' ? 'primary' : 'neutral'}>
-                              {run.source === 'generated' ? 'Generated' : 'Vendor CSV'}
+                            <StatusBadge tone={run.source === 'generated' ? 'primary' : run.source === 'vendor_portal' ? 'info' : 'neutral'}>
+                              {run.source === 'generated' ? 'Generated' : run.source === 'vendor_portal' ? 'Vendor portal' : 'Vendor CSV'}
                             </StatusBadge>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
@@ -491,6 +497,12 @@ export default function InvoicingPage() {
         vendors={vendorsQuery.data ?? []}
         pending={generateMutation.isPending}
         onSubmit={vars => generateMutation.mutate(vars)}
+      />
+      <VendorAccessDialog
+        open={vendorAccessOpen}
+        onOpenChange={setVendorAccessOpen}
+        vendors={vendorsQuery.data ?? []}
+        userLabel={userLabel}
       />
       <UploadDialog
         open={uploadOpen}
@@ -689,7 +701,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoice_runs')
-        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, vendors(name)')
+        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, returned_at, returned_by, returned_note, vendor_reference, vendor_total, vendors(name)')
         .eq('id', runId)
         .single()
       if (error) throw error
@@ -941,7 +953,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   }), [activeLines])
   const netDiscrepancy = totals.invoiced - totals.cleanerPay
 
-  const canApprove = !!run && !['approved', 'exported', 'void'].includes(run.status)
+  // A vendor's draft is still being written (or was returned to them).
+  const canApprove = !!run && !['approved', 'exported', 'void', 'draft'].includes(run.status)
   const showDownloads = !!run && (run.status === 'approved' || run.status === 'exported')
   const subtotalMismatch = run?.stated_subtotal != null && run?.computed_subtotal != null
     && Math.abs(run.stated_subtotal - run.computed_subtotal) > 0.005
@@ -962,7 +975,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   if (runQuery.error) {
     return (
       <>
-        <PageHeader title="Invoicing" actions={<Button size="sm" variant="outline" onClick={onBack}><ArrowLeft className="w-4 h-4 mr-1.5" /> Back</Button>} />
+        <PageHeader title="Invoice Reconciliation" actions={<Button size="sm" variant="outline" onClick={onBack}><ArrowLeft className="w-4 h-4 mr-1.5" /> Back</Button>} />
         <ErrorState title="Couldn't load this invoice run" onRetry={() => runQuery.refetch()} />
       </>
     )
@@ -972,7 +985,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     <>
       <PageHeader
         title={run ? vendorNameOf(run) : 'Loading…'}
-        subtitle={run ? `${run.source === 'generated' ? 'Generated draft' : 'Vendor CSV'} · ${fmtDate(run.period_start)} – ${fmtDate(run.period_end)}` : undefined}
+        subtitle={run ? `${run.source === 'generated' ? 'Generated draft' : run.source === 'vendor_portal' ? 'Built by the vendor in Ops' : 'Vendor CSV'} · ${fmtDate(run.period_start)} – ${fmtDate(run.period_end)}` : undefined}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={onBack} data-testid="button-back-to-runs">
@@ -1024,6 +1037,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
           </div>
         }
       />
+
+      {run && <VendorRunBanner run={run} onChanged={invalidate} />}
 
       {run?.period_end && bwFreshnessQuery.data != null && bwFreshnessQuery.data.slice(0, 10) < run.period_end && (
         <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3 text-sm flex items-start gap-2.5" data-testid="breezeway-stale-banner">
@@ -1322,6 +1337,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                           {prop && line.raw_property_text && line.raw_property_text !== prop.name && (
                             <p className="text-2xs text-muted-foreground truncate">raw: {line.raw_property_text}</p>
                           )}
+                          <VendorLineDetail line={line} />
                         </td>
                         <td className="px-2 py-2 max-w-36 truncate">{line.service_type ?? '—'}</td>
                         <td className="px-2 py-2 whitespace-nowrap text-muted-foreground" title={fmtDate(line.raw_date_mentioned)}>{fmtDateShort(line.raw_date_mentioned)}</td>
@@ -1466,6 +1482,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                     {line.engine_note && (line.review_status === 'needs_review' || hasIssues(line)) && (
                       <p className="text-2xs text-muted-foreground">{line.engine_note}</p>
                     )}
+                    <VendorLineDetail line={line} />
                     {lineIssues(line)
                       .filter(msg => msg !== 'Needs review')
                       .map(msg => (

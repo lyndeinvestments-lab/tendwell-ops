@@ -89,6 +89,7 @@ const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
 const TrellisTasksPage = lazyRetry(() => import("@/pages/trellis-tasks"));
 const InvoicingPage = lazyRetry(() => import("@/pages/invoicing"));
+const VendorInvoicingPage = lazyRetry(() => import("@/pages/vendor-invoicing"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
 const ResetPasswordPage = lazyRetry(() => import("@/pages/reset-password"));
 const McpConsentPage = lazyRetry(() => import("@/pages/mcp-consent"));
@@ -300,6 +301,9 @@ function AppRoutes() {
             Permissions governs the route, the table policies (20260817c) and
             api/invoices/* alike. */}
         <Route path="/invoicing">{() => <GuardedRoute viewId="invoicing" component={InvoicingPage} />}</Route>
+        {/* The cleaning company's own invoice (Operations → Invoicing). Data
+            comes only from api/vendor-invoices/*, which allow-lists fields. */}
+        <Route path="/vendor-invoicing">{() => <GuardedRoute viewId="vendor-invoicing" component={VendorInvoicingPage} />}</Route>
         <Route path="/trellis-tasks">{() => <GuardedRoute viewId="trellis-tasks" component={TrellisTasksPage} />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />

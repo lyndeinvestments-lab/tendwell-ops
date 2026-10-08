@@ -12,8 +12,8 @@ import { supabase } from '@/lib/supabase'
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export type InvoiceRunSource = 'vendor_csv' | 'generated'
-export type InvoiceRunStatus = 'ingested' | 'reconciled' | 'review_needed' | 'approved' | 'exported' | 'void'
+export type InvoiceRunSource = 'vendor_csv' | 'generated' | 'vendor_portal'
+export type InvoiceRunStatus = 'draft' | 'ingested' | 'reconciled' | 'review_needed' | 'approved' | 'exported' | 'void'
 export type LineKind = 'clean' | 'deep_clean' | 'extra' | 'combined_split' | 'operating_expense' | 'excluded'
 export type BillingChannel = 'qbo_haven' | 'bill_com' | 'none'
 export type ReviewStatus = 'ok' | 'needs_review' | 'resolved' | 'excluded'
@@ -92,6 +92,10 @@ export const FLAG_LABELS: Record<string, string> = {
   client_priced: "Client's agreed price applied",
   suspect_service_date: 'Service date looks wrong',
   aux_task: 'Billable task — not on vendor invoice',
+  vendor_added: 'Added by vendor — check it',
+  possible_duplicate: 'Possible duplicate task that day',
+  late_item: 'Dated before the invoice period',
+  completed_off_date: 'Task closed on a different day',
 }
 
 export function flagLabel(flag: string): string {
@@ -145,6 +149,15 @@ export interface InvoiceRun {
   created_at: string | null
   /** Soft-archive: non-null hides the run from the default list. */
   archived_at?: string | null
+  // Vendor-portal runs (Operations → Invoicing, source 'vendor_portal'):
+  // the vendor built and submitted this invoice themselves.
+  submitted_at?: string | null
+  submitted_by?: string | null
+  returned_at?: string | null
+  returned_by?: string | null
+  returned_note?: string | null
+  vendor_reference?: string | null
+  vendor_total?: number | null
   /** Joined via `vendors(name)` — may be an object or array depending on the query. */
   vendors?: { name: string } | { name: string }[] | null
 }
@@ -177,6 +190,11 @@ export interface InvoiceLine {
   created_at: string | null
   /** Joined via `properties(id, name, cleaner_pay)`. */
   properties?: JoinedProperty | JoinedProperty[] | null
+  /** Vendor-portal lines: what the vendor told us (category, hours, reason,
+   *  who asked, evidence link) and whether a receipt was uploaded. */
+  vendor_category?: string | null
+  vendor_detail?: Record<string, any> | null
+  receipt_path?: string | null
 }
 
 /**
