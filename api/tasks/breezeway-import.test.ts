@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizePropertyName } from './breezeway-import.js'
+import { normalizePropertyName, buildPropertyMatcherFrom } from './breezeway-import.js'
 
 // This matcher runs over every row of every daily import (~2,600 rows/day), so
 // a regression here silently unlinks tasks from properties — and a task with
@@ -45,5 +45,29 @@ describe('normalizePropertyName', () => {
   it('handles empty and punctuation-only input', () => {
     expect(normalizePropertyName('')).toBe('')
     expect(normalizePropertyName(' --- ')).toBe('')
+  })
+})
+
+describe('buildPropertyMatcherFrom — never guesses between units', () => {
+  const rows = [
+    { id: 31, name: 'Eric Fleming 1260', address: '1260 Ski View Dr Apt 6203, Gatlinburg, TN 37738' },
+    { id: 285, name: 'Stephanie Keegan 1260-1306', address: '1260 Ski View Dr #1306, Gatlinburg, TN 37738' },
+    { id: 286, name: 'Stephanie Keegan 1260-5307', address: '1260 Ski View Dr #5307, Gatlinburg, TN 37738' },
+    { id: 327, name: 'Mike Gunter 2691-8', address: '2691 Jessie Rd, Sevierville, TN 37876' },
+    { id: 380, name: 'Lewis Anderson 2691', address: '2691 Jessie Rd Unit 7, Sevierville, TN 37876' },
+  ]
+  const m = buildPropertyMatcherFrom(rows)
+
+  it('a unit-less address shared by several units resolves to nobody', () => {
+    expect(m.byAddress('1260 Ski View Drive')).toBeNull()
+  })
+  it('the Breezeway name with a unit suffix still finds the Ops name by unique prefix', () => {
+    expect(m.byName('Eric Fleming 1260-6203')).toBe(31)
+  })
+  it('Mike Gunter 2691-8 matches by exact name, never Lewis Anderson 2691', () => {
+    expect(m.byName('Mike Gunter 2691-8')).toBe(327)
+  })
+  it('an exact unique address still matches', () => {
+    expect(m.byAddress('1260 Ski View Dr #5307, Gatlinburg, TN 37738')).toBe(286)
   })
 })

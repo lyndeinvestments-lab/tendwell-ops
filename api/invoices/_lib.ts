@@ -9,6 +9,7 @@ import {
   round2,
   standardizeTitle,
   type AliasRow,
+  type BilledClean,
   type BillingChannel,
   type EngineLine,
   type PropertyRates,
@@ -55,6 +56,10 @@ export interface EngineContext {
   tasks: TaskRow[]
   /** properties.trellis_id → properties.id, for resolving Trellis snapshot rows. */
   propertyByTrellisId: Map<string, number>
+  /** Earliest Tendwell clean per property (onboarding is only valid on it). */
+  firstCleanByProperty: Map<number, string>
+  /** Cleans already billed on OTHER approved/exported runs near this period. */
+  billedCleans: BilledClean[]
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -106,10 +111,107 @@ export async function fetchAllRows<T>(
   }
 }
 
+export interface BreezewayTaskInput {
+  external_id: string
+  property_id: number | null
+  due_date: string | null
+  task_title: string
+  is_clean: boolean
+  is_deep_clean: boolean
+  raw?: Record<string, unknown> | null
+  status: string | null
+  completed_date: string | null
+}
+export interface TrellisTaskInput {
+  trellis_task_id: string
+  trellis_property_id: string | null
+  title: string | null
+  status: string | null
+  scheduled_date: string | null
+  completed_at: string | null
+}
+
+/** Pure: Breezeway + Trellis rows → the engine's clean-task evidence pool.
+ *  Exported so the replay/verification scripts use the exact same rules. */
+export function buildEngineTasks(
+  taskRows: BreezewayTaskInput[],
+  trellisRows: TrellisTaskInput[],
+  propertyByTrellisId: Map<string, number>,
+): { tasks: TaskRow[]; trellisTasks: TaskRow[] } {
+  // A Breezeway row's own is_clean flag predates the engine's title rules
+  // ("Post-Owner Stay Clean - HT" imported as not-a-clean), so the engine's
+  // rules decide here, the same way they do for Trellis.
+  const engineIsClean = (title: string) => {
+    if (isExcludedTitle(title) || /deep\s*clean/i.test(title)) return false
+    const std = standardizeTitle(title)
+    return std != null && !std.isExtra && !/in?spection|walkthrough/i.test(std.title)
+  }
+  const tasks: TaskRow[] = taskRows
+    .filter(t => !isTaskCancelled(t.status))
+    .map(t => {
+      const costRaw = t.raw?.['Total cost']
+      const cost = typeof costRaw === 'string' ? Number(costRaw.replace(/[^0-9.-]/g, '')) : typeof costRaw === 'number' ? costRaw : NaN
+      return {
+        externalId: t.external_id,
+        propertyId: t.property_id,
+        dueDate: t.due_date,
+        title: t.task_title,
+        isClean: !t.is_deep_clean && (t.is_clean || engineIsClean(t.task_title)),
+        isDeepClean: t.is_deep_clean,
+        totalCostRef: Number.isFinite(cost) ? cost : null,
+        completed: isTaskCompleted('breezeway', t.status, t.completed_date),
+        source: 'breezeway' as const,
+      }
+    })
+
+  // Trellis cleans join the evidence pool unless Breezeway already has a
+  // COMPLETED clean for that property-day (Breezeway wins only when it has the
+  // real, finished task — an open ghost row must never hide Trellis's
+  // completed one). externalId is 'trellis:'-prefixed for provenance.
+  const bwDoneCleanDays = new Set(
+    tasks.filter(t => (t.isClean || t.isDeepClean) && t.completed && t.propertyId != null && t.dueDate != null)
+      .map(t => `${t.propertyId}|${t.dueDate}`),
+  )
+  const trellisTasks: TaskRow[] = trellisRows
+    .map(t => {
+      const propertyId = t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null
+      const title = t.title ?? ''
+      const excluded = isExcludedTitle(title)
+      const std = standardizeTitle(title)
+      const isDeep = !excluded && /deep\s*clean/i.test(title)
+      return {
+        externalId: `trellis:${t.trellis_task_id}`,
+        propertyId,
+        dueDate: t.scheduled_date,
+        title,
+        // Same rule as Breezeway: an inspection/walkthrough is not a clean.
+        // (Chad Williams 223-202, 9/30: a completed "Cleaning Inspection" tied
+        // with the real Turn Clean and won the label.)
+        isClean: !excluded && !isDeep && std != null && !std.isExtra && engineIsClean(title),
+        isDeepClean: isDeep,
+        totalCostRef: null,
+        completed: isTaskCompleted('trellis', t.status, t.completed_at),
+        source: 'trellis' as const,
+        status: t.status ?? '',
+      }
+    })
+    .filter(t =>
+      (t.isClean || t.isDeepClean) &&
+      t.propertyId != null &&
+      t.dueDate != null &&
+      !isTaskCancelled(t.status) &&
+      !bwDoneCleanDays.has(`${t.propertyId}|${t.dueDate}`),
+    )
+    .map(({ status: _s, ...t }) => t)
+
+  return { tasks, trellisTasks }
+}
+
 export async function loadEngineContext(
   supabase: SupabaseClient,
   periodStart: string,
   periodEnd: string,
+  excludeRunId: string | null = null,
 ): Promise<EngineContext> {
   const taskWindowStart = shiftDate(periodStart, -TASK_WINDOW_PAD_DAYS)
   const taskWindowEnd = shiftDate(periodEnd, TASK_WINDOW_PAD_DAYS)
@@ -156,11 +258,13 @@ export async function loadEngineContext(
       is_clean: boolean
       is_deep_clean: boolean
       raw: Record<string, unknown> | null
+      status: string | null
+      completed_date: string | null
     }>(
       'breezeway_tasks',
       () => supabase
         .from('breezeway_tasks')
-        .select('external_id, property_id, due_date, task_title, is_clean, is_deep_clean, raw')
+        .select('external_id, property_id, due_date, task_title, is_clean, is_deep_clean, raw, status, completed_date')
         .gte('due_date', taskWindowStart)
         .lte('due_date', taskWindowEnd)
         .order('external_id'),
@@ -176,11 +280,12 @@ export async function loadEngineContext(
       title: string | null
       status: string | null
       scheduled_date: string | null
+      completed_at: string | null
     }>(
       'trellis_task_snapshot',
       () => supabase
         .from('trellis_task_snapshot')
-        .select('trellis_task_id, trellis_property_id, title, status, scheduled_date')
+        .select('trellis_task_id, trellis_property_id, title, status, scheduled_date, completed_at')
         // A NULL department is not "not cleaning": 4 completed "Turn Clean"
         // rows in the 90 days to 2026-09-22 carried no department and were
         // invisible here, so their vendor lines flagged unmatched_task. The
@@ -230,59 +335,54 @@ export async function loadEngineContext(
     propertyId: a.property_id,
   }))
 
-  const tasks: TaskRow[] = taskRows.map(t => {
-    const costRaw = t.raw?.['Total cost']
-    const cost = typeof costRaw === 'string' ? Number(costRaw.replace(/[^0-9.-]/g, '')) : typeof costRaw === 'number' ? costRaw : NaN
-    return {
-      externalId: t.external_id,
-      propertyId: t.property_id,
-      dueDate: t.due_date,
-      title: t.task_title,
-      isClean: t.is_clean,
-      isDeepClean: t.is_deep_clean,
-      totalCostRef: Number.isFinite(cost) ? cost : null,
-    }
-  })
+  const { tasks, trellisTasks } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
 
-  // Trellis cleans for property-days Breezeway doesn't cover. Breezeway wins
-  // per (property, day) so a clean tracked in both systems counts once.
-  // externalId is 'trellis:'-prefixed — matched_task_id historically meant
-  // breezeway_tasks.external_id, and the prefix keeps provenance unambiguous.
-  // Title rules mirror the engine: standardizeTitle must yield a base clean;
-  // Cleaner Self-Inspections / Air Filter Changes are excluded; hot-tub and
-  // other extra-only titles never generate a draft clean.
-  const bwCleanDays = new Set(
-    tasks.filter(t => (t.isClean || t.isDeepClean) && t.propertyId != null && t.dueDate != null)
-      .map(t => `${t.propertyId}|${t.dueDate}`),
-  )
-  const trellisTasks: TaskRow[] = trellisRows
-    .map(t => {
-      const propertyId = t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null
-      const title = t.title ?? ''
-      const excluded = isExcludedTitle(title)
-      const std = standardizeTitle(title)
-      const isDeep = !excluded && /deep\s*clean/i.test(title)
-      return {
-        externalId: `trellis:${t.trellis_task_id}`,
-        propertyId,
-        dueDate: t.scheduled_date,
-        title,
-        isClean: !excluded && !isDeep && std != null && !std.isExtra,
-        isDeepClean: isDeep,
-        totalCostRef: null,
-        status: t.status ?? '',
-      }
-    })
-    .filter(t =>
-      (t.isClean || t.isDeepClean) &&
-      t.propertyId != null &&
-      t.dueDate != null &&
-      !/cancel/i.test(t.status) &&
-      !bwCleanDays.has(`${t.propertyId}|${t.dueDate}`),
-    )
-    .map(({ status: _s, ...t }) => t)
+  // Onboarding evidence + cross-invoice duplicate guard.
+  const [firstRows, billedRows] = await Promise.all([
+    fetchAllRows<{ property_id: number; first_clean_date: string }>(
+      'property_first_tendwell_clean',
+      () => supabase.from('property_first_tendwell_clean').select('property_id, first_clean_date').order('property_id'),
+      'property_id',
+    ),
+    fetchAllRows<{
+      id: string
+      property_id: number
+      raw_date_mentioned: string | null
+      service_date: string | null
+      matched_task_id: string | null
+      line_no: number
+      run_id: string
+      invoice_runs: { qbo_invoice_no: number | null; status: string; archived_at: string | null } | null
+    }>(
+      'invoice_lines (billed cleans)',
+      () => {
+        let q = supabase
+          .from('invoice_lines')
+          .select('id, property_id, raw_date_mentioned, service_date, matched_task_id, line_no, run_id, invoice_runs!inner(qbo_invoice_no, status, archived_at)')
+          .in('invoice_runs.status', ['approved', 'exported'])
+          .is('invoice_runs.archived_at', null)
+          .in('line_kind', ['clean', 'combined_split', 'deep_clean'])
+          .neq('review_status', 'excluded')
+          .not('property_id', 'is', null)
+          .gte('raw_date_mentioned', taskWindowStart)
+          .lte('raw_date_mentioned', taskWindowEnd)
+          .order('id')
+        if (excludeRunId) q = q.neq('run_id', excludeRunId)
+        return q
+      },
+      'id',
+    ),
+  ])
+  const firstCleanByProperty = new Map<number, string>()
+  for (const r of firstRows) firstCleanByProperty.set(Number(r.property_id), String(r.first_clean_date))
+  const billedCleans: BilledClean[] = billedRows.map(r => ({
+    propertyId: Number(r.property_id),
+    date: String(r.service_date ?? r.raw_date_mentioned),
+    taskId: r.matched_task_id,
+    ref: `invoice ${r.invoice_runs?.qbo_invoice_no ?? '(unnumbered)'} line ${r.line_no}`,
+  }))
 
-  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId }
+  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans }
 }
 
 // ─── Billable auxiliary tasks (see _aux.ts) ──────────────────────────────────
@@ -510,6 +610,7 @@ interface InvoiceLineInsert {
   flags: string[]
   review_status: string
   engine_note: string | null
+  service_date: string | null
 }
 
 export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineInsert[] {
@@ -533,6 +634,7 @@ export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineIn
     flags: l.flags,
     review_status: l.reviewStatus,
     engine_note: l.engineNote,
+    service_date: l.serviceDate ?? l.rawDateMentioned ?? null,
   }))
 }
 
@@ -683,9 +785,11 @@ export async function reconcileRun(
 
   const periodStart = run.period_start ?? run.invoice_date ?? new Date().toISOString().slice(0, 10)
   const periodEnd = run.period_end ?? run.invoice_date ?? periodStart
-  const ctx = await loadEngineContext(supabase, periodStart, periodEnd)
+  const ctx = await loadEngineContext(supabase, periodStart, periodEnd, runId)
 
   const { lines, summary } = reconcile({
+    firstCleanByProperty: ctx.firstCleanByProperty,
+    billedCleans: ctx.billedCleans,
     vendorId: run.vendor_id,
     lines: rawLines,
     aliases: ctx.aliases,

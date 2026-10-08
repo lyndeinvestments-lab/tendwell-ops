@@ -29,6 +29,16 @@ function describeLines(rows: BlockingLine[], max = 5): string {
 // or (b) a stated subtotal exists and doesn't match the line sum to the penny.
 // Nothing ships with unresolved flags — that's the review queue's contract.
 
+/** A reimbursement's review note is detailed enough when it names who it was
+ *  for (guest / reservation / owner) and carries a link to the evidence. */
+export function reimbursementDetailOk(note: string | null | undefined): boolean {
+  const n = (note ?? '').trim()
+  if (n.length < 15) return false
+  const hasLink = /https?:\/\//i.test(n)
+  const hasWho = /\b(guest|reservation|res\b|owner|booking|stay)\b/i.test(n)
+  return hasLink && hasWho
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
@@ -149,7 +159,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .not('line_kind', 'in', '(operating_expense,excluded)')
         .neq('review_status', 'excluded')
         .is('property_id', null)
-        .or('billing_channel.is.null,billing_channel.neq.qbo_haven')
+        // A Reimbursement ALWAYS needs its property, Haven or not: Haven's AP
+        // must know which cabin/guest it was for to recover it from the guest
+        // (Christine, 2026-10-06 — two UPS lines on 1096 had no property).
+        .or('billing_channel.is.null,billing_channel.neq.qbo_haven,service_type.eq.Reimbursement')
         .order('line_no'),
       'line_no',
     )
@@ -161,6 +174,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(400).json({
       error: `Cannot approve: ${propertylessRows.length} billable line(s) have no property assigned. ${describeLines(propertylessRows)} Assign a property, bill it to QuickBooks (Haven) — the one channel that needs no property — or set the line kind to Tendwell expense if it isn't billed to a client.`,
       blocking_lines: propertylessRows,
+    })
+    return
+  }
+
+  // Reimbursements must say what they were for. Haven files guest-caused
+  // costs (shipping a guest's left item, etc.) as claims against the guest,
+  // so "UPS courier reimbursement" isn't enough: the review note has to name
+  // what was shipped/delivered, for which guest or reservation, and link the
+  // Slack/Quo thread (Christine, 2026-10-06).
+  let vagueReimbursements: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<BlockingLine & { review_note: string | null; raw_note_text: string | null }>(
+      'invoice_lines (reimbursement detail)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, review_note, raw_note_text')
+        .eq('run_id', runId)
+        .eq('service_type', 'Reimbursement')
+        // A line backed by a Breezeway/Trellis task ("Cleaning: Supply
+        // Delivery") already has its evidence; only free-text vendor lines
+        // (UPS/FedEx receipts) need the note.
+        .is('matched_task_id', null)
+        .not('line_kind', 'in', '(operating_expense,excluded)')
+        .neq('review_status', 'excluded')
+        .gt('client_charge_amount', 0)
+        .order('line_no'),
+      'line_no',
+    )
+    vagueReimbursements = rows.filter(r => !reimbursementDetailOk(r.review_note))
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check reimbursement detail', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (vagueReimbursements.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${vagueReimbursements.length} reimbursement line(s) don't say what they were for. ${describeLines(vagueReimbursements)} In the review note, write what was shipped/delivered, for which guest or reservation (or "owner request"), and paste the Slack or Quo link.`,
+      blocking_lines: vagueReimbursements,
     })
     return
   }
