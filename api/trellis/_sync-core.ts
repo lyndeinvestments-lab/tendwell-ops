@@ -82,7 +82,7 @@ function trellisKeys(): { A: string; B: string } {
 const ENDPOINT = process.env.TRELLIS_ENDPOINT || 'https://api.trellistech.com/v1/mcp-server'
 let rpcId = 0
 
-async function callTool(apiKey: string, name: string, args: Record<string, unknown>): Promise<unknown> {
+async function callTool(apiKey: string, name: string, args: Record<string, unknown>, attempt = 0): Promise<unknown> {
   const body = { jsonrpc: '2.0', id: ++rpcId, method: 'tools/call', params: { name, arguments: args } }
   const res = await fetch(ENDPOINT, {
     method: 'POST',
@@ -96,6 +96,13 @@ async function callTool(apiKey: string, name: string, args: Record<string, unkno
     signal: AbortSignal.timeout(60_000),
   })
   const text = await res.text()
+  // Trellis rate-limits bursts ("Rate limit exceeded. Retry shortly.") — the
+  // reservation pull is ~40 pages back to back. Back off and retry rather than
+  // losing the phase.
+  if (res.status === 429 && attempt < 5) {
+    await new Promise(r => setTimeout(r, 1500 * 2 ** attempt))
+    return callTool(apiKey, name, args, attempt + 1)
+  }
   if (!res.ok) throw new Error(`Trellis ${name} HTTP ${res.status}: ${text.slice(0, 300)}`)
 
   let json: { error?: { message: string }; result?: { structuredContent?: unknown; content?: Array<{ type: string; text: string }> } }
@@ -337,37 +344,6 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     await checkCancel()
   }
 
-  // ── Workspace B: Reservations (nightly) ──────────────────────────────────
-  // Haven's reservation calendar, so invoicing can tell an owner's stay from a
-  // guest's: the first clean after an owner block checks out is an OWNER
-  // charge ("Owner Stay - Departure Clean", Christine 2026-10-08). Window is
-  // wide enough to re-reconcile a month-old invoice. Best-effort: a failure
-  // here only means owner stays aren't auto-detected until the next night.
-  if (!opts.tasksOnly) {
-    try {
-      await emit('reservations', processed, estimatedTotal, 'Pulling Haven reservations…')
-      await checkCancel()
-      const resStart = isoOffset(-75)
-      const resEnd = isoOffset(45)
-      const res = dedupeById(await queryAll(B, 'reservations', RESERVATION_SELECT, {
-        status: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'],
-        checkout_date: { gte: resStart, lte: resEnd },
-      }, 100))
-      await upsert(supabase, 'trellis_reservation_snapshot', res.map(r => reservationRow(r, 'B')), 'trellis_reservation_id')
-      // A reservation cancelled since the last sync drops out of the query —
-      // remove what this run did not see inside the window it covered.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any).from('trellis_reservation_snapshot').delete()
-        .eq('workspace', 'B').lt('synced_at', runStartIso)
-        .gte('checkout_date', resStart).lte('checkout_date', resEnd)
-      await emit('reservations', processed, estimatedTotal, `Reservations done (${res.length})`)
-    } catch (e) {
-      if (e instanceof SyncCanceledError) throw e
-      await emit('reservations', processed, estimatedTotal, `Reservation sync skipped: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
-    }
-    await checkCancel()
-  }
-
   // ── Workspace B: Tasks ───────────────────────────────────────────────────
   await emit('tasks_b', processed, estimatedTotal, 'Pulling Workspace B tasks…')
   await checkCancel()
@@ -430,6 +406,39 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     }
   } catch (e) {
     console.error('auto-activate failed (sync succeeded):', e)
+  }
+
+  // ── Workspace B: Reservations (nightly) ──────────────────────────────────
+  // Haven's reservation calendar, so invoicing can tell an owner's stay from a
+  // guest's: the first clean after an owner block checks out is an OWNER
+  // charge ("Owner Stay - Departure Clean", Christine 2026-10-08). Window is
+  // wide enough to re-reconcile a month-old invoice. Best-effort: a failure
+  // here only means owner stays aren't auto-detected until the next night.
+  // Runs LAST so it can never cost the task sync its time budget (the cron
+  // has 300s); skipped when the run is already long, and retried next night.
+  if (!opts.tasksOnly && Date.now() - t0 < 180_000) {
+    try {
+      await emit('reservations', processed, estimatedTotal, 'Pulling Haven reservations…')
+      await checkCancel()
+      const resStart = isoOffset(-45)
+      const resEnd = isoOffset(14)
+      const res = dedupeById(await queryAll(B, 'reservations', RESERVATION_SELECT, {
+        status: ['CONFIRMED', 'CHECKED_IN', 'CHECKED_OUT'],
+        checkout_date: { gte: resStart, lte: resEnd },
+      }, 100))
+      await upsert(supabase, 'trellis_reservation_snapshot', res.map(r => reservationRow(r, 'B')), 'trellis_reservation_id')
+      // A reservation cancelled since the last sync drops out of the query —
+      // remove what this run did not see inside the window it covered.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any).from('trellis_reservation_snapshot').delete()
+        .eq('workspace', 'B').lt('synced_at', runStartIso)
+        .gte('checkout_date', resStart).lte('checkout_date', resEnd)
+      await emit('reservations', processed, estimatedTotal, `Reservations done (${res.length})`)
+    } catch (e) {
+      if (e instanceof SyncCanceledError) throw e
+      await emit('reservations', processed, estimatedTotal, `Reservation sync skipped: ${e instanceof Error ? e.message : String(e)}`.slice(0, 300))
+    }
+    await checkCancel()
   }
 
   const counts: SyncCounts = {

@@ -4,7 +4,9 @@
 // Usage: npx tsx scripts/replay/replay-1096.ts <dumpDir> <outDir>
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { reconcile, type PropertyRates, type RawLine, type EngineLine, type BilledClean } from '../../api/invoices/_engine.js'
+import { existsSync } from 'node:fs'
+import { reconcile, ownerStayDuring, type PropertyRates, type RawLine, type EngineLine, type BilledClean, type StayRow } from '../../api/invoices/_engine.js'
+import { AUX_CATEGORIES, classifyAuxTask } from '../../shared/aux-tasks.js'
 import { buildEngineTasks } from '../../api/invoices/_lib.js'
 import { toQboFlatCsv, toQboMultilineCsv, toRampCsv, toBillComCsv, type ExportLine, type ExportRun } from '../../api/invoices/_exporters.js'
 
@@ -44,7 +46,19 @@ const billedCleans: BilledClean[] = (J('billed.json') as any[]).map(r => ({
   ref: `invoice ${r.qbo_invoice_no ?? '(unnumbered)'} line ${r.line_no}`,
 }))
 
+// Haven reservations (owner blocks flagged) — dumped from trellis_reservation_snapshot.
+const stays: StayRow[] = existsSync(join(dir, 'stays.json'))
+  ? (J('stays.json') as any[]).flatMap(r => {
+    const pid = r.trellis_property_id ? byTrellis.get(String(r.trellis_property_id)) : undefined
+    return pid != null && r.checkin_date && r.checkout_date
+      ? [{ propertyId: pid, checkin: r.checkin_date, checkout: r.checkout_date, isOwner: r.is_owner_block === true, guestName: r.guest_name }]
+      : []
+  })
+  : []
+console.log('stays', stays.length, 'owner blocks', stays.filter(s => s.isOwner).length)
+
 const res = reconcile({
+  stays,
   vendorId: '9733deb3-03b8-4e0b-81f6-f0d97fee0565', lines: rawLines, aliases: J('aliases.json'),
   properties, tasks: [...tasks, ...trellisTasks], periodStart: '2026-09-27', periodEnd: '2026-10-03',
   firstCleanByProperty: firstClean, billedCleans,
@@ -80,7 +94,7 @@ const decisions: Record<number, Decision> = {
   310: { note: `Hostimo/bill.com: clean very likely done 10/3 (linen task completed; owner complaint about lights left on ${S}C0C2ED7C8F3/p1791132339894839) but the Trellis task is still open — close it in Trellis.`, apply: setAll({ reviewStatus: 'resolved' }) },
   248: { note: `Haven's onboarding clean (Haven Trellis ${TR}bc18837d-8168-4195-9a62-5b6d693ea121, BW 166203024). Property moved to Haven management 10/1-10/2, so this clean bills to Haven. No $50: Tendwell first cleaned 4420 on 8/17. ACTION: switch the property's client to Haven in Ops.`, apply: setAll({ billingChannel: 'qbo_haven', reviewStatus: 'resolved', serviceType: 'Onboarding Clean' }) },
   329: { note: 'One mid-stay trash pickup on 9/28 (BW "Cleaning: Mid-Stay Trash Pickup", owner charge). Dated from its note, not the 10/3 header.', apply: setAll({ rawNoteText: 'Mid-stay trash pickup 9/28 (guest Nikol)' }) },
-  258: { note: 'Owner-requested towel/bath rug delivery before owner stay.', apply: setAll({ reviewNote: `Towel + bath rug delivery requested by the owner before their owner stay (owner charge, no guest). ${S}C08V5RCALJF/p1790949842297229`, reviewStatus: 'resolved' }) },
+  258: { note: 'Extra towels + 4 bath rugs delivered on 10/2 for the owner\'s stay (John Bryan and Family, 10/2–10/6), at the owner\'s request. Trip Fee, owner charge.', apply: setAll({ reviewNote: `Extra towels + 4 bath rugs delivered for the owner's stay, owner request ${S}C08V5RCALJF/p1790949842297229`, reviewStatus: 'resolved' }) },
 }
 let final: EngineLine[] = []
 const log: Array<{ line: number; property: string | null; decision: string }> = []
@@ -99,10 +113,14 @@ if (stillOpen.length) { console.error('UNRESOLVED', stillOpen.map(l => l.lineNo)
 // from its note), so the task line would bill it twice.
 const taskLines = (J('task_lines.json') as any[]).filter(t => t.review_status !== 'excluded' && t.line_no !== 483)
 log.push({ line: 483, property: 'Brian Hopp 3163', decision: 'Removed task line: duplicate of vendor line 329 (same 9/28 mid-stay trash pickup).' })
+// Task lines were built by the pre-2026-10-08 classifier: re-derive the
+// service (deliveries are Trip Fees now) and the owner-stay flag. A price a
+// human set (Kristy Horn's $35) is kept.
 const taskExport: ExportLine[] = taskLines.map(t => ({
-  lineKind: 'extra', serviceType: t.service_type, serviceDate: t.raw_date_mentioned, propertyName: byId.get(t.property_id)?.name ?? t.raw_property_text,
+  lineKind: 'extra', serviceType: AUX_CATEGORIES[classifyAuxTask(t.raw_note_text)].serviceType ?? t.service_type, serviceDate: t.raw_date_mentioned, propertyName: byId.get(t.property_id)?.name ?? t.raw_property_text,
   propertyId: t.property_id, clientName: null, billingChannel: t.billing_channel, cleanerPayAmount: null, clientChargeAmount: t.client_charge_amount,
-  note: t.raw_note_text, reviewStatus: 'ok', flags: t.flags,
+  note: t.raw_note_text, reviewStatus: 'ok',
+  flags: [...t.flags, ...(t.raw_date_mentioned && ownerStayDuring(t.property_id, t.raw_date_mentioned, stays) ? ['owner_stay'] : [])],
 }))
 // Craig Sims 196 10/3 turn — cleaned by Hope for Your Home (Tendwell's sub),
 // completed in Haven Trellis; was hand-added to QBO 1096. Paid outside Busy Bee.
