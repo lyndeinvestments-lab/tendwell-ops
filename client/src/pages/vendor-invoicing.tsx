@@ -564,7 +564,7 @@ function LineRow({ line, property, editable, busy, fmtDay, onEdit, onDelete, onR
                 property.guest_count != null ? `${property.guest_count} ${t('property.guests')}` : null,
                 property.square_footage != null ? `${property.square_footage.toLocaleString()} ${t('property.sqft')}` : null,
                 property.cleaner_pay != null ? `${t('property.cleanerPay')} ${money(property.cleaner_pay)}` : null,
-                property.status,
+                property.status ? t(`common.stage.${property.status.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, undefined, property.status) : null,
               ].filter(Boolean).join(' · ')}
             </p>
           )}
