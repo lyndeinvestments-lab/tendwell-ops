@@ -204,3 +204,40 @@ where s.key = v.key and v.j ? 'supervisor';
 -- another invoice, tasks on properties Ops doesn't know), shown to the vendor
 -- so a missing clean is never a mystery.
 alter table public.invoice_runs add column if not exists vendor_draft_meta jsonb;
+
+-- ─── 6. Per-run write lease ─────────────────────────────────────────────────
+-- Vendor writes and reconcile both read a run's lines, then delete/insert.
+-- Two at once (double-click, refresh during submit) could drop or merge
+-- lines, so every writer takes a short lease first (withRunLease in
+-- api/invoices/_lib.ts): a conditional UPDATE that only one caller can win.
+-- It expires on its own if a function is killed mid-way.
+alter table public.invoice_runs add column if not exists lock_until timestamptz;
+
+-- ─── 7. Claim only a line's base row ────────────────────────────────────────
+-- A split line (base clean + onboarding surcharge) shares one line_no; only
+-- the row carrying the vendor's amount (or an unsplit row) is the clean.
+create or replace function public.invoice_lines_set_clean_claim()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  r record;
+  d date;
+begin
+  new.clean_claim_key := null;
+  select source, status, archived_at into r from public.invoice_runs where id = new.run_id;
+  if r.source is distinct from 'vendor_portal' or r.archived_at is not null or r.status = 'void' then
+    return new;
+  end if;
+  d := coalesce(new.service_date, new.raw_date_mentioned);
+  if new.line_kind in ('clean', 'deep_clean', 'combined_split')
+     and (new.split_group is null or coalesce(new.raw_amount, 0) <> 0)
+     and new.review_status <> 'excluded'
+     and new.property_id is not null
+     and d is not null then
+    new.clean_claim_key := new.property_id::text || '|' || d::text;
+  end if;
+  return new;
+end;
+$$;

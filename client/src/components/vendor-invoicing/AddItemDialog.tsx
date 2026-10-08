@@ -156,13 +156,12 @@ export function AddItemDialog({ runId, periodStart, periodEnd, today, properties
       await vendorApi('items', {
         method: 'POST',
         body: isEdit
-          ? { action: 'update', run_id: runId, line_id: editing!.id, item: toInput(form) }
+          ? { action: 'update', run_id: runId, line_no: editing!.line_no, line_id: editing!.id, item: toInput(form) }
           : { action: 'add', run_id: runId, item: toInput(form) },
       })
       onSaved()
     } catch (e) {
       if (e instanceof VendorApiError && e.body?.errors) setServerErrors(e.body.errors)
-      else if (e instanceof VendorApiError && e.status === 409 && e.code !== 'not_draft') setFatal(t('errors.duplicate'))
       else setFatal(t(e instanceof VendorApiError ? `errors.${e.code}` : 'errors.generic', undefined, t('errors.generic')))
     } finally {
       setSaving(false)

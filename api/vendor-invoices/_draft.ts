@@ -24,8 +24,9 @@ export interface DraftInput {
   periodStart: string
   periodEnd: string
   properties: ReadonlyMap<number, DraftProperty>
-  /** property|date → where it was already billed ("invoice 1096", "your invoice Sep 27 – Oct 3"). */
-  blockedDays: ReadonlyMap<string, string>
+  /** property|date → where it was already billed: the period of the vendor's
+   *  own invoice, or null when it is someone else's (not shown to them). */
+  blockedDays: ReadonlyMap<string, string | null>
   /** property|date already on THIS run (a refresh adds only what is new). */
   existingDays?: ReadonlySet<string>
 }
@@ -113,9 +114,8 @@ export function buildPortalDraft(input: DraftInput): DraftResult {
       continue
     }
     if (input.existingDays?.has(k)) continue
-    const blocked = input.blockedDays.get(k)
-    if (blocked) {
-      skipped.push({ propertyId, propertyName: prop.name, date, title: primary.title, reason: 'already_invoiced', ref: blocked })
+    if (input.blockedDays.has(k)) {
+      skipped.push({ propertyId, propertyName: prop.name, date, title: primary.title, reason: 'already_invoiced', ref: input.blockedDays.get(k) ?? null })
       continue
     }
 

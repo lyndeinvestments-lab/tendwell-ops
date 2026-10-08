@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { getServiceClient, reconcileRun, requireInvoicingBearer } from './_lib.js'
+import { getServiceClient, reconcileRun, requireInvoicingBearer, RunBusyError, withRunLease } from './_lib.js'
 
 // POST /api/invoices/reconcile  Body: { run_id }
 // Re-runs the deterministic engine over a run's lines (e.g. after new aliases
@@ -25,9 +25,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
   try {
-    const result = await reconcileRun(supabase, runId)
+    const result = await withRunLease(supabase, runId, () => reconcileRun(supabase, runId))
     res.status(200).json({ ok: true, run_id: runId, status: result.status, summary: result.summary })
   } catch (e) {
+    if (e instanceof RunBusyError) {
+      res.status(409).json({ error: 'This invoice is being updated right now — try again in a moment' })
+      return
+    }
     res.status(500).json({ error: 'Reconcile failed', detail: e instanceof Error ? e.message : String(e) })
   }
 }

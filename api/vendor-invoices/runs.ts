@@ -1,10 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchAllRows, loadEngineContext, reconcileRun, describeLineInsertError } from '../invoices/_lib.js'
+import { fetchAllRows, loadEngineContext, reconcileRun, describeLineInsertError, withRunLease } from '../invoices/_lib.js'
 import { validatePeriod } from '../../shared/vendor-invoice.js'
 import { buildPortalDraft, dayKey, type DraftProperty, type SkippedDay } from './_draft.js'
 import {
+  blockedDaysFor,
   isVendorVisible,
+  receiptOk,
   loadRunLines,
   loadVendorProperties,
   loadVendorRun,
@@ -33,50 +35,12 @@ import {
 //
 // Every response is built by the allow-list serializers in _lib.ts.
 
-const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
-
-function fmtRange(start: string, end: string): string {
-  return `${start} – ${end}`
-}
-
-/** Property-days already billed elsewhere: lines on approved/exported runs
- *  (any source — an uploaded Busy Bee CSV counts) and on every other active
- *  vendor-portal invoice (draft or submitted). */
-export async function blockedDaysFor(supabase: SupabaseClient, runId: string, start: string, end: string): Promise<Map<string, string>> {
-  const rows = await fetchAllRows<any>(
-    'invoice_lines (billed days)',
-    () => supabase
-      .from('invoice_lines')
-      .select('id, property_id, service_date, raw_date_mentioned, run_id, invoice_runs!inner(source, status, archived_at, period_start, period_end)')
-      .neq('run_id', runId)
-      .in('line_kind', CLEAN_KINDS)
-      .neq('review_status', 'excluded')
-      .not('property_id', 'is', null)
-      .is('invoice_runs.archived_at', null)
-      .neq('invoice_runs.status', 'void')
-      .or(`and(service_date.gte.${start},service_date.lte.${end}),and(service_date.is.null,raw_date_mentioned.gte.${start},raw_date_mentioned.lte.${end})`)
-      .order('id') as any,
-    'id',
-  )
-  const out = new Map<string, string>()
-  for (const r of rows) {
-    const run = Array.isArray(r.invoice_runs) ? r.invoice_runs[0] : r.invoice_runs
-    if (!run) continue
-    const billed = run.status === 'approved' || run.status === 'exported'
-    if (!billed && run.source !== 'vendor_portal') continue // stale admin drafts don't block
-    const d = r.service_date ?? r.raw_date_mentioned
-    if (!d) continue
-    out.set(dayKey(Number(r.property_id), String(d)), `invoice ${fmtRange(run.period_start, run.period_end)}`)
-  }
-  return out
-}
-
 /** Pull completed cleans into a draft run. On a refresh only property-days
  *  not already on the run are added (a day the vendor removed stays removed). */
 export async function populateDraft(supabase: SupabaseClient, run: RunRow): Promise<{ added: number; skipped: SkippedDay[] }> {
   const [ctx, blocked, existing] = await Promise.all([
     loadEngineContext(supabase, run.period_start, run.period_end, run.id),
-    blockedDaysFor(supabase, run.id, run.period_start, run.period_end),
+    blockedDaysFor(supabase, run.id, run.vendor_id, run.period_start, run.period_end),
     loadRunLines(supabase, run.id),
   ])
   const existingDays = new Set<string>()
@@ -257,59 +221,72 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const run = await loadVendorRun(supabase, body.run_id, actor.vendorId)
     if (!run) { res.status(404).json({ error: 'Invoice not found' }); return }
 
-    if (action === 'refresh') {
-      if (run.status !== 'draft') { res.status(409).json({ error: 'not_draft' }); return }
-      const result = await populateDraft(supabase, run)
-      const fresh = await loadVendorRun(supabase, run.id, actor.vendorId)
-      res.status(200).json({ ...(await runDetail(supabase, fresh!)), added: result.added })
+    if (action !== 'refresh' && action !== 'submit' && action !== 'delete') {
+      res.status(400).json({ error: 'Unknown action' })
       return
     }
 
-    if (action === 'submit') {
-      if (run.status !== 'draft') { res.status(409).json({ error: 'not_draft' }); return }
-      if (run.period_end > today) { res.status(400).json({ error: 'date_in_future' }); return }
-      // Fresh evidence at the moment of submission.
-      await reconcileRun(supabase, run.id)
-      const rows = (await loadRunLines(supabase, run.id)).filter(isVendorVisible)
-      const active = rows.filter(r => r.review_status !== 'excluded' && r.line_kind !== 'excluded')
-      if (active.length === 0) { res.status(400).json({ error: 'empty' }); return }
-      const { count, error: cntErr } = await supabase
-        .from('invoice_lines')
-        .select('id', { count: 'exact', head: true })
-        .eq('run_id', run.id)
-        .eq('review_status', 'needs_review')
-      if (cntErr) throw new Error(cntErr.message)
-      const reference = typeof body.vendor_reference === 'string' ? body.vendor_reference.trim().slice(0, 60) || null : null
-      const { error: updErr } = await supabase
-        .from('invoice_runs')
-        .update({
-          status: (count ?? 0) > 0 ? 'review_needed' : 'reconciled',
-          submitted_at: new Date().toISOString(),
-          submitted_by: actor.email,
-          vendor_reference: reference,
-          vendor_total: vendorTotal(rows),
-        })
-        .eq('id', run.id)
-        .eq('status', 'draft')
-      if (updErr) throw new Error(updErr.message)
-      const fresh = await loadVendorRun(supabase, run.id, actor.vendorId)
-      res.status(200).json(await runDetail(supabase, fresh!))
-      return
-    }
+    // Every write holds the run's lease and re-reads the run under it, so a
+    // second tab, a double-click or an item save racing a submit can never
+    // interleave (see withRunLease).
+    const outcome = await withRunLease(supabase, run.id, async () => {
+      const cur = await loadVendorRun(supabase, run.id, actor.vendorId)
+      if (!cur || cur.status !== 'draft') return { status: 409, body: { error: action === 'delete' ? 'not_deletable' : 'not_draft' } }
 
-    if (action === 'delete') {
-      if (run.status !== 'draft' || run.submitted_at) { res.status(409).json({ error: 'not_deletable' }); return }
-      const { error } = await supabase.from('invoice_runs').delete().eq('id', run.id).eq('status', 'draft')
+      if (action === 'refresh') {
+        const result = await populateDraft(supabase, cur)
+        const fresh = await loadVendorRun(supabase, cur.id, actor.vendorId)
+        return { status: 200, body: { ...(await runDetail(supabase, fresh!)), added: result.added } }
+      }
+
+      if (action === 'submit') {
+        if (cur.period_end > today) return { status: 400, body: { error: 'date_in_future' } }
+        // Fresh evidence at the moment of submission.
+        await reconcileRun(supabase, cur.id)
+        const rows = (await loadRunLines(supabase, cur.id)).filter(isVendorVisible)
+        const active = rows.filter(r => r.review_status !== 'excluded' && r.line_kind !== 'excluded')
+        if (active.length === 0) return { status: 400, body: { error: 'empty' } }
+        // A reimbursement's receipt must still be there (an edit or delete of
+        // another item could have removed a shared file).
+        for (const r of active.filter(r => r.vendor_category === 'reimbursement')) {
+          if (!r.receipt_path || !(await receiptOk(supabase, r.receipt_path))) return { status: 400, body: { error: 'receipt_required' } }
+        }
+        const { count, error: cntErr } = await supabase
+          .from('invoice_lines')
+          .select('id', { count: 'exact', head: true })
+          .eq('run_id', cur.id)
+          .eq('review_status', 'needs_review')
+        if (cntErr) throw new Error(cntErr.message)
+        const reference = typeof body.vendor_reference === 'string' ? body.vendor_reference.trim().slice(0, 60) || null : null
+        const { data: updated, error: updErr } = await supabase
+          .from('invoice_runs')
+          .update({
+            status: (count ?? 0) > 0 ? 'review_needed' : 'reconciled',
+            submitted_at: new Date().toISOString(),
+            submitted_by: actor.email,
+            vendor_reference: reference,
+            vendor_total: vendorTotal(rows),
+          })
+          .eq('id', cur.id)
+          .eq('status', 'draft')
+          .select('id')
+        if (updErr) throw new Error(updErr.message)
+        if (!updated?.length) return { status: 409, body: { error: 'not_draft' } }
+        const fresh = await loadVendorRun(supabase, cur.id, actor.vendorId)
+        return { status: 200, body: await runDetail(supabase, fresh!) }
+      }
+
+      // delete — only a never-submitted draft
+      if (cur.submitted_at) return { status: 409, body: { error: 'not_deletable' } }
+      const prefix = receiptPrefix(actor.vendorId, cur.id)
+      const { data: files } = await supabase.storage.from(RECEIPT_BUCKET).list(prefix.replace(/\/$/, ''))
+      const { error } = await supabase.from('invoice_runs').delete().eq('id', cur.id).eq('status', 'draft')
       if (error) throw new Error(error.message)
       // Best effort: the run's uploaded receipts go with it.
-      const prefix = receiptPrefix(actor.vendorId, run.id)
-      const { data: files } = await supabase.storage.from(RECEIPT_BUCKET).list(prefix.replace(/\/$/, ''))
       if (files?.length) await supabase.storage.from(RECEIPT_BUCKET).remove(files.map(f => `${prefix}${f.name}`))
-      res.status(200).json({ ok: true })
-      return
-    }
-
-    res.status(400).json({ error: 'Unknown action' })
+      return { status: 200, body: { ok: true } }
+    })
+    res.status(outcome.status).json(outcome.body)
   } catch (e) {
     sendError(res, e, 'Invoice request failed')
   }

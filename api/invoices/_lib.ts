@@ -50,6 +50,42 @@ export function getServiceClient(): SupabaseClient | null {
   return createClient(url, key)
 }
 
+// ─── Per-run write lease ─────────────────────────────────────────────────────
+
+export class RunBusyError extends Error {
+  constructor() {
+    super('busy')
+    this.name = 'RunBusyError'
+  }
+}
+
+/** Serialize writers on one run. reconcileRun reads every line, then deletes
+ *  and re-inserts; a vendor add or a second reconcile landing in between
+ *  could drop or merge lines (double-click, refresh during submit). One
+ *  conditional UPDATE wins the lease; everyone else gets RunBusyError (→ 409
+ *  "try again"). The lease expires on its own if the function is killed. */
+export async function withRunLease<T>(
+  supabase: SupabaseClient,
+  runId: string,
+  fn: () => Promise<T>,
+  seconds = 90,
+): Promise<T> {
+  const until = new Date(Date.now() + seconds * 1000).toISOString()
+  const { data, error } = await supabase
+    .from('invoice_runs')
+    .update({ lock_until: until })
+    .eq('id', runId)
+    .or(`lock_until.is.null,lock_until.lt.${new Date().toISOString()}`)
+    .select('id')
+  if (error) throw new Error(`Failed to lock run: ${error.message}`)
+  if (!data || data.length === 0) throw new RunBusyError()
+  try {
+    return await fn()
+  } finally {
+    await supabase.from('invoice_runs').update({ lock_until: null }).eq('id', runId).eq('lock_until', until)
+  }
+}
+
 // ─── Engine context ──────────────────────────────────────────────────────────
 
 export interface EngineContext {

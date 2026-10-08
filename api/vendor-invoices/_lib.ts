@@ -12,7 +12,7 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchAllRows, getServiceClient } from '../invoices/_lib.js'
+import { fetchAllRows, getServiceClient, RunBusyError } from '../invoices/_lib.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import { round2, vendorNotices, vendorRunStatus, type VendorRunStatus } from '../../shared/vendor-invoice.js'
 
@@ -86,11 +86,25 @@ export async function requireVendorActor(
   }
 }
 
+/** Never hand the vendor raw database / engine text: business-rule refusals
+ *  map to stable codes (translated client-side), everything else is logged
+ *  here and answered generically. */
 export function sendError(res: VercelResponse, e: unknown, fallback = 'Request failed'): void {
+  if (e instanceof RunBusyError) {
+    res.status(409).json({ error: 'busy' })
+    return
+  }
   const msg = e instanceof Error ? e.message : String(e)
-  // Business-rule refusals from the DB guards carry their own message.
-  const known = /already has an invoice covering|cannot be billed twice/i.test(msg)
-  res.status(known ? 409 : 500).json({ error: known ? msg : fallback, detail: known ? undefined : msg })
+  if (/cannot be billed twice/i.test(msg)) {
+    res.status(409).json({ error: 'duplicate' })
+    return
+  }
+  if (/already has an invoice covering/i.test(msg)) {
+    res.status(409).json({ error: 'overlap' })
+    return
+  }
+  console.error(`[vendor-invoices] ${fallback}: ${msg}`)
+  res.status(500).json({ error: 'generic' })
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────────
@@ -362,4 +376,79 @@ export function isOwnReceiptPath(path: string | null | undefined, vendorId: stri
   if (!path) return true
   const prefix = receiptPrefix(vendorId, runId)
   return path.startsWith(prefix) && !path.includes('..') && /^[A-Za-z0-9._\-/]+$/.test(path)
+}
+
+// ─── Billed days ─────────────────────────────────────────────────────────────
+
+const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
+
+/** Property-days already billed elsewhere: cleans on approved/exported runs
+ *  (any source — an uploaded CSV counts) and on every other active
+ *  vendor-portal invoice (draft or submitted). Value = where, for the vendor:
+ *  the period of THEIR OWN invoice, or null for anyone else's (another
+ *  vendor's or Tendwell's runs are none of their business). */
+export async function blockedDaysFor(
+  supabase: SupabaseClient,
+  runId: string,
+  vendorId: string,
+  start: string,
+  end: string,
+): Promise<Map<string, string | null>> {
+  const rows = await fetchAllRows<any>(
+    'invoice_lines (billed days)',
+    () => supabase
+      .from('invoice_lines')
+      .select('id, property_id, service_date, raw_date_mentioned, run_id, invoice_runs!inner(source, status, archived_at, period_start, period_end, vendor_id)')
+      .neq('run_id', runId)
+      .in('line_kind', CLEAN_KINDS)
+      .neq('review_status', 'excluded')
+      .not('property_id', 'is', null)
+      .is('invoice_runs.archived_at', null)
+      .neq('invoice_runs.status', 'void')
+      .or(`and(service_date.gte.${start},service_date.lte.${end}),and(service_date.is.null,raw_date_mentioned.gte.${start},raw_date_mentioned.lte.${end})`)
+      .order('id') as any,
+    'id',
+  )
+  const out = new Map<string, string | null>()
+  for (const r of rows) {
+    const run = Array.isArray(r.invoice_runs) ? r.invoice_runs[0] : r.invoice_runs
+    if (!run) continue
+    const billed = run.status === 'approved' || run.status === 'exported'
+    if (!billed && run.source !== 'vendor_portal') continue // stale admin drafts don't block
+    const d = r.service_date ?? r.raw_date_mentioned
+    if (!d) continue
+    const own = run.vendor_id === vendorId && run.source === 'vendor_portal'
+    out.set(`${Number(r.property_id)}|${String(d)}`, own ? `${run.period_start} – ${run.period_end}` : null)
+  }
+  return out
+}
+
+// ─── Receipts ────────────────────────────────────────────────────────────────
+
+export const RECEIPT_MAX_BYTES = 10 * 1024 * 1024
+export const RECEIPT_MIME_TYPES: ReadonlySet<string> = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf',
+])
+
+/** The uploaded file really exists and really is a photo/PDF under 10 MB —
+ *  checked from storage metadata, not from what the browser declared when it
+ *  asked for the upload link. */
+export async function receiptOk(supabase: SupabaseClient, path: string): Promise<boolean> {
+  const slash = path.lastIndexOf('/')
+  const name = path.slice(slash + 1)
+  const { data } = await supabase.storage.from(RECEIPT_BUCKET).list(path.slice(0, slash), { search: name })
+  const file = (data ?? []).find(f => f.name === name)
+  if (!file) return false
+  const meta = (file.metadata ?? {}) as { size?: number; mimetype?: string }
+  if (typeof meta.size === 'number' && (meta.size <= 0 || meta.size > RECEIPT_MAX_BYTES)) return false
+  if (typeof meta.mimetype === 'string' && !RECEIPT_MIME_TYPES.has(meta.mimetype.toLowerCase())) return false
+  return true
+}
+
+/** Remove a receipt file only when no other line still points at it. */
+export async function removeReceiptIfUnused(supabase: SupabaseClient, path: string | null | undefined, exceptLineNo: number): Promise<void> {
+  if (!path) return
+  const { data } = await supabase.from('invoice_lines').select('line_no').eq('receipt_path', path)
+  if ((data ?? []).some(r => Number(r.line_no) !== exceptLineNo)) return
+  await supabase.storage.from(RECEIPT_BUCKET).remove([path])
 }

@@ -71,7 +71,8 @@ export const vendorInvoicingEn = {
     submitBody: 'Total {{total}} for {{count}} lines. After you submit you cannot edit it unless Tendwell sends it back.',
     submitConfirm: 'Submit',
     skippedTitle: 'Completed cleans not on this invoice ({{count}})',
-    skippedAlready: 'Already on {{ref}}',
+    skippedAlready: 'Already on your invoice {{ref}}',
+    skippedElsewhere: 'Already invoiced',
     skippedUnknown: 'Property not set up in Ops — tell Tendwell',
     search: 'Search property, service or note…',
     filterAll: 'All',
@@ -213,6 +214,7 @@ export const vendorInvoicingEn = {
     period_order: 'The start must be before the end',
     period_too_long: 'An invoice can cover at most 31 days',
     duplicate: 'That clean is already on an invoice.',
+    busy: 'This invoice is being updated right now — try again in a moment.',
   },
   toast: {
     created: 'Invoice created with {{count}} cleans',

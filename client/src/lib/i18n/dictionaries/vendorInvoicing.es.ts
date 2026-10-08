@@ -71,7 +71,8 @@ export const vendorInvoicingEs: typeof vendorInvoicingEn = {
     submitBody: 'Total {{total}} por {{count}} líneas. Después de enviarla no puedes editarla a menos que Tendwell te la devuelva.',
     submitConfirm: 'Enviar',
     skippedTitle: 'Limpiezas completadas que no están en esta factura ({{count}})',
-    skippedAlready: 'Ya está en {{ref}}',
+    skippedAlready: 'Ya está en tu factura {{ref}}',
+    skippedElsewhere: 'Ya fue facturada',
     skippedUnknown: 'La propiedad no está en Ops — avisa a Tendwell',
     search: 'Buscar propiedad, servicio o nota…',
     filterAll: 'Todo',
@@ -213,6 +214,7 @@ export const vendorInvoicingEs: typeof vendorInvoicingEn = {
     period_order: 'El inicio debe ser antes del final',
     period_too_long: 'Una factura puede cubrir máximo 31 días',
     duplicate: 'Esa limpieza ya está en una factura.',
+    busy: 'Esta factura se está actualizando — intenta otra vez en un momento.',
   },
   toast: {
     created: 'Factura creada con {{count}} limpiezas',

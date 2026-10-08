@@ -420,9 +420,9 @@ function RunView({ runId, today, onBack }: { runId: string; today: string | null
                 busy={busy === l.id}
                 fmtDay={fmtDay}
                 onEdit={() => setEditing(l)}
-                onDelete={() => act(l.id, () => vendorApi('items', { method: 'POST', body: { action: 'delete', run_id: run.id, line_id: l.id } }), t('toast.itemDeleted'))}
+                onDelete={() => act(l.id, () => vendorApi('items', { method: 'POST', body: { action: 'delete', run_id: run.id, line_no: l.line_no, line_id: l.id } }), t('toast.itemDeleted'))}
                 onRemove={() => setRemoving(l)}
-                onRestore={() => act(l.id, () => vendorApi('items', { method: 'POST', body: { action: 'restore', run_id: run.id, line_id: l.id } }), t('toast.restored'))}
+                onRestore={() => act(l.id, () => vendorApi('items', { method: 'POST', body: { action: 'restore', run_id: run.id, line_no: l.line_no, line_id: l.id } }), t('toast.restored'))}
                 onReceipt={() => openReceipt(l.id).catch(() => toast({ title: t('errors.generic'), variant: 'destructive' }))}
               />
             ))}
@@ -443,7 +443,9 @@ function RunView({ runId, today, onBack }: { runId: string; today: string | null
                   <span className="font-medium">{s.property_name}</span>
                   <span className="text-muted-foreground">{fmtDay(s.date)} · {s.title}</span>
                   <span className="ml-auto text-xs text-muted-foreground">
-                    {s.reason === 'already_invoiced' ? t('detail.skippedAlready', { ref: s.ref ?? '' }) : t('detail.skippedUnknown')}
+                    {s.reason === 'already_invoiced'
+                      ? (s.ref ? t('detail.skippedAlready', { ref: s.ref }) : t('detail.skippedElsewhere'))
+                      : t('detail.skippedUnknown')}
                   </span>
                 </li>
               ))}
@@ -481,7 +483,7 @@ function RunView({ runId, today, onBack }: { runId: string; today: string | null
           dateLabel={fmtDay(removing.date)}
           onClose={() => setRemoving(null)}
           onConfirm={reason => act(removing.id, async () => {
-            await vendorApi('items', { method: 'POST', body: { action: 'remove', run_id: run.id, line_id: removing.id, reason } })
+            await vendorApi('items', { method: 'POST', body: { action: 'remove', run_id: run.id, line_no: removing.line_no, line_id: removing.id, reason } })
             setRemoving(null)
           }, t('toast.removed'))}
         />

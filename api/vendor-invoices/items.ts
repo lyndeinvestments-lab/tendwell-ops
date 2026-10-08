@@ -1,13 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { describeLineInsertError, reconcileRun } from '../invoices/_lib.js'
+import { describeLineInsertError, reconcileRun, withRunLease } from '../invoices/_lib.js'
 import { validateVendorItem, type NormalizedItem, type VendorItemInput } from '../../shared/vendor-invoice.js'
 import {
+  blockedDaysFor,
   ENGINE_ITEM_CATEGORIES,
+  receiptOk,
+  removeReceiptIfUnused,
   isOwnReceiptPath,
   loadRunLines,
   loadVendorRun,
-  RECEIPT_BUCKET,
   requireVendorActor,
   sendError,
   todayEastern,
@@ -19,10 +21,11 @@ import {
 // /api/vendor-invoices/items — a vendor's own billable items on a DRAFT.
 //
 //   POST { action: 'add',     run_id, item }            → add an item
-//   POST { action: 'update',  run_id, line_id, item }   → edit one of your items
-//   POST { action: 'delete',  run_id, line_id }         → delete one of your items
-//   POST { action: 'remove',  run_id, line_id, reason } → take a clean off (with why)
-//   POST { action: 'restore', run_id, line_id }         → put a removed clean back
+//   POST { action: 'update',  run_id, line_no, item }   → edit one of your items
+//   POST { action: 'delete',  run_id, line_no }         → delete one of your items
+//   POST { action: 'remove',  run_id, line_no, reason } → take a clean off (with why)
+//   POST { action: 'restore', run_id, line_no }         → put a removed clean back
+//   (line_id is accepted too, but line_no is the stable handle — see findLine)
 //
 // Items are validated by shared/vendor-invoice.ts on the server, whatever the
 // form sent. Missing cleans and extras go through the reconcile engine (task
@@ -30,12 +33,6 @@ import {
 // stored as entered. Every vendor item is sent to Tendwell's review queue.
 
 const REMOVE_REASON_MIN = 10
-
-async function receiptExists(supabase: SupabaseClient, path: string): Promise<boolean> {
-  const slash = path.lastIndexOf('/')
-  const { data } = await supabase.storage.from(RECEIPT_BUCKET).list(path.slice(0, slash), { search: path.slice(slash + 1) })
-  return (data ?? []).some(f => f.name === path.slice(slash + 1))
-}
 
 async function propertyFor(supabase: SupabaseClient, id: number | null) {
   if (id == null) return null
@@ -163,17 +160,124 @@ async function validated(
     res.status(400).json({ error: 'invalid_item', errors: { receipt_path: 'receipt_required' } })
     return null
   }
-  if (v.item.receipt_path && !(await receiptExists(supabase, v.item.receipt_path))) {
+  if (v.item.receipt_path && !(await receiptOk(supabase, v.item.receipt_path))) {
     res.status(400).json({ error: 'invalid_item', errors: { receipt_path: 'receipt_required' } })
     return null
   }
   return { item: v.item, prop }
 }
 
-function ownItem(lines: LineRow[], id: unknown): LineRow | null {
-  const row = lines.find(l => l.id === id)
+/** The line an action targets. `line_no` is the stable handle: reconcile
+ *  deletes and re-inserts engine-built rows, so a row id the browser saw can
+ *  be gone a second later, while line_no survives every rebuild. Falls back
+ *  to the row id. Returns the line's base row (split rows share a line_no). */
+function findLine(lines: LineRow[], body: Record<string, any>): LineRow | null {
+  const no = Number(body.line_no)
+  if (Number.isInteger(no) && no > 0) {
+    const group = lines.filter(l => l.line_no === no)
+    return group.find(l => l.split_group == null || l.line_kind !== 'extra') ?? group[0] ?? null
+  }
+  return lines.find(l => l.id === body.line_id) ?? null
+}
+
+function ownItem(lines: LineRow[], body: Record<string, any>): LineRow | null {
+  const row = findLine(lines, body)
   if (!row || !row.vendor_category || row.vendor_category === 'clean') return null
   return row
+}
+
+type Outcome = { status: number; body: Record<string, unknown> }
+
+/** A missing clean on a day already billed (approved/exported anywhere, or
+ *  on another active vendor invoice) is refused up front — the DB claim
+ *  index only covers vendor-portal invoices. */
+async function missingCleanBlocked(supabase: SupabaseClient, run: RunRow, item: NormalizedItem): Promise<boolean> {
+  if (item.category !== 'missing_clean' || item.property_id == null || !item.date) return false
+  const blocked = await blockedDaysFor(supabase, run.id, run.vendor_id, item.date, item.date)
+  return blocked.has(`${item.property_id}|${item.date}`)
+}
+
+async function act(supabase: SupabaseClient, run: RunRow, body: Record<string, any>, res: VercelResponse, actor: VendorActor): Promise<Outcome | null> {
+  const lines = await loadRunLines(supabase, run.id)
+
+  if (body.action === 'add') {
+    const ok = await validated(supabase, run, body.item, res, actor)
+    if (!ok) return null
+    if (await missingCleanBlocked(supabase, run, ok.item)) return { status: 409, body: { error: 'duplicate' } }
+    const lineNo = Math.max(0, ...lines.map(l => Number(l.line_no))) + 1
+    const row = { ...(await rowFor(supabase, ok.item, ok.prop, actor)), run_id: run.id, line_no: lineNo }
+    const { error } = await supabase.from('invoice_lines').insert(row)
+    if (error) throw new Error(describeLineInsertError(error))
+    if (ENGINE_ITEM_CATEGORIES.has(ok.item.category)) await reconcileRun(supabase, run.id)
+    return { status: 200, body: { ok: true } }
+  }
+
+  if (body.action === 'update') {
+    const existing = ownItem(lines, body)
+    if (!existing) return { status: 404, body: { error: 'Item not found' } }
+    if ((body.item ?? {}).category !== existing.vendor_category) {
+      return { status: 400, body: { error: 'invalid_item', errors: { category: 'unknown_type' } } }
+    }
+    const ok = await validated(supabase, run, body.item, res, actor, existing.receipt_path)
+    if (!ok) return null
+    if (await missingCleanBlocked(supabase, run, ok.item)) return { status: 409, body: { error: 'duplicate' } }
+    const row = await rowFor(supabase, ok.item, ok.prop, actor)
+    // Update the row IN PLACE: if the new values are refused (e.g. the clean
+    // claim), the original item is untouched. Only then drop any split rows
+    // the engine had made from the old values; reconcile rebuilds them.
+    const { error } = await supabase.from('invoice_lines').update(row).eq('id', existing.id)
+    if (error) throw new Error(describeLineInsertError(error))
+    const { error: delErr } = await supabase.from('invoice_lines').delete().eq('run_id', run.id).eq('line_no', existing.line_no).neq('id', existing.id)
+    if (delErr) throw new Error(delErr.message)
+    if (existing.receipt_path && existing.receipt_path !== ok.item.receipt_path) {
+      await removeReceiptIfUnused(supabase, existing.receipt_path, existing.line_no)
+    }
+    if (ENGINE_ITEM_CATEGORIES.has(ok.item.category)) await reconcileRun(supabase, run.id)
+    return { status: 200, body: { ok: true } }
+  }
+
+  if (body.action === 'delete') {
+    const existing = ownItem(lines, body)
+    if (!existing) return { status: 404, body: { error: 'Item not found' } }
+    const { error } = await supabase.from('invoice_lines').delete().eq('run_id', run.id).eq('line_no', existing.line_no)
+    if (error) throw new Error(error.message)
+    await removeReceiptIfUnused(supabase, existing.receipt_path, existing.line_no)
+    return { status: 200, body: { ok: true } }
+  }
+
+  if (body.action === 'remove' || body.action === 'restore') {
+    const row = findLine(lines, body)
+    if (!row || row.vendor_category !== 'clean') return { status: 404, body: { error: 'Line not found' } }
+    const group = lines.filter(l => l.line_no === row.line_no)
+    if (body.action === 'remove') {
+      const reason = typeof body.reason === 'string' ? body.reason.replace(/\s+/g, ' ').trim() : ''
+      if (reason.length < REMOVE_REASON_MIN) return { status: 400, body: { error: 'invalid_item', errors: { description: reason ? 'too_short' : 'required' } } }
+      for (const r of group) {
+        const { error } = await supabase
+          .from('invoice_lines')
+          .update({
+            review_status: 'excluded',
+            vendor_detail: { ...(r.vendor_detail ?? {}), removed_reason: reason.slice(0, 500), removed_by: actor.email, removed_at: new Date().toISOString() },
+          })
+          .eq('id', r.id)
+        if (error) throw new Error(error.message)
+      }
+      return { status: 200, body: { ok: true } }
+    }
+    const d = row.vendor_detail ?? {}
+    // Only a clean the VENDOR removed can be put back here; one Tendwell
+    // removed stays Tendwell's call.
+    if (row.review_status !== 'excluded' || typeof d.removed_reason !== 'string') return { status: 409, body: { error: 'not_restorable' } }
+    for (const r of group) {
+      const { removed_reason: _a, removed_by: _b, removed_at: _c, ...rest } = r.vendor_detail ?? {}
+      const { error } = await supabase.from('invoice_lines').update({ review_status: 'ok', vendor_detail: rest }).eq('id', r.id)
+      if (error) throw new Error(describeLineInsertError(error))
+    }
+    await reconcileRun(supabase, run.id)
+    return { status: 200, body: { ok: true } }
+  }
+
+  return { status: 400, body: { error: 'Unknown action' } }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -189,91 +293,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const run = await loadVendorRun(supabase, body.run_id, actor.vendorId)
     if (!run) { res.status(404).json({ error: 'Invoice not found' }); return }
-    if (run.status !== 'draft') { res.status(409).json({ error: 'not_draft' }); return }
-    const lines = await loadRunLines(supabase, run.id)
-
-    if (body.action === 'add') {
-      const ok = await validated(supabase, run, body.item, res, actor)
-      if (!ok) return
-      const lineNo = Math.max(0, ...lines.map(l => Number(l.line_no))) + 1
-      const row = { ...(await rowFor(supabase, ok.item, ok.prop, actor)), run_id: run.id, line_no: lineNo }
-      const { error } = await supabase.from('invoice_lines').insert(row)
-      if (error) throw new Error(describeLineInsertError(error))
-      if (ENGINE_ITEM_CATEGORIES.has(ok.item.category)) await reconcileRun(supabase, run.id)
-      res.status(200).json({ ok: true })
-      return
-    }
-
-    if (body.action === 'update') {
-      const existing = ownItem(lines, body.line_id)
-      if (!existing) { res.status(404).json({ error: 'Item not found' }); return }
-      if ((body.item ?? {}).category !== existing.vendor_category) {
-        res.status(400).json({ error: 'invalid_item', errors: { category: 'unknown_type' } })
-        return
-      }
-      const ok = await validated(supabase, run, body.item, res, actor, existing.receipt_path)
-      if (!ok) return
-      const row = await rowFor(supabase, ok.item, ok.prop, actor)
-      // Engine-path items share a line_no with their split rows, if any.
-      const { error: delErr } = await supabase.from('invoice_lines').delete().eq('run_id', run.id).eq('line_no', existing.line_no)
-      if (delErr) throw new Error(delErr.message)
-      const { error } = await supabase.from('invoice_lines').insert({ ...row, run_id: run.id, line_no: existing.line_no })
-      if (error) throw new Error(describeLineInsertError(error))
-      if (existing.receipt_path && existing.receipt_path !== ok.item.receipt_path) {
-        await supabase.storage.from(RECEIPT_BUCKET).remove([existing.receipt_path])
-      }
-      if (ENGINE_ITEM_CATEGORIES.has(ok.item.category)) await reconcileRun(supabase, run.id)
-      res.status(200).json({ ok: true })
-      return
-    }
-
-    if (body.action === 'delete') {
-      const existing = ownItem(lines, body.line_id)
-      if (!existing) { res.status(404).json({ error: 'Item not found' }); return }
-      const { error } = await supabase.from('invoice_lines').delete().eq('run_id', run.id).eq('line_no', existing.line_no)
-      if (error) throw new Error(error.message)
-      if (existing.receipt_path) await supabase.storage.from(RECEIPT_BUCKET).remove([existing.receipt_path])
-      res.status(200).json({ ok: true })
-      return
-    }
-
-    if (body.action === 'remove' || body.action === 'restore') {
-      const row = lines.find(l => l.id === body.line_id)
-      if (!row || row.vendor_category !== 'clean') { res.status(404).json({ error: 'Line not found' }); return }
-      const group = lines.filter(l => l.line_no === row.line_no)
-      if (body.action === 'remove') {
-        const reason = typeof body.reason === 'string' ? body.reason.replace(/\s+/g, ' ').trim() : ''
-        if (reason.length < REMOVE_REASON_MIN) { res.status(400).json({ error: 'invalid_item', errors: { description: reason ? 'too_short' : 'required' } }); return }
-        for (const r of group) {
-          const { error } = await supabase
-            .from('invoice_lines')
-            .update({
-              review_status: 'excluded',
-              vendor_detail: { ...(r.vendor_detail ?? {}), removed_reason: reason.slice(0, 500), removed_by: actor.email, removed_at: new Date().toISOString() },
-            })
-            .eq('id', r.id)
-          if (error) throw new Error(error.message)
-        }
-      } else {
-        const d = row.vendor_detail ?? {}
-        // Only a clean the VENDOR removed can be put back here; one Tendwell
-        // removed stays Tendwell's call.
-        if (row.review_status !== 'excluded' || typeof d.removed_reason !== 'string') {
-          res.status(409).json({ error: 'not_restorable' })
-          return
-        }
-        for (const r of group) {
-          const { removed_reason: _a, removed_by: _b, removed_at: _c, ...rest } = r.vendor_detail ?? {}
-          const { error } = await supabase.from('invoice_lines').update({ review_status: 'ok', vendor_detail: rest }).eq('id', r.id)
-          if (error) throw new Error(describeLineInsertError(error))
-        }
-        await reconcileRun(supabase, run.id)
-      }
-      res.status(200).json({ ok: true })
-      return
-    }
-
-    res.status(400).json({ error: 'Unknown action' })
+    // Hold the run's lease and re-check it is still a draft UNDER the lease,
+    // so an item can never land on an invoice that was just submitted.
+    const outcome = await withRunLease(supabase, run.id, async () => {
+      const cur = await loadVendorRun(supabase, run.id, actor.vendorId)
+      if (!cur || cur.status !== 'draft') return { status: 409, body: { error: 'not_draft' } } as Outcome
+      return act(supabase, cur, body, res, actor)
+    })
+    if (outcome) res.status(outcome.status).json(outcome.body)
   } catch (e) {
     sendError(res, e, 'Item request failed')
   }
