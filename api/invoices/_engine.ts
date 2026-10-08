@@ -66,6 +66,18 @@ export interface BilledClean {
   ref: string // human label, e.g. "invoice 1095 line 198"
 }
 
+/** One reservation at a property (Haven's PMS via the Trellis reservation
+ *  snapshot). `isOwner` = an owner block: a $0 direct booking — the owner,
+ *  their family or friends, or a block they asked for. A clean after one is
+ *  an OWNER charge, not a Haven expense (Christine, 2026-10-08). */
+export interface StayRow {
+  propertyId: number
+  checkin: string // yyyy-mm-dd
+  checkout: string // yyyy-mm-dd
+  isOwner: boolean
+  guestName: string | null
+}
+
 export interface RawLine {
   lineNo: number
   // 'task' rows (billable Breezeway/Trellis tasks, see _aux.ts) never enter
@@ -137,6 +149,10 @@ export interface EngineInput {
   firstCleanByProperty?: ReadonlyMap<number, string>
   // Cleans already billed on other approved/exported runs (see BilledClean).
   billedCleans?: ReadonlyArray<BilledClean>
+  // Reservations around the period, owner blocks included. Absent = no
+  // reservation data → owner stays only come from a "Post-Owner Stay Clean"
+  // task title.
+  stays?: ReadonlyArray<StayRow>
 }
 
 // ─── Flag taxonomy (client renders badges from these) ───────────────────────
@@ -190,8 +206,10 @@ export const FLAGS = {
   // The billed service type came from the matched task, not the vendor's word
   // (informational — explains why "Departure" became "Turn").
   LABEL_FROM_TASK: 'label_from_task',
-  // Post-owner-stay clean: an owner charge, not a Haven expense (Christine,
-  // 2026-10-08). Exported as "<property> – Owner Stay".
+  // Owner charge, not a Haven expense (Christine, 2026-10-08): the first clean
+  // after an owner block checks out, or extra work done during one. Exported
+  // as "Owner Stay - Departure Clean" / "Owner Stay - Turn Clean" so Haven's
+  // QBO class rules route it to the owner.
   OWNER_STAY: 'owner_stay',
 } as const
 
@@ -343,14 +361,21 @@ const EXTRA_RULES: TitleRule[] = [
   { re: /trip\s*fee/i, title: 'Trip Fee' },
   { re: /reimburse/i, title: 'Reimbursement' },
   { re: /\b(left\s*items?|mailed)\b/i, title: 'Mailed Left Items by the Guest' },
-  // Guest-requested deliveries ("Towell deliver", "Deliver extra supplies
-  // requested by the guest" — real lines, runs TEST 4–6) are the priced
-  // Delivery/Supplies/Reimbursement service, not a generic Extra Cleaning:
-  // routed there they bill the standard $50 review-free instead of queueing.
-  { re: /\bdeliver|\bsuppl(?:y|ies)\b/i, title: 'Reimbursement', keepInReason: true },
-  // A courier charge that DID resolve to a property is the same billable
-  // service, even when the vendor omits the word "deliver" ("Fedex 8/31/26").
+  // A courier charge that DID resolve to a property is a Reimbursement of
+  // what the vendor paid the carrier ("Fedex 8/31/26", "Ups Deliver 8/31/26")
+  // — checked BEFORE the delivery rule so "Ups Deliver" is never a Trip Fee.
   { re: /\b(?:ups|usps|fedex|dhl)\b|\bpostage\b|\bship(?:ping|ment)\b/i, title: 'Reimbursement', keepInReason: true },
+  // Something the vendor BOUGHT for the property ("Propane tank 76.81 plus
+  // deliver $10", "Bathroom supply buy on 9/13/26") is a Reimbursement, even
+  // when it was also delivered.
+  { re: /\b(?:buy|bought|purchased?|receipt)\b|\bpropane\b/i, title: 'Reimbursement', keepInReason: true },
+  // A cleaner driving extra towels / supplies to the property ("Towell
+  // deliver", "Deliver extra supplies requested by the guest") is a TRIP, not
+  // a reimbursement: Haven (Christine, 2026-10-08) wants "Trip Fee (reason)"
+  // so it is never mistaken for left items mailed to a guest, which have
+  // their own title above.
+  { re: /\bdeliver|\bdrop\s*-?\s*off\b/i, title: 'Trip Fee', keepInReason: true },
+  { re: /\bsuppl(?:y|ies)\b/i, title: 'Reimbursement', keepInReason: true },
   // "Maintenance work replace …" (real line 78, run "Test 1"): a $50 repair
   // charge with no rule here fell through to the clean path and the rate floor
   // paid $380 on it. Pass through as a reason-required extra so the work
@@ -375,6 +400,76 @@ const EXTRA_RULES: TitleRule[] = [
  *  2026-10-08). Read from the task title, never the vendor's note. */
 export function isOwnerStayTitle(text: string | null | undefined): boolean {
   return !!text && /owner\s*stay/i.test(text) && !/pre.?owner\s*stay/i.test(text)
+}
+
+// ─── Owner stays ─────────────────────────────────────────────────────────────
+//
+// Haven (Christine, 2026-10-08): a clean after the OWNER checks out is an
+// owner charge, and should read "Owner Stay - Departure Clean" / "Owner Stay -
+// Turn Clean" so their QBO class rules book it to the owner instead of as a
+// Haven expense — identified automatically, not by someone remembering.
+// Evidence is the reservation calendar: an owner block is a $0 direct booking
+// in Haven's PMS (see StayRow).
+
+/** Base clean types that can follow an owner's checkout. Deep cleans and
+ *  onboarding are scheduled work, never a turnover of the owner's stay. */
+export const OWNER_STAY_CLEAN_TYPES: ReadonlySet<string> = new Set([
+  'Departure Clean',
+  'Turn Clean',
+  'Last Clean',
+  'Last Clean & Linen Pull',
+])
+
+// A turnover normally happens on the checkout day; allow a short gap for a
+// clean pushed a day or two (owner left Sunday night, cleaned Tuesday).
+const OWNER_CHECKOUT_WINDOW_DAYS = 3
+
+function dayDiff(from: string, to: string): number {
+  return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000)
+}
+
+/** The owner stay a clean on `date` turns over, or null. It is the most
+ *  recent reservation to check out at the property on or shortly before the
+ *  clean, it is an owner block, and no other completed clean happened between
+ *  that checkout and this clean (the first clean after the owner leaves is
+ *  the owner's; a later one belongs to whoever came next). */
+export function ownerStayBeforeClean(
+  propertyId: number,
+  date: string,
+  stays: ReadonlyArray<StayRow>,
+  tasks: ReadonlyArray<TaskRow>,
+): StayRow | null {
+  let last: StayRow | null = null
+  for (const s of stays) {
+    if (s.propertyId !== propertyId || s.checkout > date) continue
+    if (dayDiff(s.checkout, date) > OWNER_CHECKOUT_WINDOW_DAYS) continue
+    // Two checkouts the same day can't both be turned over by one clean —
+    // prefer the guest's, so a mixed case never bills the owner.
+    if (!last || s.checkout > last.checkout || (s.checkout === last.checkout && !s.isOwner)) last = s
+  }
+  if (!last || !last.isOwner) return null
+  const cleanedBetween = tasks.some(t =>
+    t.propertyId === propertyId && (t.isClean || t.isDeepClean) && t.completed !== false &&
+    t.dueDate != null && t.dueDate >= last!.checkout && t.dueDate < date,
+  )
+  return cleanedBetween ? null : last
+}
+
+/** The owner stay in progress on `date` (extra work done for the owner —
+ *  towels delivered, trash picked up mid-stay), or null. On a changeover day
+ *  that is also a guest's check-in or checkout the work could be either
+ *  party's, so it is not attributed to the owner. */
+export function ownerStayDuring(
+  propertyId: number,
+  date: string,
+  stays: ReadonlyArray<StayRow>,
+): StayRow | null {
+  const here = stays.filter(s => s.propertyId === propertyId && s.checkin <= date && date <= s.checkout)
+  const owner = here.find(s => s.isOwner)
+  if (!owner) return null
+  if (owner.checkin < date && date < owner.checkout) return owner
+  const guestToo = stays.some(s => s.propertyId === propertyId && !s.isOwner && (s.checkin === date || s.checkout === date))
+  return guestToo ? null : owner
 }
 
 export function isExcludedTitle(text: string | null): boolean {
@@ -421,10 +516,13 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
 //       price under-charged those and over-charged the rest.
 //   Linen Pull                    50.00 → 50        40.00 → 40
 //   Delivery/Supplies/Reimburse   47.93 → 50        27.00 → 25
+//     └ 2026-10-08: deliveries moved to Trip Fee (Haven's title for a trip
+//       to the property). Trip Fee takes the same $50 deliveries were
+//       already billed at, so no client price changed.
 //   Pet / Dog-hair Fee            44.44 → 45        23.50 → 25
 //
-// Types with no history (Trip Fee, Mailed Left Items, Extra Cleaning /
-// maintenance, Double Clean) are deliberately absent: they keep the old
+// Types with no history (Mailed Left Items, Extra Cleaning / maintenance,
+// Double Clean) are deliberately absent: they keep the old
 // pass-through-and-review behavior rather than getting an invented price.
 export interface StandardFee {
   charge: number
@@ -440,6 +538,7 @@ export const STANDARD_EXTRA_PRICING: Readonly<Record<string, StandardFee>> = {
   'Vacancy Clean / Touch Up Clean': { charge: 50, hotTubCharge: 65, costRef: 25 },
   'Linen Pull': { charge: 50, costRef: 40 },
   'Reimbursement': { charge: 50, costRef: 25 },
+  'Trip Fee': { charge: 50, costRef: 25 },
   'Pet Fee': { charge: 45, costRef: 25 },
 }
 
@@ -455,8 +554,8 @@ export interface ExtraPrice {
  *  hot-tub variant when the property has a tub. A missing property (an
  *  unresolved line) prices as no hot tub, no override.
  *
- *  Overrides only apply to fees on the standard list. An unpriced type (Trip
- *  Fee, Extra Cleaning…) keeps its pass-through-and-review path on purpose:
+ *  Overrides only apply to fees on the standard list. An unpriced type (Extra
+ *  Cleaning, Double Clean…) keeps its pass-through-and-review path on purpose:
  *  that review is what catches a spurious keyword match, and an override must
  *  not be a way around it. */
 export function extraPriceFor(
@@ -1564,6 +1663,35 @@ function applyEvidenceRules(line: EngineLine, c: EvidenceCtx): EngineLine {
   return l
 }
 
+/** Flag the rows of one vendor line that are an owner charge. The base clean
+ *  is checked against the owner's checkout; a split extra rides with its base
+ *  (it was billed on the same visit); a standalone extra is checked against
+ *  the stay in progress that day. */
+function markOwnerStay(
+  rows: EngineLine[],
+  date: string | null,
+  stays: ReadonlyArray<StayRow>,
+  tasks: ReadonlyArray<TaskRow>,
+): EngineLine[] {
+  if (!date) return rows
+  const isBase = (l: EngineLine) => l.splitGroup == null || l.lineKind !== 'extra'
+  const eligible = (l: EngineLine) =>
+    l.propertyId != null && l.lineKind !== 'excluded' && l.lineKind !== 'operating_expense' && l.reviewStatus !== 'excluded'
+  const base = rows.find(isBase)
+  const baseOwner = base != null && eligible(base) &&
+    (base.flags.includes(FLAGS.OWNER_STAY) ||
+      (base.serviceType != null && OWNER_STAY_CLEAN_TYPES.has(base.serviceType) &&
+        ownerStayBeforeClean(base.propertyId!, date, stays, tasks) != null))
+  return rows.map(l => {
+    if (!eligible(l) || l.flags.includes(FLAGS.OWNER_STAY)) return l
+    if (isBase(l) && l.lineKind !== 'extra') return baseOwner ? flag(l, FLAGS.OWNER_STAY) : l
+    if (l.splitGroup != null) return baseOwner ? flag(l, FLAGS.OWNER_STAY) : l
+    // Standalone extra (Trip Fee, trash, hot tub…). Onboarding is never the owner's stay.
+    if (l.serviceType === 'Onboarding Clean') return l
+    return ownerStayDuring(l.propertyId!, date, stays) ? flag(l, FLAGS.OWNER_STAY) : l
+  })
+}
+
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
   const threshold = input.fuzzyThreshold ?? FUZZY_CONFIRM_THRESHOLD
   const propsById = new Map(input.properties.map(p => [p.id, p]))
@@ -1660,6 +1788,7 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
         if (!cur || d < cur) firstClean.set(base.propertyId, d)
       }
     }
+    if (input.stays?.length) classified = markOwnerStay(classified, serviceDate ?? noteDate, input.stays, input.tasks)
     outByIndex.set(i, classified.map(l => ({ ...l, serviceDate })))
   }
   const outLines: EngineLine[] = []

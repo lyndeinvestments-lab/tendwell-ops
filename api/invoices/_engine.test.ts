@@ -1127,13 +1127,15 @@ describe('TEST 3–6 review-queue fixes', () => {
     expect(lines[0].reviewStatus).toBe('ok')
   })
 
-  it('"Towell deliver" is a priced delivery, not an under-billed clean', () => {
+  it('"Towell deliver" is a priced Trip Fee, not an under-billed clean', () => {
     // Real line (Janine Patterson, TEST 6): $20 towel delivery went down the
-    // clean path, queued, and would have billed the $269 clean rate.
+    // clean path, queued, and would have billed the $269 clean rate. Since
+    // 2026-10-08 a delivery is a Trip Fee (Haven: never "Reimbursement" or
+    // "Delivery", so it is not mistaken for left items mailed to a guest).
     const { lines } = reconcile(
       input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Towell deliver', rawAmount: 20, rawDateMentioned: null })], { tasks: [] }),
     )
-    expect(lines[0].serviceType).toBe('Reimbursement')
+    expect(lines[0].serviceType).toBe('Trip Fee')
     expect(lines[0].lineKind).toBe('extra')
     expect(lines[0].cleanerPayAmount).toBe(20)
     expect(lines[0].clientChargeAmount).toBe(50)
@@ -1146,9 +1148,20 @@ describe('TEST 3–6 review-queue fixes', () => {
     const { lines } = reconcile(
       input([vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Deliver extra supplies requested by the guest', rawAmount: 25, rawDateMentioned: null })], { tasks: [] }),
     )
-    expect(lines[0].serviceType).toBe('Reimbursement')
+    expect(lines[0].serviceType).toBe('Trip Fee')
     expect(lines[0].clientChargeAmount).toBe(50)
     expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('a purchase stays a Reimbursement even when it was delivered; a resolved courier line too', () => {
+    // Real lines: "Propane tank 76.81 plus deliver $10 =86.81" (CTN-Rebel Hill),
+    // "Ups Deliver 8/31/26" — what the vendor PAID for is reimbursed, a trip is not.
+    const { lines } = reconcile(input([
+      vendorLine({ lineNo: 1, rawPropertyText: 'Michael Rohwer 2455 - Propane tank 76.81 plus deliver $10', rawAmount: 86.81, rawDateMentioned: null }),
+      vendorLine({ lineNo: 2, rawPropertyText: 'Michael Rohwer 2455 - Ups Deliver 8/31/26', rawAmount: 33.95, rawDateMentioned: null }),
+      vendorLine({ lineNo: 3, rawPropertyText: 'Michael Rohwer 2455 - Bathroom supply buy', rawAmount: 40, rawDateMentioned: null }),
+    ], { tasks: [] }))
+    expect(lines.map(l => l.serviceType)).toEqual(['Reimbursement', 'Reimbursement', 'Reimbursement'])
   })
 
   it('"doh hair" splits a Pet Fee off the clean', () => {
@@ -1245,10 +1258,10 @@ describe('engine notes explain the review reason', () => {
   })
 
   it('an unpriced under-rate extra says a standard price is missing', () => {
-    // Matched clean task + trip-fee note billed under rate: the unpriced
+    // Matched clean task + extra-work note billed under rate: the unpriced
     // negative-split path, which passes through and queues.
-    const { lines } = reconcile(input([vendorLine({ rawAmount: 50, rawNoteText: 'Trip fee for extra visit' })]))
-    const extra = lines.find(l => l.serviceType === 'Trip Fee')!
+    const { lines } = reconcile(input([vendorLine({ rawAmount: 50, rawNoteText: 'Extra visit to wipe the oven' })]))
+    const extra = lines.find(l => l.serviceType === 'Extra Cleaning')!
     expect(extra.reviewStatus).toBe('needs_review')
     expect(extra.engineNote).toMatch(/no standard price/)
   })
@@ -1278,8 +1291,10 @@ describe('standardExtraCharge', () => {
 
   it('returns null for types with no price history', () => {
     expect(standardExtraCharge('Extra Cleaning', 50)).toBeNull()
-    expect(standardExtraCharge('Trip Fee', 30)).toBeNull()
+    expect(standardExtraCharge('Mailed Left Items by the Guest', 30)).toBeNull()
     expect(standardExtraCharge(null, 30)).toBeNull()
+    // Trip Fee has a price since deliveries moved onto it (2026-10-08).
+    expect(standardExtraCharge('Trip Fee', 30)).toMatchObject({ charge: 50, review: false })
   })
 
   it('prices the real lines 77/82/85 from run "Test 1"', () => {
@@ -1361,10 +1376,10 @@ describe('client fee overrides', () => {
   })
 
   it('an override on a fee with no standard price is ignored (keeps its review path)', () => {
-    const ov = { 'Trip Fee': { charge: 35, hotTubCharge: null } }
-    expect(extraPriceFor('Trip Fee', { feeOverrides: ov })).toBeNull()
+    const ov = { 'Extra Cleaning': { charge: 35, hotTubCharge: null } }
+    expect(extraPriceFor('Extra Cleaning', { feeOverrides: ov })).toBeNull()
     const { lines } = reconcile(input(
-      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Trip fee', rawAmount: 30, rawDateMentioned: null })],
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Extra cleaning of the porch', rawAmount: 30, rawDateMentioned: null })],
       { properties: [{ ...PROPS[0], feeOverrides: ov }, ...PROPS.slice(1)], tasks: [] },
     ))
     expect(lines[0].flags).not.toContain('client_priced')
@@ -1610,5 +1625,67 @@ describe('invoice 1096 fixes — labels, onboarding, duplicates', () => {
     const { lines } = run([line(1, 'Kim Mills 2222', '2026-09-30', 90)], [T('t', 50, '2026-10-01', 'Turn Clean')])
     expect(lines[0].serviceDate).toBe('2026-10-01')
     expect(lines[0].reviewStatus).toBe('ok')
+  })
+})
+
+// ─── Owner stays (Christine, 2026-10-08) ─────────────────────────────────────
+// "If it's an owner stay and the cleaner does a clean after the owner checks
+// out ... can AI automatically identify this" — from the reservation calendar
+// (owner block = $0 direct booking), not from anyone remembering to say so.
+describe('owner stays', () => {
+  const owner = (checkin: string, checkout: string) => ({ propertyId: 1, checkin, checkout, isOwner: true, guestName: 'Michael Rohwer and Family' })
+  const guest = (checkin: string, checkout: string) => ({ propertyId: 1, checkin, checkout, isOwner: false, guestName: 'Shannon Taylor' })
+
+  it('the clean on the owner checkout day is flagged owner_stay', () => {
+    const { lines } = reconcile(input([vendorLine({})], { stays: [owner('2026-08-01', '2026-08-05')] }))
+    expect(lines[0].serviceType).toBe('Departure Clean')
+    expect(lines[0].flags).toContain('owner_stay')
+  })
+
+  it('a turn after the owner leaves (guest arrives same day) is still the owner\'s', () => {
+    const tasks: TaskRow[] = [{ ...TASKS[0], title: 'Turn Clean' }, ...TASKS.slice(1)]
+    const { lines } = reconcile(input([vendorLine({ rawNoteText: 'Turn clean' })], {
+      tasks, stays: [owner('2026-08-01', '2026-08-05'), guest('2026-08-05', '2026-08-09')],
+    }))
+    expect(lines[0].serviceType).toBe('Turn Clean')
+    expect(lines[0].flags).toContain('owner_stay')
+  })
+
+  it('a clean after a GUEST checkout is not, even if the owner stayed before that guest', () => {
+    const { lines } = reconcile(input([vendorLine({})], { stays: [owner('2026-07-28', '2026-08-01'), guest('2026-08-01', '2026-08-05')] }))
+    expect(lines[0].flags).not.toContain('owner_stay')
+  })
+
+  it('only the FIRST clean after the owner leaves is theirs', () => {
+    const tasks: TaskRow[] = [
+      ...TASKS,
+      { externalId: 't9', propertyId: 1, dueDate: '2026-08-03', title: 'Departure Clean', isClean: true, isDeepClean: false, totalCostRef: null },
+    ]
+    const { lines } = reconcile(input([vendorLine({})], { tasks, stays: [owner('2026-07-30', '2026-08-03')] }))
+    expect(lines[0].flags).not.toContain('owner_stay')
+  })
+
+  it('a deep clean is scheduled work, never an owner-stay turnover', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Brandi Tropf 2505', rawAmount: 400, rawNoteText: 'Deep clean', rawDateMentioned: '2026-08-07' })],
+      { stays: [{ propertyId: 2, checkin: '2026-08-01', checkout: '2026-08-07', isOwner: true, guestName: 'Brandi Tropf' }] },
+    ))
+    expect(lines[0].flags).not.toContain('owner_stay')
+  })
+
+  it('a towel run during the owner stay is an owner Trip Fee', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawPropertyText: 'Michael Rohwer 2455 - Deliver towel', rawAmount: 20, rawDateMentioned: '2026-08-03' })],
+      { tasks: [], stays: [owner('2026-08-02', '2026-08-06')] },
+    ))
+    expect(lines[0].serviceType).toBe('Trip Fee')
+    expect(lines[0].flags).toContain('owner_stay')
+  })
+
+  it('no reservation data → only a "Post-Owner Stay Clean" task title flags it', () => {
+    const tasks: TaskRow[] = [{ ...TASKS[0], title: 'Post-Owner Stay Clean - HT' }, ...TASKS.slice(1)]
+    const { lines } = reconcile(input([vendorLine({})], { tasks }))
+    expect(lines[0].serviceType).toBe('Departure Clean')
+    expect(lines[0].flags).toContain('owner_stay')
   })
 })

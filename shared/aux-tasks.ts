@@ -26,6 +26,7 @@ export type AuxCategory =
   | 'trash'
   | 'linen_pull'
   | 'delivery'
+  | 'mailed_items'
   | 'lockbox'
   | 'touch_up'
   | 'pet'
@@ -66,9 +67,16 @@ export const AUX_CATEGORIES: Record<AuxCategory, AuxCategoryDef> = {
     id: 'linen_pull', label: 'Linen pull (standalone)', serviceType: 'Linen Pull', billableDefault: true,
     blurb: 'Collecting dirty linens without a clean. A Last Clean & Linen Pull is a clean, not this.',
   },
+  // A trip to the property, billed as "Trip Fee (reason)" — Haven's title,
+  // so a towel run is never mistaken for left items mailed to a guest
+  // (Christine, 2026-10-08). Was Reimbursement until then.
   delivery: {
-    id: 'delivery', label: 'Delivery / supply run', serviceType: 'Reimbursement', billableDefault: true,
-    blurb: 'Dropping off pillows, blankets, covers, batteries, tabs or other supplies requested at the property.',
+    id: 'delivery', label: 'Delivery / supply run', serviceType: 'Trip Fee', billableDefault: true,
+    blurb: 'Driving pillows, towels, blankets, covers, batteries, tabs or other supplies to the property. Billed as a Trip Fee with the reason.',
+  },
+  mailed_items: {
+    id: 'mailed_items', label: 'Mailed left items', serviceType: 'Mailed Left Items by the Guest', billableDefault: true,
+    blurb: "Shipping a guest's left-behind items back to them. Needs the postage cost as the price.",
   },
   lockbox: {
     id: 'lockbox', label: 'Lockbox / key check', serviceType: 'Trip Fee', billableDefault: true,
@@ -152,7 +160,8 @@ const RULES: Array<{ re: RegExp; category: AuxCategory }> = [
   // Specific billable work. Delivery verbs before hot_tub so "Drop off
   // bromine tabs for hot tub" is a supply run, not a refresh.
   { re: /air\s*filter|a\/?c\s*filters?|\bfilters?\b/i, category: 'air_filter' },
-  { re: /\bdeliver(y|ed|ies)?\b|\bdrop\s*-?\s*off\b|\bmailed\b|left\s*items?/i, category: 'delivery' },
+  { re: /\bmail(ed)?\b|left\s*(behind\s*)?items?|\bship\s*(back|to\s*guest)/i, category: 'mailed_items' },
+  { re: /\bdeliver(y|ed|ies)?\b|\bdrop\s*-?\s*off\b/i, category: 'delivery' },
   { re: /\b(hot|cool)\s*tub\b|\btub\s*(refresh|refill)/i, category: 'hot_tub' },
   { re: /trash\s*pick|mid.?stay.*trash|remove\s*trash|trash\s*removal|excessive\s*trash|scattered\s*trash|^trash\s*pickup$/i, category: 'trash' },
   { re: /linen\s*pull|dirty\s*linens?|linen\s*back|grab\s*(dirty\s*)?linens?/i, category: 'linen_pull' },
@@ -198,6 +207,7 @@ export const DEFAULT_EXTRA_PRICING: Readonly<Record<string, number>> = {
   'Vacancy Clean / Touch Up Clean': 50,
   'Linen Pull': 50,
   'Reimbursement': 50,
+  'Trip Fee': 50,
   'Pet Fee': 45,
 }
 

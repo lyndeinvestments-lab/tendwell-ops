@@ -79,21 +79,68 @@ function invoiceNoFor(run: ExportRun, month: string): string {
   return n != null ? String(n) : ''
 }
 
-/** Client-facing description: the property, plus what makes this line
- *  different from a plain clean — an owner stay (owner charge, not Haven's)
- *  or the reason an onboarding fee applies. Haven's AP bot copies this text
- *  straight into Ramp, so it has to be right on its own. */
+// Charges Haven has to assign either to the OWNER or to itself. Their title
+// carries the reason AND the property so Finance can decide from the line
+// alone (Christine, 2026-10-08) — a UPS reimbursement or a towel run that
+// doesn't say where or why can't be booked.
+export const PROPERTY_IN_TITLE: ReadonlySet<string> = new Set([
+  'Reimbursement',
+  'Trip Fee',
+  'Mailed Left Items by the Guest',
+])
+
+const URL_RE = /https?:\/\/[^\s)]+/gi
+
+/** Slack / Quo / receipt links in a review note — they go in the
+ *  description (Haven follows them to see who the guest was), never the title. */
+export function linksIn(text: string | null | undefined): string[] {
+  return text ? [...new Set(text.match(URL_RE) ?? [])] : []
+}
+
+/** A reason fit for a client-facing title: links removed (they go in the
+ *  description), our own bookkeeping — "(orig: Deliver towel)", "(Jordan,
+ *  2026-10-05)" — removed, whitespace and stray punctuation tidied. */
+export function cleanReason(text: string | null | undefined): string | null {
+  if (!text) return null
+  const out = text
+    .replace(URL_RE, ' ')
+    .replace(/\(\s*orig:[^)]*\)/gi, ' ')
+    .replace(/\(\s*[A-Z][a-z]+,?\s*\d{4}-\d{2}-\d{2}\s*\)/g, ' ')
+    .replace(/\(\s*\)/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—:;,.]+|[\s\-–—:;,.]+$/g, '')
+    .trim()
+  return out.length >= 3 ? out : null
+}
+
+/** The stated reason for an extra that must carry one: the human review note
+ *  wins, else the reason derived from the vendor note. */
+export function lineReason(l: Pick<ExportLine, 'serviceType' | 'reviewNote' | 'note'>): string | null {
+  const t = l.serviceType
+  if (!t || !(REASON_REQUIRED_EXTRAS.has(t) || PROPERTY_IN_TITLE.has(t))) return null
+  return cleanReason(l.reviewNote) ?? cleanReason(extraReasonFromNote(cleanReason(l.note), t))
+}
+
+const isOwnerStay = (l: Pick<ExportLine, 'flags'>) => !!l.flags?.includes('owner_stay')
+
+/** Client-facing description. An owner-stay line LEADS with "Owner Stay -
+ *  <service>" (Christine's wording, 2026-10-08) so Haven's QBO class rules
+ *  can book it to the owner from the description alone; then the property,
+ *  then what else sets the line apart (mid-stay trash, a valid onboarding
+ *  fee) and, for owner-or-Haven charges, the evidence link. Haven's AP bot
+ *  copies this text straight into Ramp, so it has to be right on its own. */
 export function clientDescription(l: ExportLine): string {
-  const prop = l.propertyName ?? ''
-  const extras: string[] = []
-  if (l.flags?.includes('owner_stay')) extras.push('Owner Stay')
+  const parts: string[] = []
+  if (isOwnerStay(l)) parts.push(`Owner Stay - ${l.serviceType ?? 'Clean'}`)
+  parts.push(l.propertyName ?? '')
   // Mid-stay trash is an OWNER charge; trash left at checkout is the guest's
   // (Jordan, 2026-07-15). Haven needs to tell them apart to bill the right party.
-  if (l.serviceType === 'Excessive Trash Pickup' && /mid.?stay/i.test(l.note ?? '')) extras.push('Mid-Stay pickup')
+  if (l.serviceType === 'Excessive Trash Pickup' && /mid.?stay/i.test(l.note ?? '')) parts.push('Mid-Stay pickup')
   if (l.serviceType === 'Onboarding Clean' && l.lineKind === 'extra' && /first tendwell clean/i.test(l.note ?? '')) {
-    extras.push('onboarding fee, first Tendwell clean')
+    parts.push('onboarding fee, first Tendwell clean')
   }
-  return [prop, ...extras].filter(Boolean).join(' – ')
+  if (l.serviceType && PROPERTY_IN_TITLE.has(l.serviceType)) parts.push(...linksIn(l.reviewNote))
+  return parts.filter(Boolean).join(' – ')
 }
 
 // Line-item splits exist for QBO only (Jordan 2026-08-18): the vendor billed
@@ -125,14 +172,21 @@ function collapseSplits(
 
 // Finance requires certain extras to carry their reason IN the title —
 // "Pet Fee (excess dog hair)" — exactly as Nina's real QBO sheet (#1085) does.
-// Precedence: the human review note, else the reason derived from the vendor
-// note. A missing reason was already flagged for review upstream, so a bare
-// title here means a human explicitly approved it without one.
+// Owner-or-Haven charges also name the property: "Trip Fee (extra towels
+// delivered) – John Bryan 4144". An owner charge leads with "Owner Stay - ".
+// A missing reason was already flagged for review upstream, so a bare title
+// here means a human explicitly approved it without one.
 export function serviceTitle(l: ExportLine): string {
   const title = l.serviceType ?? ''
-  if (!title || !REASON_REQUIRED_EXTRAS.has(title)) return title
-  const reason = l.reviewNote?.trim() || extraReasonFromNote(l.note, title)
-  return reason ? `${title} (${reason})` : title
+  if (!title) return title
+  let out = title
+  const reason = lineReason(l)
+  if (reason) out = `${out} (${reason})`
+  const prop = l.propertyName?.trim()
+  if (prop && PROPERTY_IN_TITLE.has(title) && !(reason ?? '').toLowerCase().includes(prop.toLowerCase())) {
+    out = `${out} – ${prop}`
+  }
+  return isOwnerStay(l) ? `Owner Stay - ${out}` : out
 }
 
 // CSV formula-injection guard: vendor-authored free text (notes, invoice
@@ -387,9 +441,7 @@ export function toQboMultilineCsv(run: ExportRun, lines: ExportLine[]): string {
       // reason-required extra's reason. Note-only lines still surface the note.
       withNote(
         clientDescription(l),
-        l.serviceType && REASON_REQUIRED_EXTRAS.has(l.serviceType)
-          ? l.reviewNote?.trim() || extraReasonFromNote(l.note, l.serviceType)
-          : (!l.propertyName && !l.serviceType ? l.note : null),
+        lineReason(l) ?? (!l.propertyName && !l.serviceType ? l.note : null),
       ),
       '1',
       (l.clientChargeAmount ?? 0).toFixed(2),

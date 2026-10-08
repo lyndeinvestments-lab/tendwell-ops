@@ -15,6 +15,7 @@ import {
   type PropertyRates,
   type RawLine,
   type RunSummary,
+  type StayRow,
   type TaskRow,
 } from './_engine.js'
 import { buildTaskLines, isHumanTouchedTaskLine, type AuxTaskRow, type ExistingLineRef } from './_aux.js'
@@ -60,6 +61,8 @@ export interface EngineContext {
   firstCleanByProperty: Map<number, string>
   /** Cleans already billed on OTHER approved/exported runs near this period. */
   billedCleans: BilledClean[]
+  /** Haven reservations around the period (owner blocks flagged). */
+  stays: StayRow[]
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -382,7 +385,66 @@ export async function loadEngineContext(
     ref: `invoice ${r.invoice_runs?.qbo_invoice_no ?? '(unnumbered)'} line ${r.line_no}`,
   }))
 
-  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans }
+  const stays = await loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId)
+
+  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans, stays }
+}
+
+/** Reservations that overlap the window, mapped onto Ops properties (primary
+ *  trellis_id, then property_aliases.trellis_id for duplicate/renamed Trellis
+ *  records). Best-effort: with no snapshot (table missing / never synced)
+ *  owner stays come only from "Post-Owner Stay Clean" task titles. */
+export async function loadStays(
+  supabase: SupabaseClient,
+  windowStart: string,
+  windowEnd: string,
+  propertyByTrellisId: ReadonlyMap<string, number>,
+): Promise<StayRow[]> {
+  try {
+    const [rows, aliasRows] = await Promise.all([
+      fetchAllRows<{
+        trellis_reservation_id: string
+        trellis_property_id: string | null
+        guest_name: string | null
+        checkin_date: string | null
+        checkout_date: string | null
+        is_owner_block: boolean | null
+      }>(
+        'trellis_reservation_snapshot',
+        () => supabase
+          .from('trellis_reservation_snapshot')
+          .select('trellis_reservation_id, trellis_property_id, guest_name, checkin_date, checkout_date, is_owner_block')
+          // Overlap, padded so a checkout just before the window still counts.
+          .gte('checkout_date', shiftDate(windowStart, -7))
+          .lte('checkin_date', windowEnd)
+          .order('trellis_reservation_id'),
+        'trellis_reservation_id',
+      ),
+      fetchAllRows<{ id: string; property_id: number; trellis_id: string | null }>(
+        'property_aliases',
+        () => supabase.from('property_aliases').select('id, property_id, trellis_id').not('trellis_id', 'is', null).order('id'),
+        'id',
+      ),
+    ])
+    const byTrellis = new Map(propertyByTrellisId)
+    for (const a of aliasRows) if (a.trellis_id && !byTrellis.has(a.trellis_id)) byTrellis.set(a.trellis_id, Number(a.property_id))
+    const out: StayRow[] = []
+    for (const r of rows) {
+      const propertyId = r.trellis_property_id ? byTrellis.get(r.trellis_property_id) : undefined
+      if (propertyId == null || !r.checkin_date || !r.checkout_date) continue
+      out.push({
+        propertyId,
+        checkin: r.checkin_date,
+        checkout: r.checkout_date,
+        isOwner: r.is_owner_block === true,
+        guestName: r.guest_name,
+      })
+    }
+    return out
+  } catch (e) {
+    console.error('owner-stay reservations unavailable:', e)
+    return []
+  }
 }
 
 // ─── Billable auxiliary tasks (see _aux.ts) ──────────────────────────────────
@@ -509,6 +571,7 @@ export async function syncTaskLines(
     /** Every non-task line that will be on the run after this reconcile. */
     otherLines: ExistingLineRef[]
     nextLineNo: number
+    stays?: StayRow[]
   },
 ): Promise<TaskLineSyncResult> {
   const kept = input.taskRows.filter(isHumanTouchedTaskLine)
@@ -569,6 +632,7 @@ export async function syncTaskLines(
     periodStart: input.periodStart,
     periodEnd: input.periodEnd,
     nextLineNo: input.nextLineNo,
+    stays: input.stays,
   })
   if (built.inserts.length > 0) {
     const { error } = await supabase
@@ -790,6 +854,7 @@ export async function reconcileRun(
   const { lines, summary } = reconcile({
     firstCleanByProperty: ctx.firstCleanByProperty,
     billedCleans: ctx.billedCleans,
+    stays: ctx.stays,
     vendorId: run.vendor_id,
     lines: rawLines,
     aliases: ctx.aliases,
@@ -842,6 +907,7 @@ export async function reconcileRun(
     periodEnd,
     properties: ctx.properties,
     propertyByTrellisId: ctx.propertyByTrellisId,
+    stays: ctx.stays,
     taskRows,
     otherLines: [
       ...preserved.map(r => asRef({

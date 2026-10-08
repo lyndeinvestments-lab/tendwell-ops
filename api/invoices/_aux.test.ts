@@ -80,11 +80,16 @@ describe('buildTaskLines — the money rules', () => {
     expect(r.inserts[0].review_status).toBe('ok')
   })
 
-  it('an unpriced type (Trip Fee) is still added, but queued with missing_rate', () => {
-    const r = buildTaskLines({ ...base, tasks: [task({ externalId: 'bw2', title: 'Lockbox Key Check' })] })
-    expect(r.inserts[0]).toMatchObject({ service_type: 'Trip Fee', client_charge_amount: null, review_status: 'needs_review' })
+  it('an unpriced type (Mailed Left Items) is still added, but queued with missing_rate', () => {
+    const r = buildTaskLines({ ...base, tasks: [task({ externalId: 'bw2', title: 'Mail left items to guest' })] })
+    expect(r.inserts[0]).toMatchObject({ service_type: 'Mailed Left Items by the Guest', client_charge_amount: null, review_status: 'needs_review' })
     expect(r.inserts[0].flags).toContain('missing_rate')
     expect(r.needsReviewCount).toBe(1)
+  })
+
+  it('a lockbox check is a $50 Trip Fee by default', () => {
+    const r = buildTaskLines({ ...base, tasks: [task({ externalId: 'bw2', title: 'Lockbox Key Check' })] })
+    expect(r.inserts[0]).toMatchObject({ service_type: 'Trip Fee', client_charge_amount: 50, review_status: 'ok' })
   })
 
   it('a settings price for Trip Fee turns it into an auto-approved line', () => {
@@ -93,10 +98,26 @@ describe('buildTaskLines — the money rules', () => {
     expect(r.inserts[0]).toMatchObject({ client_charge_amount: 35, review_status: 'ok' })
   })
 
-  it('a delivery is a Reimbursement whose reason is the task title (no review)', () => {
+  it('a delivery is a Trip Fee whose reason is the task title (no review) — Haven, 2026-10-08', () => {
     const r = buildTaskLines({ ...base, tasks: [task({ externalId: 'bw3', title: 'Urgent: deliver extra blankets for pull-out couch' })] })
-    expect(r.inserts[0]).toMatchObject({ service_type: 'Reimbursement', client_charge_amount: 50, review_status: 'ok' })
+    expect(r.inserts[0]).toMatchObject({ service_type: 'Trip Fee', client_charge_amount: 50, review_status: 'ok' })
     expect(r.inserts[0].raw_note_text).toBe('Urgent: deliver extra blankets for pull-out couch')
+  })
+
+  it('work done during an owner stay is flagged owner_stay (John Bryan 4144, 10/2 towel + rug run)', () => {
+    const stays = [
+      { propertyId: 1, checkin: '2026-09-05', checkout: '2026-09-09', isOwner: false, guestName: 'Shannon Taylor' },
+      { propertyId: 1, checkin: '2026-09-09', checkout: '2026-09-13', isOwner: true, guestName: 'John Bryan and Family' },
+    ]
+    const r = buildTaskLines({ ...base, stays, tasks: [
+      task({ externalId: 'bw5', title: 'Cleaning: Supply Delivery', date: '2026-09-10' }),
+      // Changeover day: the guest checked out the same day — not the owner's.
+      task({ externalId: 'bw6', title: 'Trash pickup', date: '2026-09-09' }),
+    ] })
+    const byId = new Map(r.inserts.map(l => [l.matched_task_id, l]))
+    expect(byId.get('bw5')!.flags).toContain('owner_stay')
+    expect(byId.get('bw5')!.service_type).toBe('Trip Fee')
+    expect(byId.get('bw6')!.flags).not.toContain('owner_stay')
   })
 
   it('a property with no billing channel is flagged so Approve blocks until the client is routed', () => {
