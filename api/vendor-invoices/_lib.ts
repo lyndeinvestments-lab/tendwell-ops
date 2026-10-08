@@ -441,7 +441,13 @@ export async function receiptOk(supabase: SupabaseClient, path: string): Promise
   if (!file) return false
   const meta = (file.metadata ?? {}) as { size?: number; mimetype?: string }
   if (typeof meta.size === 'number' && (meta.size <= 0 || meta.size > RECEIPT_MAX_BYTES)) return false
-  if (typeof meta.mimetype === 'string' && !RECEIPT_MIME_TYPES.has(meta.mimetype.toLowerCase())) return false
+  // Storage records octet-stream when the browser sent no type (iPhone HEIC
+  // often arrives untyped). The extension was fixed server-side from the
+  // declared type when the upload link was issued, and files are only ever
+  // served through short-lived signed links, so octet-stream is accepted;
+  // anything that declares itself as something else (text/html…) is not.
+  const mime = typeof meta.mimetype === 'string' ? meta.mimetype.toLowerCase() : null
+  if (mime && mime !== 'application/octet-stream' && !RECEIPT_MIME_TYPES.has(mime)) return false
   return true
 }
 

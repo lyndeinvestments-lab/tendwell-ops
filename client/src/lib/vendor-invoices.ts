@@ -135,7 +135,10 @@ export async function uploadReceipt(runId: string, file: File): Promise<string> 
     method: 'POST',
     body: { action: 'upload_url', run_id: runId, content_type: type, size: file.size },
   })
-  const { error } = await supabase.storage.from('vendor-invoices').uploadToSignedUrl(path, token, file, { contentType: type })
+  // Re-wrap with the resolved type: the upload sends the File as form data,
+  // which carries the File's own type, and iPhone HEIC files often have none.
+  const typed = file.type === type ? file : new File([file], file.name, { type })
+  const { error } = await supabase.storage.from('vendor-invoices').uploadToSignedUrl(path, token, typed, { contentType: type })
   if (error) throw new VendorApiError('upload_failed', 500, error)
   return path
 }

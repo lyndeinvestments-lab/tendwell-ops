@@ -103,7 +103,7 @@ try {
   const pid = firstClean.property_id
   const up = await api('vendor-invoices/receipts', { method: 'POST', body: { action: 'upload_url', run_id: runId, content_type: 'application/pdf', size: 20 } })
   check('receipt upload link issued', up.status === 200 && !!up.json.token, `${up.status}`)
-  const { error: upErr } = await anon.storage.from('vendor-invoices').uploadToSignedUrl(up.json.path, up.json.token, new Blob(['%PDF-1.4 e2e']), { contentType: 'application/pdf' })
+  const { error: upErr } = await anon.storage.from('vendor-invoices').uploadToSignedUrl(up.json.path, up.json.token, new Blob(['%PDF-1.4 e2e'], { type: 'application/pdf' }), { contentType: 'application/pdf' })
   check('receipt uploads through the signed link', !upErr, upErr?.message)
   const badType = await api('vendor-invoices/receipts', { method: 'POST', body: { action: 'upload_url', run_id: runId, content_type: 'text/html', size: 20 } })
   check('non-image/PDF uploads are refused', badType.status === 400, `${badType.status}`)
