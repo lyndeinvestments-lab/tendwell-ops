@@ -11,12 +11,42 @@
 // extra tasks are recorded on the line (`possible_duplicate`, reviewed by
 // Tendwell), and a day already on another invoice is skipped with the reason.
 
-import type { TaskRow } from '../invoices/_engine.js'
+import { standardizeTitle, type TaskRow } from '../invoices/_engine.js'
 
 export interface DraftProperty {
   id: number
   name: string
   cleanerPay: number | null
+  /** Street address; two Ops records at one address (Paladino 4420 is #526
+   *  and #543, both active) must not both bill the same day unchecked. */
+  address?: string | null
+}
+
+/** The clean types a vendor is paid a full Cleaner Pay rate for. Everything
+ *  else a task title can standardize to is NOT a full clean: a Vacancy Clean
+ *  is a non-billable tidy, a Touch Up / Linen Pull is an auxiliary task
+ *  (client-billed, not vendor-paid since 2026-09-22), and an inspection is an
+ *  inspection — "Cleaner inspection — assess touch-up vs. Departure Clean"
+ *  contains "Departure Clean" but is not one. */
+const FULL_CLEAN_TITLES: ReadonlySet<string> = new Set([
+  'Departure Clean', 'Turn Clean', 'Last Clean', 'Last Clean & Linen Pull', 'Deep Clean', 'Onboarding Clean',
+])
+const NOT_A_CLEAN = /in?spection|\bassess|walk.?through|vacancy|touch.?up/i
+
+export function isFullCleanTask(t: Pick<TaskRow, 'title' | 'isClean' | 'isDeepClean'>): boolean {
+  if (!(t.isClean || t.isDeepClean)) return false
+  if (NOT_A_CLEAN.test(t.title)) return false
+  if (t.isDeepClean) return true
+  const std = standardizeTitle(t.title)
+  return std != null && !std.isExtra && FULL_CLEAN_TITLES.has(std.title)
+}
+
+/** "4420 Stackstone Rd, Sevierville, TN" → "4420 stackstone rd": house number
+ *  + street, enough to spot two Ops records for one house. */
+export function addressKey(address: string | null | undefined): string | null {
+  if (!address) return null
+  const head = address.split(',')[0].toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  return /^\d+ \S+/.test(head) ? head : null
 }
 
 export interface DraftInput {
@@ -78,7 +108,7 @@ function primaryOrder(a: TaskRow, b: TaskRow): number {
 export function buildPortalDraft(input: DraftInput): DraftResult {
   const groups = new Map<string, TaskRow[]>()
   for (const t of input.tasks) {
-    if (!(t.isClean || t.isDeepClean)) continue
+    if (!isFullCleanTask(t)) continue
     // Only completed work is billable: an open task is not evidence of a clean.
     if (t.completed === false) continue
     if (t.propertyId == null || t.dueDate == null) continue
@@ -138,5 +168,53 @@ export function buildPortalDraft(input: DraftInput): DraftResult {
       flags,
     })
   }
+  // Same house, same day, two Ops records: bill both only after a human
+  // confirms they are really two cleans (and which client owns which).
+  const byAddressDay = new Map<string, DraftLine[]>()
+  for (const l of lines) {
+    const a = addressKey(input.properties.get(l.propertyId)?.address)
+    if (!a) continue
+    const k = `${a}|${l.date}`
+    const g = byAddressDay.get(k)
+    if (g) g.push(l)
+    else byAddressDay.set(k, [l])
+  }
+  for (const g of byAddressDay.values()) {
+    if (new Set(g.map(l => l.propertyId)).size < 2) continue
+    // Different units on one lot ("Land Yacht Air Stream" / "The River Nook -
+    // Tiny Home" share 2328 Business Ctr Cir) are genuinely separate cleans;
+    // only records whose NAMES also overlap look like one house twice.
+    for (const l of g) {
+      const mine = nameTokens(l.propertyName)
+      const twin = g.some(o => o.propertyId !== l.propertyId && [...nameTokens(o.propertyName)].some(tok => mine.has(tok)))
+      if (twin && !l.flags.includes('possible_duplicate')) l.flags.push('possible_duplicate')
+    }
+  }
   return { lines, skipped }
+}
+
+const GENERIC_NAME_TOKENS = new Set(['the', 'and', 'home', 'house', 'cabin', 'unit', 'lodge', 'tiny', 'ctn', 'hpm', 'wtn'])
+
+function nameTokens(name: string): Set<string> {
+  return new Set(
+    name.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(tok => tok.length >= 3 && !GENERIC_NAME_TOKENS.has(tok)),
+  )
+}
+
+/** Ops property ids that are archived duplicates of an active property (same
+ *  Trellis record) → the active id. Breezeway still files Kelly Armsworth
+ *  3634's tasks under the archived #507 while Trellis maps to #499; without
+ *  this one clean became two invoice lines. */
+export function archivedDuplicateMap(rows: ReadonlyArray<{ id: number; trellis_id: string | null; archived_at: string | null }>): Map<number, number> {
+  const active = new Map<string, number>()
+  for (const r of rows) {
+    if (r.trellis_id && !r.archived_at && (!active.has(r.trellis_id) || r.id < active.get(r.trellis_id)!)) active.set(r.trellis_id, r.id)
+  }
+  const out = new Map<number, number>()
+  for (const r of rows) {
+    if (!r.archived_at || !r.trellis_id) continue
+    const to = active.get(r.trellis_id)
+    if (to != null && to !== r.id) out.set(r.id, to)
+  }
+  return out
 }

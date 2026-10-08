@@ -120,3 +120,74 @@ describe('buildPortalDraft', () => {
     expect(lines[1].title).toBe('Turn Clean')
   })
 })
+
+describe('what counts as a full clean', () => {
+  it('never drafts vacancy cleans, touch-ups, linen pulls or inspections as cleans', async () => {
+    const { isFullCleanTask } = await import('./_draft.js')
+    const t = (title: string, extra: Partial<TaskRow> = {}) => ({ title, isClean: true, isDeepClean: false, ...extra })
+    expect(isFullCleanTask(t('Vacancy Clean'))).toBe(false)
+    expect(isFullCleanTask(t('Vacancy Clean/Touch-up Clean'))).toBe(false)
+    expect(isFullCleanTask(t('Touch Up Clean'))).toBe(false)
+    expect(isFullCleanTask(t('Linen Pull'))).toBe(false)
+    expect(isFullCleanTask(t('Cleaner inspection — assess touch-up vs. Departure Clean'))).toBe(false)
+    expect(isFullCleanTask(t('Cleaning Inspection'))).toBe(false)
+    expect(isFullCleanTask(t('Departure Clean'))).toBe(true)
+    expect(isFullCleanTask(t('Turn Clean'))).toBe(true)
+    expect(isFullCleanTask(t('HTLR Onboarding Clean'))).toBe(true)
+    expect(isFullCleanTask(t('Last Clean & Linen Pull'))).toBe(true)
+    expect(isFullCleanTask(t('Post-Owner Stay Clean - HT'))).toBe(true)
+    expect(isFullCleanTask(t('Deep Clean', { isClean: false, isDeepClean: true }))).toBe(true)
+  })
+
+  it('drafts only full cleans from a mixed day', () => {
+    const { lines } = buildPortalDraft({
+      ...base,
+      tasks: [
+        task({ externalId: 'v', propertyId: 8, dueDate: '2026-10-05', title: 'Vacancy Clean' }),
+        task({ externalId: 'a', propertyId: 25, dueDate: '2026-10-05', title: 'Cleaner inspection — assess touch-up vs. Departure Clean' }),
+      ],
+    })
+    expect(lines).toHaveLength(0)
+  })
+})
+
+describe('one house, two Ops records', () => {
+  it('flags same-address same-day cleans on different records for review (Paladino 4420 #526/#543)', () => {
+    const props = new Map<number, DraftProperty>([
+      [526, { id: 526, name: 'Jason and Marsha Paladino 4420', cleanerPay: 200, address: '4420 Stackstone Rd, Sevierville, TN 37862, USA' }],
+      [543, { id: 543, name: 'Jason Paladino 4420', cleanerPay: 240, address: '4420 Stackstone Rd, Sevierville, TN 37862' }],
+    ])
+    const { lines } = buildPortalDraft({
+      ...base,
+      properties: props,
+      tasks: [task({ externalId: 'x', propertyId: 526, dueDate: '2026-10-05' }), task({ externalId: 'y', propertyId: 543, dueDate: '2026-10-05' })],
+    })
+    expect(lines).toHaveLength(2)
+    expect(lines.every(l => l.flags.includes('possible_duplicate'))).toBe(true)
+  })
+
+  it('does not flag different units on one lot (Land Yacht / River Nook share an address)', () => {
+    const props = new Map<number, DraftProperty>([
+      [650, { id: 650, name: 'Land Yacht Air Stream', cleanerPay: 40, address: '2328 Business Ctr Cir, Sevierville, TN 37876, USA' }],
+      [651, { id: 651, name: 'The River Nook - Tiny Home', cleanerPay: 40, address: '2328 Business Ctr Cir, Sevierville, TN 37876, USA' }],
+    ])
+    const { lines } = buildPortalDraft({
+      ...base,
+      properties: props,
+      tasks: [task({ externalId: 'x', propertyId: 650, dueDate: '2026-10-05' }), task({ externalId: 'y', propertyId: 651, dueDate: '2026-10-05' })],
+    })
+    expect(lines.some(l => l.flags.includes('possible_duplicate'))).toBe(false)
+  })
+
+  it('maps an archived duplicate onto its active twin (Kelly Armsworth 3634 #507 → #499)', async () => {
+    const { archivedDuplicateMap } = await import('./_draft.js')
+    const m = archivedDuplicateMap([
+      { id: 499, trellis_id: 'T', archived_at: null },
+      { id: 507, trellis_id: 'T', archived_at: '2026-09-17' },
+      { id: 600, trellis_id: 'U', archived_at: '2026-01-01' },
+    ])
+    expect(m.get(507)).toBe(499)
+    expect(m.has(499)).toBe(false)
+    expect(m.has(600)).toBe(false)
+  })
+})

@@ -85,7 +85,10 @@ try {
   // Compare with the admin "generated" path for the same days, if one exists.
   const { data: adminRun } = await supabase.from('invoice_runs').select('id').eq('source', 'generated').eq('period_start', START).eq('period_end', END).is('archived_at', null).maybeSingle()
   if (adminRun) {
-    const adminLines = (await supabase.from('invoice_lines').select('property_id, service_date, raw_date_mentioned, line_kind, cleaner_pay_amount').eq('run_id', adminRun.id).in('line_kind', ['clean', 'deep_clean', 'combined_split'])).data ?? []
+    // The admin path used to draft vacancy cleans / touch-ups / inspections
+    // as full cleans; those are deliberately NOT portal cleans.
+    const adminLines = ((await supabase.from('invoice_lines').select('property_id, service_date, raw_date_mentioned, raw_note_text, line_kind, cleaner_pay_amount').eq('run_id', adminRun.id).in('line_kind', ['clean', 'deep_clean', 'combined_split'])).data ?? [])
+      .filter(l => !/vacancy|touch.?up|in?spection|assess/i.test(l.raw_note_text ?? ''))
     const adminDays = new Set(adminLines.map(l => `${l.property_id}|${l.service_date ?? l.raw_date_mentioned}`))
     const missing = [...adminDays].filter(d => !days.has(d))
     const extra = [...days].filter(d => !adminDays.has(d))

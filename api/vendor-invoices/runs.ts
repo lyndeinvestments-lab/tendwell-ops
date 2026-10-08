@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchAllRows, loadEngineContext, reconcileRun, describeLineInsertError, withRunLease } from '../invoices/_lib.js'
 import { validatePeriod } from '../../shared/vendor-invoice.js'
-import { buildPortalDraft, dayKey, type DraftProperty, type SkippedDay } from './_draft.js'
+import { archivedDuplicateMap, buildPortalDraft, dayKey, type DraftProperty, type SkippedDay } from './_draft.js'
 import {
   blockedDaysFor,
   isVendorVisible,
@@ -52,13 +52,29 @@ export async function populateDraft(supabase: SupabaseClient, run: RunRow): Prom
       existingDays.add(dayKey(Number(r.property_id), d))
     }
   }
-  const properties = new Map<number, DraftProperty>(ctx.properties.map(p => [p.id, { id: p.id, name: p.name, cleanerPay: p.cleanerPay }]))
+  const { data: propMeta, error: metaReadErr } = await supabase
+    .from('properties')
+    .select('id, address, trellis_id, archived_at')
+    .is('deleted_at', null)
+    .limit(5000)
+  if (metaReadErr) throw new Error(`Failed to load property addresses: ${metaReadErr.message}`)
+  const addressOf = new Map<number, string | null>((propMeta ?? []).map(p => [Number(p.id), p.address ?? null]))
+  const canonical = archivedDuplicateMap((propMeta ?? []).map(p => ({ id: Number(p.id), trellis_id: p.trellis_id ?? null, archived_at: p.archived_at ?? null })))
+  const canon = (id: number | null) => (id == null ? id : canonical.get(id) ?? id)
+  const properties = new Map<number, DraftProperty>(ctx.properties.map(p => [p.id, { id: p.id, name: p.name, cleanerPay: p.cleanerPay, address: addressOf.get(p.id) ?? null }]))
+  // Days billed under an archived duplicate block the active record too.
+  const blockedCanon = new Map<string, string | null>()
+  for (const [k, v] of blocked) {
+    const [pid, d] = k.split('|')
+    blockedCanon.set(k, v)
+    blockedCanon.set(dayKey(canon(Number(pid))!, d), v)
+  }
   const draft = buildPortalDraft({
-    tasks: ctx.tasks,
+    tasks: ctx.tasks.map(t => (t.propertyId != null && canonical.has(t.propertyId) ? { ...t, propertyId: canon(t.propertyId) } : t)),
     periodStart: run.period_start,
     periodEnd: run.period_end,
     properties,
-    blockedDays: blocked,
+    blockedDays: blockedCanon,
     existingDays,
   })
 
