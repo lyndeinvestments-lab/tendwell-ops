@@ -11,7 +11,7 @@ import {
 import {
   LayoutDashboard, Kanban, Users, FileSpreadsheet, DollarSign, Building2,
   BedDouble, Boxes, ShieldAlert, KeyRound, Wind, ListFilter, TrendingUp, LogOut, Sun, Moon, Settings,
-  ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks, Receipt
+  ClipboardCheck, Users2, Bell, BellRing, Activity, AlertTriangle, CheckSquare, ChevronDown, ChevronRight, Star, PackageSearch, Scale, PackagePlus, Plug, Eye, MessageSquareText, ListChecks, Receipt, FileText
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { canAccessView } from '@/lib/auth'
@@ -63,6 +63,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
       { title: 'Incoming Shipments', href: '/incoming-shipments', view: 'incoming-shipments', icon: PackagePlus },
       { title: 'Laundry Weigh-Ins', href: '/laundry-weigh-ins', view: 'laundry-weigh-ins', icon: Scale },
       { title: 'Onboarding', href: '/onboarding-queue', view: 'onboarding-queue', icon: ClipboardCheck },
+      { title: 'Invoicing', href: '/vendor-invoicing', view: 'vendor-invoicing', icon: FileText },
     ],
   },
   {
@@ -91,7 +92,7 @@ const NAV_SECTIONS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { title: 'Activity', href: '/activity', view: 'activity', icon: Activity },
       { title: 'API Sync', href: '/api-sync', view: 'trellis-sync', icon: Plug },
-      { title: 'Invoicing', href: '/invoicing', view: 'invoicing', icon: Receipt },
+      { title: 'Invoice Reconciliation', href: '/invoicing', view: 'invoicing', icon: Receipt },
       { title: 'Settings', href: '/settings', view: 'settings', icon: Settings },
     ],
   },

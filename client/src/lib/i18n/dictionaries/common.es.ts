@@ -37,6 +37,8 @@ export const commonEs: typeof commonEn = {
     'north-star': 'North Star',
     'activity': 'Actividad',
     'trellis-sync': 'Sincronización de API',
+    'invoicing': 'Conciliación de Facturas',
+    'vendor-invoicing': 'Facturación',
     'settings': 'Configuración',
     'notifications': 'Notificaciones',
     'account': 'Mi Cuenta',

@@ -58,6 +58,8 @@ import { onboardingEn } from './onboarding.en'
 import { onboardingEs } from './onboarding.es'
 import { onboardingAdminEn } from './onboardingAdmin.en'
 import { onboardingAdminEs } from './onboardingAdmin.es'
+import { vendorInvoicingEn } from './vendorInvoicing.en'
+import { vendorInvoicingEs } from './vendorInvoicing.es'
 
 /**
  * App-wide dictionary registry. Each feature area owns one namespace
@@ -103,6 +105,7 @@ export const dictionaryEn = {
   authPages: authPagesEn,
   onboarding: onboardingEn,
   onboardingAdmin: onboardingAdminEn,
+  vendorInvoicing: vendorInvoicingEn,
 }
 
 export const dictionaryEs: typeof dictionaryEn = {
@@ -138,4 +141,5 @@ export const dictionaryEs: typeof dictionaryEn = {
   authPages: authPagesEs,
   onboarding: onboardingEs,
   onboardingAdmin: onboardingAdminEs,
+  vendorInvoicing: vendorInvoicingEs,
 }

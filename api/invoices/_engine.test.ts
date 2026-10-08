@@ -1689,3 +1689,65 @@ describe('owner stays', () => {
     expect(lines[0].flags).toContain('owner_stay')
   })
 })
+
+// ─── Vendor portal: pinned property / service type ──────────────────────────
+
+describe('vendor-portal preset lines', () => {
+  const TWINS: PropertyRates[] = [
+    ...PROPS,
+    { id: 21, name: 'Kelly Armsworth 3634', ceCharged: 200, cleanerPay: 120, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 22, name: 'Kelly Armsworth 3634', ceCharged: 260, cleanerPay: 150, deepClean3xCe: null, billingChannel: 'bill_com' },
+  ]
+
+  it('uses the pinned property instead of re-resolving the name (duplicate-named properties)', () => {
+    const { lines } = reconcile(input([
+      vendorLine({ source: 'generated', rawPropertyText: 'Kelly Armsworth 3634', rawNoteText: 'Turn Clean on 2026-08-05', rawAmount: 150, presetPropertyId: 22 }),
+    ], { properties: TWINS }))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].propertyId).toBe(22)
+    expect(lines[0].cleanerPayAmount).toBe(150)
+    expect(lines[0].billingChannel).toBe('bill_com')
+    expect(lines[0].flags).not.toContain(FLAGS.UNRESOLVED_PROPERTY)
+  })
+
+  it('a pinned extra stays that extra even when the reason names another keyword', () => {
+    const { lines } = reconcile(input([
+      vendorLine({ rawNoteText: 'Pet Fee - dog hair and trash everywhere', rawAmount: 25, presetPropertyId: 1, presetServiceType: 'Pet Fee' }),
+    ]))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].serviceType).toBe('Pet Fee')
+    expect(lines[0].cleanerPayAmount).toBe(25)
+    expect(lines[0].clientChargeAmount).toBe(STANDARD_EXTRA_PRICING['Pet Fee'].charge)
+    expect(lines[0].matchedTaskId).toBeNull()
+  })
+
+  it('a pinned extra billed above the clean rate never splits into a phantom base clean', () => {
+    // Property 1 pays $100 a clean and has a completed clean on 8/5.
+    const { lines } = reconcile(input([
+      vendorLine({ rawNoteText: 'Extra Cleaning - full kitchen degrease after party', rawAmount: 180, presetPropertyId: 1, presetServiceType: 'Extra Cleaning' }),
+    ]))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].splitGroup).toBeNull()
+    expect(lines[0].cleanerPayAmount).toBe(180)
+  })
+
+  it('a pinned extra does not claim the day\'s clean task away from the clean line', () => {
+    const { lines } = reconcile(input([
+      vendorLine({ lineNo: 1, rawNoteText: 'Hot Tub Refresh Requested by Guest - guest asked at check-in', rawAmount: 30, presetPropertyId: 1, presetServiceType: 'Hot Tub Refresh Requested by Guest' }),
+      vendorLine({ lineNo: 2, source: 'generated', rawNoteText: 'Departure Clean on 2026-08-05', rawAmount: 100, presetPropertyId: 1 }),
+    ]))
+    const clean = lines.find(l => l.lineNo === 2)!
+    expect(clean.matchedTaskId).toBe('t1')
+    expect(clean.reviewStatus).toBe('ok')
+    expect(lines.find(l => l.lineNo === 1)!.serviceType).toBe('Hot Tub Refresh Requested by Guest')
+  })
+
+  it('ignores a preset service type that is not on the approved extras list', () => {
+    const { lines } = reconcile(input([
+      vendorLine({ rawNoteText: 'Departure Clean on 2026-08-05', rawAmount: 100, presetPropertyId: 1, presetServiceType: 'Bogus Fee' }),
+    ]))
+    expect(lines[0].lineKind).toBe('clean')
+  })
+})

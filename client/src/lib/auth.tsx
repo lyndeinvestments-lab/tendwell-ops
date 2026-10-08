@@ -27,6 +27,9 @@ export const VIEW_DEFINITIONS = [
   { id: 'incoming-shipments',     label: 'Incoming Shipments',      group: 'Operations' },
   { id: 'laundry-weigh-ins',      label: 'Laundry Weigh-Ins',       group: 'Operations' },
   { id: 'onboarding-queue',       label: 'Onboarding Queue',        group: 'Operations' },
+  // A cleaning company's own invoice (Busy Bee). Needs a vendor_users link
+  // too — the API refuses a login that isn't linked to a vendor.
+  { id: 'vendor-invoicing',       label: 'Invoicing',               group: 'Operations' },
   // Management
   { id: 'tasks',               label: 'Tasks',               group: 'Management' },
   { id: 'issues',              label: 'Issues',              group: 'Management' },
@@ -45,7 +48,7 @@ export const VIEW_DEFINITIONS = [
   { id: 'report',              label: 'Executive Summary',   group: 'Admin' },
   { id: 'settings',            label: 'Settings',            group: 'Admin' },
   { id: 'trellis-sync',        label: 'API Sync',            group: 'Admin' },
-  { id: 'invoicing',           label: 'Invoicing',           group: 'Admin' },
+  { id: 'invoicing',           label: 'Invoice Reconciliation', group: 'Admin' },
 ] as const
 
 export type ViewId = typeof VIEW_DEFINITIONS[number]['id']
@@ -114,7 +117,7 @@ export const ROLE_VIEWS: Record<string, string[]> = {
     'revenue-report', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star', 'lost-items',
     'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue', 'trellis-sync',
-    'trellis-tasks', 'invoicing',
+    'trellis-tasks', 'invoicing', 'vendor-invoicing',
   ],
   operations: ['property-list', 'linen-tracker', 'linen-inventory', 'damaged-linens', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'reviews', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'lost-items', 'incoming-shipments', 'laundry-weigh-ins', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],

@@ -29,6 +29,7 @@ import {
   type AuxBillingSettings,
 } from '../../shared/aux-tasks.js'
 
+import { PORTAL_REVIEW_FLAGS } from '../../shared/vendor-invoice.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 
@@ -163,6 +164,7 @@ export function buildEngineTasks(
         isDeepClean: t.is_deep_clean,
         totalCostRef: Number.isFinite(cost) ? cost : null,
         completed: isTaskCompleted('breezeway', t.status, t.completed_date),
+        completedOn: t.completed_date ? String(t.completed_date).slice(0, 10) : null,
         source: 'breezeway' as const,
       }
     })
@@ -194,6 +196,7 @@ export function buildEngineTasks(
         isDeepClean: isDeep,
         totalCostRef: null,
         completed: isTaskCompleted('trellis', t.status, t.completed_at),
+        completedOn: t.completed_at ? String(t.completed_at).slice(0, 10) : null,
         source: 'trellis' as const,
         status: t.status ?? '',
       }
@@ -208,6 +211,24 @@ export function buildEngineTasks(
     .map(({ status: _s, ...t }) => t)
 
   return { tasks, trellisTasks }
+}
+
+/** properties.trellis_id → Ops property id. When two Ops rows share a Trellis
+ *  id (an archived duplicate kept for history — Kelly Armsworth 3634 is #499
+ *  active and #507 archived, same Trellis record) the ACTIVE row wins; the
+ *  old last-row-wins map sent her Trellis cleans to the archived #507.
+ *  Ties fall back to the lowest id so the result never depends on row order. */
+export function trellisIdIndex(rows: ReadonlyArray<{ id: number; trellis_id: string | null; archived_at?: string | null }>): Map<string, number> {
+  const best = new Map<string, { id: number; archived: boolean }>()
+  for (const p of rows) {
+    if (!p.trellis_id) continue
+    const archived = p.archived_at != null
+    const cur = best.get(p.trellis_id)
+    if (!cur || (cur.archived && !archived) || (cur.archived === archived && p.id < cur.id)) {
+      best.set(p.trellis_id, { id: p.id, archived })
+    }
+  }
+  return new Map([...best].map(([k, v]) => [k, v.id]))
 }
 
 export async function loadEngineContext(
@@ -231,11 +252,12 @@ export async function loadEngineContext(
       contact_id: string | null
       trellis_id: string | null
       hot_tub: boolean | null
+      archived_at: string | null
     }>(
       'properties',
       () => supabase
         .from('properties')
-        .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id, hot_tub')
+        .select('id, name, ce_charged, cleaner_pay, deep_clean_3x_ce, contact_id, trellis_id, hot_tub, archived_at')
         .is('deleted_at', null)
         .order('id'),
       'id',
@@ -329,8 +351,7 @@ export async function loadEngineContext(
     hotTub: p.hot_tub === true,
     feeOverrides: p.contact_id ? overridesByContact.get(p.contact_id) : undefined,
   }))
-  const propertyByTrellisId = new Map<string, number>()
-  for (const p of propRows) if (p.trellis_id) propertyByTrellisId.set(p.trellis_id, p.id)
+  const propertyByTrellisId = trellisIdIndex(propRows)
 
   const aliases: AliasRow[] = aliasRows.map(a => ({
     vendorId: a.vendor_id,
@@ -702,6 +723,39 @@ export function toLineInserts(runId: string, lines: EngineLine[]): InvoiceLineIn
   }))
 }
 
+/** Re-attach the vendor's own detail to a rebuilt row and, on a vendor-portal
+ *  run, send to review anything Tendwell must look at by hand: every item the
+ *  vendor typed in (vendor_added), plus draft-time flags (possible duplicate
+ *  task, task closed far from its date, late item) and assumed deep-clean pay.
+ *  Exported for tests. */
+export function withVendorCarry<T extends { flags: string[]; review_status: string; line_kind: string }>(
+  ins: T,
+  carry: { vendor_category: string; vendor_detail: Record<string, any> | null; receipt_path: string | null } | undefined,
+  isPortalRun: boolean,
+): T & { vendor_category?: string; vendor_detail?: Record<string, any> | null; receipt_path?: string | null } {
+  if (!carry) return ins
+  const out = { ...ins, vendor_category: carry.vendor_category, vendor_detail: carry.vendor_detail, receipt_path: carry.receipt_path }
+  if (!isPortalRun || out.review_status === 'excluded' || out.line_kind === 'excluded') return out
+  const draftFlags: string[] = Array.isArray(carry.vendor_detail?.flags) ? carry.vendor_detail!.flags : []
+  const flags = [...out.flags]
+  for (const f of draftFlags) if (!flags.includes(f)) flags.push(f)
+  if (carry.vendor_category !== 'clean' && !flags.includes('vendor_added')) flags.push('vendor_added')
+  const review = flags.some(f => PORTAL_REVIEW_FLAGS.has(f))
+  return { ...out, flags, review_status: review ? 'needs_review' : out.review_status }
+}
+
+/** A unique-claim violation means a property-day clean is already on another
+ *  active vendor invoice — say that, not "duplicate key value". */
+export function describeLineInsertError(err: { message: string; code?: string; details?: string | null }): string {
+  if (err.code === '23505' && /clean_claim_key/.test(`${err.message} ${err.details ?? ''}`)) {
+    const m = /\(clean_claim_key\)=\((\d+)\|(\d{4}-\d{2}-\d{2})\)/.exec(err.details ?? '')
+    return m
+      ? `A clean at property ${m[1]} on ${m[2]} is already on a vendor invoice (this one or another) — it cannot be billed twice.`
+      : 'A clean on this invoice is already on a vendor invoice — it cannot be billed twice.'
+  }
+  return `Failed to insert lines: ${err.message}`
+}
+
 export interface ReconcileResult {
   summary: RunSummary
   status: 'reconciled' | 'review_needed'
@@ -795,10 +849,11 @@ export async function reconcileRun(
 ): Promise<ReconcileResult> {
   const { data: run, error: runErr } = await supabase
     .from('invoice_runs')
-    .select('id, vendor_id, period_start, period_end, invoice_date, stated_subtotal, status')
+    .select('id, vendor_id, source, period_start, period_end, invoice_date, stated_subtotal, status')
     .eq('id', runId)
     .single()
   if (runErr || !run) throw new Error(`Run not found: ${runErr?.message ?? runId}`)
+  const isPortalRun = run.source === 'vendor_portal'
   if (run.status === 'approved' || run.status === 'exported') {
     throw new Error('Run is approved/exported — void it before re-reconciling')
   }
@@ -836,16 +891,31 @@ export async function reconcileRun(
       if (!existing || existing.split_group != null) byLineNo.set(r.line_no, r)
     }
   }
+  // Vendor-portal rows carry what the vendor told us (category, detail,
+  // receipt) — the engine knows nothing about it, so it rides through the
+  // delete-and-rebuild below by line_no, onto every row of that line.
+  const vendorCarry = new Map<number, { vendor_category: string; vendor_detail: Record<string, any> | null; receipt_path: string | null }>()
+  for (const r of rebuild) {
+    if (r.vendor_category && !vendorCarry.has(r.line_no)) {
+      vendorCarry.set(r.line_no, { vendor_category: r.vendor_category, vendor_detail: r.vendor_detail ?? null, receipt_path: r.receipt_path ?? null })
+    }
+  }
   const rawLines: RawLine[] = [...byLineNo.values()]
     .sort((a, b) => a.line_no - b.line_no)
-    .map(r => ({
-      lineNo: r.line_no,
-      source: r.source === 'manual' ? 'manual' : r.source,
-      rawPropertyText: r.raw_property_text,
-      rawNoteText: r.raw_note_text,
-      rawAmount: Number(r.raw_amount),
-      rawDateMentioned: r.raw_date_mentioned,
-    }))
+    .map(r => {
+      const carry = vendorCarry.get(r.line_no)
+      const presetPid = carry?.vendor_detail?.property_id
+      return {
+        lineNo: r.line_no,
+        source: r.source === 'manual' ? 'manual' : r.source,
+        rawPropertyText: r.raw_property_text,
+        rawNoteText: r.raw_note_text,
+        rawAmount: Number(r.raw_amount),
+        rawDateMentioned: r.raw_date_mentioned,
+        presetPropertyId: presetPid != null ? Number(presetPid) : null,
+        presetServiceType: carry?.vendor_category === 'extra' ? (carry.vendor_detail?.service_type ?? null) : null,
+      }
+    })
 
   const periodStart = run.period_start ?? run.invoice_date ?? new Date().toISOString().slice(0, 10)
   const periodEnd = run.period_end ?? run.invoice_date ?? periodStart
@@ -887,9 +957,10 @@ export async function reconcileRun(
   }
   if (lines.length > 0) {
     const inserts = toLineInserts(runId, offsetLines.filter(l => !preservedLineNos.has(l.lineNo)))
+      .map(ins => withVendorCarry(ins, vendorCarry.get(ins.line_no), isPortalRun))
     if (inserts.length > 0) {
       const { error: insErr } = await supabase.from('invoice_lines').insert(inserts)
-      if (insErr) throw new Error(`Failed to insert lines: ${insErr.message}`)
+      if (insErr) throw new Error(describeLineInsertError(insErr))
     }
   }
 
@@ -972,14 +1043,30 @@ export async function reconcileRun(
   // channel fixed since they were resolved (see refreshBillingChannels).
   await refreshBillingChannels(supabase, runId)
 
+  if (isPortalRun) {
+    // The portal post-processing (withVendorCarry) can send rows to review
+    // that the engine passed, so count the queue from what was stored.
+    const { count, error: cntErr } = await supabase
+      .from('invoice_lines')
+      .select('id', { count: 'exact', head: true })
+      .eq('run_id', runId)
+      .eq('review_status', 'needs_review')
+    if (cntErr) throw new Error(`Failed to count review queue: ${cntErr.message}`)
+    summary.needsReviewCount = count ?? 0
+  }
+
   const stated = run.stated_subtotal != null ? Number(run.stated_subtotal) : null
   const subtotalOk = stated == null || Math.abs(summary.totalInvoiced - stated) <= 0.005
   const needsReview = summary.needsReviewCount > 0 || !subtotalOk
   const status: ReconcileResult['status'] = needsReview ? 'review_needed' : 'reconciled'
 
+  // A vendor's draft stays a draft: only submitting it moves it into the
+  // admin review queue (api/vendor-invoices/runs.ts → submit).
   const { error: updErr } = await supabase
     .from('invoice_runs')
-    .update({ status, computed_subtotal: summary.totalInvoiced })
+    .update(run.status === 'draft'
+      ? { computed_subtotal: summary.totalInvoiced }
+      : { status, computed_subtotal: summary.totalInvoiced })
     .eq('id', runId)
   if (updErr) throw new Error(`Failed to update run: ${updErr.message}`)
 

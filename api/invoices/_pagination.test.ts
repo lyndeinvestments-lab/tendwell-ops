@@ -82,3 +82,17 @@ describe('fetchAllRows', () => {
     await expect(fetchAllRows<Row>('t', build, 'n')).rejects.toThrow(/Refusing to page past/)
   })
 })
+
+describe('trellisIdIndex', () => {
+  it('maps a shared Trellis id to the active property, not an archived duplicate', async () => {
+    const { trellisIdIndex } = await import('./_lib.js')
+    const idx = trellisIdIndex([
+      { id: 499, trellis_id: 'T', archived_at: null },
+      { id: 507, trellis_id: 'T', archived_at: '2026-09-17' },
+      { id: 9, trellis_id: 'U', archived_at: null },
+      { id: 3, trellis_id: 'U', archived_at: null },
+    ])
+    expect(idx.get('T')).toBe(499)
+    expect(idx.get('U')).toBe(3)
+  })
+})

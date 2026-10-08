@@ -71,6 +71,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(200).json({ ok: true, run_id: runId, status: run.status, already: true })
     return
   }
+  if (run.status === 'draft') {
+    // A vendor-portal invoice the vendor hasn't submitted (or that Tendwell
+    // returned to them) is still being written — never approve it from under them.
+    res.status(400).json({ error: 'This invoice is still a draft with the vendor — it can be approved once they submit it' })
+    return
+  }
   if (run.status === 'void' || run.status === 'ingested') {
     res.status(400).json({ error: `Run is ${run.status} — reconcile it first` })
     return

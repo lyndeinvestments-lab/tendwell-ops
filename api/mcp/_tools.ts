@@ -19,7 +19,7 @@ import {
   type AuxCategory,
 } from '../../shared/aux-tasks.js'
 import { suggestQuotePricing } from '../../shared/quote-pricing.js'
-import { getServiceClient, loadAuxSettings, loadAuxiliaryTasks } from '../invoices/_lib.js'
+import { getServiceClient, loadAuxSettings, loadAuxiliaryTasks, trellisIdIndex } from '../invoices/_lib.js'
 import { resolveProperty, type AliasRow, type BillingChannel, type PropertyRates } from '../invoices/_engine.js'
 import {
   JSON_RPC_ERRORS,
@@ -710,8 +710,8 @@ interface PropertyContext {
 
 async function loadPropertyContext(): Promise<PropertyContext> {
   const [props, contacts, aliases] = await Promise.all([
-    sbFetch<Array<{ id: number; name: string; trellis_id: string | null; contact_id: string | null }>>(
-      'properties?select=id,name,trellis_id,contact_id&deleted_at=is.null&order=id&limit=5000',
+    sbFetch<Array<{ id: number; name: string; trellis_id: string | null; contact_id: string | null; archived_at: string | null }>>(
+      'properties?select=id,name,trellis_id,contact_id,archived_at&deleted_at=is.null&order=id&limit=5000',
     ),
     sbFetch<Array<{ id: string; billing_channel: BillingChannel | null }>>('contacts?select=id,billing_channel&limit=5000'),
     sbFetch<Array<{ vendor_id: string | null; alias_raw: string; property_id: number }>>(
@@ -727,8 +727,8 @@ async function loadPropertyContext(): Promise<PropertyContext> {
     deepClean3xCe: null,
     billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
   }))
-  const byTrellisId = new Map<string, number>()
-  for (const p of props) if (p.trellis_id) byTrellisId.set(p.trellis_id, p.id)
+  // Active property wins over an archived duplicate sharing the Trellis id.
+  const byTrellisId = trellisIdIndex(props)
   return {
     properties,
     aliases: aliases.map(a => ({ vendorId: a.vendor_id, aliasRaw: a.alias_raw, propertyId: a.property_id })),

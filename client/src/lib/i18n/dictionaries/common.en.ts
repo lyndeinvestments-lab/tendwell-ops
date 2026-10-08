@@ -38,6 +38,8 @@ export const commonEn = {
     'north-star': 'North Star',
     'activity': 'Activity',
     'trellis-sync': 'API Sync',
+    'invoicing': 'Invoice Reconciliation',
+    'vendor-invoicing': 'Invoicing',
     'settings': 'Settings',
     'notifications': 'Notifications',
     'account': 'My Account',
