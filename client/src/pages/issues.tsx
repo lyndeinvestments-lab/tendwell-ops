@@ -103,7 +103,7 @@ function IssuesPageContent() {
       // Exclude pre-service (Quote) and post-service (Offboarded) properties —
       // cleaning issues only make sense for properties we actively touch.
       const { data, error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select('id, name, pipeline_stages!inner(name)')
         .not('pipeline_stages.name', 'in', '("Quote","Offboarded")')
         .order('name')

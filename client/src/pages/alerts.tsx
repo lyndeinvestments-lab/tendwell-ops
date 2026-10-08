@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth, canAccessView } from '@/lib/auth'
+import { useCanViewFinancials } from '@/lib/financial-access'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useLocation } from 'wouter'
@@ -42,17 +43,49 @@ const SEVERITY_CONFIG: Record<'critical' | 'warning' | 'info', { icon: typeof Al
   info: { icon: Info, tone: 'info', bg: 'bg-info/5 border-info/25' },
 }
 
+// Alert inputs. Money fields are only fetched for staff who may see them;
+// crews read the crew-safe view, so their browser never receives them.
+type AlertProperty = {
+  id: number
+  name: string
+  stage_id: number | null
+  ce_charged?: number | null
+  cleaner_pay?: number | null
+  estimated_profit?: number | null
+  profit_percentage?: number | null
+  bedrooms: number | null
+  address: string | null
+  king_beds: number | null
+  queen_beds: number | null
+  full_beds: number | null
+  twin_beds: number | null
+  bath_towels: number | null
+  washcloths: number | null
+  hand_towels: number | null
+  bathmats: number | null
+  pool_towels: number | null
+  next_filter_due: string | null
+  pipeline_stages: unknown
+}
+const ALERT_PROPERTY_COLUMNS = 'id, name, stage_id, bedrooms, address, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, next_filter_due, pipeline_stages!properties_stage_id_fkey(name)'
+
 export function useAlerts() {
   const { effectiveUser } = useAuth()
+  const canViewFinancials = useCanViewFinancials()
   const { data: properties, isError, refetch } = useQuery({
-    queryKey: ['/supabase/alerts-properties'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('id, name, stage_id, ce_charged, cleaner_pay, estimated_profit, profit_percentage, bedrooms, address, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, next_filter_due, pipeline_stages!properties_stage_id_fkey(name)')
-        .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote","Offboarding")')
+    queryKey: ['/supabase/alerts-properties', canViewFinancials],
+    queryFn: async (): Promise<AlertProperty[]> => {
+      const { data, error } = canViewFinancials
+        ? await supabase
+            .from('properties')
+            .select(`${ALERT_PROPERTY_COLUMNS}, ce_charged, cleaner_pay, estimated_profit, profit_percentage`)
+            .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote","Offboarding")')
+        : await supabase
+            .from('property_ops')
+            .select(ALERT_PROPERTY_COLUMNS)
+            .not('pipeline_stages.name', 'in', '("Offboarded","Lead","Quote","Offboarding")')
       if (error) throw error
-      return data || []
+      return (data || []) as unknown as AlertProperty[]
     },
     staleTime: 120_000,
   })
@@ -69,6 +102,7 @@ export function useAlerts() {
 
   const { data: contacts } = useQuery({
     queryKey: ['/supabase/alerts-contacts'],
+    enabled: canViewFinancials,
     queryFn: async () => {
       const { data, error } = await supabase.from('contacts').select('id, created_at, properties:properties(id)')
       if (error) throw error
@@ -160,7 +194,7 @@ export function useAlerts() {
       if (stageName === 'Offboarded' || stageName === 'Lead' || stageName === 'Quote' || stageName === 'Offboarding') continue
 
       // Critical: Negative Profit — skip $0 CE properties (those are missing data, not truly negative)
-      if ((p.profit_percentage || 0) < 0 && (p.ce_charged || 0) > 0) {
+      if (canViewFinancials && (p.profit_percentage || 0) < 0 && (p.ce_charged || 0) > 0) {
         result.push({
           id: `negative_profit_${p.id}`,
           severity: 'critical',
@@ -174,7 +208,7 @@ export function useAlerts() {
       }
 
       // Warning: Missing financial data ($0 CE for active properties)
-      if (stageName === 'Active' && (p.ce_charged == null || p.ce_charged === 0)) {
+      if (canViewFinancials && stageName === 'Active' && (p.ce_charged == null || p.ce_charged === 0)) {
         result.push({
           id: `missing_financial_${p.id}`,
           severity: 'warning',
@@ -323,7 +357,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, canViewFinancials])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()

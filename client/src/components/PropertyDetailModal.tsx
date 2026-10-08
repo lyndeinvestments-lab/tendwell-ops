@@ -4,6 +4,7 @@ import { supabase, STAGE_COLORS, logPropertyEdit, logActivity } from '@/lib/supa
 import { thumbUrl } from '@/lib/image'
 import { resizeImageFile } from '@/lib/resize-image'
 import { useAuth, canAccessView, canEditView } from '@/lib/auth'
+import { propertySource, useCanViewFinancials } from '@/lib/financial-access'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { calculateLinens, sleepCount } from '@/lib/linen-calc'
 import { profitColorClass } from '@/lib/profit-colors'
@@ -792,6 +793,15 @@ function buildFormFromProperty(property: any): Record<string, any> {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// The modal's property row comes from `properties` for staff who may see
+// client money, and from the crew-safe `property_ops` view (same ids and
+// operational columns, no money / client fields) for everyone else. Typed as
+// `properties` so callers keep one row type; money fields are simply absent
+// for crews, and every money UI is gated on canViewFinancials below.
+function propertyTable(src: 'properties' | 'property_ops') {
+  return supabase.from(src as 'properties')
+}
+
 export function PropertyDetailModal() {
   const { t } = useLocale('propertyModal')
   const { modalState, closePropertyModal } = usePropertyModal()
@@ -823,11 +833,13 @@ export function PropertyDetailModal() {
   const highlightFields = modalState?.highlightFields ?? []
   const sourceContext = modalState?.sourceContext
 
+  const canReadMoney = useCanViewFinancials()
+  const propSrc = propertySource(canReadMoney)
+
   const { data: property, isLoading } = useQuery({
     queryKey: ['/supabase/property-detail', propertyId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('properties')
+      const { data, error } = await propertyTable(propSrc)
         .select(PROPERTY_DETAIL_SELECT)
         .eq('id', Number(propertyId!))
         .single()
@@ -840,8 +852,9 @@ export function PropertyDetailModal() {
   // Contacts for linking
   const [contactSearch, setContactSearch] = useState('')
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false)
-  const { data: allContacts } = useContacts({ enabled: !!propertyId })
-  const { data: organizations } = useOrganizations({ enabled: !!propertyId })
+  // Client records are finance-only (RLS); don't even ask for crews.
+  const { data: allContacts } = useContacts({ enabled: !!propertyId && canReadMoney })
+  const { data: organizations } = useOrganizations({ enabled: !!propertyId && canReadMoney })
 
   const linkedContact = useMemo(() => {
     if (!property?.contact_id || !allContacts) return null
@@ -863,7 +876,7 @@ export function PropertyDetailModal() {
 
   const { mutate: linkContact } = useMutation({
     mutationFn: async (contactId: string | null) => {
-      const { data, error } = await supabase.from('properties').update({ contact_id: contactId }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ contact_id: contactId }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return data
     },
@@ -986,7 +999,7 @@ export function PropertyDetailModal() {
       }
       if (Object.keys(updates).length === 0) return null
       if (updates.ical_url && !isHttpUrl(String(updates.ical_url))) throw new Error(t('overview.icalUrlInvalid'))
-      const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { row: data, written: Object.keys(updates) }
     },
@@ -1029,7 +1042,7 @@ export function PropertyDetailModal() {
       const raw = 'patch' in input ? input.patch : { [input.field]: input.value }
       const updates: Record<string, any> = {}
       for (const [field, value] of Object.entries(raw)) updates[field] = toDb(field, value)
-      const { data, error } = await supabase.from('properties').update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update(updates).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { updates, row: data }
     },
@@ -1061,7 +1074,7 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleHotTub } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { data, error } = await supabase.from('properties').update({ hot_tub: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ hot_tub: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { next, row: data }
     },
@@ -1085,7 +1098,7 @@ export function PropertyDetailModal() {
   // answers "yes" and every later click flips it.
   const { mutate: togglePool } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { data, error } = await supabase.from('properties').update({ pool: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ pool: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { next, row: data }
     },
@@ -1107,7 +1120,7 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleAutoCode } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { data, error } = await supabase.from('properties').update({ has_auto_code: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ has_auto_code: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { next, row: data }
     },
@@ -1124,7 +1137,7 @@ export function PropertyDetailModal() {
   // the dashboard Today's Actions list (which derives from follow_up_date).
   const { mutate: clearFollowUp } = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.from('properties').update({ follow_up_date: null }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ follow_up_date: null }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { row: data }
     },
@@ -1146,7 +1159,7 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleInspectionExempt } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { data, error } = await supabase.from('properties').update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ exempt_from_inspections: next } as any).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { next, row: data }
     },
@@ -1170,7 +1183,7 @@ export function PropertyDetailModal() {
 
   const { mutate: toggleLinenProgram } = useMutation({
     mutationFn: async (next: boolean) => {
-      const { data, error } = await supabase.from('properties').update({ linen_program: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
+      const { data, error } = await propertyTable(propSrc).update({ linen_program: next }).eq('id', Number(propertyId!)).select(PROPERTY_DETAIL_SELECT).single()
       if (error) throw error
       return { next, row: data }
     },
@@ -1741,7 +1754,7 @@ export function PropertyDetailModal() {
                     }
                   }
                   if (Object.keys(updates).length === 0) { setSavingMissing(false); return }
-                  const { data, error } = await supabase.from('properties').update(updates).eq('id', property.id).select(PROPERTY_DETAIL_SELECT).single()
+                  const { data, error } = await propertyTable(propSrc).update(updates).eq('id', property.id).select(PROPERTY_DETAIL_SELECT).single()
                   setSavingMissing(false)
                   if (error) {
                     toast({ title: t('toasts.saveFailed'), description: error.message, variant: 'destructive' })

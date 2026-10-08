@@ -566,8 +566,10 @@ function ClientSheet({
         p_contact_id: id!,
         p_summary: note.trim(),
         p_interaction_type: 'note',
-        p_next_action: nextAction.trim() || null,
-        p_next_action_date: nextDate || null,
+        // Omitted → the function's own NULL default (regenerated types make
+        // optional RPC args `undefined`, not `null`).
+        p_next_action: nextAction.trim() || undefined,
+        p_next_action_date: nextDate || undefined,
         p_source: 'ui',
       })
       if (error) throw error

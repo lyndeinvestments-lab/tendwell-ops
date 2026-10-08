@@ -51,7 +51,7 @@ async function buildSearchOrClause(search: string): Promise<string | null> {
   const term = search.trim().replace(/[%_,()."\\]/g, ' ').replace(/\s+/g, ' ').trim()
   if (!term) return null
   const [propRes, cleanerRes] = await Promise.all([
-    supabase.from('properties').select('id').ilike('name', `%${term}%`).limit(200),
+    supabase.from('property_ops').select('id').ilike('name', `%${term}%`).limit(200),
     supabase.from('cleaners').select('id').ilike('full_name', `%${term}%`).limit(200),
   ])
   const parts = [`notes.ilike.%${term}%`, `cleaner_name.ilike.%${term}%`]

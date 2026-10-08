@@ -31,7 +31,7 @@ export async function executeStageTransition(params: TransitionParams): Promise<
   // 1. Update property stage
   const updates: Record<string, any> = { stage_id: toStageId }
   if (toStageName === 'Offboarded') updates.offboarded_at = new Date().toISOString()
-  const { error } = await supabase.from('properties').update(updates).eq('id', propertyId)
+  const { error } = await supabase.from('property_ops').update(updates).eq('id', propertyId)
   if (error) return { ok: false, error: error.message }
 
   // 2. Insert stage_transitions record. Column names previously didn't match

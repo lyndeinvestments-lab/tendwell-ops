@@ -171,7 +171,7 @@ export default function AccessCodesPage() {
     queryKey: ['/supabase/access-codes'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('operational_properties')
+        .from('operational_property_ops')
         .select('id, name, stage_name, has_auto_code, door_code, other_codes, wifi_info, notes, updated_at')
         .in('stage_name', ['Active', 'Onboarding', 'Offboarding'])
         .not('name', 'is', null)
@@ -182,7 +182,7 @@ export default function AccessCodesPage() {
 
   const { mutate: updateField } = useGuardedMutation('access-codes', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', Number(id))
+      const { error } = await supabase.from('property_ops').update({ [field]: value }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },

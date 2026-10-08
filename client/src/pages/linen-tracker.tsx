@@ -70,7 +70,7 @@ export default function LinenTrackerPage() {
     queryKey: ['/supabase/linen-tracker'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('operational_properties')
+        .from('operational_property_ops')
         .select('id, name, stage_name, bedrooms, full_baths, hot_tub, guest_count, king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, linen_notes')
         .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error
@@ -80,7 +80,7 @@ export default function LinenTrackerPage() {
 
   const { mutate: updateLinen } = useGuardedMutation('linen-tracker', {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: any; oldValue?: any; propName?: string }) => {
-      const { error } = await supabase.from('properties').update({ [field]: value }).eq('id', Number(id))
+      const { error } = await supabase.from('property_ops').update({ [field]: value }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },
@@ -122,7 +122,7 @@ export default function LinenTrackerPage() {
         if (overwrite || current == null || current === 0) updates[key] = c[key]
       }
       if (Object.keys(updates).length === 0) return { id: p.id, changed: 0, sleep: sleepCount(inputs) }
-      const { error } = await supabase.from('properties').update(updates).eq('id', p.id)
+      const { error } = await supabase.from('property_ops').update(updates).eq('id', p.id)
       if (error) throw error
       for (const [field, value] of Object.entries(updates)) {
         logPropertyEdit(p.id, field, p[field], value, p.name)
@@ -176,7 +176,7 @@ export default function LinenTrackerPage() {
         const fromBeds = sleepCount({ king_beds: p.king_beds, queen_beds: p.queen_beds, full_beds: p.full_beds, twin_beds: p.twin_beds })
         if (fromBeds > 0) bulkUpdates.guest_count = fromBeds
       }
-      const { error } = await supabase.from('properties').update(bulkUpdates).eq('id', p.id)
+      const { error } = await supabase.from('property_ops').update(bulkUpdates).eq('id', p.id)
       if (!error) {
         ok++
         for (const [field, value] of Object.entries(bulkUpdates)) logPropertyEdit(p.id, field, (p as any)[field], value, p.name)
@@ -355,7 +355,7 @@ export default function LinenTrackerPage() {
     for (const row of importData) {
       if (!row.matchedProperty) { skipped++; continue }
       const { error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .update(row.updates)
         .eq('id', row.matchedProperty.id)
       if (!error) updated++
@@ -644,7 +644,7 @@ export default function LinenTrackerPage() {
                     // (.catch never fired either: supabase resolves with
                     // { error } rather than rejecting.)
                     const patch = Object.fromEntries(NUMERIC_KEYS.map(k => [k, s[k] ?? null]))
-                    supabase.from('properties').update(patch).eq('id', copyTarget.id).then(({ error }) => {
+                    supabase.from('property_ops').update(patch).eq('id', copyTarget.id).then(({ error }) => {
                       if (error) {
                         toast({ title: t('tracker.toasts.copyFailed', undefined, 'Copy failed'), description: error.message, variant: 'destructive' })
                         return

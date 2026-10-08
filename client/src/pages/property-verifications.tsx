@@ -113,7 +113,7 @@ export default function InspectionsPage() {
     queryFn: async () => {
       const fields = ['id', 'name', 'stage_id', ...ALL_VERIFY_FIELDS.map(f => f.key)].join(', ')
       const { data, error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select(`${fields}, pipeline_stages!properties_stage_id_fkey(name)`)
         .eq('exempt_from_inspections', false)
         .order('name')
@@ -259,7 +259,7 @@ export default function InspectionsPage() {
 
       // Update property fields if any changed
       if (Object.keys(updates).length > 0) {
-        const { error } = await supabase.from('properties').update(updates).eq('id', activeProperty.id)
+        const { error } = await supabase.from('property_ops').update(updates).eq('id', activeProperty.id)
         if (error) {
           toast({ title: t('toasts.updatePropertyFailed'), description: error.message, variant: 'destructive' })
           setSaving(false)

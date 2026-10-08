@@ -164,7 +164,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
     queryKey: ['/supabase/inspection-form-properties', 'operational'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select('id, name, address, filter_size, last_filter_changed, next_filter_due, auto_code, door_code, other_codes, wifi_info, pipeline_stages!inner(name)')
         .in('pipeline_stages.name', ['Onboarding', 'Active', 'Offboarding'])
         .order('name')
