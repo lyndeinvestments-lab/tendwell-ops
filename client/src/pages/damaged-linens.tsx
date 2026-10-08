@@ -73,7 +73,7 @@ export default function DamagedLinensPage() {
       for (let from = 0; ; from += PAGE_SIZE) {
         const { data, error } = await (supabase as any)
           .from('damaged_linens')
-          .select('*, property:properties(id, name)')
+          .select('*, property:property_ops(id, name)')
           .order('found_date', { ascending: false })
           .order('created_at', { ascending: false })
           .range(from, from + PAGE_SIZE - 1)
@@ -90,7 +90,7 @@ export default function DamagedLinensPage() {
     queryKey: ['/supabase/damaged-linens-properties'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select('id, name, pipeline_stages!inner(name)')
         .not('pipeline_stages.name', 'in', '("Lead","Quote")')
         .order('name')

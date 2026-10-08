@@ -4,6 +4,7 @@ import { supabase, STAGE_COLORS } from '@/lib/supabase'
 import { useLocation } from 'wouter'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useContacts } from '@/hooks/use-contacts'
+import { useCanViewFinancials } from '@/lib/financial-access'
 import { useAuth, canAccessView } from '@/lib/auth'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -47,6 +48,14 @@ interface CommandPaletteProps {
   onClose: () => void
 }
 
+type PaletteProperty = {
+  id: number
+  name: string
+  address: string | null
+  contacts?: { full_name: string | null; email: string | null; phone: string | null } | null
+  pipeline_stages: { name: string; color: string | null } | null
+}
+
 export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const { t } = useLocale('palette')
   const [query, setQuery] = useState('')
@@ -56,20 +65,29 @@ export function CommandPalette({ open, onClose }: CommandPaletteProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(-1)
 
+  // Client name/email/phone search is for staff who may see clients; crews
+  // search the crew-safe property view (name + address) and never load the
+  // client list at all.
+  const canViewFinancials = useCanViewFinancials()
   const { data: properties } = useQuery({
-    queryKey: ['/supabase/command-palette-properties'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('properties')
-        .select('id, name, address, contacts(full_name, email, phone), pipeline_stages!properties_stage_id_fkey(name, color)')
-        .order('name')
+    queryKey: ['/supabase/command-palette-properties', canViewFinancials],
+    queryFn: async (): Promise<PaletteProperty[]> => {
+      const { data, error } = canViewFinancials
+        ? await supabase
+            .from('properties')
+            .select('id, name, address, contacts(full_name, email, phone), pipeline_stages!properties_stage_id_fkey(name, color)')
+            .order('name')
+        : await supabase
+            .from('property_ops')
+            .select('id, name, address, pipeline_stages!properties_stage_id_fkey(name, color)')
+            .order('name')
       if (error) throw error
-      return data ?? []
+      return (data ?? []) as unknown as PaletteProperty[]
     },
     staleTime: 30_000,
   })
 
-  const { data: contacts } = useContacts()
+  const { data: contacts } = useContacts({ enabled: canViewFinancials })
 
   // Focus input when opened — use requestAnimationFrame instead of setTimeout
   // to avoid stray keystrokes landing in the input before it's focused

@@ -128,7 +128,7 @@ export default function LinenInventoryPage() {
     queryKey: ['/supabase/linen-inventory-requirements'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('operational_properties')
+        .from('operational_property_ops')
         .select('king_beds, queen_beds, full_beds, twin_beds, bath_towels, washcloths, hand_towels, bathmats, pool_towels, kitchens, stage_name')
         .in('stage_name', ['Active', 'Onboarding'])
       if (error) throw error

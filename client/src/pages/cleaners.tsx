@@ -146,7 +146,7 @@ export default function CleanersPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('clean_assignments')
-        .select('*, cleaners(full_name), properties!clean_assignments_property_id_fkey(id, name, address, cleaner_pay)')
+        .select('*, cleaners(full_name), properties:property_ops!clean_assignments_property_id_fkey(id, name, address, cleaner_pay)')
         .order('scheduled_date', { ascending: false })
       if (error) throw error
       return data || []
@@ -157,7 +157,7 @@ export default function CleanersPage() {
     queryKey: ['/supabase/cleaners-active-props'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select('id, name, cleaner_pay, pipeline_stages!properties_stage_id_fkey(name)')
       if (error) throw error
       return (data || []).filter((p: any) => {

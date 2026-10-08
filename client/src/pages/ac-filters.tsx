@@ -89,7 +89,7 @@ export default function AcFiltersPage() {
     queryKey: ['/supabase/ac-filters'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('operational_properties')
+        .from('operational_property_ops')
         .select('id, name, stage_name, notes, filter_size, last_filter_changed, next_filter_due')
         .neq('stage_name', 'Offboarded')
       if (error) throw error
@@ -101,7 +101,7 @@ export default function AcFiltersPage() {
     mutationFn: async ({ id, field, value, oldValue, propName }: { id: string; field: string; value: string; oldValue?: any; propName?: string }) => {
       // properties.id is bigint at the DB; the handler receives a string-typed
       // id from React keys / Set<string>, so coerce at the query boundary.
-      const { error } = await supabase.from('properties').update({ [field]: value || null }).eq('id', Number(id))
+      const { error } = await supabase.from('property_ops').update({ [field]: value || null }).eq('id', Number(id))
       if (error) throw error
       logPropertyEdit(id, field, oldValue, value, propName)
     },
@@ -135,7 +135,7 @@ export default function AcFiltersPage() {
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
     const prop = properties?.find((p: any) => p.id === id)
-    const { error } = await supabase.from('properties').update({
+    const { error } = await supabase.from('property_ops').update({
       last_filter_changed: today,
       next_filter_due: nextDue,
     }).eq('id', Number(id))
@@ -174,7 +174,7 @@ export default function AcFiltersPage() {
     }
     if (!bulkFilterSize.trim() || bulkSelected.size === 0) return
     const ids = Array.from(bulkSelected)
-    const { error } = await supabase.from('properties').update({ filter_size: bulkFilterSize.trim() }).in('id', ids.map(Number))
+    const { error } = await supabase.from('property_ops').update({ filter_size: bulkFilterSize.trim() }).in('id', ids.map(Number))
     if (error) { toast({ title: t('toasts.bulkUpdateFailed'), description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
@@ -197,7 +197,7 @@ export default function AcFiltersPage() {
     const ids = Array.from(bulkSelected)
     const today = new Date().toISOString().slice(0, 10)
     const nextDue = calcNextDue(today)
-    const { error } = await supabase.from('properties').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids.map(Number))
+    const { error } = await supabase.from('property_ops').update({ last_filter_changed: today, next_filter_due: nextDue }).in('id', ids.map(Number))
     if (error) { toast({ title: t('toasts.bulkUpdateFailed'), description: error.message, variant: 'destructive' }); return }
     ids.forEach(id => {
       const prop = properties?.find((p: any) => p.id === id)
@@ -246,7 +246,7 @@ export default function AcFiltersPage() {
         updates.next_filter_due = calcNextDue(lastChanged)
       }
       if (Object.keys(updates).length === 0) continue
-      const { error } = await supabase.from('properties').update(updates).eq('id', match.id)
+      const { error } = await supabase.from('property_ops').update(updates).eq('id', match.id)
       if (!error) {
         updated++
         if (filterSize) logPropertyEdit(match.id, 'filter_size', match.filter_size, filterSize, match.name)

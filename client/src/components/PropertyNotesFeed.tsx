@@ -81,7 +81,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
       // Only general notes map to properties.notes; linen context maps to linen_notes.
       const legacyCol = context === 'linen' ? 'linen_notes' : (context ? null : 'notes')
       if (legacyCol) {
-        await supabase.from('properties').update({ [legacyCol]: trimmed }).eq('id', Number(propertyId))
+        await supabase.from('property_ops').update({ [legacyCol]: trimmed }).eq('id', Number(propertyId))
       }
 
       // Fire @-mention email notifications (best-effort — don't block the user)
@@ -91,7 +91,7 @@ export function PropertyNotesFeed({ propertyId, context, title, placeholder, com
         const mentionedIds = parseMentions(trimmed, users).filter(id => String(id) !== String(user?.id))
         if (mentionedIds.length > 0) {
           const { data: prop } = await supabase
-            .from('properties')
+            .from('property_ops')
             .select('name')
             .eq('id', Number(propertyId))
             .single()

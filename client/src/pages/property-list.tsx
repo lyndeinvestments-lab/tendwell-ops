@@ -138,7 +138,7 @@ export default function PropertyListPage() {
     queryKey: ['/supabase/properties-list'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('operational_properties')
+        .from('operational_property_ops')
         .select('id, name, address, bedrooms, full_baths, guest_count, square_footage, cleaner_pay, stage_name, stage_color')
       if (error) throw error
       return data || []

@@ -177,7 +177,7 @@ export async function logPropertyEdit(
   if (!resolvedName) {
     try {
       const { data } = await supabase
-        .from('properties')
+        .from('property_ops')
         .select('name')
         .eq('id', Number(propertyId))
         .single()

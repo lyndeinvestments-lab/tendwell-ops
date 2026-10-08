@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.4"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -239,6 +239,7 @@ export type Database = {
           password_hash: string | null
           preferred_locale: string | null
           role: string
+          ui_prefs: Json
         }
         Insert: {
           allowed_views?: string[] | null
@@ -251,6 +252,7 @@ export type Database = {
           password_hash?: string | null
           preferred_locale?: string | null
           role: string
+          ui_prefs?: Json
         }
         Update: {
           allowed_views?: string[] | null
@@ -263,6 +265,127 @@ export type Database = {
           password_hash?: string | null
           preferred_locale?: string | null
           role?: string
+          ui_prefs?: Json
+        }
+        Relationships: []
+      }
+      bedlinen_targets: {
+        Row: {
+          amb: number | null
+          bm: number | null
+          bt: number | null
+          cap: number | null
+          f: number | null
+          fb: number | null
+          g: number | null
+          hd: number | null
+          hf: number | null
+          hk: number | null
+          hq: number | null
+          hsum: number | null
+          htw: number | null
+          id: number | null
+          k: number | null
+          name: string | null
+          nb: number | null
+          nm: string | null
+          osum: number | null
+          pt: number | null
+          q: number | null
+          t: number | null
+          t_bath: number | null
+          t_hand: number | null
+          t_mats: number | null
+          t_pool: number | null
+          t_wash: number | null
+          take_ha: boolean | null
+          tf: number | null
+          tg: number | null
+          tk: number | null
+          tnb: number | null
+          tq: number | null
+          tt: number | null
+          updated_at: string | null
+          wc: number | null
+          wet: boolean | null
+        }
+        Insert: {
+          amb?: number | null
+          bm?: number | null
+          bt?: number | null
+          cap?: number | null
+          f?: number | null
+          fb?: number | null
+          g?: number | null
+          hd?: number | null
+          hf?: number | null
+          hk?: number | null
+          hq?: number | null
+          hsum?: number | null
+          htw?: number | null
+          id?: number | null
+          k?: number | null
+          name?: string | null
+          nb?: number | null
+          nm?: string | null
+          osum?: number | null
+          pt?: number | null
+          q?: number | null
+          t?: number | null
+          t_bath?: number | null
+          t_hand?: number | null
+          t_mats?: number | null
+          t_pool?: number | null
+          t_wash?: number | null
+          take_ha?: boolean | null
+          tf?: number | null
+          tg?: number | null
+          tk?: number | null
+          tnb?: number | null
+          tq?: number | null
+          tt?: number | null
+          updated_at?: string | null
+          wc?: number | null
+          wet?: boolean | null
+        }
+        Update: {
+          amb?: number | null
+          bm?: number | null
+          bt?: number | null
+          cap?: number | null
+          f?: number | null
+          fb?: number | null
+          g?: number | null
+          hd?: number | null
+          hf?: number | null
+          hk?: number | null
+          hq?: number | null
+          hsum?: number | null
+          htw?: number | null
+          id?: number | null
+          k?: number | null
+          name?: string | null
+          nb?: number | null
+          nm?: string | null
+          osum?: number | null
+          pt?: number | null
+          q?: number | null
+          t?: number | null
+          t_bath?: number | null
+          t_hand?: number | null
+          t_mats?: number | null
+          t_pool?: number | null
+          t_wash?: number | null
+          take_ha?: boolean | null
+          tf?: number | null
+          tg?: number | null
+          tk?: number | null
+          tnb?: number | null
+          tq?: number | null
+          tt?: number | null
+          updated_at?: string | null
+          wc?: number | null
+          wet?: boolean | null
         }
         Relationships: []
       }
@@ -332,7 +455,21 @@ export type Database = {
             foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -360,6 +497,13 @@ export type Database = {
             foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -369,6 +513,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_property_resolutions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -447,7 +598,21 @@ export type Database = {
             foreignKeyName: "breezeway_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -475,6 +640,13 @@ export type Database = {
             foreignKeyName: "breezeway_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -484,6 +656,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -527,7 +706,21 @@ export type Database = {
             foreignKeyName: "clean_assignments_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "clean_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clean_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -555,6 +748,13 @@ export type Database = {
             foreignKeyName: "clean_assignments_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "clean_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -564,6 +764,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "clean_assignments_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -692,7 +899,21 @@ export type Database = {
             foreignKeyName: "cleaning_history_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -720,6 +941,13 @@ export type Database = {
             foreignKeyName: "cleaning_history_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -729,6 +957,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -819,7 +1054,21 @@ export type Database = {
             foreignKeyName: "cleaning_issues_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -847,6 +1096,13 @@ export type Database = {
             foreignKeyName: "cleaning_issues_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -856,6 +1112,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -997,7 +1260,21 @@ export type Database = {
             foreignKeyName: "cleaning_logs_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_logs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_logs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -1025,6 +1302,13 @@ export type Database = {
             foreignKeyName: "cleaning_logs_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_logs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -1034,6 +1318,112 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_logs_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_fee_overrides: {
+        Row: {
+          charge: number
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          hot_tub_charge: number | null
+          id: string
+          note: string | null
+          service_type: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          charge: number
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          hot_tub_charge?: number | null
+          id?: string
+          note?: string | null
+          service_type: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          charge?: number
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          hot_tub_charge?: number | null
+          id?: string
+          note?: string | null
+          service_type?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_fee_overrides_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_fee_overrides_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_stage_transitions: {
+        Row: {
+          changed_by: string | null
+          contact_id: string
+          created_at: string
+          from_stage: string | null
+          id: number
+          notes: string | null
+          to_stage: string
+        }
+        Insert: {
+          changed_by?: string | null
+          contact_id: string
+          created_at?: string
+          from_stage?: string | null
+          id?: number
+          notes?: string | null
+          to_stage: string
+        }
+        Update: {
+          changed_by?: string | null
+          contact_id?: string
+          created_at?: string
+          from_stage?: string | null
+          id?: number
+          notes?: string | null
+          to_stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_stage_transitions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_stage_transitions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1079,6 +1469,13 @@ export type Database = {
             referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "contact_interactions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
         ]
       }
       contact_notes: {
@@ -1111,47 +1508,15 @@ export type Database = {
             referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      client_stage_transitions: {
-        Row: {
-          changed_by: string | null
-          contact_id: string
-          created_at: string
-          from_stage: string | null
-          id: number
-          notes: string | null
-          to_stage: string
-        }
-        Insert: {
-          changed_by?: string | null
-          contact_id: string
-          created_at?: string
-          from_stage?: string | null
-          id?: number
-          notes?: string | null
-          to_stage: string
-        }
-        Update: {
-          changed_by?: string | null
-          contact_id?: string
-          created_at?: string
-          from_stage?: string | null
-          id?: number
-          notes?: string | null
-          to_stage?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "client_stage_transitions_contact_id_fkey"
+            foreignKeyName: "contact_notes_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
-            referencedRelation: "contacts"
+            referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
           },
         ]
       }
-
       contacts: {
         Row: {
           additional_properties_count: number | null
@@ -1234,7 +1599,15 @@ export type Database = {
           tags?: string[] | null
           updated_at?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       csv_import_log: {
         Row: {
@@ -1278,6 +1651,225 @@ export type Database = {
           rows_inserted?: number
           rows_skipped?: number
           source_table?: string
+        }
+        Relationships: []
+      }
+      damaged_linens: {
+        Row: {
+          charge_back: boolean
+          cleaner_id: string | null
+          created_at: string
+          created_by: string | null
+          damage_type: string
+          estimated_cost: number | null
+          found_by: string | null
+          found_date: string
+          id: string
+          item_type: string
+          notes: string | null
+          photo_urls: string[]
+          property_id: number | null
+          quantity: number
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          charge_back?: boolean
+          cleaner_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          damage_type?: string
+          estimated_cost?: number | null
+          found_by?: string | null
+          found_date?: string
+          id?: string
+          item_type: string
+          notes?: string | null
+          photo_urls?: string[]
+          property_id?: number | null
+          quantity?: number
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          charge_back?: boolean
+          cleaner_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          damage_type?: string
+          estimated_cost?: number | null
+          found_by?: string | null
+          found_date?: string
+          id?: string
+          item_type?: string
+          notes?: string | null
+          photo_urls?: string[]
+          property_id?: number | null
+          quantity?: number
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "damaged_linens_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "cleaners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ha_listing_stage: {
+        Row: {
+          amb: number | null
+          bedrooms: number | null
+          beds: number | null
+          cap: number | null
+          f: number | null
+          ha_id: number
+          k: number | null
+          nm: string | null
+          q: number | null
+          t: number | null
+        }
+        Insert: {
+          amb?: number | null
+          bedrooms?: number | null
+          beds?: number | null
+          cap?: number | null
+          f?: number | null
+          ha_id: number
+          k?: number | null
+          nm?: string | null
+          q?: number | null
+          t?: number | null
+        }
+        Update: {
+          amb?: number | null
+          bedrooms?: number | null
+          beds?: number | null
+          cap?: number | null
+          f?: number | null
+          ha_id?: number
+          k?: number | null
+          nm?: string | null
+          q?: number | null
+          t?: number | null
+        }
+        Relationships: []
+      }
+      ha_match: {
+        Row: {
+          amb: number | null
+          cap: number | null
+          ha_beds: number | null
+          ha_id: number | null
+          hf: number | null
+          hk: number | null
+          hq: number | null
+          ht_: number | null
+          id: number | null
+          name: string | null
+        }
+        Insert: {
+          amb?: number | null
+          cap?: number | null
+          ha_beds?: number | null
+          ha_id?: number | null
+          hf?: number | null
+          hk?: number | null
+          hq?: number | null
+          ht_?: number | null
+          id?: number | null
+          name?: string | null
+        }
+        Update: {
+          amb?: number | null
+          cap?: number | null
+          ha_beds?: number | null
+          ha_id?: number | null
+          hf?: number | null
+          hk?: number | null
+          hq?: number | null
+          ht_?: number | null
+          id?: number | null
+          name?: string | null
         }
         Relationships: []
       }
@@ -1383,7 +1975,21 @@ export type Database = {
             foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
             columns: ["matched_property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -1411,6 +2017,13 @@ export type Database = {
             foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
             columns: ["matched_property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -1420,6 +2033,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "hostaway_listing_snapshot_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1628,7 +2248,21 @@ export type Database = {
             foreignKeyName: "inspections_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "inspections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inspections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -1656,6 +2290,13 @@ export type Database = {
             foreignKeyName: "inspections_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inspections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -1665,6 +2306,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "inspections_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1711,9 +2359,11 @@ export type Database = {
         Row: {
           alias_confidence: number | null
           billing_channel: string | null
+          clean_claim_key: string | null
           cleaner_pay_amount: number | null
           client_charge_amount: number | null
           created_at: string | null
+          engine_note: string | null
           flags: string[]
           id: string
           line_kind: string
@@ -1724,21 +2374,27 @@ export type Database = {
           raw_date_mentioned: string | null
           raw_note_text: string | null
           raw_property_text: string | null
+          receipt_path: string | null
           resolved_at: string | null
           resolved_by: string | null
           review_note: string | null
           review_status: string
           run_id: string
+          service_date: string | null
           service_type: string | null
           source: string
           split_group: number | null
+          vendor_category: string | null
+          vendor_detail: Json | null
         }
         Insert: {
           alias_confidence?: number | null
           billing_channel?: string | null
+          clean_claim_key?: string | null
           cleaner_pay_amount?: number | null
           client_charge_amount?: number | null
           created_at?: string | null
+          engine_note?: string | null
           flags?: string[]
           id?: string
           line_kind?: string
@@ -1749,21 +2405,27 @@ export type Database = {
           raw_date_mentioned?: string | null
           raw_note_text?: string | null
           raw_property_text?: string | null
+          receipt_path?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
           review_note?: string | null
           review_status?: string
           run_id: string
+          service_date?: string | null
           service_type?: string | null
           source?: string
           split_group?: number | null
+          vendor_category?: string | null
+          vendor_detail?: Json | null
         }
         Update: {
           alias_confidence?: number | null
           billing_channel?: string | null
+          clean_claim_key?: string | null
           cleaner_pay_amount?: number | null
           client_charge_amount?: number | null
           created_at?: string | null
+          engine_note?: string | null
           flags?: string[]
           id?: string
           line_kind?: string
@@ -1774,21 +2436,39 @@ export type Database = {
           raw_date_mentioned?: string | null
           raw_note_text?: string | null
           raw_property_text?: string | null
+          receipt_path?: string | null
           resolved_at?: string | null
           resolved_by?: string | null
           review_note?: string | null
           review_status?: string
           run_id?: string
+          service_date?: string | null
           service_type?: string | null
           source?: string
           split_group?: number | null
+          vendor_category?: string | null
+          vendor_detail?: Json | null
         }
         Relationships: [
           {
             foreignKeyName: "invoice_lines_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -1816,6 +2496,13 @@ export type Database = {
             foreignKeyName: "invoice_lines_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -1825,6 +2512,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "invoice_lines_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "invoice_lines_run_id_fkey"
@@ -1839,59 +2533,92 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_by: string | null
+          archived_at: string | null
           computed_subtotal: number | null
           created_at: string | null
           created_by: string | null
           id: string
           invoice_date: string | null
           invoice_number: string | null
+          lock_until: string | null
           period_end: string | null
           period_start: string | null
           qbo_invoice_no: number | null
+          qbo_invoice_nos: Json | null
+          returned_at: string | null
+          returned_by: string | null
+          returned_note: string | null
           source: string
           source_file_path: string | null
           source_file_sha256: string | null
           stated_subtotal: number | null
           status: string
+          submitted_at: string | null
+          submitted_by: string | null
+          vendor_draft_meta: Json | null
           vendor_id: string | null
+          vendor_reference: string | null
+          vendor_total: number | null
         }
         Insert: {
           approved_at?: string | null
           approved_by?: string | null
+          archived_at?: string | null
           computed_subtotal?: number | null
           created_at?: string | null
           created_by?: string | null
           id?: string
           invoice_date?: string | null
           invoice_number?: string | null
+          lock_until?: string | null
           period_end?: string | null
           period_start?: string | null
           qbo_invoice_no?: number | null
+          qbo_invoice_nos?: Json | null
+          returned_at?: string | null
+          returned_by?: string | null
+          returned_note?: string | null
           source: string
           source_file_path?: string | null
           source_file_sha256?: string | null
           stated_subtotal?: number | null
           status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          vendor_draft_meta?: Json | null
           vendor_id?: string | null
+          vendor_reference?: string | null
+          vendor_total?: number | null
         }
         Update: {
           approved_at?: string | null
           approved_by?: string | null
+          archived_at?: string | null
           computed_subtotal?: number | null
           created_at?: string | null
           created_by?: string | null
           id?: string
           invoice_date?: string | null
           invoice_number?: string | null
+          lock_until?: string | null
           period_end?: string | null
           period_start?: string | null
           qbo_invoice_no?: number | null
+          qbo_invoice_nos?: Json | null
+          returned_at?: string | null
+          returned_by?: string | null
+          returned_note?: string | null
           source?: string
           source_file_path?: string | null
           source_file_sha256?: string | null
           stated_subtotal?: number | null
           status?: string
+          submitted_at?: string | null
+          submitted_by?: string | null
+          vendor_draft_meta?: Json | null
           vendor_id?: string | null
+          vendor_reference?: string | null
+          vendor_total?: number | null
         }
         Relationships: [
           {
@@ -2411,6 +3138,123 @@ export type Database = {
           },
         ]
       }
+      mcp_oauth_authorization_codes: {
+        Row: {
+          client_id: string
+          code_challenge: string
+          code_challenge_method: string
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          redirect_uri: string
+          scopes: string[]
+          subject_email: string
+        }
+        Insert: {
+          client_id: string
+          code_challenge: string
+          code_challenge_method?: string
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          redirect_uri: string
+          scopes?: string[]
+          subject_email: string
+        }
+        Update: {
+          client_id?: string
+          code_challenge?: string
+          code_challenge_method?: string
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          redirect_uri?: string
+          scopes?: string[]
+          subject_email?: string
+        }
+        Relationships: []
+      }
+      mcp_oauth_clients: {
+        Row: {
+          client_id: string
+          client_name: string | null
+          created_at: string
+          id: string
+          redirect_uris: string[]
+          revoked_at: string | null
+          scopes: string[]
+          token_endpoint_auth_method: string
+        }
+        Insert: {
+          client_id: string
+          client_name?: string | null
+          created_at?: string
+          id?: string
+          redirect_uris?: string[]
+          revoked_at?: string | null
+          scopes?: string[]
+          token_endpoint_auth_method?: string
+        }
+        Update: {
+          client_id?: string
+          client_name?: string | null
+          created_at?: string
+          id?: string
+          redirect_uris?: string[]
+          revoked_at?: string | null
+          scopes?: string[]
+          token_endpoint_auth_method?: string
+        }
+        Relationships: []
+      }
+      mcp_oauth_tokens: {
+        Row: {
+          client_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          last_used_at: string | null
+          paired_token_id: string | null
+          revoked_at: string | null
+          scopes: string[]
+          subject_email: string
+          token_hash: string
+          token_type: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          last_used_at?: string | null
+          paired_token_id?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          subject_email: string
+          token_hash: string
+          token_type: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          last_used_at?: string | null
+          paired_token_id?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          subject_email?: string
+          token_hash?: string
+          token_type?: string
+        }
+        Relationships: []
+      }
       monthly_financial_snapshot: {
         Row: {
           actual_cogs: number | null
@@ -2634,12 +3478,15 @@ export type Database = {
           notify_issue_overdue: boolean
           notify_list_added: boolean
           notify_onboarding_submitted: boolean
+          notify_owner_portal_activity: boolean
           notify_property_note_mention: boolean
           notify_task_assigned: boolean
           notify_task_mention: boolean
           notify_task_overdue: boolean
+          notify_vendor_invoice_submitted: boolean
           notify_verification_due: boolean
           notify_watcher_update: boolean
+          notify_web_lead: boolean
           updated_at: string
           updated_by: string | null
           user_id: number
@@ -2655,12 +3502,15 @@ export type Database = {
           notify_issue_overdue?: boolean
           notify_list_added?: boolean
           notify_onboarding_submitted?: boolean
+          notify_owner_portal_activity?: boolean
           notify_property_note_mention?: boolean
           notify_task_assigned?: boolean
           notify_task_mention?: boolean
           notify_task_overdue?: boolean
+          notify_vendor_invoice_submitted?: boolean
           notify_verification_due?: boolean
           notify_watcher_update?: boolean
+          notify_web_lead?: boolean
           updated_at?: string
           updated_by?: string | null
           user_id: number
@@ -2676,12 +3526,15 @@ export type Database = {
           notify_issue_overdue?: boolean
           notify_list_added?: boolean
           notify_onboarding_submitted?: boolean
+          notify_owner_portal_activity?: boolean
           notify_property_note_mention?: boolean
           notify_task_assigned?: boolean
           notify_task_mention?: boolean
           notify_task_overdue?: boolean
+          notify_vendor_invoice_submitted?: boolean
           notify_verification_due?: boolean
           notify_watcher_update?: boolean
+          notify_web_lead?: boolean
           updated_at?: string
           updated_by?: string | null
           user_id?: number
@@ -2727,6 +3580,7 @@ export type Database = {
           number_of_beds: number | null
           onboarding_deep_clean: boolean | null
           other_codes: string | null
+          owner_id: string | null
           pet_friendly: string | null
           photos: string[]
           pool: boolean | null
@@ -2769,6 +3623,7 @@ export type Database = {
           number_of_beds?: number | null
           onboarding_deep_clean?: boolean | null
           other_codes?: string | null
+          owner_id?: string | null
           pet_friendly?: string | null
           photos?: string[]
           pool?: boolean | null
@@ -2811,6 +3666,7 @@ export type Database = {
           number_of_beds?: number | null
           onboarding_deep_clean?: boolean | null
           other_codes?: string | null
+          owner_id?: string | null
           pet_friendly?: string | null
           photos?: string[]
           pool?: boolean | null
@@ -2825,10 +3681,31 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "onboarding_submissions_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
             foreignKeyName: "onboarding_submissions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -2856,6 +3733,13 @@ export type Database = {
             foreignKeyName: "onboarding_submissions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -2865,6 +3749,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "onboarding_submissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2925,7 +3816,21 @@ export type Database = {
             foreignKeyName: "onboarding_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -2953,6 +3858,13 @@ export type Database = {
             foreignKeyName: "onboarding_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -2962,6 +3874,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "onboarding_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -2998,6 +3917,42 @@ export type Database = {
           payment_method?: string | null
           payment_notes?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      organizations_backup_20260916: {
+        Row: {
+          billing_channel: string | null
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          name: string | null
+          notes: string | null
+          payment_method: string | null
+          payment_notes: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          billing_channel?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          payment_notes?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          billing_channel?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          name?: string | null
+          notes?: string | null
+          payment_method?: string | null
+          payment_notes?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -3096,6 +4051,32 @@ export type Database = {
           },
         ]
       }
+      owner_emulations: {
+        Row: {
+          admin_email: string
+          created_at: string
+          owner_id: string
+        }
+        Insert: {
+          admin_email: string
+          created_at?: string
+          owner_id: string
+        }
+        Update: {
+          admin_email?: string
+          created_at?: string
+          owner_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "owner_emulations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "property_owners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       owner_feedback: {
         Row: {
           admin_note: string | null
@@ -3137,32 +4118,6 @@ export type Database = {
           },
         ]
       }
-      owner_emulations: {
-        Row: {
-          admin_email: string
-          created_at: string
-          owner_id: string
-        }
-        Insert: {
-          admin_email: string
-          created_at?: string
-          owner_id: string
-        }
-        Update: {
-          admin_email?: string
-          created_at?: string
-          owner_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "owner_emulations_owner_id_fkey"
-            columns: ["owner_id"]
-            isOneToOne: false
-            referencedRelation: "property_owners"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       owner_properties: {
         Row: {
           created_at: string
@@ -3191,7 +4146,21 @@ export type Database = {
             foreignKeyName: "owner_properties_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -3219,6 +4188,13 @@ export type Database = {
             foreignKeyName: "owner_properties_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -3229,7 +4205,32 @@ export type Database = {
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
           },
+          {
+            foreignKeyName: "owner_properties_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      owner_properties_backup_20260916: {
+        Row: {
+          created_at: string | null
+          owner_id: string | null
+          property_id: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          owner_id?: string | null
+          property_id?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          owner_id?: string | null
+          property_id?: number | null
+        }
+        Relationships: []
       }
       owner_property_permissions: {
         Row: {
@@ -3262,7 +4263,21 @@ export type Database = {
             foreignKeyName: "owner_property_permissions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -3290,6 +4305,13 @@ export type Database = {
             foreignKeyName: "owner_property_permissions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -3299,6 +4321,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "owner_property_permissions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4363,6 +5392,20 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "properties_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "properties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "properties_requested_by_owner_id_fkey"
             columns: ["requested_by_owner_id"]
             isOneToOne: false
@@ -4374,6 +5417,308 @@ export type Database = {
             columns: ["stage_id"]
             isOneToOne: false
             referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      properties_bedlinen_backup_20260917: {
+        Row: {
+          backed_up_at: string | null
+          bath_towels: number | null
+          bathmats: number | null
+          estimated_profit: number | null
+          full_beds: number | null
+          guest_count: number | null
+          hand_towels: number | null
+          id: number | null
+          king_beds: number | null
+          linen_program_cost: number | null
+          name: string | null
+          number_of_beds: number | null
+          pool_towels: number | null
+          queen_beds: number | null
+          total_estimated_cost: number | null
+          twin_beds: number | null
+          updated_at: string | null
+          washcloths: number | null
+        }
+        Insert: {
+          backed_up_at?: string | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          estimated_profit?: number | null
+          full_beds?: number | null
+          guest_count?: number | null
+          hand_towels?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program_cost?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          pool_towels?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+          washcloths?: number | null
+        }
+        Update: {
+          backed_up_at?: string | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          estimated_profit?: number | null
+          full_beds?: number | null
+          guest_count?: number | null
+          hand_towels?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program_cost?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          pool_towels?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+          washcloths?: number | null
+        }
+        Relationships: []
+      }
+      properties_linen_autofill_backup_20260917: {
+        Row: {
+          backed_up_at: string | null
+          bath_towels: number | null
+          bathmats: number | null
+          guest_count: number | null
+          hand_towels: number | null
+          id: number | null
+          name: string | null
+          pool_towels: number | null
+          washcloths: number | null
+        }
+        Insert: {
+          backed_up_at?: string | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          guest_count?: number | null
+          hand_towels?: number | null
+          id?: number | null
+          name?: string | null
+          pool_towels?: number | null
+          washcloths?: number | null
+        }
+        Update: {
+          backed_up_at?: string | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          guest_count?: number | null
+          hand_towels?: number | null
+          id?: number | null
+          name?: string | null
+          pool_towels?: number | null
+          washcloths?: number | null
+        }
+        Relationships: []
+      }
+      properties_linen_king_backup_20260916: {
+        Row: {
+          estimated_profit: number | null
+          full_beds: number | null
+          id: number | null
+          king_beds: number | null
+          linen_program: boolean | null
+          linen_program_cost: number | null
+          name: string | null
+          number_of_beds: number | null
+          profit_percentage: number | null
+          queen_beds: number | null
+          total_estimated_cost: number | null
+          twin_beds: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          estimated_profit?: number | null
+          full_beds?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program?: boolean | null
+          linen_program_cost?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          profit_percentage?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          estimated_profit?: number | null
+          full_beds?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program?: boolean | null
+          linen_program_cost?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          profit_percentage?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      properties_linen_recalc_backup_20260916: {
+        Row: {
+          estimated_profit: number | null
+          full_beds: number | null
+          id: number | null
+          king_beds: number | null
+          linen_program: boolean | null
+          linen_program_cost: number | null
+          monthly_cost_estimate: number | null
+          monthly_profit_estimate: number | null
+          name: string | null
+          number_of_beds: number | null
+          profit_percentage: number | null
+          queen_beds: number | null
+          total_estimated_cost: number | null
+          twin_beds: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          estimated_profit?: number | null
+          full_beds?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program?: boolean | null
+          linen_program_cost?: number | null
+          monthly_cost_estimate?: number | null
+          monthly_profit_estimate?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          profit_percentage?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          estimated_profit?: number | null
+          full_beds?: number | null
+          id?: number | null
+          king_beds?: number | null
+          linen_program?: boolean | null
+          linen_program_cost?: number | null
+          monthly_cost_estimate?: number | null
+          monthly_profit_estimate?: number | null
+          name?: string | null
+          number_of_beds?: number | null
+          profit_percentage?: number | null
+          queen_beds?: number | null
+          total_estimated_cost?: number | null
+          twin_beds?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      property_aliases: {
+        Row: {
+          alias: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          note: string | null
+          property_id: number
+          trellis_id: string | null
+        }
+        Insert: {
+          alias: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          property_id: number
+          trellis_id?: string | null
+        }
+        Update: {
+          alias?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          property_id?: number
+          trellis_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
             referencedColumns: ["id"]
           },
         ]
@@ -4411,7 +5756,21 @@ export type Database = {
             foreignKeyName: "property_edit_log_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_edit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_edit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4439,6 +5798,13 @@ export type Database = {
             foreignKeyName: "property_edit_log_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_edit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4448,6 +5814,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "property_edit_log_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4501,7 +5874,21 @@ export type Database = {
             foreignKeyName: "property_notes_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4529,6 +5916,13 @@ export type Database = {
             foreignKeyName: "property_notes_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4539,6 +5933,13 @@ export type Database = {
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
           },
+          {
+            foreignKeyName: "property_notes_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
         ]
       }
       property_owners: {
@@ -4547,6 +5948,7 @@ export type Database = {
           contact_id: string | null
           created_at: string
           email: string
+          first_login_notified_at: string | null
           id: string
           name: string | null
           phone: string | null
@@ -4559,6 +5961,7 @@ export type Database = {
           contact_id?: string | null
           created_at?: string
           email: string
+          first_login_notified_at?: string | null
           id?: string
           name?: string | null
           phone?: string | null
@@ -4571,6 +5974,7 @@ export type Database = {
           contact_id?: string | null
           created_at?: string
           email?: string
+          first_login_notified_at?: string | null
           id?: string
           name?: string | null
           phone?: string | null
@@ -4584,6 +5988,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_owners_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
           },
         ]
@@ -4615,7 +6026,21 @@ export type Database = {
             foreignKeyName: "property_photos_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_photos_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_photos_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4643,6 +6068,13 @@ export type Database = {
             foreignKeyName: "property_photos_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_photos_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4652,6 +6084,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "property_photos_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4685,7 +6124,21 @@ export type Database = {
             foreignKeyName: "property_supplies_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_supplies_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_supplies_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4713,6 +6166,13 @@ export type Database = {
             foreignKeyName: "property_supplies_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_supplies_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4722,6 +6182,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "property_supplies_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4761,7 +6228,21 @@ export type Database = {
             foreignKeyName: "property_verifications_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: true
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_verifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_verifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4789,6 +6270,13 @@ export type Database = {
             foreignKeyName: "property_verifications_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: true
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_verifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4799,7 +6287,223 @@ export type Database = {
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
           },
+          {
+            foreignKeyName: "property_verifications_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: true
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      qbo_class_pl_months: {
+        Row: {
+          class_name: string
+          cogs: number
+          expenses: number
+          income: number
+          month: string
+          net_income: number
+          qbo_class_id: string
+          synced_at: string
+        }
+        Insert: {
+          class_name: string
+          cogs?: number
+          expenses?: number
+          income?: number
+          month: string
+          net_income?: number
+          qbo_class_id: string
+          synced_at?: string
+        }
+        Update: {
+          class_name?: string
+          cogs?: number
+          expenses?: number
+          income?: number
+          month?: string
+          net_income?: number
+          qbo_class_id?: string
+          synced_at?: string
+        }
+        Relationships: []
+      }
+      qbo_classes: {
+        Row: {
+          active: boolean
+          fully_qualified_name: string
+          matched_property_id: number | null
+          name: string
+          qbo_id: string
+          synced_at: string
+        }
+        Insert: {
+          active?: boolean
+          fully_qualified_name: string
+          matched_property_id?: number | null
+          name: string
+          qbo_id: string
+          synced_at?: string
+        }
+        Update: {
+          active?: boolean
+          fully_qualified_name?: string
+          matched_property_id?: number | null
+          name?: string
+          qbo_id?: string
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "qbo_classes_matched_property_id_fkey"
+            columns: ["matched_property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qbo_pl_months: {
+        Row: {
+          cogs_breakdown: Json
+          expense_breakdown: Json
+          gross_profit: number
+          income_breakdown: Json
+          month: string
+          net_income: number
+          synced_at: string
+          total_cogs: number
+          total_expenses: number
+          total_income: number
+        }
+        Insert: {
+          cogs_breakdown?: Json
+          expense_breakdown?: Json
+          gross_profit?: number
+          income_breakdown?: Json
+          month: string
+          net_income?: number
+          synced_at?: string
+          total_cogs?: number
+          total_expenses?: number
+          total_income?: number
+        }
+        Update: {
+          cogs_breakdown?: Json
+          expense_breakdown?: Json
+          gross_profit?: number
+          income_breakdown?: Json
+          month?: string
+          net_income?: number
+          synced_at?: string
+          total_cogs?: number
+          total_expenses?: number
+          total_income?: number
+        }
+        Relationships: []
+      }
+      quarterly_goals: {
+        Row: {
+          created_at: string
+          detail: string | null
+          id: string
+          kind: string
+          owner_name: string | null
+          quarter: string
+          sort_order: number
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: string | null
+          id?: string
+          kind?: string
+          owner_name?: string | null
+          quarter: string
+          sort_order?: number
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          detail?: string | null
+          id?: string
+          kind?: string
+          owner_name?: string | null
+          quarter?: string
+          sort_order?: number
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       recurring_task_templates: {
         Row: {
@@ -4886,7 +6590,21 @@ export type Database = {
             foreignKeyName: "stage_transitions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "stage_transitions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_transitions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -4914,6 +6632,13 @@ export type Database = {
             foreignKeyName: "stage_transitions_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_transitions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -4923,6 +6648,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "stage_transitions_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "stage_transitions_to_stage_id_fkey"
@@ -5046,6 +6778,156 @@ export type Database = {
           user_id?: number | null
         }
         Relationships: []
+      }
+      task_audit_observations: {
+        Row: {
+          category: string
+          created_at: string
+          created_by: string | null
+          evidence_url: string | null
+          external_id: string
+          id: string
+          invoice_line_id: string | null
+          matched_task_id: string | null
+          note: string | null
+          occurred_on: string
+          property_id: number | null
+          property_text: string | null
+          raw: Json | null
+          reported_by: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          service_type: string | null
+          source: string
+          status: string
+          summary: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          external_id: string
+          id?: string
+          invoice_line_id?: string | null
+          matched_task_id?: string | null
+          note?: string | null
+          occurred_on: string
+          property_id?: number | null
+          property_text?: string | null
+          raw?: Json | null
+          reported_by?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          service_type?: string | null
+          source: string
+          status?: string
+          summary: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          external_id?: string
+          id?: string
+          invoice_line_id?: string | null
+          matched_task_id?: string | null
+          note?: string | null
+          occurred_on?: string
+          property_id?: number | null
+          property_text?: string | null
+          raw?: Json | null
+          reported_by?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          service_type?: string | null
+          source?: string
+          status?: string
+          summary?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_audit_observations_invoice_line_id_fkey"
+            columns: ["invoice_line_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "task_audit_observations_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       task_comments: {
         Row: {
@@ -5306,7 +7188,21 @@ export type Database = {
             foreignKeyName: "tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -5334,6 +7230,13 @@ export type Database = {
             foreignKeyName: "tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -5345,10 +7248,31 @@ export type Database = {
             referencedColumns: ["ops_property_id"]
           },
           {
+            foreignKeyName: "tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_verification_property_id_fkey"
+            columns: ["verification_property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
             foreignKeyName: "tasks_verification_property_id_fkey"
             columns: ["verification_property_id"]
             isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_verification_property_id_fkey"
+            columns: ["verification_property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -5376,6 +7300,13 @@ export type Database = {
             foreignKeyName: "tasks_verification_property_id_fkey"
             columns: ["verification_property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_verification_property_id_fkey"
+            columns: ["verification_property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -5385,6 +7316,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "tasks_verification_property_id_fkey"
+            columns: ["verification_property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "tasks_workflow_template_id_fkey"
@@ -5512,6 +7450,51 @@ export type Database = {
           kind?: string
           ops_property_id?: number | null
           trellis_property_id?: string | null
+        }
+        Relationships: []
+      }
+      trellis_reservation_snapshot: {
+        Row: {
+          checkin_date: string | null
+          checkout_date: string | null
+          guest_name: string | null
+          is_owner_block: boolean | null
+          property_name: string | null
+          source: string | null
+          status: string | null
+          synced_at: string
+          total_amount: number | null
+          trellis_property_id: string | null
+          trellis_reservation_id: string
+          workspace: string
+        }
+        Insert: {
+          checkin_date?: string | null
+          checkout_date?: string | null
+          guest_name?: string | null
+          is_owner_block?: boolean | null
+          property_name?: string | null
+          source?: string | null
+          status?: string | null
+          synced_at?: string
+          total_amount?: number | null
+          trellis_property_id?: string | null
+          trellis_reservation_id: string
+          workspace?: string
+        }
+        Update: {
+          checkin_date?: string | null
+          checkout_date?: string | null
+          guest_name?: string | null
+          is_owner_block?: boolean | null
+          property_name?: string | null
+          source?: string | null
+          status?: string | null
+          synced_at?: string
+          total_amount?: number | null
+          trellis_property_id?: string | null
+          trellis_reservation_id?: string
+          workspace?: string
         }
         Relationships: []
       }
@@ -5746,7 +7729,21 @@ export type Database = {
             foreignKeyName: "vendor_property_aliases_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -5774,6 +7771,13 @@ export type Database = {
             foreignKeyName: "vendor_property_aliases_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -5785,7 +7789,46 @@ export type Database = {
             referencedColumns: ["ops_property_id"]
           },
           {
+            foreignKeyName: "vendor_property_aliases_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "vendor_property_aliases_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vendor_users: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          email: string
+          id: string
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          email: string
+          id?: string
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          id?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vendor_users_vendor_id_fkey"
             columns: ["vendor_id"]
             isOneToOne: false
             referencedRelation: "vendors"
@@ -5823,8 +7866,183 @@ export type Database = {
         }
         Relationships: []
       }
+      website_leads: {
+        Row: {
+          booked_at: string | null
+          calendly_event_uri: string | null
+          company: string | null
+          contact_id: string | null
+          created_at: string
+          email: string | null
+          external_id: string
+          full_name: string
+          id: string
+          interaction_id: string | null
+          message: string | null
+          phone: string | null
+          property_count: string | null
+          property_location: string | null
+          referrer: string | null
+          source_page: string | null
+          user_agent: string | null
+          utm: Json
+        }
+        Insert: {
+          booked_at?: string | null
+          calendly_event_uri?: string | null
+          company?: string | null
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          external_id: string
+          full_name: string
+          id?: string
+          interaction_id?: string | null
+          message?: string | null
+          phone?: string | null
+          property_count?: string | null
+          property_location?: string | null
+          referrer?: string | null
+          source_page?: string | null
+          user_agent?: string | null
+          utm?: Json
+        }
+        Update: {
+          booked_at?: string | null
+          calendly_event_uri?: string | null
+          company?: string | null
+          contact_id?: string | null
+          created_at?: string
+          email?: string | null
+          external_id?: string
+          full_name?: string
+          id?: string
+          interaction_id?: string | null
+          message?: string | null
+          phone?: string | null
+          property_count?: string | null
+          property_location?: string | null
+          referrer?: string | null
+          source_page?: string | null
+          user_agent?: string | null
+          utm?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "website_leads_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_leads_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "website_leads_interaction_id_fkey"
+            columns: ["interaction_id"]
+            isOneToOne: false
+            referencedRelation: "contact_interactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
+      breezeway_exceptions: {
+        Row: {
+          clean_count: number | null
+          first_due: string | null
+          last_due: string | null
+          property_raw: string | null
+          task_count: number | null
+        }
+        Relationships: []
+      }
+      breezeway_property_coverage: {
+        Row: {
+          clean_count: number | null
+          last_clean_due: string | null
+          property_id: number | null
+          task_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_attention: {
         Row: {
           client_stage: string | null
@@ -5850,7 +8068,6 @@ export type Database = {
           client_stage: string | null
           client_stage_since: string | null
           company: string | null
-          organization_id: string | null
           days_in_stage: number | null
           email: string | null
           full_name: string | null
@@ -5866,6 +8083,7 @@ export type Database = {
           note_count: number | null
           offboarded_count: number | null
           onboarding_count: number | null
+          organization_id: string | null
           payment_method: string | null
           phone: string | null
           property_count: number | null
@@ -5873,7 +8091,15 @@ export type Database = {
           source: string | null
           tags: string[] | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       crm_stale_quote_properties: {
         Row: {
@@ -5885,67 +8111,20 @@ export type Database = {
           property_name: string | null
           since: string | null
         }
-        Relationships: []
-      }
-      breezeway_exceptions: {
-        Row: {
-          clean_count: number | null
-          first_due: string | null
-          last_due: string | null
-          property_raw: string | null
-          task_count: number | null
-        }
-        Relationships: []
-      }
-      breezeway_property_coverage: {
-        Row: {
-          clean_count: number | null
-          last_clean_due: string | null
-          property_id: number | null
-          task_count: number | null
-        }
         Relationships: [
           {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
+            foreignKeyName: "properties_contact_id_fkey"
+            columns: ["contact_id"]
             isOneToOne: false
-            referencedRelation: "operational_properties"
+            referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
+            foreignKeyName: "properties_contact_id_fkey"
+            columns: ["contact_id"]
             isOneToOne: false
-            referencedRelation: "pipeline_view"
+            referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "properties"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "property_breezeway_stats"
-            referencedColumns: ["property_id"]
-          },
-          {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "property_proforma"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "breezeway_tasks_property_id_fkey"
-            columns: ["property_id"]
-            isOneToOne: false
-            referencedRelation: "trellis_reconciliation"
-            referencedColumns: ["ops_property_id"]
           },
         ]
       }
@@ -5958,7 +8137,21 @@ export type Database = {
             foreignKeyName: "breezeway_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -5986,6 +8179,13 @@ export type Database = {
             foreignKeyName: "breezeway_tasks_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -5995,6 +8195,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "breezeway_tasks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -6077,7 +8284,21 @@ export type Database = {
             foreignKeyName: "cleaning_issues_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
             referencedColumns: ["id"]
           },
           {
@@ -6105,6 +8326,13 @@ export type Database = {
             foreignKeyName: "cleaning_issues_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "property_proforma"
             referencedColumns: ["id"]
           },
@@ -6114,6 +8342,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "trellis_reconciliation"
             referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "cleaning_issues_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -6230,6 +8465,80 @@ export type Database = {
           },
         ]
       }
+      operational_property_ops: {
+        Row: {
+          address: string | null
+          address_norm: string | null
+          archived_at: string | null
+          auto_code: string | null
+          avg_cleans_per_month: number | null
+          bath_towels: number | null
+          bathmats: number | null
+          bed_sizes_text: string | null
+          bedrooms: number | null
+          breezeway_id: string | null
+          breezeway_name: string | null
+          check_in_time: string | null
+          check_out_time: string | null
+          cleaner_pay: number | null
+          cleaning_frequency: string | null
+          created_at: string | null
+          deleted_at: string | null
+          door_code: string | null
+          exempt_from_inspections: boolean | null
+          filter_size: string | null
+          first_clean_date: string | null
+          full_baths: number | null
+          full_beds: number | null
+          guest_count: number | null
+          half_baths: number | null
+          hand_towels: number | null
+          has_auto_code: boolean | null
+          hot_tub: boolean | null
+          ical_url: string | null
+          id: number | null
+          king_beds: number | null
+          kitchens: number | null
+          last_filter_changed: string | null
+          linen_notes: string | null
+          linen_onboarding_comforters: boolean | null
+          linen_onboarding_sets: number | null
+          linen_program: boolean | null
+          listing_url: string | null
+          name: string | null
+          next_filter_due: string | null
+          notes: string | null
+          number_of_beds: number | null
+          offboarded_at: string | null
+          offboarding_date: string | null
+          onboarding_date: string | null
+          other_codes: string | null
+          pet_friendly: string | null
+          pool: boolean | null
+          pool_towels: number | null
+          queen_beds: number | null
+          square_footage: number | null
+          stage_color: string | null
+          stage_id: number | null
+          stage_name: string | null
+          stage_slug: string | null
+          target_par_sets: number | null
+          trellis_id: string | null
+          twin_beds: number | null
+          updated_at: string | null
+          washcloths: number | null
+          wifi_info: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "properties_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pipeline_view: {
         Row: {
           address: string | null
@@ -6319,6 +8628,249 @@ export type Database = {
           total_deep_cleans: number | null
         }
         Relationships: []
+      }
+      property_clean_stats: {
+        Row: {
+          avg_cleans_per_month: number | null
+          avg_deep_cleans_per_month: number | null
+          cleans_90d: number | null
+          first_clean_date: string | null
+          latest_task: string | null
+          months_with_data: number | null
+          property_id: number | null
+          total_cleans: number | null
+        }
+        Relationships: []
+      }
+      property_first_tendwell_clean: {
+        Row: {
+          first_clean_date: string | null
+          property_id: number | null
+        }
+        Relationships: []
+      }
+      property_month_financials: {
+        Row: {
+          allocated_overhead: number | null
+          cleaner_pay: number | null
+          cleans: number | null
+          deep_cleans: number | null
+          est_cleaner_pay: number | null
+          est_revenue: number | null
+          invoiced_pay: number | null
+          invoiced_revenue: number | null
+          month: string | null
+          overhead_source: string | null
+          pay_source: string | null
+          property_id: number | null
+          property_name: string | null
+          qbo_income: number | null
+          revenue: number | null
+          revenue_source: string | null
+          stage_name: string | null
+          variable_costs: number | null
+        }
+        Relationships: []
+      }
+      property_monthly_cleans: {
+        Row: {
+          cleans: number | null
+          deep_cleans: number | null
+          month: string | null
+          property_id: number | null
+        }
+        Relationships: []
+      }
+      property_ops: {
+        Row: {
+          address: string | null
+          address_norm: string | null
+          archived_at: string | null
+          auto_code: string | null
+          avg_cleans_per_month: number | null
+          bath_towels: number | null
+          bathmats: number | null
+          bed_sizes_text: string | null
+          bedrooms: number | null
+          breezeway_id: string | null
+          breezeway_name: string | null
+          check_in_time: string | null
+          check_out_time: string | null
+          cleaner_pay: number | null
+          cleaning_frequency: string | null
+          created_at: string | null
+          deleted_at: string | null
+          door_code: string | null
+          exempt_from_inspections: boolean | null
+          filter_size: string | null
+          first_clean_date: string | null
+          full_baths: number | null
+          full_beds: number | null
+          guest_count: number | null
+          half_baths: number | null
+          hand_towels: number | null
+          has_auto_code: boolean | null
+          hot_tub: boolean | null
+          ical_url: string | null
+          id: number | null
+          king_beds: number | null
+          kitchens: number | null
+          last_filter_changed: string | null
+          linen_notes: string | null
+          linen_onboarding_comforters: boolean | null
+          linen_onboarding_sets: number | null
+          linen_program: boolean | null
+          listing_url: string | null
+          name: string | null
+          next_filter_due: string | null
+          notes: string | null
+          number_of_beds: number | null
+          offboarded_at: string | null
+          offboarding_date: string | null
+          onboarding_date: string | null
+          other_codes: string | null
+          pet_friendly: string | null
+          pool: boolean | null
+          pool_towels: number | null
+          queen_beds: number | null
+          square_footage: number | null
+          stage_id: number | null
+          target_par_sets: number | null
+          trellis_id: string | null
+          twin_beds: number | null
+          updated_at: string | null
+          washcloths: number | null
+          wifi_info: string | null
+        }
+        Insert: {
+          address?: string | null
+          address_norm?: string | null
+          archived_at?: string | null
+          auto_code?: string | null
+          avg_cleans_per_month?: number | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          bed_sizes_text?: string | null
+          bedrooms?: number | null
+          breezeway_id?: string | null
+          breezeway_name?: string | null
+          check_in_time?: string | null
+          check_out_time?: string | null
+          cleaner_pay?: number | null
+          cleaning_frequency?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          door_code?: string | null
+          exempt_from_inspections?: boolean | null
+          filter_size?: string | null
+          first_clean_date?: string | null
+          full_baths?: number | null
+          full_beds?: number | null
+          guest_count?: number | null
+          half_baths?: number | null
+          hand_towels?: number | null
+          has_auto_code?: boolean | null
+          hot_tub?: boolean | null
+          ical_url?: string | null
+          id?: number | null
+          king_beds?: number | null
+          kitchens?: number | null
+          last_filter_changed?: string | null
+          linen_notes?: string | null
+          linen_onboarding_comforters?: boolean | null
+          linen_onboarding_sets?: number | null
+          linen_program?: boolean | null
+          listing_url?: string | null
+          name?: string | null
+          next_filter_due?: string | null
+          notes?: string | null
+          number_of_beds?: number | null
+          offboarded_at?: string | null
+          offboarding_date?: string | null
+          onboarding_date?: string | null
+          other_codes?: string | null
+          pet_friendly?: string | null
+          pool?: boolean | null
+          pool_towels?: number | null
+          queen_beds?: number | null
+          square_footage?: number | null
+          stage_id?: number | null
+          target_par_sets?: number | null
+          trellis_id?: string | null
+          twin_beds?: number | null
+          updated_at?: string | null
+          washcloths?: number | null
+          wifi_info?: string | null
+        }
+        Update: {
+          address?: string | null
+          address_norm?: string | null
+          archived_at?: string | null
+          auto_code?: string | null
+          avg_cleans_per_month?: number | null
+          bath_towels?: number | null
+          bathmats?: number | null
+          bed_sizes_text?: string | null
+          bedrooms?: number | null
+          breezeway_id?: string | null
+          breezeway_name?: string | null
+          check_in_time?: string | null
+          check_out_time?: string | null
+          cleaner_pay?: number | null
+          cleaning_frequency?: string | null
+          created_at?: string | null
+          deleted_at?: string | null
+          door_code?: string | null
+          exempt_from_inspections?: boolean | null
+          filter_size?: string | null
+          first_clean_date?: string | null
+          full_baths?: number | null
+          full_beds?: number | null
+          guest_count?: number | null
+          half_baths?: number | null
+          hand_towels?: number | null
+          has_auto_code?: boolean | null
+          hot_tub?: boolean | null
+          ical_url?: string | null
+          id?: number | null
+          king_beds?: number | null
+          kitchens?: number | null
+          last_filter_changed?: string | null
+          linen_notes?: string | null
+          linen_onboarding_comforters?: boolean | null
+          linen_onboarding_sets?: number | null
+          linen_program?: boolean | null
+          listing_url?: string | null
+          name?: string | null
+          next_filter_due?: string | null
+          notes?: string | null
+          number_of_beds?: number | null
+          offboarded_at?: string | null
+          offboarding_date?: string | null
+          onboarding_date?: string | null
+          other_codes?: string | null
+          pet_friendly?: string | null
+          pool?: boolean | null
+          pool_towels?: number | null
+          queen_beds?: number | null
+          square_footage?: number | null
+          stage_id?: number | null
+          target_par_sets?: number | null
+          trellis_id?: string | null
+          twin_beds?: number | null
+          updated_at?: string | null
+          washcloths?: number | null
+          wifi_info?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "properties_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       property_proforma: {
         Row: {
@@ -6430,43 +8982,46 @@ export type Database = {
         }
         Relationships: []
       }
+      v_haven_ops: {
+        Row: {
+          bm: number | null
+          bt: number | null
+          f: number | null
+          fb: number | null
+          g: number | null
+          hd: number | null
+          id: number | null
+          k: number | null
+          name: string | null
+          nb: number | null
+          nm: string | null
+          pt: number | null
+          q: number | null
+          t: number | null
+          updated_at: string | null
+          wc: number | null
+          wet: boolean | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      crm_set_client_stage: {
-        Args: {
-          p_contact_id: string
-          p_to_stage: string
-          p_note?: string | null
-          p_actor?: string | null
-        }
-        Returns: Json
-      }
-      crm_move_property_stage: {
-        Args: {
-          p_property_id: number
-          p_to_stage: string
-          p_note?: string | null
-          p_actor?: string | null
-        }
-        Returns: Json
-      }
-      crm_log_interaction: {
-        Args: {
-          p_contact_id: string
-          p_summary: string
-          p_interaction_type?: string
-          p_occurred_at?: string | null
-          p_next_action?: string | null
-          p_next_action_date?: string | null
-          p_source?: string
-          p_external_id?: string | null
-          p_actor?: string | null
-        }
-        Returns: Json
+      _grant_org_properties_to_owner: {
+        Args: { p_organization_id: string; p_owner_id: string }
+        Returns: number
       }
       add_cleaner_app_user: {
         Args: { p_email: string; p_name: string; p_role: string }
         Returns: undefined
+      }
+      admin_contact_delete_impact: { Args: { p_id: string }; Returns: Json }
+      admin_delete_contact_permanently: {
+        Args: { p_confirm_name: string; p_id: string }
+        Returns: Json
+      }
+      admin_delete_property_permanently: {
+        Args: { p_confirm_name: string; p_id: number }
+        Returns: Json
       }
       admin_hard_delete_property: { Args: { p_id: number }; Returns: undefined }
       admin_list_deleted_properties: {
@@ -6493,6 +9048,7 @@ export type Database = {
           cleaning_frequency: string | null
           contact_id: string | null
           created_at: string | null
+          custom_deep_clean_income: number | null
           deep_clean_3x_ce: number | null
           deleted_at: string | null
           door_code: string | null
@@ -6519,8 +9075,12 @@ export type Database = {
           kitchens: number | null
           last_filter_changed: string | null
           linen_notes: string | null
+          linen_onboarding_comforters: boolean
+          linen_onboarding_fee: number | null
+          linen_onboarding_sets: number
           linen_program: boolean
           linen_program_cost: number
+          listing_url: string | null
           monthly_cost_estimate: number | null
           monthly_profit_estimate: number | null
           monthly_revenue_estimate: number | null
@@ -6531,6 +9091,7 @@ export type Database = {
           offboarded_at: string | null
           offboarding_date: string | null
           onboarding_date: string | null
+          organization_id: string | null
           other_codes: string | null
           pet_friendly: string | null
           pool: boolean | null
@@ -6540,8 +9101,10 @@ export type Database = {
           profit_percentage: number | null
           queen_beds: number | null
           quote_owner_response: string | null
+          quote_requested_at: string | null
           quote_responded_at: string | null
           quote_sent_at: string | null
+          requested_by_owner_id: string | null
           square_footage: number | null
           stage_id: number | null
           suggested_pay: number | null
@@ -6561,8 +9124,11 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      admin_property_delete_impact: { Args: { p_id: number }; Returns: Json }
       admin_restore_property: { Args: { p_id: number }; Returns: undefined }
       archive_stale_quotes: { Args: { max_age_days?: number }; Returns: number }
+      can_view_financials: { Args: never; Returns: boolean }
+      canonical_trellis_property_id: { Args: { p: string }; Returns: string }
       compute_monthly_estimate: {
         Args: { target_month: string }
         Returns: {
@@ -6576,11 +9142,125 @@ export type Database = {
           per_property: Json
         }[]
       }
+      crm_actor: { Args: { p_actor?: string }; Returns: string }
+      crm_caller_allowed: { Args: never; Returns: boolean }
+      crm_create_quote_property: {
+        Args: {
+          p_actor?: string
+          p_address?: string
+          p_bedrooms?: number
+          p_ce_charged?: number
+          p_cleaner_pay?: number
+          p_contact_email?: string
+          p_contact_id?: string
+          p_contact_name?: string
+          p_contact_phone?: string
+          p_full_baths?: number
+          p_full_beds?: number
+          p_guest_count?: number
+          p_half_baths?: number
+          p_hot_tub?: boolean
+          p_king_beds?: number
+          p_kitchens?: number
+          p_linen_program?: boolean
+          p_listing_url?: string
+          p_name: string
+          p_note?: string
+          p_pool?: boolean
+          p_queen_beds?: number
+          p_square_footage?: number
+          p_twin_beds?: number
+        }
+        Returns: Json
+      }
+      crm_log_interaction: {
+        Args: {
+          p_actor?: string
+          p_contact_id: string
+          p_external_id?: string
+          p_interaction_type?: string
+          p_next_action?: string
+          p_next_action_date?: string
+          p_occurred_at?: string
+          p_source?: string
+          p_summary: string
+        }
+        Returns: Json
+      }
+      crm_log_meeting: {
+        Args: {
+          p_actor?: string
+          p_company?: string
+          p_contact_email?: string
+          p_contact_id?: string
+          p_contact_name?: string
+          p_contact_phone?: string
+          p_external_id: string
+          p_next_action?: string
+          p_next_action_date?: string
+          p_occurred_at: string
+          p_source?: string
+          p_summary?: string
+          p_title: string
+        }
+        Returns: Json
+      }
+      crm_log_web_lead: {
+        Args: {
+          p_company?: string
+          p_email?: string
+          p_external_id: string
+          p_full_name: string
+          p_message?: string
+          p_occurred_at?: string
+          p_phone?: string
+          p_property_count?: string
+          p_property_location?: string
+          p_referrer?: string
+          p_source_page?: string
+          p_user_agent?: string
+          p_utm?: Json
+        }
+        Returns: Json
+      }
+      crm_mark_web_lead_booked: {
+        Args: {
+          p_event_uri?: string
+          p_lead_id: string
+          p_scheduled_at?: string
+        }
+        Returns: Json
+      }
+      crm_move_property_stage: {
+        Args: {
+          p_actor?: string
+          p_note?: string
+          p_property_id: number
+          p_to_stage: string
+        }
+        Returns: Json
+      }
+      crm_set_client_stage: {
+        Args: {
+          p_actor?: string
+          p_contact_id: string
+          p_note?: string
+          p_to_stage: string
+        }
+        Returns: Json
+      }
+      crm_setting_int: {
+        Args: { p_default: number; p_key: string }
+        Returns: number
+      }
       current_app_user_id: { Args: never; Returns: number }
       current_auth_email: { Args: never; Returns: string }
       current_owner_id: { Args: never; Returns: string }
+      current_user_can_edit: { Args: { p_view: string }; Returns: boolean }
+      current_user_can_view: { Args: { p_view: string }; Returns: boolean }
       current_user_role: { Args: never; Returns: string }
       get_laundry_weigh_in_names: { Args: never; Returns: string[] }
+      get_my_ui_prefs: { Args: never; Returns: Json }
       get_owner_agreement: { Args: never; Returns: Json[] }
       get_owner_onboarding_status: {
         Args: never
@@ -6589,10 +9269,6 @@ export type Database = {
           status: string
           submitted_at: string
         }[]
-      }
-      grant_org_properties_to_owner: {
-        Args: { p_organization_id: string; p_owner_id: string }
-        Returns: number
       }
       get_owner_properties: { Args: never; Returns: Json[] }
       get_owner_property_notes: {
@@ -6641,9 +9317,36 @@ export type Database = {
         }[]
       }
       get_property_names_for_weigh_in: { Args: never; Returns: string[] }
+      grant_org_properties_to_owner: {
+        Args: { p_organization_id: string; p_owner_id: string }
+        Returns: number
+      }
+      invoice_apply_reconcile: {
+        Args: {
+          p_delete_ids: string[]
+          p_rows: Json
+          p_run: Json
+          p_run_id: string
+        }
+        Returns: Json
+      }
       is_current_user_admin: { Args: never; Returns: boolean }
+      is_owner_emulating: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       is_staff_or_server: { Args: never; Returns: boolean }
+      mcp_oauth_purge: {
+        Args: never
+        Returns: {
+          codes_deleted: number
+          tokens_deleted: number
+        }[]
+      }
+      next_qbo_invoice_no: { Args: never; Returns: number }
+      onboarding_link_owner_property: {
+        Args: { p_submission_id: string }
+        Returns: boolean
+      }
+      owner_activity_actor: { Args: never; Returns: string }
       owner_add_property_note: {
         Args: { p_content: string; p_property_id: number }
         Returns: Json
@@ -6654,6 +9357,11 @@ export type Database = {
         Args: { p_owner_id: string; p_property_id: number }
         Returns: Json
       }
+      owner_quote_request_num: {
+        Args: { hi: number; k: string; lo: number; p: Json }
+        Returns: number
+      }
+      owner_quote_unit_key: { Args: { addr: string }; Returns: string }
       owner_request_quote: { Args: { p: Json }; Returns: Json }
       owner_respond_to_quote: {
         Args: { p_property_id: number; p_response: string }
@@ -6723,6 +9431,11 @@ export type Database = {
         }[]
       }
       set_my_locale: { Args: { p_locale: string }; Returns: undefined }
+      set_my_ui_pref: {
+        Args: { p_key: string; p_value: Json }
+        Returns: undefined
+      }
+      staff_has_financial_view: { Args: never; Returns: boolean }
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
       tendwell_normalize_street: { Args: { p: string }; Returns: string }
     }
@@ -6775,12 +9488,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6804,11 +9517,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6829,11 +9542,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6854,11 +9567,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -6871,11 +9584,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
