@@ -90,7 +90,7 @@ export async function requireVendorActor(
  *  map to stable codes (translated client-side), everything else is logged
  *  here and answered generically. */
 export function sendError(res: VercelResponse, e: unknown, fallback = 'Request failed'): void {
-  if (e instanceof RunBusyError) {
+  if (e instanceof RunBusyError || /changed while reconciling/i.test(e instanceof Error ? e.message : '')) {
     res.status(409).json({ error: 'busy' })
     return
   }

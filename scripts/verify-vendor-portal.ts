@@ -97,6 +97,32 @@ try {
     console.log(`  days only in portal draft: ${extra.length} ${extra.slice(0, 5).join(', ')}`)
   }
 
+  // ── 1b. Reconcile applies all-or-nothing (invoice_apply_reconcile) ──
+  {
+    const before = await loadRunLines(supabase, (run as any).id)
+    const victims = before.filter(l => l.vendor_category === 'clean').slice(0, 3)
+    const day = victims[0]
+    const clash = { line_no: 9001, source: 'vendor', raw_property_text: 'x', raw_amount: 1, raw_date_mentioned: day.service_date, service_date: day.service_date, property_id: day.property_id, line_kind: 'clean', review_status: 'ok' }
+    // Deletes 3 real lines, then inserts two rows claiming one property-day:
+    // the second insert fails, so the deletes must roll back too.
+    const { error: failErr } = await supabase.rpc('invoice_apply_reconcile', {
+      p_run_id: (run as any).id,
+      p_delete_ids: victims.map(v => v.id),
+      p_rows: [clash, { ...clash, line_no: 9002 }],
+      p_run: {},
+    })
+    const after = await loadRunLines(supabase, (run as any).id)
+    check('a failure mid-apply rolls back every delete (nothing lost)', !!failErr && after.length === before.length && victims.every(v => after.some(a => a.id === v.id)), `${failErr?.code} ${before.length}→${after.length}`)
+    const { error: staleErr } = await supabase.rpc('invoice_apply_reconcile', {
+      p_run_id: (run as any).id, p_delete_ids: [victims[0].id, '00000000-0000-0000-0000-000000000000'], p_rows: [], p_run: {},
+    })
+    const after2 = await loadRunLines(supabase, (run as any).id)
+    check('stale row ids abort the apply without touching the run', /changed while reconciling/.test(staleErr?.message ?? '') && after2.length === before.length, `${staleErr?.code} ${after2.length}`)
+    const anonClient = createClient(process.env.SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!)
+    const { error: anonErr } = await anonClient.rpc('invoice_apply_reconcile', { p_run_id: (run as any).id, p_delete_ids: [], p_rows: [], p_run: {} })
+    check('only the server can call the apply function', !!anonErr, anonErr?.message ?? 'no error')
+  }
+
   // ── 2. Vendor view carries no Tendwell-internal data ──
   const fresh = (await supabase.from('invoice_runs').select(RUN_COLUMNS).eq('id', (run as any).id).single()).data
   const detail = await runDetail(supabase, fresh as any)
