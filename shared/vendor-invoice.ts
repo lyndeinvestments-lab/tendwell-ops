@@ -53,16 +53,102 @@ export const VENDOR_EXTRA_TYPES = [
   'Double Clean',
   'Extra Cleaning',
   'Mailed Left Items by the Guest',
+  'Last-Minute Surcharge',
 ] as const
 
+// ─── Evidence on charges ────────────────────────────────────────────────────
+
+/** A surcharge for a clean booked at the last minute. No standard price
+ *  exists yet, so the engine passes the vendor's amount through and queues it
+ *  for a human to set the client charge. */
+export const LAST_MINUTE_SURCHARGE = 'Last-Minute Surcharge'
+
+/** Charges that cannot be approved without proof: a photo, or a Slack link to
+ *  the thread where the work was reported (item 7, 2026-10-09). Checked by
+ *  api/invoices/approve.ts and mirrored in the review UI. A different rule
+ *  from the reimbursement detail rule (who it was for + any link). */
+export const EVIDENCE_REQUIRED_SERVICES: readonly string[] = [
+  'Pet Fee',
+  'Extra Cleaning',
+  'Double Clean',
+  LAST_MINUTE_SURCHARGE,
+]
+
 /** Extras Haven disputes without proof (Jordan 2026-08-11: "photos and the
- *  #cleaning-tendwell link"). A photo upload or an evidence link is required. */
+ *  #cleaning-tendwell link"). In the vendor portal a photo upload or an
+ *  evidence link is required: every approve-gated charge plus trash pickups. */
 export const EVIDENCE_REQUIRED_EXTRAS: ReadonlySet<string> = new Set([
   'Excessive Trash Pickup',
-  'Pet Fee',
-  'Double Clean',
-  'Extra Cleaning',
+  ...EVIDENCE_REQUIRED_SERVICES,
 ])
+
+// Hosts whose links count as evidence: Slack, and the places a cleaner's
+// photo ends up (image hosts, Google Drive / Photos, iCloud / Dropbox shared
+// albums, Breezeway task photos). Matched on the registrable domain, so
+// "evilslack.com" never passes for slack.com.
+const EVIDENCE_HOSTS = [
+  'slack.com',
+  'slack-files.com',
+  'breezeway.io',
+  'drive.google.com',
+  'photos.google.com',
+  'photos.app.goo.gl',
+  'googleusercontent.com',
+  'imgur.com',
+  'ibb.co',
+  'postimg.cc',
+  'flickr.com',
+  'staticflickr.com',
+  'icloud.com',
+  'dropbox.com',
+  'dropboxusercontent.com',
+]
+
+const IMAGE_PATH = /\.(?:jpe?g|png|gif|webp|heic|heif|bmp|tiff?)$/i
+
+/** One URL is evidence: https, and either a Slack / photo host, a Supabase
+ *  storage object (any host, so the custom API domain counts), or a path
+ *  ending in an image extension. */
+export function isEvidenceLink(url: string): boolean {
+  let u: URL
+  try {
+    u = new URL(url)
+  } catch {
+    return false
+  }
+  if (u.protocol !== 'https:') return false
+  const host = u.hostname.toLowerCase()
+  if (EVIDENCE_HOSTS.some(d => host === d || host.endsWith(`.${d}`))) return true
+  if (u.pathname.startsWith('/storage/v1/object/')) return true
+  return IMAGE_PATH.test(u.pathname)
+}
+
+const HTTPS_URL = /https:\/\/[^\s<>"'()]+/gi
+
+/** True when the text carries at least one evidence link (see isEvidenceLink).
+ *  A bare http link, or an https link to anywhere else, is not enough. */
+export function evidenceLinkOk(note: string | null | undefined): boolean {
+  const urls = (note ?? '').match(HTTPS_URL) ?? []
+  return urls.some(raw => isEvidenceLink(raw.replace(/[.,;:!?\]]+$/, '')))
+}
+
+/** Whether a charge line carries its evidence: a task-derived line is backed
+ *  by its Breezeway/Trellis task; a vendor-portal line by an uploaded photo or
+ *  its evidence link; any line by an evidence link in the review note or the
+ *  vendor's own note. */
+export function chargeHasEvidence(line: {
+  source?: string | null
+  receipt_path?: string | null
+  vendor_detail?: Record<string, any> | null
+  review_note?: string | null
+  raw_note_text?: string | null
+}): boolean {
+  if (line.source === 'task') return true
+  if (line.receipt_path && line.receipt_path.trim()) return true
+  const link = line.vendor_detail?.evidence_url
+  if (typeof link === 'string' && evidenceLinkOk(link)) return true
+  return evidenceLinkOk(line.review_note) || evidenceLinkOk(line.raw_note_text)
+}
 
 export const LIMITS = {
   extraMax: 1000,
@@ -188,6 +274,12 @@ export function isEvidenceUrl(s: string): boolean {
   }
 }
 
+/** Throwaway vendors created by the verify scripts ("ZZ E2E Vendor 123",
+ *  "ZZ Portal Test Vendor 123"). Their activity must never email staff. */
+export function isTestVendorName(name: string | null | undefined): boolean {
+  return typeof name === 'string' && /^zz /i.test(name.trimStart())
+}
+
 export type PeriodError = 'invalid_date' | 'period_order' | 'date_in_future' | 'period_too_long'
 
 /** The invoice period a vendor may create: real dates, start <= end, ending
@@ -293,7 +385,9 @@ export function validateVendorItem(input: VendorItemInput, ctx: ItemContext): It
 
   // ── Evidence ──
   if (evidenceUrl && !isEvidenceUrl(evidenceUrl)) errors.evidence_url = 'invalid_url'
-  if (category === 'extra' && serviceType && EVIDENCE_REQUIRED_EXTRAS.has(serviceType) && !evidenceUrl && !receiptPath) {
+  // A link only counts when Tendwell's approve gate will accept it (a Slack
+  // thread or a photo), so the vendor learns it here, not after submitting.
+  if (category === 'extra' && serviceType && EVIDENCE_REQUIRED_EXTRAS.has(serviceType) && !receiptPath && !(evidenceUrl && evidenceLinkOk(evidenceUrl))) {
     errors.evidence_url = errors.evidence_url ?? 'evidence_required'
   }
 

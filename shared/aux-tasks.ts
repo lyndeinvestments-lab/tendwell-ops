@@ -209,7 +209,8 @@ export const DEFAULT_EXTRA_PRICING: Readonly<Record<string, number>> = {
   'Excessive Trash Pickup': 50,
   'Vacancy Clean / Touch Up Clean': 50,
   'Linen Pull': 50,
-  'Reimbursement': 50,
+  // No 'Reimbursement': it bills at the receipt amount, never a list price
+  // (2026-10-09), and no task category maps to it.
   'Trip Fee': 50,
   'Pet Fee': 45,
 }

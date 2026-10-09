@@ -86,6 +86,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       tasks: ctx.tasks,
       trellisCoverage: ctx.trellisCoverage,
       redoTasks: ctx.redoTasks,
+      previousCharges: ctx.previousCharges,
+      havenListingPropertyIds: ctx.havenListingPropertyIds,
       periodStart,
       periodEnd,
     })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isTestVendorName,
   validatePeriod,
   validateVendorItem,
   vendorNotices,
@@ -94,6 +95,18 @@ describe('validateVendorItem — extras', () => {
     expect(validateVendorItem({ ...pet, receipt_path: 'vendor-portal/v/r/photo.jpg' }, ctx).ok).toBe(true)
   })
 
+  it('only a Slack or photo link satisfies the evidence rule, matching the approve gate', () => {
+    const pet = { ...extra, service_type: 'Pet Fee', description: 'Heavy dog hair on every couch and bed' }
+    expect(validateVendorItem({ ...pet, evidence_url: 'https://example.com/page' }, ctx).errors.evidence_url).toBe('evidence_required')
+    expect(validateVendorItem({ ...pet, evidence_url: 'https://drive.google.com/file/d/abc' }, ctx).ok).toBe(true)
+  })
+
+  it('offers a Last-Minute Surcharge, and it needs evidence too', () => {
+    const lm = { ...extra, service_type: 'Last-Minute Surcharge', description: 'Booked at 9pm for a 10am turn' }
+    expect(validateVendorItem(lm, ctx).errors.evidence_url).toBe('evidence_required')
+    expect(validateVendorItem({ ...lm, evidence_url: 'https://tendwell.slack.com/archives/C08/p9' }, ctx).ok).toBe(true)
+  })
+
   it('rejects a non-https evidence link', () => {
     expect(validateVendorItem({ ...extra, evidence_url: 'javascript:alert(1)' }, ctx).errors.evidence_url).toBe('invalid_url')
     expect(validateVendorItem({ ...extra, evidence_url: 'http://example.com' }, ctx).errors.evidence_url).toBe('invalid_url')
@@ -163,5 +176,21 @@ describe('vendorRunStatus', () => {
     expect(vendorRunStatus({ status: 'draft', submitted_at: '2026-10-11T10:00:00Z', returned_at: '2026-10-11T12:00:00Z' })).toBe('returned')
     expect(vendorRunStatus({ status: 'exported' })).toBe('approved')
     expect(vendorRunStatus({ status: 'void' })).toBe('void')
+  })
+})
+
+describe('isTestVendorName', () => {
+  it('matches the verify scripts\' throwaway vendors, any case', () => {
+    expect(isTestVendorName('ZZ E2E Vendor 1759')).toBe(true)
+    expect(isTestVendorName('ZZ Portal Test Vendor 1759')).toBe(true)
+    expect(isTestVendorName('zz e2e vendor')).toBe(true)
+  })
+  it('never matches a real vendor or an empty name', () => {
+    expect(isTestVendorName('Busy Bee Cleaning')).toBe(false)
+    expect(isTestVendorName('ZZTop Cleaning')).toBe(false)
+    expect(isTestVendorName('Fuzz Cleaning')).toBe(false)
+    expect(isTestVendorName('')).toBe(false)
+    expect(isTestVendorName(null)).toBe(false)
+    expect(isTestVendorName(undefined)).toBe(false)
   })
 })
