@@ -32,6 +32,7 @@ import {
   type AuxBillingSettings,
 } from '../../shared/aux-tasks.js'
 
+import { isRedoTask } from '../../shared/invoice-redo.js'
 import { PORTAL_REVIEW_FLAGS } from '../../shared/vendor-invoice.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -105,6 +106,8 @@ export interface EngineContext {
   stays: StayRow[]
   /** Trellis's own clean record (see EngineInput.trellisCoverage). */
   trellisCoverage: TrellisCoverage
+  /** Callback / reclean / redo tasks (see EngineInput.redoTasks). */
+  redoTasks: TaskRow[]
   /** Client charges on approved/exported invoices (charge-changed check). */
   previousCharges: PreviousCharge[]
   /** Ops properties with a matched Hostaway listing; null = unavailable. */
@@ -186,7 +189,7 @@ export function buildEngineTasks(
   taskRows: BreezewayTaskInput[],
   trellisRows: TrellisTaskInput[],
   propertyByTrellisId: Map<string, number>,
-): { tasks: TaskRow[]; trellisTasks: TaskRow[]; trellisCoverage: TrellisCoverage } {
+): { tasks: TaskRow[]; trellisTasks: TaskRow[]; trellisCoverage: TrellisCoverage; redoTasks: TaskRow[] } {
   // A Breezeway row's own is_clean flag predates the engine's title rules
   // ("Post-Owner Stay Clean - HT" imported as not-a-clean), so the engine's
   // rules decide here, the same way they do for Trellis.
@@ -207,7 +210,8 @@ export function buildEngineTasks(
         propertyId: t.property_id,
         dueDate: t.due_date,
         title: t.task_title,
-        isClean: !t.is_deep_clean && (t.is_clean || engineIsClean(t.task_title)),
+        // A redo is the cleaner fixing a clean, never a second billable one.
+        isClean: !t.is_deep_clean && !isRedoTask(t.task_title) && (t.is_clean || engineIsClean(t.task_title)),
         isDeepClean: t.is_deep_clean,
         totalCostRef: Number.isFinite(cost) ? cost : null,
         completed: isTaskCompleted('breezeway', t.status, t.completed_date),
@@ -239,7 +243,7 @@ export function buildEngineTasks(
         // Same rule as Breezeway: an inspection/walkthrough is not a clean.
         // (Chad Williams 223-202, 9/30: a completed "Cleaning Inspection" tied
         // with the real Turn Clean and won the label.)
-        isClean: !excluded && !isDeep && std != null && !std.isExtra && engineIsClean(title),
+        isClean: !excluded && !isDeep && !isRedoTask(title) && std != null && !std.isExtra && engineIsClean(title),
         isDeepClean: isDeep,
         totalCostRef: null,
         completed: isTaskCompleted('trellis', t.status, t.completed_at),
@@ -265,7 +269,29 @@ export function buildEngineTasks(
     else taskDays.set(t.propertyId!, [t.dueDate!])
   }
 
-  return { tasks, trellisTasks, trellisCoverage: { doneCleanDays, taskDays } }
+  // Callbacks / recleans / redos from both systems, whatever their status
+  // (a scheduled callback already says the clean had a problem). Cancelled
+  // and deleted tasks were dropped above.
+  const redoTasks: TaskRow[] = [
+    ...taskRows
+      .filter(t => !isTaskCancelled(t.status) && isRedoTask(t.task_title, t.status) && t.property_id != null && t.due_date != null)
+      .map(t => ({
+        externalId: t.external_id,
+        propertyId: t.property_id,
+        dueDate: t.due_date,
+        title: t.task_title,
+        isClean: false,
+        isDeepClean: false,
+        totalCostRef: null,
+        completed: isTaskCompleted('breezeway', t.status, t.completed_date),
+        source: 'breezeway' as const,
+      })),
+    ...trellisAll
+      .filter(t => isRedoTask(t.title, t.status))
+      .map(({ status: _s, ...t }) => ({ ...t, isClean: false, isDeepClean: false })),
+  ]
+
+  return { tasks, trellisTasks, trellisCoverage: { doneCleanDays, taskDays }, redoTasks }
 }
 
 /** properties.trellis_id → Ops property id. When two Ops rows share a Trellis
@@ -415,7 +441,7 @@ export async function loadEngineContext(
     propertyId: a.property_id,
   }))
 
-  const { tasks, trellisTasks, trellisCoverage } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
+  const { tasks, trellisTasks, trellisCoverage, redoTasks } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
 
   // Onboarding evidence + cross-invoice duplicate guard.
   const [firstRows, billedRows] = await Promise.all([
@@ -470,7 +496,7 @@ export async function loadEngineContext(
 
   return {
     properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty,
-    billedCleans, stays, trellisCoverage, previousCharges, havenListingPropertyIds,
+    billedCleans, stays, trellisCoverage, redoTasks, previousCharges, havenListingPropertyIds,
   }
 }
 
@@ -1076,6 +1102,7 @@ export async function reconcileRun(
     billedCleans: ctx.billedCleans,
     stays: ctx.stays,
     trellisCoverage: ctx.trellisCoverage,
+    redoTasks: ctx.redoTasks,
     previousCharges: ctx.previousCharges,
     havenListingPropertyIds: ctx.havenListingPropertyIds,
     vendorId: run.vendor_id,

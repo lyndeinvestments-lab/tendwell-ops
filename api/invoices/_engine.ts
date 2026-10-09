@@ -7,6 +7,7 @@
 // flag + review_status='needs_review' and surfaces in the review queue.
 
 import type { FeeOverride } from '../../shared/aux-tasks.js'
+import { REDO_PENDING_FLAG, REDO_WINDOW_DAYS } from '../../shared/invoice-redo.js'
 import { CHARGE_CHANGED_FLAG, NOT_HAVEN_LISTING_FLAG } from '../../shared/invoice-review.js'
 export type { FeeOverride }
 
@@ -175,6 +176,10 @@ export interface EngineInput {
   // Trellis clean whenever Breezeway has a completed one that day). Absent =
   // no Trellis data → Breezeway completions are taken at face value.
   trellisCoverage?: TrellisCoverage
+  // Callback / reclean / redo tasks (Breezeway and Trellis, any status except
+  // cancelled or deleted). A billed clean followed by one within a week goes
+  // to review as redo_pending. Absent = no redo check.
+  redoTasks?: ReadonlyArray<TaskRow>
   // Client charges on the most recent approved/exported invoices, for the
   // charge-changed check. Absent or empty = no history, nothing is flagged.
   previousCharges?: ReadonlyArray<PreviousCharge>
@@ -283,6 +288,10 @@ export const FLAGS = {
   // as "Owner Stay - Departure Clean" / "Owner Stay - Turn Clean" so Haven's
   // QBO class rules route it to the owner.
   OWNER_STAY: 'owner_stay',
+  // A callback / reclean / redo task at the property on the clean's day or
+  // within REDO_WINDOW_DAYS after it. Needs an explicit "bill" or "no charge"
+  // decision before Approve (shared/invoice-redo.ts).
+  REDO_PENDING: REDO_PENDING_FLAG,
   // The client charge differs from the one on the most recent approved/exported
   // line for the same property and service. A price that moves between
   // invoices should be a decision someone wrote down, never a side effect of
@@ -1820,6 +1829,32 @@ function applyEvidenceRules(line: EngineLine, c: EvidenceCtx): EngineLine {
   return l
 }
 
+/** The redo task that puts a clean at `propertyId` on `cleanDate` in
+ *  question: a callback/reclean/redo on that day or up to REDO_WINDOW_DAYS
+ *  after. A redo belongs to the most recent clean before it, so one that
+ *  comes after a later completed clean at the property (`cleanDays`) is that
+ *  clean's problem, not this one's. Earliest redo wins. */
+export function findRedoAfterClean(
+  propertyId: number,
+  cleanDate: string,
+  redoTasks: ReadonlyArray<TaskRow>,
+  cleanDays: ReadonlyArray<string> = [],
+): TaskRow | null {
+  const end = addDays(cleanDate, REDO_WINDOW_DAYS)
+  const hits = redoTasks
+    .filter(t => t.propertyId === propertyId && t.dueDate != null && t.dueDate >= cleanDate && t.dueDate <= end)
+    .filter(t => !cleanDays.some(d => d > cleanDate && d <= t.dueDate!))
+    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || a.externalId.localeCompare(b.externalId))
+  return hits[0] ?? null
+}
+
+function markRedoPending(line: EngineLine, redo: TaskRow, cleanDate: string): EngineLine {
+  const where = redo.source === 'trellis' ? 'Trellis' : 'Breezeway'
+  const msg = `A redo task followed this clean: "${redo.title}" (${where}) on ${redo.dueDate}, clean on ${cleanDate}. Decide before approving: "bill" (the charge stands) or "no charge" (the redo was our fault, client charge set to 0).`
+  const out = needsReview(line, FLAGS.REDO_PENDING)
+  return { ...out, engineNote: out.engineNote ? `${out.engineNote} ${msg}` : msg }
+}
+
 /** Flag the rows of one vendor line that are an owner charge. The base clean
  *  is checked against the owner's checkout; a split extra rides with its base
  *  (it was billed on the same visit); a standalone extra is checked against
@@ -2025,6 +2060,20 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
       if (base.propertyId != null && d && base.reviewStatus !== 'excluded') {
         const cur = firstClean.get(base.propertyId)
         if (!cur || d < cur) firstClean.set(base.propertyId, d)
+      }
+      // A redo/callback after the clean: the base row (it carries the
+      // client charge for the visit) waits for a bill / no-charge decision.
+      if (d && base.propertyId != null && input.redoTasks?.length) {
+        const cleanDays = (tasksByProperty.get(base.propertyId) ?? [])
+          .filter(t => isDone(t) && t.dueDate != null)
+          .map(t => t.dueDate!)
+        const redo = findRedoAfterClean(base.propertyId, d, input.redoTasks, cleanDays)
+        if (redo) {
+          classified = classified.map(l =>
+            (l.splitGroup == null || l.lineKind !== 'extra') && l.reviewStatus !== 'excluded'
+              ? markRedoPending(l, redo, d)
+              : l)
+        }
       }
     }
     if (input.stays?.length) classified = markOwnerStay(classified, serviceDate ?? noteDate, input.stays, input.tasks)

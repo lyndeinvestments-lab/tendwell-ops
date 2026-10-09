@@ -13,11 +13,41 @@ from __future__ import annotations
 
 import datetime as dt
 import sys
+import types
 
-from breezeway_import import (
+# CI installs the real dependencies (requirements-breezeway.txt). On a machine
+# without them, stand in empty modules so the pure functions under test can
+# still be imported; nothing here ever calls the network clients.
+for _mod in (
+    "requests",
+    "google",
+    "google.oauth2",
+    "google.oauth2.service_account",
+    "googleapiclient",
+    "googleapiclient.discovery",
+    "googleapiclient.errors",
+    "googleapiclient.http",
+):
+    try:
+        __import__(_mod)
+    except ImportError:
+        _stub = types.ModuleType(_mod)
+        _stub.build = _stub.MediaIoBaseDownload = None  # type: ignore[attr-defined]
+        _stub.HttpError = Exception  # type: ignore[attr-defined]
+        _stub.RequestException = Exception  # type: ignore[attr-defined]
+        sys.modules[_mod] = _stub
+        _parent, _, _child = _mod.rpartition(".")
+        if _parent in sys.modules:
+            setattr(sys.modules[_parent], _child, _stub)
+
+from breezeway_import import (  # noqa: E402
     DEFAULT_LOOKBACK_HOURS,
+    FULL_EXPORT_MAX_SPAN_DAYS,
     DriveFile,
+    build_import_url,
+    full_export_check,
     parse_due_date,
+    parse_window,
     select_files,
     summarize_csv,
 )
@@ -129,6 +159,60 @@ check("date mode picks all three 08-18 files", sorted(f.id for f in picked), ["a
 
 picked = select_files(pool, since=run_at, export_date=None, file_ids=["d"])
 check("file-id mode", [f.id for f in picked], ["d"])
+
+# --- full-export mode (opt-in) ---------------------------------------------
+BASE = "https://app.example.test"
+
+# The daily run's URL must not change: no full-export params unless asked.
+check("daily url", build_import_url(BASE, "current_month"), f"{BASE}/api/tasks/breezeway-import?source=current_month")
+check("daily url no label", build_import_url(BASE + "/", None), f"{BASE}/api/tasks/breezeway-import")
+
+oct_window = (dt.date(2026, 10, 1), dt.date(2026, 10, 31))
+check(
+    "full export url",
+    build_import_url(BASE, "current_month", oct_window),
+    f"{BASE}/api/tasks/breezeway-import?source=current_month&full_export=true&window_start=2026-10-01&window_end=2026-10-31",
+)
+check(
+    "full export url force",
+    build_import_url(BASE, None, oct_window, force=True),
+    f"{BASE}/api/tasks/breezeway-import?full_export=true&window_start=2026-10-01&window_end=2026-10-31&force=true",
+)
+# force is meaningless without a window and is never sent on its own.
+check("force alone ignored", build_import_url(BASE, None, None, force=True), f"{BASE}/api/tasks/breezeway-import")
+
+check("window ok", parse_window("2026-10-01", "2026-10-31"), oct_window)
+check("window one day", parse_window("2026-10-01", "2026-10-01"), (dt.date(2026, 10, 1), dt.date(2026, 10, 1)))
+
+
+def window_error(start: str | None, end: str | None) -> str | None:
+    try:
+        parse_window(start, end)
+    except ValueError as e:
+        return str(e)
+    return None
+
+
+check("window missing end", "--window-end" in (window_error("2026-10-01", None) or ""), True)
+check("window bad format", "YYYY-MM-DD" in (window_error("10/01/2026", "2026-10-31") or ""), True)
+check("window reversed", "after" in (window_error("2026-10-31", "2026-10-01") or ""), True)
+check("window too long", "maximum" in (window_error("2025-10-01", "2026-10-31") or ""), True)
+check("max span", FULL_EXPORT_MAX_SPAN_DAYS, 93)
+
+# A file with no row in the window is not that window's export: error, so
+# nothing is posted that could mark the whole window deleted.
+errs, warns = full_export_check(csv_bytes([row("Turn Clean", "2026-09-30")]), *oct_window)
+check("no rows in window -> error", len(errs), 1)
+
+errs, warns = full_export_check(
+    csv_bytes([row("Turn Clean", "2026-10-02"), row("Departure Clean", "2026-10-31"), row("Turn Clean", "2026-11-01")]),
+    *oct_window,
+)
+check("rows in window -> no error", errs, [])
+check("row outside window -> warning", len(warns), 1)
+
+errs, warns = full_export_check(csv_bytes([row("Turn Clean", "2026-10-15"), row("Air Filter Change", "")]), *oct_window)
+check("blank due ignored", (errs, warns), ([], []))
 
 if failures:
     print("FAILED:")

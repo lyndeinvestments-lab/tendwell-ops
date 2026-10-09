@@ -42,6 +42,9 @@ import {
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
+import {
+  REDO_DECISION_LABELS, REDO_PENDING_FLAG, redoDecisionFromNote, withRedoDecision, type RedoDecision,
+} from '@shared/invoice-redo'
 import { RESOLVE_NOTE_FLAGS, flagsNeedingResolveNote, resolveNoteOk } from '@shared/invoice-review'
 import { chargeHasEvidence, evidenceLinkOk } from '@shared/vendor-invoice'
 
@@ -1810,6 +1813,19 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   const [saveChannelToClient, setSaveChannelToClient] = useState(true)
   const isExpenseKind = lineKind === 'operating_expense' || lineKind === 'excluded'
 
+  // A callback / reclean followed this clean: the decision is a token in the
+  // review note (shared/invoice-redo.ts). "No charge" zeroes the client
+  // charge, which is what the Approve gate checks it against.
+  const isRedoLine = (line.flags ?? []).includes(REDO_PENDING_FLAG)
+  const redoDecision = redoDecisionFromNote(reviewNote)
+  function chooseRedoDecision(d: RedoDecision) {
+    setReviewNote(withRedoDecision(reviewNote, d))
+    if (d === 'no_charge') setClientCharge('0')
+    else if (Number(clientCharge || 0) === 0 && line.client_charge_amount != null && Number(line.client_charge_amount) !== 0) {
+      setClientCharge(String(line.client_charge_amount))
+    }
+  }
+
   const clientQuery = useQuery<ClientChannelInfo | null>({
     queryKey: ['invoicing-property-client', propertyId],
     enabled: propertyId != null,
@@ -2219,6 +2235,31 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
                   />
                   <span>Save as {clientInfo.full_name ?? 'this client'}’s billing channel for future invoices</span>
                 </label>
+              )}
+            </div>
+          )}
+          {isRedoLine && (
+            <div className="space-y-1.5">
+              <Label>
+                Redo decision{' '}
+                <span className="text-muted-foreground font-normal">(required before approving)</span>
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {(['bill', 'no_charge'] as const).map(d => (
+                  <Button
+                    key={d}
+                    type="button"
+                    size="sm"
+                    variant={redoDecision === d ? 'default' : 'outline'}
+                    onClick={() => chooseRedoDecision(d)}
+                    data-testid={`button-redo-${d}`}
+                  >
+                    {REDO_DECISION_LABELS[d]}
+                  </Button>
+                ))}
+              </div>
+              {redoDecision == null && (
+                <p className="text-2xs text-warning">Pick one: Approve refuses this line until it carries a decision.</p>
               )}
             </div>
           )}
