@@ -2361,7 +2361,7 @@ export type Database = {
           applied_at: string | null
           applied_line_id: string | null
           applied_run_id: string | null
-          contact_id: string
+          contact_id: string | null
           created_at: string
           created_by: string | null
           evidence_url: string | null
@@ -2380,7 +2380,7 @@ export type Database = {
           applied_at?: string | null
           applied_line_id?: string | null
           applied_run_id?: string | null
-          contact_id: string
+          contact_id?: string | null
           created_at?: string
           created_by?: string | null
           evidence_url?: string | null

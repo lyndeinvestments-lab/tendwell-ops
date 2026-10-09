@@ -44,7 +44,7 @@ interface ContactLite {
 
 interface OpenCredit {
   id: string
-  contact_id: string
+  contact_id: string | null // null: client permanently deleted
   amount: number | string
   reason: string
   evidence_url: string | null
@@ -123,11 +123,14 @@ export function OpenCreditsPanel({ userLabel }: { userLabel: string }) {
 
   const groups = useMemo(() => {
     const byClient = new Map<string, { name: string; credits: OpenCredit[]; total: number }>()
+    // A credit whose client was permanently deleted keeps its history but can
+    // never be applied; list it under its own heading.
     for (const c of creditsQuery.data ?? []) {
-      const g = byClient.get(c.contact_id) ?? { name: clientName(one(c.contacts)), credits: [], total: 0 }
+      const key = c.contact_id ?? '(deleted client)'
+      const g = byClient.get(key) ?? { name: c.contact_id ? clientName(one(c.contacts)) : 'Deleted client (cannot be applied)', credits: [], total: 0 }
       g.credits.push(c)
       g.total = Math.round((g.total + Number(c.amount)) * 100) / 100
-      byClient.set(c.contact_id, g)
+      byClient.set(key, g)
     }
     return Array.from(byClient.values()).sort((a, b) => a.name.localeCompare(b.name))
   }, [creditsQuery.data])
