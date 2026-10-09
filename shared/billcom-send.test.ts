@@ -69,6 +69,11 @@ describe('status rules', () => {
     expect(billComLineSendable({ contactId: null, serviceMonth: '2026-08' }, states)).toBe(false)
     expect(states.size).toBe(0)
   })
+  it('a credit whose client was deleted (adjustment contact_id null) falls back to its property', () => {
+    const m = creditClientsByLine([{ applied_line_id: 'L1', contact_id: null, contacts: null }])
+    expect(m.size).toBe(0)
+    expect(lineClient({ id: 'L1', propertyContactId: null, propertyClientName: null }, m)).toEqual({ contactId: null, clientName: null })
+  })
   it('send control only on approved or exported runs', () => {
     expect(runAllowsSendControl('approved')).toBe(true)
     expect(runAllowsSendControl('exported')).toBe(true)
