@@ -60,6 +60,7 @@ export const alertsEn = {
   category: {
     all: 'All',
     financial: 'Financial',
+    billing: 'Billing',
     data_quality: 'Data Quality',
     maintenance: 'Maintenance',
     inventory: 'Inventory',

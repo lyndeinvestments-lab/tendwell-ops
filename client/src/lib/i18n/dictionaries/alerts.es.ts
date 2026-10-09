@@ -42,6 +42,7 @@ export const alertsEs: typeof alertsEn = {
   category: {
     all: 'Todas',
     financial: 'Financiero',
+    billing: 'Facturación',
     data_quality: 'Calidad de Datos',
     maintenance: 'Mantenimiento',
     inventory: 'Inventario',

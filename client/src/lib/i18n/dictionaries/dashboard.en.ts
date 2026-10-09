@@ -53,6 +53,7 @@ export const dashboardEn = {
     badgeOverdue: 'Overdue',
     badgeToday: 'Today',
     badgeStalled: 'Stalled',
+    badgeBilling: 'Billing',
     viewAllAlerts: 'View all alerts →',
   },
   attention: {

@@ -2788,6 +2788,7 @@ export type Database = {
           invoice_date: string | null
           invoice_number: string | null
           lock_until: string | null
+          paid_at: string | null
           period_end: string | null
           period_start: string | null
           qbo_invoice_no: number | null
@@ -2818,6 +2819,7 @@ export type Database = {
           invoice_date?: string | null
           invoice_number?: string | null
           lock_until?: string | null
+          paid_at?: string | null
           period_end?: string | null
           period_start?: string | null
           qbo_invoice_no?: number | null
@@ -2848,6 +2850,7 @@ export type Database = {
           invoice_date?: string | null
           invoice_number?: string | null
           lock_until?: string | null
+          paid_at?: string | null
           period_end?: string | null
           period_start?: string | null
           qbo_invoice_no?: number | null
