@@ -312,6 +312,7 @@ export const APPROVED_EXTRA_SERVICES = [
   'Mailed Left Items by the Guest',
   'Hot Tub Refresh Requested by Guest',
   'Pet Fee',
+  'Last-Minute Surcharge',
 ] as const
 
 // Base services a vendor may also bill on their own, without a clean, from the
@@ -578,11 +579,16 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
 //     └ 2026-10-08: deliveries moved to Trip Fee (Haven's title for a trip
 //       to the property). Trip Fee takes the same $50 deliveries were
 //       already billed at, so no client price changed.
+//     └ 2026-10-09: Reimbursement left this list. A reimbursement is money
+//       the vendor fronted, so it bills at the receipt amount (client charge
+//       = cleaner pay = the vendor's line amount), never a flat $50 that
+//       over-billed a $12 purchase and under-billed an $86 propane tank. See
+//       reimbursementAtCost.
 //   Pet / Dog-hair Fee            44.44 → 45        23.50 → 25
 //
 // Types with no history (Mailed Left Items, Extra Cleaning / maintenance,
-// Double Clean) are deliberately absent: they keep the old
-// pass-through-and-review behavior rather than getting an invented price.
+// Double Clean, Last-Minute Surcharge) are deliberately absent: they keep the
+// old pass-through-and-review behavior rather than getting an invented price.
 export interface StandardFee {
   charge: number
   // Price when the property has a hot tub, for fees whose work includes it.
@@ -596,7 +602,6 @@ export const STANDARD_EXTRA_PRICING: Readonly<Record<string, StandardFee>> = {
   'Excessive Trash Pickup': { charge: 50, costRef: 30 },
   'Vacancy Clean / Touch Up Clean': { charge: 50, hotTubCharge: 65, costRef: 25 },
   'Linen Pull': { charge: 50, costRef: 40 },
-  'Reimbursement': { charge: 50, costRef: 25 },
   'Trip Fee': { charge: 50, costRef: 25 },
   'Pet Fee': { charge: 45, costRef: 25 },
 }
@@ -1045,15 +1050,41 @@ function requireReason(line: EngineLine, note: string | null): EngineLine {
   return line
 }
 
+/** A reimbursement bills at the receipt amount: the client is charged exactly
+ *  what the vendor fronted and the vendor is paid it back. With no amount
+ *  there is nothing to bill, so the line queues for a human to enter the
+ *  receipt total. */
+export function reimbursementAtCost(rawAmount: number): { amount: number | null; review: boolean } {
+  if (!Number.isFinite(rawAmount) || rawAmount <= PENNY) return { amount: null, review: true }
+  return { amount: round2(rawAmount), review: false }
+}
+
 // Price a standalone extra from the fee list (or the client's override).
 // Returns null for an unpriced type so the caller keeps its own fallback.
 // On the unprofitable case the note names the price that was compared
-// against, never the floor the charge was bumped to.
+// against, never the floor the charge was bumped to. Reimbursements bill at
+// cost and a Last-Minute Surcharge (no price yet) always queues, so neither
+// falls back to a caller's generic path.
 function priceStandaloneExtra(
   line: EngineLine,
   rawAmount: number,
   property: PropertyRates | null,
 ): EngineLine | null {
+  if (line.serviceType === 'Reimbursement') {
+    const cost = reimbursementAtCost(rawAmount)
+    const out: EngineLine = { ...line, cleanerPayAmount: cost.amount, clientChargeAmount: cost.amount }
+    if (!cost.review) return out
+    return withNote(
+      needsReview(out, FLAGS.MISSING_RATE),
+      'Reimbursement with no amount: enter the receipt total as both the invoiced amount and the client charge (it bills at cost).',
+    )
+  }
+  if (line.serviceType === 'Last-Minute Surcharge') {
+    return withNote(
+      needsReview({ ...line, clientChargeAmount: round2(rawAmount) }, FLAGS.MISSING_RATE),
+      `Last-Minute Surcharge billed ${usd(rawAmount)}: there is no standard price yet, so confirm the pay and set the client charge.`,
+    )
+  }
   const priced = standardExtraCharge(line.serviceType, rawAmount, property)
   if (!priced) return null
   let out: EngineLine = { ...line, clientChargeAmount: round2(priced.charge) }

@@ -95,6 +95,18 @@ describe('validateVendorItem — extras', () => {
     expect(validateVendorItem({ ...pet, receipt_path: 'vendor-portal/v/r/photo.jpg' }, ctx).ok).toBe(true)
   })
 
+  it('only a Slack or photo link satisfies the evidence rule, matching the approve gate', () => {
+    const pet = { ...extra, service_type: 'Pet Fee', description: 'Heavy dog hair on every couch and bed' }
+    expect(validateVendorItem({ ...pet, evidence_url: 'https://example.com/page' }, ctx).errors.evidence_url).toBe('evidence_required')
+    expect(validateVendorItem({ ...pet, evidence_url: 'https://drive.google.com/file/d/abc' }, ctx).ok).toBe(true)
+  })
+
+  it('offers a Last-Minute Surcharge, and it needs evidence too', () => {
+    const lm = { ...extra, service_type: 'Last-Minute Surcharge', description: 'Booked at 9pm for a 10am turn' }
+    expect(validateVendorItem(lm, ctx).errors.evidence_url).toBe('evidence_required')
+    expect(validateVendorItem({ ...lm, evidence_url: 'https://tendwell.slack.com/archives/C08/p9' }, ctx).ok).toBe(true)
+  })
+
   it('rejects a non-https evidence link', () => {
     expect(validateVendorItem({ ...extra, evidence_url: 'javascript:alert(1)' }, ctx).errors.evidence_url).toBe('invalid_url')
     expect(validateVendorItem({ ...extra, evidence_url: 'http://example.com' }, ctx).errors.evidence_url).toBe('invalid_url')
