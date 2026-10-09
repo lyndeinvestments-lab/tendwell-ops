@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  isTestVendorName,
   validatePeriod,
   validateVendorItem,
   vendorNotices,
@@ -163,5 +164,21 @@ describe('vendorRunStatus', () => {
     expect(vendorRunStatus({ status: 'draft', submitted_at: '2026-10-11T10:00:00Z', returned_at: '2026-10-11T12:00:00Z' })).toBe('returned')
     expect(vendorRunStatus({ status: 'exported' })).toBe('approved')
     expect(vendorRunStatus({ status: 'void' })).toBe('void')
+  })
+})
+
+describe('isTestVendorName', () => {
+  it('matches the verify scripts\' throwaway vendors, any case', () => {
+    expect(isTestVendorName('ZZ E2E Vendor 1759')).toBe(true)
+    expect(isTestVendorName('ZZ Portal Test Vendor 1759')).toBe(true)
+    expect(isTestVendorName('zz e2e vendor')).toBe(true)
+  })
+  it('never matches a real vendor or an empty name', () => {
+    expect(isTestVendorName('Busy Bee Cleaning')).toBe(false)
+    expect(isTestVendorName('ZZTop Cleaning')).toBe(false)
+    expect(isTestVendorName('Fuzz Cleaning')).toBe(false)
+    expect(isTestVendorName('')).toBe(false)
+    expect(isTestVendorName(null)).toBe(false)
+    expect(isTestVendorName(undefined)).toBe(false)
   })
 })
