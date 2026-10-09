@@ -530,6 +530,9 @@ export type Database = {
           completed_date: string | null
           created_date: string | null
           department: string | null
+          disappeared_at: string | null
+          disappeared_batch: string | null
+          disappeared_prev_status: string | null
           due_date: string | null
           external_id: string
           id: string
@@ -553,6 +556,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id: string
           id?: string
@@ -576,6 +582,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id?: string
           id?: string

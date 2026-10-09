@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
+import { REDO_PENDING_FLAG, redoBlocker, type RedoCheckLine } from '../../shared/invoice-redo.js'
 
 // A line that is holding up Approve. Every guard below reports these, because
 // a bare count ("2 billable line(s) have no billing channel") is unfindable on
@@ -56,6 +57,19 @@ export function vendorInvoicedSum(rows: ReadonlyArray<{ line_no: number; raw_amo
     if (r.split_group == null || r.line_kind !== 'extra') base.set(r.line_no, Number(r.raw_amount ?? 0))
   }
   return Math.round([...base.values()].reduce((a, n) => a + n, 0) * 100) / 100
+}
+
+/** Redo-flagged lines that still lack a usable bill / no-charge decision.
+ *  Rows sharing a line_no are one vendor line, reported once. */
+export function undecidedRedoLines<T extends BlockingLine & RedoCheckLine>(rows: ReadonlyArray<T>): BlockingLine[] {
+  const out: BlockingLine[] = []
+  const seen = new Set<number>()
+  for (const r of rows) {
+    if (seen.has(r.line_no) || redoBlocker(r) == null) continue
+    seen.add(r.line_no)
+    out.push({ line_no: r.line_no, raw_property_text: r.raw_property_text, raw_amount: r.raw_amount })
+  }
+  return out
 }
 
 const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
@@ -225,6 +239,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       })
       return
     }
+  }
+
+  // Redos: a clean followed by a callback / reclean within a week needs an
+  // explicit decision, "bill" (charge stands) or "no charge" (our fault, client
+  // charge 0). Checked before the generic review count so the message names
+  // the decision, and again on resolved rows: a bulk Resolve must not wave a
+  // redo through without one (shared/invoice-redo.ts).
+  let undecidedRedos: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<BlockingLine & RedoCheckLine>(
+      'invoice_lines (redo decisions)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, flags, review_status, line_kind, review_note, client_charge_amount')
+        .eq('run_id', runId)
+        .contains('flags', [REDO_PENDING_FLAG])
+        .order('line_no'),
+      'line_no',
+    )
+    undecidedRedos = undecidedRedoLines(rows)
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check redo decisions', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (undecidedRedos.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${undecidedRedos.length} clean line(s) were followed by a redo/callback and have no decision. ${describeLines(undecidedRedos)} Open each line and choose "Bill" (the charge stands) or "No charge" (the redo was our fault; client charge 0).`,
+      blocking_lines: undecidedRedos,
+    })
+    return
   }
 
   const { count, error: cntErr } = await supabase

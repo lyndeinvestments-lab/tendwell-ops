@@ -3,12 +3,14 @@ import {
   AUX_CATEGORIES,
   BILLABLE_AUX_CATEGORIES,
   DEFAULT_EXTRA_PRICING,
+  DISAPPEARED_TASK_STATUS,
   auxCharge,
   auxPrice,
   feeOverridesByContact,
   classifyAuxTask,
   daysBetween,
   isBillableCategory,
+  isTaskCancelled,
   isTaskCompleted,
   matchObservationToTask,
   resolveAuxSettings,
@@ -63,6 +65,10 @@ const VOCABULARY: Array<[string, AuxCategory]> = [
   ['Cleaner Callback', 'callback'],
   ['Cleaner: Callback', 'callback'],
   ['Cleaner callback needed today - bathrooms, stained bedding...', 'callback'],
+  // Same thing as a callback; used to fall through to billable extra_cleaning.
+  ['Reclean master bath', 'callback'],
+  ['Re-clean', 'callback'],
+  ['Redo bathrooms', 'callback'],
   ['Cleaning Inspection', 'inspection'],
   ['Touch Up Inspection', 'touch_up'], // a touch-up that was inspected is still touch-up work
   ['Urgent cleaner inspection', 'inspection'],
@@ -238,6 +244,17 @@ describe('billability & pricing settings', () => {
     const s = resolveAuxSettings({ pricing: '{not json', billable: 42 })
     expect(auxCharge('Linen Pull', s)).toBe(50)
     expect(isBillableCategory('hot_tub', s)).toBe(true)
+  })
+})
+
+describe('isTaskCancelled', () => {
+  it('covers cancelled tasks and tasks that disappeared from a full Breezeway export', () => {
+    expect(isTaskCancelled(DISAPPEARED_TASK_STATUS)).toBe(true)
+    expect(isTaskCancelled('CANCELLED')).toBe(true)
+    expect(isTaskCancelled('Canceled')).toBe(true)
+    expect(isTaskCancelled('Deleted')).toBe(true)
+    expect(isTaskCancelled('Closed')).toBe(false)
+    expect(isTaskCancelled(null)).toBe(false)
   })
 })
 

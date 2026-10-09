@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { redoBlocker } from '@shared/invoice-redo'
 
 /**
  * Shared domain types + API helpers for the Invoicing feature (client-side
@@ -96,6 +97,7 @@ export const FLAG_LABELS: Record<string, string> = {
   possible_duplicate: 'Possible duplicate task that day',
   late_item: 'Dated before the invoice period',
   completed_off_date: 'Task closed on a different day',
+  redo_pending: 'Redo after this clean: bill or no charge?',
 }
 
 export function flagLabel(flag: string): string {
@@ -253,6 +255,9 @@ export function lineIssues(l: InvoiceLine): string[] {
   if ((l.flags ?? []).includes('suspect_service_date')) {
     out.push('Service date looks wrong')
   }
+  // Mirrors the redo-decision guard in api/invoices/approve.ts.
+  const redo = redoBlocker(l)
+  if (redo) out.push(redo)
   if (l.review_status === 'needs_review') {
     out.push('Needs review')
   }

@@ -155,7 +155,10 @@ const RULES: Array<{ re: RegExp; category: AuxCategory }> = [
   { re: /vacancy\s*clean/i, category: 'vacancy_clean' },
   { re: /self.?in?spection/i, category: 'self_inspection' },
   { re: /pre.?owner|owner\s*stay|property\s*walkthrough|\bwalkthrough\b/i, category: 'owner_walkthrough' },
-  { re: /\bcall\s*back\b|\bcallback\b/i, category: 'callback' },
+  // A reclean / redo is the same thing as a callback: the cleaner fixing their
+  // own work. Without this, "Re-clean" fell through to the catch-all clean
+  // rule below and became a billable Extra Cleaning.
+  { re: /\bcall\s*back\b|\bcallback\b|\bre\s*-?\s*clean(s|ed|ing)?\b|\bre\s*-?\s*do(ne)?\b/i, category: 'callback' },
 
   // Specific billable work. Delivery verbs before hot_tub so "Drop off
   // bromine tabs for hot tub" is a supply run, not a refresh.
@@ -376,8 +379,14 @@ export function isTaskCompleted(
   return s === 'closed' || s === 'finished' || s === 'completed' || s === 'done'
 }
 
+/** Status the Breezeway import writes on a task that vanished from a full
+ *  re-export of its window (api/tasks/breezeway-import.ts, full_export mode):
+ *  Haven deleted or cancelled it, so it is never evidence of work. */
+export const DISAPPEARED_TASK_STATUS = 'deleted_or_canceled'
+
 export function isTaskCancelled(status: string | null | undefined): boolean {
-  return /cancel/i.test(status ?? '')
+  const s = status ?? ''
+  return s === DISAPPEARED_TASK_STATUS || /cancel|delet/i.test(s)
 }
 
 // ─── Observation matching ──────────────────────────────────────────────────

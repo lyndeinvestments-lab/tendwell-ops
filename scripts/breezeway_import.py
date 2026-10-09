@@ -36,6 +36,15 @@ Env:
   BUSINESS_TZ                  default America/New_York
   UNMATCHED_WARN_THRESHOLD     default 10
 
+FULL-EXPORT MODE (opt-in, manual only): `--full-export --window-start
+YYYY-MM-DD --window-end YYYY-MM-DD` declares that the ONE selected file is
+Breezeway's complete list of tasks due in that window. The endpoint then marks
+every breezeway_tasks row due in the window that is missing from the file as
+`deleted_or_canceled` (rows are never deleted). It refuses, writing nothing,
+when that would mark more than 25% of the window's tasks or 50 tasks
+(whichever is smaller) unless `--force` is also given. The daily scheduled
+run never passes these flags.
+
 Exit codes: 0 all posted, 1 something failed (or nothing found).
 """
 
@@ -85,6 +94,10 @@ DEFAULT_LOOKBACK_HOURS = 30
 POST_ATTEMPTS = 3
 POST_TIMEOUT_S = 120
 MAX_FILES = 40
+
+# Mirrors FULL_EXPORT_MAX_SPAN_DAYS in api/tasks/breezeway-import.ts: a
+# full-export window longer than this is almost certainly a typo.
+FULL_EXPORT_MAX_SPAN_DAYS = 93
 
 
 # --------------------------------------------------------------------------
@@ -329,14 +342,88 @@ def month_str(m: tuple[int, int] | None) -> str:
 
 
 # --------------------------------------------------------------------------
+# full-export mode
+# --------------------------------------------------------------------------
+
+
+def parse_window(start: str | None, end: str | None) -> tuple[dt.date, dt.date]:
+    """Validate a full-export window. Raises ValueError with a readable message."""
+    if not start or not end:
+        raise ValueError("--full-export needs both --window-start and --window-end (YYYY-MM-DD)")
+    try:
+        s = dt.date.fromisoformat(start)
+        e = dt.date.fromisoformat(end)
+    except ValueError:
+        raise ValueError(f"window dates must be YYYY-MM-DD, got {start!r} and {end!r}") from None
+    if s > e:
+        raise ValueError(f"--window-start {s} is after --window-end {e}")
+    span = (e - s).days + 1
+    if span > FULL_EXPORT_MAX_SPAN_DAYS:
+        raise ValueError(f"full-export window is {span} days; the maximum is {FULL_EXPORT_MAX_SPAN_DAYS}")
+    return s, e
+
+
+def full_export_check(data: bytes, start: dt.date, end: dt.date) -> tuple[list[str], list[str]]:
+    """(errors, warnings) for posting this CSV as the full export of [start, end].
+
+    No row due inside the window means the file is not that window's export
+    at all (wrong file or wrong dates), which would mark every task in the
+    window as deleted: an error. Rows due outside the window are only a
+    warning; they upsert normally and are never marked.
+    """
+    text = data.decode("utf-8-sig", errors="replace")
+    inside = outside = 0
+    for row in csv.DictReader(io.StringIO(text)):
+        due = parse_due_date(row.get("Due date"))
+        if due is None:
+            continue
+        if start <= due <= end:
+            inside += 1
+        else:
+            outside += 1
+    errors: list[str] = []
+    warnings: list[str] = []
+    if inside == 0:
+        errors.append(f"no row is due between {start} and {end}; this is not a full export of that window")
+    if outside:
+        warnings.append(f"{outside} row(s) are due outside {start}..{end}; they import normally and are never marked")
+    return errors, warnings
+
+
+def build_import_url(
+    base_url: str,
+    label: str | None,
+    full_window: tuple[dt.date, dt.date] | None = None,
+    force: bool = False,
+) -> str:
+    """Endpoint URL. The full-export params are only ever added when asked for."""
+    params: list[str] = []
+    if label:
+        params.append(f"source={label}")
+    if full_window is not None:
+        params.append("full_export=true")
+        params.append(f"window_start={full_window[0].isoformat()}")
+        params.append(f"window_end={full_window[1].isoformat()}")
+        if force:
+            params.append("force=true")
+    url = f"{base_url.rstrip('/')}/api/tasks/breezeway-import"
+    return f"{url}?{'&'.join(params)}" if params else url
+
+
+# --------------------------------------------------------------------------
 # POST
 # --------------------------------------------------------------------------
 
 
-def post_csv(base_url: str, key: str, label: str | None, data: bytes) -> dict[str, Any]:
-    url = f"{base_url.rstrip('/')}/api/tasks/breezeway-import"
-    if label:
-        url += f"?source={label}"
+def post_csv(
+    base_url: str,
+    key: str,
+    label: str | None,
+    data: bytes,
+    full_window: tuple[dt.date, dt.date] | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    url = build_import_url(base_url, label, full_window, force)
     headers = {"Content-Type": "text/csv", "x-tendwell-import-key": key}
 
     last_err = "unknown error"
@@ -430,7 +517,29 @@ def main() -> int:
     )
     ap.add_argument("--file-id", action="append", default=[], help="Import a specific Drive file id (repeatable).")
     ap.add_argument("--dry-run", action="store_true", help="Download and classify, but do not POST.")
+    ap.add_argument(
+        "--full-export",
+        action="store_true",
+        help="Declare the ONE selected file a complete export of --window-start..--window-end: tasks due in "
+        "that window that are missing from it are marked deleted_or_canceled. Never used by the daily run.",
+    )
+    ap.add_argument("--window-start", help="Full-export window start (YYYY-MM-DD, inclusive, by Due date).")
+    ap.add_argument("--window-end", help="Full-export window end (YYYY-MM-DD, inclusive, by Due date).")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Full export only: allow marking more than 25%% of the window (or more than 50 tasks).",
+    )
     args = ap.parse_args()
+
+    full_window: tuple[dt.date, dt.date] | None = None
+    if args.full_export:
+        try:
+            full_window = parse_window(args.window_start, args.window_end)
+        except ValueError as e:
+            die(str(e))
+    elif args.window_start or args.window_end or args.force:
+        die("--window-start, --window-end and --force only apply with --full-export")
 
     base_url = env("TENDWELL_BASE_URL", "https://app.tendwellcleaningco.com")
     folder_id = env("DRIVE_FOLDER_ID", required=True)
@@ -470,6 +579,14 @@ def main() -> int:
         write_step_summary(["## Breezeway import — FAILED", "", msg])
         notify_slack(f":rotating_light: Breezeway import found no CSVs to import. {msg}")
         return 1
+
+    # A full export compares the window against ONE file. Posting two would
+    # have each mark the other's tasks as deleted.
+    if full_window is not None and len(files) != 1:
+        die(
+            f"--full-export needs exactly one file, but {len(files)} matched {scope}. "
+            "Pick it with --file-id."
+        )
 
     # Oldest first so that when two exports overlap, the newer one lands last
     # and wins on the shared external_id rows.
@@ -513,17 +630,45 @@ def main() -> int:
         if summary.label is None:
             log("::warning::no parseable Due date in any row; posting without a source label")
 
+        if full_window is not None:
+            fx_errors, fx_warnings = full_export_check(data, *full_window)
+            for w in fx_warnings:
+                log(f"::warning::full export: {w}")
+            if fx_errors:
+                err = "full export: " + "; ".join(fx_errors)
+                log(f"::error::{err}")
+                results.append(Result(file=f, label=summary.label, summary=summary, error=err))
+                continue
+            log(
+                f"  FULL EXPORT of {full_window[0]}..{full_window[1]}"
+                f"{' (force)' if args.force else ''}: missing tasks in the window will be marked deleted_or_canceled"
+            )
+
         if args.dry_run:
             log("  dry run — not posting")
             results.append(Result(file=f, label=summary.label, summary=summary, skipped=True))
             continue
 
         try:
-            body = post_csv(base_url, import_key, summary.label, data)
+            body = post_csv(base_url, import_key, summary.label, data, full_window, args.force)
         except RuntimeError as e:
             log(f"::error::POST failed: {e}")
             results.append(Result(file=f, label=summary.label, summary=summary, error=str(e)))
             continue
+
+        if full_window is not None:
+            fx = body.get("full_export") or {}
+            log(
+                f"  full export: {fx.get('marked', 0)} of {fx.get('missing', '?')} missing task(s) marked "
+                f"(window {fx.get('window_tasks', '?')} tasks, limit {fx.get('limit', '?')})"
+            )
+            if not fx.get("applied"):
+                # The rows still imported; the disappearance marking did not.
+                reason = fx.get("error") or fx.get("skipped_reason") or "endpoint did not report full_export"
+                err = f"rows imported but full export not applied: {reason}"
+                log(f"::error::{err}")
+                results.append(Result(file=f, label=summary.label, summary=summary, response=body, error=err))
+                continue
 
         log(
             f"  posted: {body.get('rows_upserted')} upserted, "
@@ -557,7 +702,7 @@ def main() -> int:
     lines.append("|---|---|---:|---:|---:|---:|---:|---|")
     for r in results:
         b = r.response or {}
-        status = "dry run" if r.skipped else ("ok" if r.response else f"FAILED — {r.error}")
+        status = "dry run" if r.skipped else ("ok" if r.ok else f"FAILED: {r.error}")
         lines.append(
             f"| `{r.file.name}` | {r.label or '—'} | {r.summary.rows if r.summary else '—'} "
             f"| {b.get('rows_upserted', '—')} | {b.get('cleans_in_batch', '—')} "
