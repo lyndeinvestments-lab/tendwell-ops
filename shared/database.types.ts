@@ -1433,7 +1433,7 @@ export type Database = {
         Update: {
           billcom_invoice_number?: string | null
           billing_channel?: string
-          contact_id?: string
+          contact_id?: string | null
           created_at?: string
           hold_reason?: string | null
           id?: string
@@ -2547,7 +2547,7 @@ export type Database = {
           applied_at?: string | null
           applied_line_id?: string | null
           applied_run_id?: string | null
-          contact_id?: string
+          contact_id?: string | null
           created_at?: string
           created_by?: string | null
           evidence_url?: string | null
@@ -6380,7 +6380,70 @@ export type Database = {
             foreignKeyName: "property_rate_history_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
             referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
             referencedColumns: ["id"]
           },
         ]
