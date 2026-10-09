@@ -7,6 +7,7 @@
 // flag + review_status='needs_review' and surfaces in the review queue.
 
 import type { FeeOverride } from '../../shared/aux-tasks.js'
+import { CHARGE_CHANGED_FLAG, NOT_HAVEN_LISTING_FLAG } from '../../shared/invoice-review.js'
 export type { FeeOverride }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -174,6 +175,22 @@ export interface EngineInput {
   // Trellis clean whenever Breezeway has a completed one that day). Absent =
   // no Trellis data → Breezeway completions are taken at face value.
   trellisCoverage?: TrellisCoverage
+  // Client charges on the most recent approved/exported invoices, for the
+  // charge-changed check. Absent or empty = no history, nothing is flagged.
+  previousCharges?: ReadonlyArray<PreviousCharge>
+  // Ops properties that have a matched Hostaway listing (Haven's listings).
+  // null/absent = the snapshot is empty or unreadable: the check is skipped so
+  // a failed Hostaway sync cannot put every Haven line into review.
+  havenListingPropertyIds?: ReadonlySet<number> | null
+}
+
+/** A client charge billed on an approved/exported invoice. */
+export interface PreviousCharge {
+  propertyId: number
+  serviceType: string
+  charge: number
+  date: string // yyyy-mm-dd service date (falls back to the invoice date)
+  ref: string // human label, e.g. "invoice 1095"
 }
 
 export interface TrellisCoverage {
@@ -266,6 +283,14 @@ export const FLAGS = {
   // as "Owner Stay - Departure Clean" / "Owner Stay - Turn Clean" so Haven's
   // QBO class rules route it to the owner.
   OWNER_STAY: 'owner_stay',
+  // The client charge differs from the one on the most recent approved/exported
+  // line for the same property and service. A price that moves between
+  // invoices should be a decision someone wrote down, never a side effect of
+  // an edit to the property's rate. Resolving it requires a note.
+  CHARGE_CHANGED_SINCE_LAST_INVOICE: CHARGE_CHANGED_FLAG,
+  // Billed to Haven (QuickBooks channel) but the property has no matched
+  // Hostaway listing, so it is probably not Haven's. Resolving requires a note.
+  NOT_HAVEN_LISTING: NOT_HAVEN_LISTING_FLAG,
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -1793,6 +1818,89 @@ function markOwnerStay(
   })
 }
 
+// ─── Rate-change guard + Haven-listing check ─────────────────────────────────
+
+/** Lines the two checks apply to: billed to a client and tied to a property. */
+function isBilledPropertyLine(l: EngineLine): boolean {
+  return l.propertyId != null && l.lineKind !== 'excluded' && l.lineKind !== 'operating_expense' && l.reviewStatus !== 'excluded'
+}
+
+// Unlike withNote (first writer wins), these checks run after classification,
+// so they append to whatever explanation is already there.
+function appendNote(line: EngineLine, text: string): EngineLine {
+  return { ...line, engineNote: line.engineNote ? `${line.engineNote} ${text}` : text }
+}
+
+/** What a property+service was last billed at. Several lines can share the
+ *  latest date with different charges (an onboarding clean is a base row plus
+ *  a $50 surcharge row), so every distinct charge on that date is kept. */
+export interface LastCharge {
+  date: string
+  ref: string
+  charges: number[]
+}
+
+const lastChargeKey = (propertyId: number, serviceType: string) => `${propertyId}|${serviceType}`
+
+/** Index the client charges by property + service, keeping the most recent
+ *  date. Zero/blank charges are skipped: a $0 row is a deliberate no-charge
+ *  (onboarding_not_first_clean, owner comps), not a price to compare against. */
+export function lastChargeIndex(prev: ReadonlyArray<PreviousCharge> | undefined): Map<string, LastCharge> {
+  const out = new Map<string, LastCharge>()
+  for (const p of prev ?? []) {
+    if (!(p.charge > 0) || !p.serviceType) continue
+    const key = lastChargeKey(p.propertyId, p.serviceType)
+    const charge = round2(p.charge)
+    const cur = out.get(key)
+    if (!cur || p.date > cur.date) out.set(key, { date: p.date, ref: p.ref, charges: [charge] })
+    else if (p.date === cur.date && !cur.charges.some(c => Math.abs(c - charge) <= PENNY)) cur.charges.push(charge)
+  }
+  return out
+}
+
+/** Flag a line whose client charge differs from the last approved/exported
+ *  charge for the same property and service. Skips lines with no charge, and
+ *  properties/services with no history. */
+export function checkChargeChanged(line: EngineLine, index: ReadonlyMap<string, LastCharge>): EngineLine {
+  if (!isBilledPropertyLine(line) || line.serviceType == null) return line
+  const charge = line.clientChargeAmount
+  if (charge == null || !(charge > 0)) return line
+  const last = index.get(lastChargeKey(line.propertyId!, line.serviceType))
+  if (!last) return line
+  const now = round2(charge)
+  if (last.charges.some(c => Math.abs(c - now) <= PENNY)) return line
+  const was = last.charges.map(usd).join(' / ')
+  return appendNote(
+    needsReview(line, FLAGS.CHARGE_CHANGED_SINCE_LAST_INVOICE),
+    `Charge changed: was ${was} on ${last.date} (${last.ref}), now ${usd(now)}. Confirm the new price is intended and say why in the review note.`,
+  )
+}
+
+/** Property ids that have a Hostaway listing, from the reconciliation rows.
+ *  Returns null when no listing is matched to a property (empty or never-synced
+ *  snapshot), so the caller skips the check instead of flagging every line. */
+export function havenListingIdsFromRows(
+  rows: ReadonlyArray<{ property_id: number | string | null }> | null | undefined,
+): Set<number> | null {
+  const ids = new Set<number>()
+  for (const r of rows ?? []) if (r.property_id != null) ids.add(Number(r.property_id))
+  return ids.size > 0 ? ids : null
+}
+
+/** Flag a Haven-billed line whose property has no matched Hostaway listing.
+ *  `listingPropertyIds` null/empty means the snapshot is unavailable, so
+ *  nothing is flagged (a failed sync must not block every Haven line). Lines
+ *  with no property (courier reimbursements) have nothing to look up. */
+export function checkHavenListing(line: EngineLine, listingPropertyIds: ReadonlySet<number> | null | undefined): EngineLine {
+  if (listingPropertyIds == null || listingPropertyIds.size === 0) return line
+  if (line.billingChannel !== 'qbo_haven' || !isBilledPropertyLine(line)) return line
+  if (listingPropertyIds.has(line.propertyId!)) return line
+  return appendNote(
+    needsReview(line, FLAGS.NOT_HAVEN_LISTING),
+    `Billed to Haven, but this property has no matched Hostaway listing, so it may not be a Haven property. Confirm it is Haven's (or change the billing channel) and say why in the review note.`,
+  )
+}
+
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
   const threshold = input.fuzzyThreshold ?? FUZZY_CONFIRM_THRESHOLD
   const propsById = new Map(input.properties.map(p => [p.id, p]))
@@ -1903,8 +2011,13 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
     }
   }
 
+  const lastCharges = lastChargeIndex(input.previousCharges)
+  for (let i = 0; i < outLines.length; i++) {
+    outLines[i] = checkHavenListing(checkChargeChanged(outLines[i], lastCharges), input.havenListingPropertyIds)
+  }
+
   const active = outLines.filter(l => l.lineKind !== 'excluded')
-  const matched = active.filter(l => l.lineKind !== 'operating_expense')
+  const matched =active.filter(l => l.lineKind !== 'operating_expense')
   const totalInvoiced = round2(input.lines.reduce((a, l) => a + l.rawAmount, 0))
   const totalCleanerPay = round2(active.reduce((a, l) => a + (l.cleanerPayAmount ?? 0), 0))
   const totalClientCharge = round2(matched.reduce((a, l) => a + (l.clientChargeAmount ?? 0), 0))

@@ -35,6 +35,24 @@ describe('lineIssues — property-less lines', () => {
   })
 })
 
+describe('lineIssues: flags that need a written explanation', () => {
+  const changed = { flags: ['charge_changed_since_last_invoice'], review_status: 'resolved' as const }
+
+  it('a resolved price-change line with no note still blocks approval', () => {
+    expect(lineIssues(line({ ...changed, review_note: null }))).toContain(
+      'Add a review note: say why the charge changed or why this property is billed to Haven',
+    )
+  })
+
+  it('a non-Haven listing billed to Haven needs the same note', () => {
+    expect(lineIssues(line({ flags: ['not_haven_listing'], review_status: 'resolved', review_note: null }))).toHaveLength(1)
+  })
+
+  it('passes once the note says why', () => {
+    expect(lineIssues(line({ ...changed, review_note: 'Owner agreed to the new rate on 10/1' }))).toEqual([])
+  })
+})
+
 describe('lineIssues — guest-recoverable charges need detail', () => {
   it('a vendor Trip Fee with no note is blocked like a reimbursement (1096 #258)', () => {
     expect(lineIssues(line({ service_type: 'Trip Fee', client_charge_amount: 50, matched_task_id: null, review_note: null }))).toContain(

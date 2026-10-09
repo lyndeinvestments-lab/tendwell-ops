@@ -6094,6 +6094,47 @@ export type Database = {
           },
         ]
       }
+      property_rate_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          field: string
+          id: string
+          new_value: number | null
+          old_value: number | null
+          property_id: number
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          field: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id: number
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          field?: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id?: number
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_supplies: {
         Row: {
           current_qty: number | null
@@ -9433,6 +9474,15 @@ export type Database = {
       set_my_locale: { Args: { p_locale: string }; Returns: undefined }
       set_my_ui_pref: {
         Args: { p_key: string; p_value: Json }
+        Returns: undefined
+      }
+      set_rate_with_reason: {
+        Args: {
+          p_field: string
+          p_property_id: number
+          p_reason: string
+          p_value: number
+        }
         Returns: undefined
       }
       staff_has_financial_view: { Args: never; Returns: boolean }
