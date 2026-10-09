@@ -1397,6 +1397,79 @@ export type Database = {
           },
         ]
       }
+      client_invoices: {
+        Row: {
+          billcom_invoice_number: string | null
+          billing_channel: string
+          contact_id: string | null
+          created_at: string
+          hold_reason: string | null
+          id: string
+          run_id: string
+          sent_at: string | null
+          sent_by: string | null
+          service_month: string
+          status: string
+          total: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          billcom_invoice_number?: string | null
+          billing_channel?: string
+          contact_id?: string | null
+          created_at?: string
+          hold_reason?: string | null
+          id?: string
+          run_id: string
+          sent_at?: string | null
+          sent_by?: string | null
+          service_month: string
+          status?: string
+          total?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          billcom_invoice_number?: string | null
+          billing_channel?: string
+          contact_id?: string
+          created_at?: string
+          hold_reason?: string | null
+          id?: string
+          run_id?: string
+          sent_at?: string | null
+          sent_by?: string | null
+          service_month?: string
+          status?: string
+          total?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_invoices_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_price_agreements: {
         Row: {
           accepted_clean_price: number | null
@@ -2529,6 +2602,7 @@ export type Database = {
       invoice_lines: {
         Row: {
           alias_confidence: number | null
+          bill_hold_reason: string | null
           billing_channel: string | null
           clean_claim_key: string | null
           cleaner_pay_amount: number | null
@@ -2560,6 +2634,7 @@ export type Database = {
         }
         Insert: {
           alias_confidence?: number | null
+          bill_hold_reason?: string | null
           billing_channel?: string | null
           clean_claim_key?: string | null
           cleaner_pay_amount?: number | null
@@ -2591,6 +2666,7 @@ export type Database = {
         }
         Update: {
           alias_confidence?: number | null
+          bill_hold_reason?: string | null
           billing_channel?: string | null
           clean_claim_key?: string | null
           cleaner_pay_amount?: number | null

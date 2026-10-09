@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import Papa from 'papaparse'
+import { creditClientsByLine, lineClient } from '../../shared/billcom-send.js'
 import { cleanReason, clientDescription, fmtUsd, fmtUsDate, qboClassFor, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 
 const RUN: ExportRun = {
@@ -477,6 +478,133 @@ describe('toBillComCsv', () => {
     expect(rows[1]).toContain('Ctn Black Bear Cub')
     expect(rows[1]).toContain('120.00')
     expect(csv).not.toContain('Haven Vacation Rentals')
+  })
+
+  it('without send-control state (migration pending) a hold reason changes nothing', () => {
+    const held = LINES.map(l => (l.billingChannel === 'bill_com' ? { ...l, lineNo: 2, billHoldReason: 'Client disputes it' } : l))
+    expect(toBillComCsv(RUN, held)).toBe(csv)
+    expect(toBillComCsv({ ...RUN, billComInvoices: null }, held)).toBe(csv)
+  })
+})
+
+describe('toBillComCsv with bill.com send control', () => {
+  const JANE = '11111111-1111-4111-8111-111111111111'
+  const BOB = '22222222-2222-4222-8222-222222222222'
+  const mk = (lineNo: number, contactId: string, client: string, prop: string, date: string, amt: number, extra: Partial<ExportLine> = {}): ExportLine => ({
+    lineKind: 'clean', serviceType: 'Turn Clean', serviceDate: date, propertyName: prop, clientName: client,
+    billingChannel: 'bill_com', cleanerPayAmount: amt / 2, clientChargeAmount: amt, note: null, reviewStatus: 'ok',
+    lineNo, contactId, ...extra,
+  })
+  const lines = [
+    mk(1, JANE, 'Jane Owner', 'Jane 101', '2026-08-05', 120),
+    mk(2, JANE, 'Jane Owner', 'Jane 101', '2026-08-06', 150),
+    mk(3, BOB, 'Bob Owner', 'Bob 202', '2026-08-06', 200),
+  ]
+  const parse = (csv: string) => Papa.parse<string[]>(csv, { skipEmptyLines: true }).data
+  const runWith = (states: ExportRun['billComInvoices']): ExportRun => ({ ...RUN, billComInvoices: states })
+
+  it('an approved client invoice is included', () => {
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), lines))
+    expect(rows.slice(1).map(r => r[7])).toEqual(['120.00', '150.00'])
+    expect(rows.slice(1).every(r => r[0] === 'Jane Owner')).toBe(true)
+  })
+
+  it('a held client invoice, and one with no row yet, is excluded', () => {
+    const rows = parse(toBillComCsv(runWith([
+      { contactId: JANE, serviceMonth: '2026-08', status: 'held' },
+    ]), lines))
+    expect(rows).toHaveLength(1) // header only: Jane is held, Bob has no row
+  })
+
+  it('an already-sent client invoice is excluded', () => {
+    const rows = parse(toBillComCsv(runWith([
+      { contactId: JANE, serviceMonth: '2026-08', status: 'sent', billcomInvoiceNumber: '10452' },
+      { contactId: BOB, serviceMonth: '2026-08', status: 'approved' },
+    ]), lines))
+    expect(rows.slice(1).map(r => r[0])).toEqual(['Bob Owner'])
+  })
+
+  it('a held line is excluded while the rest of its approved invoice goes out', () => {
+    const withHold = lines.map(l => (l.lineNo === 2 ? { ...l, billHoldReason: 'Client disputes the second clean' } : l))
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), withHold))
+    expect(rows.slice(1).map(r => r[7])).toEqual(['120.00'])
+  })
+
+  it('a blank hold reason does not hold the line', () => {
+    const withBlank = lines.map(l => (l.lineNo === 2 ? { ...l, billHoldReason: '   ' } : l))
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), withBlank))
+    expect(rows).toHaveLength(3)
+  })
+
+  it('a hold on the surcharge row of a split line holds the collapsed line', () => {
+    const split = [
+      mk(5, JANE, 'Jane Owner', 'Jane 101', '2026-08-07', 300, { splitGroup: 9, serviceType: 'Onboarding Clean' }),
+      mk(5, JANE, 'Jane Owner', 'Jane 101', '2026-08-07', 50, { splitGroup: 9, lineKind: 'extra', serviceType: 'Onboarding Clean', billHoldReason: 'Not their first clean' }),
+    ]
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [...lines.slice(0, 1), ...split]))
+    expect(rows.slice(1).map(r => r[7])).toEqual(['120.00'])
+  })
+
+  it('each service month is its own client invoice', () => {
+    const twoMonths = [mk(1, JANE, 'Jane Owner', 'Jane 101', '2026-08-31', 120), mk(2, JANE, 'Jane Owner', 'Jane 101', '2026-09-01', 150)]
+    const rows = parse(toBillComCsv(runWith([
+      { contactId: JANE, serviceMonth: '2026-08', status: 'sent', billcomInvoiceNumber: 'A-1' },
+      { contactId: JANE, serviceMonth: '2026-09', status: 'approved' },
+    ]), twoMonths))
+    expect(rows.slice(1).map(r => r[4])).toEqual(['09/01/2026'])
+  })
+
+  it('a line whose property has no client never goes out', () => {
+    const orphan = mk(7, '', 'Nobody', 'Orphan 303', '2026-08-06', 99, { contactId: null })
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [...lines, orphan]))
+    expect(rows.slice(1).map(r => r[5])).toEqual(['Jane 101', 'Jane 101'])
+  })
+})
+
+describe('toBillComCsv: client credits under bill.com send control', () => {
+  const JANE = '11111111-1111-4111-8111-111111111111'
+  const CREDIT_LINE_ID = '44444444-4444-4444-8444-444444444444'
+  const clean: ExportLine = {
+    lineKind: 'clean', serviceType: 'Turn Clean', serviceDate: '2026-08-05', propertyName: 'Jane 101', clientName: 'Jane Owner',
+    billingChannel: 'bill_com', cleanerPayAmount: 60, clientChargeAmount: 120, note: null, reviewStatus: 'ok', lineNo: 1, contactId: JANE,
+  }
+  // A credit line as invoice_apply_open_credits writes it: no property, its
+  // client only on the adjustment row (applied_line_id = the line id).
+  const creditLine = (credits: ReturnType<typeof creditClientsByLine>): ExportLine => {
+    const client = lineClient({ id: CREDIT_LINE_ID, propertyContactId: null, propertyClientName: null }, credits)
+    return {
+      lineKind: 'extra', serviceType: 'Credit', serviceDate: '2026-08-05', propertyName: null, clientName: client.clientName,
+      billingChannel: 'bill_com', cleanerPayAmount: 0, clientChargeAmount: -40, note: null, reviewNote: 'Bad clean refund',
+      reviewStatus: 'resolved', flags: ['credit'], lineNo: 2, contactId: client.contactId,
+    }
+  }
+  const adjustments = creditClientsByLine([
+    { applied_line_id: CREDIT_LINE_ID, contact_id: JANE, contacts: { full_name: 'Jane Owner', company: null } },
+  ])
+  const parse = (csv: string) => Papa.parse<string[]>(csv, { skipEmptyLines: true }).data
+  const runWith = (states: ExportRun['billComInvoices']): ExportRun => ({ ...RUN, billComInvoices: states })
+
+  it('an approved client invoice keeps its credit line, negative, under the client', () => {
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [clean, creditLine(adjustments)]))
+    expect(rows.slice(1).map(r => [r[0], r[3], r[7]])).toEqual([
+      ['Jane Owner', 'Turn Clean', '120.00'],
+      ['Jane Owner', 'Credit (Bad clean refund)', '-40.00'],
+    ])
+  })
+
+  it('a held client invoice drops the credit with the rest of it', () => {
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'held' }]), [clean, creditLine(adjustments)]))
+    expect(rows).toHaveLength(1) // header only
+  })
+
+  it('adjustment lookup missing (migration pending): behaves as before', () => {
+    const orphan = creditLine(creditClientsByLine(null))
+    expect(orphan.contactId).toBeNull()
+    // No send-control state: listed (blank customer sorts first), as before send control existed.
+    expect(parse(toBillComCsv(RUN, [clean, orphan])).slice(1).map(r => [r[0], r[7]])).toEqual([['', '-40.00'], ['Jane Owner', '120.00']])
+    // Send control on: a line with no client can't go out, as before this fix.
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [clean, orphan]))
+    expect(rows.slice(1).map(r => r[7])).toEqual(['120.00'])
   })
 })
 

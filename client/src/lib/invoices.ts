@@ -188,6 +188,8 @@ export interface InvoiceLine {
   raw_note_text: string | null
   raw_amount: number
   raw_date_mentioned: string | null
+  /** Task date when the vendor's date was a day off; null on older rows. */
+  service_date?: string | null
   property_id: number | null
   alias_confidence: number | null
   matched_task_id: string | null
@@ -211,6 +213,9 @@ export interface InvoiceLine {
   vendor_category?: string | null
   vendor_detail?: Record<string, any> | null
   receipt_path?: string | null
+  /** Non-blank → held back from the bill.com worksheet (bill.com send
+   *  control, shared/billcom-send.ts). Absent until migration 20261009c. */
+  bill_hold_reason?: string | null
 }
 
 /**
