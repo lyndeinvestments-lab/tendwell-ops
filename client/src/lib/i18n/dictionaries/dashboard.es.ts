@@ -46,6 +46,7 @@ export const dashboardEs: typeof dashboardEn = {
     badgeOverdue: 'Vencido',
     badgeToday: 'Hoy',
     badgeStalled: 'Estancado',
+    badgeBilling: 'Facturación',
     viewAllAlerts: 'Ver todas las alertas →',
   },
   attention: {

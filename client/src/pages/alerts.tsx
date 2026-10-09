@@ -20,6 +20,8 @@ import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
 import { breezewayFreshness, breezewayFreshnessDescription } from '@/lib/data-freshness'
 import { localISODate } from '@/lib/local-date'
+import { invoicesApi } from '@/lib/invoices'
+import { billingAlerts, type BillingAlertsResponse } from '@/lib/billing-alerts'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -167,6 +169,24 @@ export function useAlerts() {
     },
     // Alert is admin-gated below; skip the round-trip for everyone else.
     enabled: canAccessView('trellis-sync', effectiveUser),
+    staleTime: 300_000,
+  })
+
+  // Billing alerts (uninvoiced cleans, unpaid invoices). Client money, so
+  // only for finance staff who also hold the invoicing view the endpoint
+  // checks; everyone else never makes the request. In-app only.
+  const canSeeBilling = canViewFinancials && canAccessView('invoicing', effectiveUser)
+  const { data: billing } = useQuery({
+    queryKey: ['/api/invoices/billing-alerts'],
+    queryFn: async (): Promise<BillingAlertsResponse | null> => {
+      try {
+        return await invoicesApi<BillingAlertsResponse>(`billing-alerts?today=${localISODate()}`)
+      } catch {
+        // A failed feed must not take the rest of the alerts down with it.
+        return null
+      }
+    },
+    enabled: canSeeBilling,
     staleTime: 300_000,
   })
 
@@ -335,6 +355,8 @@ export function useAlerts() {
       }
     }
 
+    if (canSeeBilling && billing) result.push(...billingAlerts(billing))
+
     // Info: New Contact Unlinked
     if (contacts) {
       for (const c of contacts) {
@@ -357,7 +379,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, canViewFinancials])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, canViewFinancials, canSeeBilling, billing])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()
@@ -402,7 +424,7 @@ export default function AlertsPage() {
 
   const visibleAlerts = useMemo(() => {
     let base = showDismissed ? alerts : alerts.filter(a => !dismissedSet.has(a.id))
-    if (!canViewFinancials) base = base.filter(a => a.category !== 'Financial')
+    if (!canViewFinancials) base = base.filter(a => a.category !== 'Financial' && a.category !== 'Billing')
     if (categoryFilter !== 'All') base = base.filter(a => a.category === categoryFilter)
     if (severityFilter !== 'all') base = base.filter(a => a.severity === severityFilter)
     return base
@@ -565,7 +587,7 @@ export default function AlertsPage() {
           only the rendered label is translated (slug lookup, raw fallback). */}
       <div className="flex items-center gap-1.5 flex-wrap -mt-1">
         <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground/70 mr-1">{t('filters.categoryLabel')}</span>
-        {['All', 'Financial', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM', 'Issues']
+        {['All', 'Financial', 'Billing', 'Data Quality', 'Maintenance', 'Inventory', 'Onboarding', 'CRM', 'Issues']
           .filter(cat => cat === 'All' || (categoryCounts[cat] || 0) > 0)
           .map(cat => (
             <button

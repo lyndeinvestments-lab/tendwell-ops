@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
 import { ErrorState } from '@/components/ErrorState'
 import { TONE_SOFT } from '@/lib/status-colors'
-import { Building2, TrendingUp, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp } from 'lucide-react'
+import { Building2, TrendingUp, Activity, AlertTriangle, AlertCircle, UserCheck, UserMinus, Wrench, Users, ClipboardCheck, CalendarDays, ChevronDown, ChevronUp, Receipt } from 'lucide-react'
 import { profitTier, PROFIT_COLOR_HEX, PROFIT_TIER_LABELS } from '@/lib/profit-colors'
 import { useTrellisTasksToday } from '@/hooks/use-trellis-tasks-today'
 import { usePipelineStages } from '@/hooks/use-pipeline-stages'
@@ -392,6 +392,9 @@ export default function DashboardPage() {
   // so this panel, the Alerts page, and the bell never diverge.
   const todayStr = new Date().toISOString().split('T')[0]
   const stalledOnboardings = activeAlerts.filter((a: any) => a.category === 'Onboarding')
+  // Billing alerts (uninvoiced cleans, unpaid invoices) only reach finance
+  // staff: useAlerts() never fetches them for anyone else.
+  const billingItems = activeAlerts.filter((a: any) => a.category === 'Billing')
   const actionItems = [
     ...((followUps as any[]) || []).map((p: any) => {
       const overdue = p.follow_up_date < todayStr
@@ -406,8 +409,12 @@ export default function DashboardPage() {
       name: (a.title || '').replace(/^Onboarding Stalled:\s*/, ''),
       detail: a.description, overdue: false, propertyId: a.propertyId,
     })),
+    ...billingItems.map((a: any) => ({
+      key: a.id, kind: 'billing' as const, name: a.title,
+      detail: '', overdue: a.severity === 'critical', propertyId: undefined as string | undefined,
+    })),
   ].sort((x, y) => {
-    const rank = (it: any) => (it.kind === 'follow-up' ? (it.overdue ? 0 : 1) : 2)
+    const rank = (it: any) => (it.kind === 'follow-up' ? (it.overdue ? 0 : 1) : it.kind === 'billing' ? 1.5 : 2)
     return rank(x) - rank(y)
   })
 
@@ -615,13 +622,20 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-2 min-w-0">
                         {it.kind === 'follow-up'
                           ? <CalendarDays className="w-3.5 h-3.5 text-primary flex-shrink-0" />
-                          : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
-                        <span className="truncate cursor-pointer hover:underline" onClick={() => it.propertyId && openPropertyModal(it.propertyId)}>{it.name}</span>
+                          : it.kind === 'billing'
+                            ? <Receipt className="w-3.5 h-3.5 text-warning flex-shrink-0" />
+                            : <TrendingUp className="w-3.5 h-3.5 text-info flex-shrink-0" />}
+                        <span
+                          className="truncate cursor-pointer hover:underline"
+                          onClick={() => it.kind === 'billing' ? navigate('/invoicing') : it.propertyId && openPropertyModal(it.propertyId)}
+                        >{it.name}</span>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>
-                        <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : 'text-primary'}>
-                          {it.kind === 'follow-up' ? (it.overdue ? t('todayActions.badgeOverdue') : t('todayActions.badgeToday')) : t('todayActions.badgeStalled')}
+                        {it.detail && <span className="text-muted-foreground hidden sm:inline">{it.detail}</span>}
+                        <span className={it.overdue ? 'text-destructive font-medium' : it.kind === 'onboarding' ? 'text-info' : it.kind === 'billing' ? 'text-warning' : 'text-primary'}>
+                          {it.kind === 'follow-up'
+                            ? (it.overdue ? t('todayActions.badgeOverdue') : t('todayActions.badgeToday'))
+                            : it.kind === 'billing' ? t('todayActions.badgeBilling') : t('todayActions.badgeStalled')}
                         </span>
                       </div>
                     </div>

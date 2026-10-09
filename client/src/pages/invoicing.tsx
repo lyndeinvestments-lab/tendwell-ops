@@ -42,6 +42,7 @@ import {
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
+import { isMissingColumnError } from '@/lib/billing-alerts'
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -737,6 +738,38 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     onError: (e: unknown) => toast({ title: 'Reconcile failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
+  // Client payment on an exported run (invoice_runs.paid_at, recorded by hand)
+  // clears the in-app "Invoices unpaid" billing alert. Read separately so the
+  // run itself still loads before 20261009g_billing_alerts.sql is applied;
+  // until then the control stays hidden.
+  const paidQuery = useQuery<{ supported: boolean; paidAt: string | null }>({
+    queryKey: ['invoicing-run-paid', runId],
+    enabled: runQuery.data?.status === 'exported',
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from('invoice_runs').select('paid_at').eq('id', runId).single()
+      if (error) {
+        if (isMissingColumnError(error)) return { supported: false, paidAt: null }
+        throw error
+      }
+      return { supported: true, paidAt: data?.paid_at ?? null }
+    },
+  })
+  const paidMutation = useMutation({
+    mutationFn: async (paid: boolean) => {
+      const { error } = await (supabase as any)
+        .from('invoice_runs')
+        .update({ paid_at: paid ? new Date().toISOString() : null })
+        .eq('id', runId)
+      if (error) throw error
+    },
+    onSuccess: (_d, paid) => {
+      toast({ title: paid ? 'Marked as paid by the client' : 'Payment cleared' })
+      qc.invalidateQueries({ queryKey: ['invoicing-run-paid', runId] })
+      qc.invalidateQueries({ queryKey: ['/api/invoices/billing-alerts'] })
+    },
+    onError: (e: unknown) => toast({ title: 'Could not update payment', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
+  })
+
   // Lines the server named as blocking the last approve attempt. A toast
   // scrolls away and a count alone ("2 billable lines have no billing
   // channel") is unfindable in a 300-row table, so these get pinned to the
@@ -1030,6 +1063,23 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
               <FileText className="w-4 h-4 mr-1.5" />
               Preview export
             </Button>
+            {run?.status === 'exported' && paidQuery.data?.supported && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => paidMutation.mutate(!paidQuery.data?.paidAt)}
+                disabled={paidMutation.isPending}
+                title={paidQuery.data.paidAt
+                  ? 'Client payment recorded. Click to clear it.'
+                  : 'Record that the client paid this invoice. Clears the "Invoice unpaid" alert.'}
+                data-testid="button-mark-paid"
+              >
+                {paidMutation.isPending
+                  ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  : <CheckCircle2 className={cn('w-4 h-4 mr-1.5', paidQuery.data.paidAt && 'text-success')} />}
+                {paidQuery.data.paidAt ? `Paid ${fmtDateTime(paidQuery.data.paidAt)}` : 'Mark client paid'}
+              </Button>
+            )}
             {canApprove && needsVendorTotal && (
               <Input
                 type="number"
