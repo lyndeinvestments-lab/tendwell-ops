@@ -63,6 +63,12 @@ describe('status rules', () => {
     expect(billComLineSendable({ contactId: BOB, serviceMonth: '2026-08' }, states)).toBe(false)
     expect(billComLineSendable({ contactId: null, serviceMonth: '2026-08' }, states)).toBe(false)
   })
+  it('a row whose client was deleted (contact_id null) never approves client-less lines', () => {
+    const states = stateMap([{ contactId: null, serviceMonth: '2026-08', status: 'approved' }])
+    expect(statusFor(states, null, '2026-08')).toBe('held')
+    expect(billComLineSendable({ contactId: null, serviceMonth: '2026-08' }, states)).toBe(false)
+    expect(states.size).toBe(0)
+  })
   it('send control only on approved or exported runs', () => {
     expect(runAllowsSendControl('approved')).toBe(true)
     expect(runAllowsSendControl('exported')).toBe(true)

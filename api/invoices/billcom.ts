@@ -95,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(missing ? 503 : 500).json({ error: missing ? NOT_SET_UP : 'Failed to load client invoices', detail: ciErr.message })
     return
   }
-  const existing = new Map((ciRows ?? []).map(r => [clientInvoiceKey(r.contact_id, r.service_month), r]))
+  const existing = new Map((ciRows ?? []).filter(r => !!r.contact_id).map(r => [clientInvoiceKey(r.contact_id, r.service_month), r]))
 
   // A client credit bills the client on its adjustment (it usually has no
   // property), so it joins and nets that client's invoice, same as the

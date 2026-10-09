@@ -1386,7 +1386,7 @@ export type Database = {
         Row: {
           billcom_invoice_number: string | null
           billing_channel: string
-          contact_id: string
+          contact_id: string | null
           created_at: string
           hold_reason: string | null
           id: string
@@ -1402,7 +1402,7 @@ export type Database = {
         Insert: {
           billcom_invoice_number?: string | null
           billing_channel?: string
-          contact_id: string
+          contact_id?: string | null
           created_at?: string
           hold_reason?: string | null
           id?: string

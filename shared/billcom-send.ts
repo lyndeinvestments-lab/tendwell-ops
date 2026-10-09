@@ -21,7 +21,7 @@ export const CLIENT_INVOICE_STATUSES: readonly ClientInvoiceStatus[] = ['held', 
 
 /** The stored state of one client invoice (a public.client_invoices row). */
 export interface ClientInvoiceState {
-  contactId: string
+  contactId: string | null // null: client permanently deleted (history only)
   serviceMonth: string // yyyy-mm
   status: ClientInvoiceStatus
   holdReason?: string | null
@@ -88,7 +88,9 @@ export function isMissingSchemaError(err: unknown): boolean {
 }
 
 export function stateMap(states: ReadonlyArray<ClientInvoiceState>): Map<string, ClientInvoiceState> {
-  return new Map(states.map(s => [clientInvoiceKey(s.contactId, s.serviceMonth), s]))
+  // A row whose client was permanently deleted (contact_id SET NULL) keeps its
+  // history but must never approve lines that have no client.
+  return new Map(states.filter(s => !!s.contactId).map(s => [clientInvoiceKey(s.contactId, s.serviceMonth), s]))
 }
 
 /** A client invoice with no stored row has never been approved: held. */
