@@ -2355,6 +2355,102 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_adjustments: {
+        Row: {
+          amount: number
+          applied_at: string | null
+          applied_line_id: string | null
+          applied_run_id: string | null
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          evidence_url: string | null
+          id: string
+          original_line_id: string | null
+          parent_adjustment_id: string | null
+          reason: string
+          status: string
+          updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          amount: number
+          applied_at?: string | null
+          applied_line_id?: string | null
+          applied_run_id?: string | null
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          id?: string
+          original_line_id?: string | null
+          parent_adjustment_id?: string | null
+          reason: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          amount?: number
+          applied_at?: string | null
+          applied_line_id?: string | null
+          applied_run_id?: string | null
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          id?: string
+          original_line_id?: string | null
+          parent_adjustment_id?: string | null
+          reason?: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_adjustments_applied_run_id_fkey"
+            columns: ["applied_run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_original_line_id_fkey"
+            columns: ["original_line_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_parent_adjustment_id_fkey"
+            columns: ["parent_adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_adjustments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_lines: {
         Row: {
           alias_confidence: number | null
@@ -9320,6 +9416,10 @@ export type Database = {
       grant_org_properties_to_owner: {
         Args: { p_organization_id: string; p_owner_id: string }
         Returns: number
+      }
+      invoice_apply_open_credits: {
+        Args: { p_actor?: string; p_run_id: string }
+        Returns: Json
       }
       invoice_apply_reconcile: {
         Args: {

@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
+import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
@@ -339,6 +340,7 @@ export default function InvoicingPage() {
           ) : (
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
+          <OpenCreditsPanel userLabel={userLabel} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -748,14 +750,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // invoice (the penny gate in api/invoices/approve.ts).
   const [vendorTotal, setVendorTotal] = useState('')
   const approveMutation = useMutation({
-    mutationFn: async () => invoicesApi<{ ok: boolean; status: string }>('approve', {
+    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string }>('approve', {
       method: 'POST',
       body: vendorTotal.trim() ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
     }),
     onSuccess: (r) => {
       setApproveBlockers(null)
       setApproveError(null)
-      toast({ title: 'Invoice approved', description: `Status: ${r.status}` })
+      const credits = r.credits_applied
+        ? ` ${r.credits_applied} open client credit(s) added (${fmtMoney(r.credit_total ?? 0)}).`
+        : ''
+      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${credits}` })
+      if (r.credits_warning) toast({ title: 'Client credits not applied', description: r.credits_warning, variant: 'destructive' })
+      qc.invalidateQueries({ queryKey: ['invoicing', 'credits'] })
       invalidate()
     },
     onError: (e: unknown) => {
