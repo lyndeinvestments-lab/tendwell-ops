@@ -6623,6 +6623,105 @@ export type Database = {
         }
         Relationships: []
       }
+      sent_invoices: {
+        Row: {
+          billing_channel: string
+          client_invoice_id: string | null
+          client_name: string
+          contact_id: string | null
+          created_at: string
+          id: string
+          invoice_number: string
+          note: string | null
+          pdf_sha256: string | null
+          period_end: string
+          period_start: string
+          recipient: string | null
+          run_id: string | null
+          run_source: string | null
+          sent_at: string
+          sent_by: string | null
+          total: number
+          voids_id: string | null
+        }
+        Insert: {
+          billing_channel: string
+          client_invoice_id?: string | null
+          client_name: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_number: string
+          note?: string | null
+          pdf_sha256?: string | null
+          period_end: string
+          period_start: string
+          recipient?: string | null
+          run_id?: string | null
+          run_source?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          total: number
+          voids_id?: string | null
+        }
+        Update: {
+          billing_channel?: string
+          client_invoice_id?: string | null
+          client_name?: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_number?: string
+          note?: string | null
+          pdf_sha256?: string | null
+          period_end?: string
+          period_start?: string
+          recipient?: string | null
+          run_id?: string | null
+          run_source?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          total?: number
+          voids_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sent_invoices_client_invoice_id_fkey"
+            columns: ["client_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "client_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_voids_id_fkey"
+            columns: ["voids_id"]
+            isOneToOne: false
+            referencedRelation: "sent_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stage_transitions: {
         Row: {
           created_at: string | null
@@ -9205,6 +9304,17 @@ export type Database = {
       archive_stale_quotes: { Args: { max_age_days?: number }; Returns: number }
       can_view_financials: { Args: never; Returns: boolean }
       canonical_trellis_property_id: { Args: { p: string }; Returns: string }
+      client_invoice_mark_sent: {
+        Args: {
+          p_actor?: string
+          p_client_invoice_id: string
+          p_number: string
+          p_pdf_sha256?: string
+          p_recipient?: string
+          p_total?: number
+        }
+        Returns: Json
+      }
       compute_monthly_estimate: {
         Args: { target_month: string }
         Returns: {

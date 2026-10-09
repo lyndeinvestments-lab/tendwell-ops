@@ -59,7 +59,7 @@
       "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts,client/public/agreements/service-agreement-v1.pdf"
     },
     "api/invoices/*.ts": {
-      "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/invoices/_aux.ts,api/vendor-invoices/_draft.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/billcom-send.ts"
+      "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/invoices/_aux.ts,api/vendor-invoices/_draft.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/billcom-send.ts,shared/sent-invoice-register.ts"
     },
     "api/vendor-invoices/*.ts": {
       "includeFiles": "api/vendor-invoices/_lib.ts,api/vendor-invoices/_draft.ts,api/notify/_lib.ts,api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_aux.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts",

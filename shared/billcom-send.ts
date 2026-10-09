@@ -119,6 +119,7 @@ export type BillComAction =
   | { action: 'hold_line'; runId: string; lineNo: number; reason: string | null }
   | { action: 'set_status'; runId: string; contactId: string; serviceMonth: string; status: 'held' | 'approved'; holdReason: string | null }
   | { action: 'mark_sent'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string }
+  | { action: 'presend_check'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string | null }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -135,8 +136,8 @@ export function parseBillComAction(body: unknown): { ok: true; value: BillComAct
     if (!Number.isInteger(lineNo) || lineNo < 0) return { ok: false, error: 'line_no is required' }
     return { ok: true, value: { action, runId, lineNo, reason: normalizeHoldReason(b.reason) } }
   }
-  if (action !== 'set_status' && action !== 'mark_sent') {
-    return { ok: false, error: 'action must be hold_line, set_status or mark_sent' }
+  if (action !== 'set_status' && action !== 'mark_sent' && action !== 'presend_check') {
+    return { ok: false, error: 'action must be hold_line, set_status, mark_sent or presend_check' }
   }
   const contactId = typeof b.contact_id === 'string' ? b.contact_id : ''
   if (!UUID_RE.test(contactId)) return { ok: false, error: 'contact_id is required (a bill.com invoice needs a client)' }
@@ -147,6 +148,8 @@ export function parseBillComAction(body: unknown): { ok: true; value: BillComAct
     return { ok: true, value: { action, runId, contactId, serviceMonth, status: b.status, holdReason: b.status === 'held' ? normalizeHoldReason(b.hold_reason) : null } }
   }
   const billcomInvoiceNumber = normalizeBillcomInvoiceNumber(b.billcom_invoice_number)
+  // presend_check: the number is optional (the dialog checks before one is typed).
+  if (action === 'presend_check') return { ok: true, value: { action, runId, contactId, serviceMonth, billcomInvoiceNumber } }
   if (!billcomInvoiceNumber) return { ok: false, error: 'Enter the bill.com invoice number (up to 64 characters)' }
   return { ok: true, value: { action, runId, contactId, serviceMonth, billcomInvoiceNumber } }
 }

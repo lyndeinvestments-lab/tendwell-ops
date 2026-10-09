@@ -4,6 +4,7 @@ import {
   canTransition,
   clientInvoiceKey,
   groupBillComInvoices,
+  isBillComArLine,
   isMissingSchemaError,
   lineServiceMonth,
   parseBillComAction,
@@ -11,11 +12,31 @@ import {
   type BillComLineInput,
   type ClientInvoiceStatus,
 } from '../../shared/billcom-send.js'
+import {
+  isMissingFunctionError,
+  parseMarkSentExtras,
+  preSendExceptions,
+  registerPeriod,
+  sendableTotal,
+  type PreSendException,
+  type PreSendLine,
+} from '../../shared/sent-invoice-register.js'
 
 // POST /api/invoices/billcom
 //   { action: 'hold_line',  run_id, line_no, reason }        reason blank → release
 //   { action: 'set_status', run_id, contact_id, service_month, status: 'held'|'approved', hold_reason? }
-//   { action: 'mark_sent',  run_id, contact_id, service_month, billcom_invoice_number }
+//   { action: 'mark_sent',  run_id, contact_id, service_month, billcom_invoice_number,
+//     recipient?, pdf_sha256?, total? }
+//   { action: 'presend_check', run_id, contact_id, service_month, billcom_invoice_number? }
+//
+// Sent-invoices register (20261009h): mark_sent runs the pre-send check and
+// records the register row in ONE transaction (client_invoice_mark_sent), and
+// is refused with the list of exceptions unless that list is empty.
+// presend_check returns the same list (plus the default recipient and the
+// period the register will record) for the Mark sent dialog. Until 20261009h
+// is applied, mark_sent behaves exactly as before and presend_check reports
+// register_available: false. Only the SHA-256 of the bill.com PDF is ever
+// received; the PDF itself is never uploaded.
 //
 // bill.com send control: bookkeeping only. bill.com has no import and this
 // never calls bill.com; a human enters the invoice there, then records it
@@ -40,6 +61,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
   const a = parsed.value
+  const extras = parseMarkSentExtras(req.body)
+  if (a.action === 'mark_sent' && !extras.ok) {
+    res.status(400).json({ error: extras.error })
+    return
+  }
   const supabase = getServiceClient()
   if (!supabase) {
     res.status(503).json({ error: 'Supabase service role not configured' })
@@ -49,7 +75,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: run, error: runErr } = await supabase
     .from('invoice_runs')
-    .select('id, status, invoice_date')
+    .select('id, status, invoice_date, period_start, period_end, archived_at, source')
     .eq('id', a.runId)
     .maybeSingle()
   if (runErr || !run) {
@@ -67,7 +93,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'invoice_lines',
       () => supabase
         .from('invoice_lines')
-        .select('id, line_no, line_kind, review_status, billing_channel, client_charge_amount, service_date, raw_date_mentioned, bill_hold_reason, properties(contact_id, contacts:contact_id(full_name, company))')
+        .select('id, line_no, line_kind, review_status, review_note, flags, billing_channel, client_charge_amount, service_date, raw_date_mentioned, bill_hold_reason, properties(contact_id, contacts:contact_id(full_name, company))')
         .eq('run_id', a.runId)
         .order('line_no'),
       'line_no',
@@ -109,6 +135,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
   const inputs = rows.map(toInput)
+  const toPreSend = (r: Record<string, any>): PreSendLine => ({
+    lineNo: Number(r.line_no),
+    reviewStatus: r.review_status,
+    billHoldReason: r.bill_hold_reason ?? null,
+    flags: Array.isArray(r.flags) ? r.flags : [],
+    reviewNote: r.review_note ?? null,
+    serviceDate: r.service_date ?? r.raw_date_mentioned ?? null,
+    clientChargeAmount: r.client_charge_amount != null ? Number(r.client_charge_amount) : null,
+  })
 
   // ── hold / release one vendor line ────────────────────────────────────────
   if (a.action === 'hold_line') {
@@ -154,6 +189,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
   const row = existing.get(group.key)
+
+  // ── pre-send check (read only) ────────────────────────────────────────────
+  if (a.action === 'presend_check') {
+    // Every row of this client invoice, held ones included (same membership
+    // as groupBillComInvoices and the SQL function).
+    const groupLines = rows
+      .filter((r, i) => {
+        const l = inputs[i]
+        return isBillComArLine(l) && l.contactId === a.contactId && lineServiceMonth(l.serviceDate, run.invoice_date) === a.serviceMonth
+      })
+      .map(toPreSend)
+    // The register lookup doubles as the "is 20261009h applied" probe. With no
+    // number yet it matches nothing (the column refuses blanks).
+    const { data: regRows, error: regErr } = await supabase
+      .from('sent_invoices')
+      .select('client_name, sent_at')
+      .eq('billing_channel', 'bill_com')
+      .eq('invoice_number', a.billcomInvoiceNumber ?? '')
+      .is('voids_id', null)
+      .limit(1)
+    if (regErr && !isMissingSchemaError(regErr)) {
+      res.status(500).json({ error: 'Failed to read the sent-invoices register', detail: regErr.message })
+      return
+    }
+    const { data: contact } = await supabase.from('contacts').select('email').eq('id', a.contactId).maybeSingle()
+    const exceptions: PreSendException[] = preSendExceptions({
+      run: { status: run.status, archivedAt: run.archived_at },
+      invoice: { status: (row?.status ?? null) as ClientInvoiceStatus | null, serviceMonth: a.serviceMonth },
+      lines: groupLines,
+      registered: regRows?.[0] ? { clientName: regRows[0].client_name, sentAt: regRows[0].sent_at } : null,
+    })
+    res.status(200).json({
+      ok: true,
+      register_available: !regErr,
+      exceptions,
+      total: sendableTotal(groupLines),
+      period: registerPeriod(a.serviceMonth, run.period_start, run.period_end, groupLines.map(l => l.serviceDate)),
+      recipient_default: contact?.email?.trim() || null,
+      run_source: run.source,
+    })
+    return
+  }
+
   const from = (row?.status ?? 'held') as ClientInvoiceStatus
   const to: ClientInvoiceStatus = a.action === 'mark_sent' ? 'sent' : a.status
 
@@ -176,6 +254,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (to !== 'held' && group.total <= 0) {
     res.status(409).json({ error: 'Every line on this client invoice is held; release a line first' })
     return
+  }
+
+  // mark_sent with the register (20261009h): pre-send check, status change
+  // and register row in one transaction. Refused with the exceptions unless
+  // there are none. Falls through to the plain update below only when the
+  // function is not there yet (migration pending).
+  if (a.action === 'mark_sent' && row && extras.ok) {
+    const args: { p_client_invoice_id: string; p_number: string; p_actor: string; p_recipient?: string; p_pdf_sha256?: string; p_total?: number } = {
+      p_client_invoice_id: row.id,
+      p_number: a.billcomInvoiceNumber,
+      p_actor: who,
+    }
+    if (extras.value.recipient) args.p_recipient = extras.value.recipient
+    if (extras.value.pdfSha256) args.p_pdf_sha256 = extras.value.pdfSha256
+    if (extras.value.confirmedTotal != null) args.p_total = extras.value.confirmedTotal
+    const { data: result, error: rpcErr } = await supabase.rpc('client_invoice_mark_sent', args)
+    if (rpcErr && !isMissingFunctionError(rpcErr)) {
+      if (rpcErr.code === '23505') {
+        res.status(409).json({ error: 'This invoice number was already recorded as sent; refresh and check the register' })
+        return
+      }
+      res.status(500).json({ error: 'Failed to mark the client invoice sent', detail: rpcErr.message })
+      return
+    }
+    if (!rpcErr) {
+      const out = (result ?? {}) as { ok?: boolean; exceptions?: unknown; client_invoice?: unknown; sent_invoice?: unknown }
+      if (!out.ok) {
+        res.status(409).json({ error: 'Pre-send check failed: fix these before marking it sent', exceptions: out.exceptions ?? [] })
+        return
+      }
+      res.status(200).json({ ok: true, client_invoice: out.client_invoice ?? null, sent_invoice: out.sent_invoice ?? null })
+      return
+    }
   }
 
   const patch: Record<string, unknown> = {

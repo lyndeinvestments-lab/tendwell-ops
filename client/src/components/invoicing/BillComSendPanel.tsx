@@ -15,7 +15,6 @@ import {
   groupBillComInvoices,
   isBillComArLine,
   isMissingSchemaError,
-  normalizeBillcomInvoiceNumber,
   normalizeHoldReason,
   runAllowsSendControl,
   stateMap,
@@ -24,6 +23,7 @@ import {
   type ClientInvoiceState,
   type ClientInvoiceStatus,
 } from '@shared/billcom-send'
+import { MarkSentDialog } from './MarkSentDialog'
 
 /**
  * bill.com send control on an approved run: one row per client invoice (a
@@ -178,7 +178,9 @@ export function BillComSendPanel({ run, lines, onChanged }: {
   const counts = { held: 0, approved: 0, sent: 0 }
   for (const g of groups) counts[statusFor(states, g.contactId, g.serviceMonth)] += 1
 
-  const promptValue = prompt?.kind === 'mark_sent' ? normalizeBillcomInvoiceNumber(promptText) : normalizeHoldReason(promptText)
+  // Mark sent has its own dialog (MarkSentDialog: pre-send check, recipient,
+  // PDF fingerprint); this prompt only asks for hold reasons.
+  const promptValue = normalizeHoldReason(promptText)
   const promptValid = prompt?.kind === 'hold_invoice' || !!promptValue
   function submitPrompt() {
     if (!prompt || !promptValid) return
@@ -186,8 +188,6 @@ export function BillComSendPanel({ run, lines, onChanged }: {
       actionMutation.mutate({ action: 'hold_line', line_no: prompt.line.line_no, reason: promptValue })
     } else if (prompt.kind === 'hold_invoice') {
       actionMutation.mutate({ action: 'set_status', contact_id: prompt.group.contactId, service_month: prompt.group.serviceMonth, status: 'held', hold_reason: promptValue })
-    } else {
-      actionMutation.mutate({ action: 'mark_sent', contact_id: prompt.group.contactId, service_month: prompt.group.serviceMonth, billcom_invoice_number: promptValue })
     }
   }
 
@@ -346,28 +346,26 @@ export function BillComSendPanel({ run, lines, onChanged }: {
         )}
       </CardContent>
 
-      <Dialog open={prompt != null} onOpenChange={open => { if (!open) setPrompt(null) }}>
+      <Dialog open={prompt != null && prompt.kind !== 'mark_sent'} onOpenChange={open => { if (!open) setPrompt(null) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {prompt?.kind === 'mark_sent' ? 'Mark sent to bill.com' : prompt?.kind === 'hold_line' ? `Hold line ${prompt.line.line_no}` : 'Hold this client invoice'}
+              {prompt?.kind === 'hold_line' ? `Hold line ${prompt.line.line_no}` : 'Hold this client invoice'}
             </DialogTitle>
             <DialogDescription>
-              {prompt?.kind === 'mark_sent'
-                ? `${prompt.group.clientName ?? 'Client'}, ${fmtMonth(prompt.group.serviceMonth)}, ${fmtMoney(prompt.group.total)}. Enter the invoice number bill.com gave it. This can't be undone.`
-                : prompt?.kind === 'hold_line'
-                  ? 'The line stays on the run but is left off the bill.com list until released.'
-                  : 'It comes off the bill.com list until approved again. A reason is optional.'}
+              {prompt?.kind === 'hold_line'
+                ? 'The line stays on the run but is left off the bill.com list until released. While it is held, its client invoice cannot be marked sent.'
+                : 'It comes off the bill.com list until approved again. A reason is optional.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <Label htmlFor="billcom-prompt">{prompt?.kind === 'mark_sent' ? 'bill.com invoice number' : 'Reason'}</Label>
+            <Label htmlFor="billcom-prompt">Reason</Label>
             <Input
               id="billcom-prompt"
               autoFocus
               value={promptText}
-              maxLength={prompt?.kind === 'mark_sent' ? 64 : 500}
-              placeholder={prompt?.kind === 'mark_sent' ? 'e.g. 10452' : 'e.g. Client disputes the trip fee'}
+              maxLength={500}
+              placeholder="e.g. Client disputes the trip fee"
               onChange={e => setPromptText(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') submitPrompt() }}
               data-testid="input-billcom-prompt"
@@ -377,11 +375,18 @@ export function BillComSendPanel({ run, lines, onChanged }: {
             <Button variant="outline" onClick={() => setPrompt(null)}>Cancel</Button>
             <Button onClick={submitPrompt} disabled={!promptValid || actionMutation.isPending} data-testid="button-billcom-prompt-submit">
               {actionMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              {prompt?.kind === 'mark_sent' ? 'Mark sent' : 'Hold'}
+              Hold
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MarkSentDialog
+        run={run}
+        group={prompt?.kind === 'mark_sent' ? prompt.group : null}
+        onClose={() => setPrompt(null)}
+        onSent={() => { invoicesQuery.refetch(); onChanged() }}
+      />
     </Card>
   )
 }
