@@ -7,7 +7,8 @@
 // flag + review_status='needs_review' and surfaces in the review queue.
 
 import type { FeeOverride } from '../../shared/aux-tasks.js'
-export type { FeeOverride }
+import type { PriceAgreement } from '../../shared/price-agreements.js'
+export type { FeeOverride, PriceAgreement }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,11 @@ export interface PropertyRates {
   // Resolved from the property's contact exactly the way billingChannel is,
   // so every property of one client shares the same map.
   feeOverrides?: Readonly<Record<string, FeeOverride>>
+  // The prices this property's CLIENT accepted (client_price_agreements),
+  // resolved through contact_id like feeOverrides. Never sets a price: a line
+  // billing something else is sent to review (price_mismatch_agreement).
+  // Absent = no agreement on file, never flagged.
+  priceAgreement?: PriceAgreement
   // Archived duplicate kept for history. Only consulted when several Ops rows
   // share one name (Kelly Armsworth 3634: #499 active, #507 archived).
   archived?: boolean
@@ -266,6 +272,10 @@ export const FLAGS = {
   // as "Owner Stay - Departure Clean" / "Owner Stay - Turn Clean" so Haven's
   // QBO class rules route it to the owner.
   OWNER_STAY: 'owner_stay',
+  // The client charge differs from the price this client accepted (agreed
+  // clean price, linen fee or onboarding fee in client_price_agreements).
+  // See priceAgreementMismatch.
+  PRICE_MISMATCH_AGREEMENT: 'price_mismatch_agreement',
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -1793,6 +1803,67 @@ function markOwnerStay(
   })
 }
 
+// ─── Agreed client prices ─────────────────────────────────────────────────────
+
+export type AgreedPriceKind = 'clean' | 'linen' | 'onboarding'
+
+/** Which agreed price (if any) a line's client charge should equal. Only
+ *  billed rows count: excluded, operating-expense and uncharged rows never do.
+ *  The onboarding fee is the split surcharge row (the $50 next to the base
+ *  clean); the disputed $0 "not first clean" row is deliberately unbilled. A
+ *  deep clean is its own price and is not checked against the clean price. */
+export function agreedPriceKind(line: EngineLine): AgreedPriceKind | null {
+  if (line.propertyId == null || line.clientChargeAmount == null) return null
+  if (line.reviewStatus === 'excluded' || line.lineKind === 'excluded' || line.lineKind === 'operating_expense') return null
+  if (line.serviceType != null && /linen\s*fee/i.test(line.serviceType)) return 'linen'
+  if (line.lineKind === 'extra') {
+    if (line.serviceType === 'Onboarding Clean' && line.splitGroup != null &&
+        !line.flags.includes(FLAGS.ONBOARDING_NOT_FIRST_CLEAN)) return 'onboarding'
+    return null
+  }
+  if (line.lineKind === 'clean' || line.lineKind === 'combined_split') return 'clean'
+  return null
+}
+
+const AGREED_PRICE_LABEL: Record<AgreedPriceKind, string> = {
+  clean: 'clean price',
+  linen: 'linen fee',
+  onboarding: 'onboarding fee',
+}
+
+/** The mismatch between a line's client charge and the client's agreed price,
+ *  or null when they agree (within $0.01), the client has no agreement, or the
+ *  agreement does not cover this kind of line. */
+export function priceAgreementMismatch(
+  line: EngineLine,
+  agreement: PriceAgreement | null | undefined,
+): { kind: AgreedPriceKind; agreed: number; billed: number; note: string } | null {
+  if (!agreement) return null
+  const kind = agreedPriceKind(line)
+  if (!kind) return null
+  const agreed = kind === 'clean' ? agreement.cleanPrice : kind === 'linen' ? agreement.linenFee : agreement.onboardingFee
+  if (agreed == null) return null
+  const billed = round2(line.clientChargeAmount!)
+  if (Math.abs(billed - agreed) <= 0.01 + Number.EPSILON) return null
+  const note = `Agreed ${usd(agreed)}${agreement.acceptedDate ? ` on ${agreement.acceptedDate}` : ''}` +
+    `${agreement.sourceLink ? ` (${agreement.sourceLink})` : ''}, billed ${usd(billed)}` +
+    ` (${AGREED_PRICE_LABEL[kind]}). Fix the client charge, or update the agreement if the price changed.`
+  return { kind, agreed, billed, note }
+}
+
+/** Send every line whose client charge disagrees with its client's agreed
+ *  price to review. The note is appended rather than first-writer-wins: the
+ *  line may already explain something else, and this has to be seen too. */
+export function applyPriceAgreements(lines: EngineLine[], propsById: ReadonlyMap<number, PropertyRates>): EngineLine[] {
+  return lines.map(l => {
+    const agreement = l.propertyId != null ? propsById.get(l.propertyId)?.priceAgreement : undefined
+    const m = priceAgreementMismatch(l, agreement)
+    if (!m) return l
+    const out = needsReview(l, FLAGS.PRICE_MISMATCH_AGREEMENT)
+    return { ...out, engineNote: out.engineNote ? `${out.engineNote} ${m.note}` : m.note }
+  })
+}
+
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
   const threshold = input.fuzzyThreshold ?? FUZZY_CONFIRM_THRESHOLD
   const propsById = new Map(input.properties.map(p => [p.id, p]))
@@ -1891,8 +1962,9 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
     if (input.stays?.length) classified = markOwnerStay(classified, serviceDate ?? noteDate, input.stays, input.tasks)
     outByIndex.set(i, classified.map(l => ({ ...l, serviceDate })))
   }
-  const outLines: EngineLine[] = []
+  let outLines: EngineLine[] = []
   for (let i = 0; i < input.lines.length; i++) outLines.push(...(outByIndex.get(i) ?? []))
+  outLines = applyPriceAgreements(outLines, propsById)
 
   for (const w of detectMisdatedBlocks(outLines, input.tasks)) {
     for (const l of outLines) {

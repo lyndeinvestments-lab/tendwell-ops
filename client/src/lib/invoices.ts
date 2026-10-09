@@ -90,6 +90,7 @@ export const FLAG_LABELS: Record<string, string> = {
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
   standard_priced: 'Standard price applied',
   client_priced: "Client's agreed price applied",
+  price_mismatch_agreement: "Differs from client's agreed price",
   suspect_service_date: 'Service date looks wrong',
   aux_task: 'Billable task — not on vendor invoice',
   vendor_added: 'Added by vendor — check it',
