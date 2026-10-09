@@ -530,6 +530,9 @@ export type Database = {
           completed_date: string | null
           created_date: string | null
           department: string | null
+          disappeared_at: string | null
+          disappeared_batch: string | null
+          disappeared_prev_status: string | null
           due_date: string | null
           external_id: string
           id: string
@@ -553,6 +556,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id: string
           id?: string
@@ -576,6 +582,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id?: string
           id?: string
@@ -1330,6 +1339,7 @@ export type Database = {
       }
       client_fee_overrides: {
         Row: {
+          accepted_date: string | null
           charge: number
           contact_id: string
           created_at: string
@@ -1338,10 +1348,12 @@ export type Database = {
           id: string
           note: string | null
           service_type: string
+          source_link: string | null
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          accepted_date?: string | null
           charge: number
           contact_id: string
           created_at?: string
@@ -1350,10 +1362,12 @@ export type Database = {
           id?: string
           note?: string | null
           service_type: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          accepted_date?: string | null
           charge?: number
           contact_id?: string
           created_at?: string
@@ -1362,6 +1376,7 @@ export type Database = {
           id?: string
           note?: string | null
           service_type?: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -1377,6 +1392,66 @@ export type Database = {
             foreignKeyName: "client_fee_overrides_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_price_agreements: {
+        Row: {
+          accepted_clean_price: number | null
+          accepted_date: string | null
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          linen_fee: number | null
+          note: string | null
+          onboarding_fee: number | null
+          source_link: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
             referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
           },
@@ -6190,6 +6265,47 @@ export type Database = {
           },
         ]
       }
+      property_rate_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          field: string
+          id: string
+          new_value: number | null
+          old_value: number | null
+          property_id: number
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          field: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id: number
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          field?: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id?: number
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_supplies: {
         Row: {
           current_qty: number | null
@@ -9533,6 +9649,15 @@ export type Database = {
       set_my_locale: { Args: { p_locale: string }; Returns: undefined }
       set_my_ui_pref: {
         Args: { p_key: string; p_value: Json }
+        Returns: undefined
+      }
+      set_rate_with_reason: {
+        Args: {
+          p_field: string
+          p_property_id: number
+          p_reason: string
+          p_value: number
+        }
         Returns: undefined
       }
       staff_has_financial_view: { Args: never; Returns: boolean }
