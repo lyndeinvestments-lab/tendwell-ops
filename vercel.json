@@ -59,10 +59,10 @@
       "includeFiles": "api/agreements/_lib.ts,api/notify/_lib.ts,client/public/agreements/service-agreement-v1.pdf"
     },
     "api/invoices/*.ts": {
-      "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/invoices/_aux.ts,api/vendor-invoices/_draft.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/invoice-review.ts,shared/invoice-redo.ts"
+      "includeFiles": "api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_exporters.ts,api/invoices/_aux.ts,api/vendor-invoices/_draft.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/invoice-review.ts,shared/invoice-redo.ts,shared/price-agreements.ts,shared/db-errors.ts"
     },
     "api/vendor-invoices/*.ts": {
-      "includeFiles": "api/vendor-invoices/_lib.ts,api/vendor-invoices/_draft.ts,api/notify/_lib.ts,api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_aux.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/invoice-review.ts,shared/invoice-redo.ts",
+      "includeFiles": "api/vendor-invoices/_lib.ts,api/vendor-invoices/_draft.ts,api/notify/_lib.ts,api/invoices/_lib.ts,api/invoices/_engine.ts,api/invoices/_aux.ts,api/qbo/_lib.ts,shared/aux-tasks.ts,shared/vendor-invoice.ts,shared/invoice-review.ts,shared/invoice-redo.ts,shared/price-agreements.ts,shared/db-errors.ts",
       "maxDuration": 60
     },
     "api/tasks/*.ts": {

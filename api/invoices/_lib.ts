@@ -32,6 +32,7 @@ import {
   type AuxBillingSettings,
 } from '../../shared/aux-tasks.js'
 
+import { priceAgreementsByContact, type PriceAgreement, type PriceAgreementRow } from '../../shared/price-agreements.js'
 import { isRedoTask } from '../../shared/invoice-redo.js'
 import { PORTAL_REVIEW_FLAGS } from '../../shared/vendor-invoice.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
@@ -151,6 +152,8 @@ export async function fetchAllRows<T>(
   const out: T[] = []
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await build().range(from, from + PAGE_SIZE - 1)
+    // Keep the PostgREST code so callers can tell "table not migrated yet"
+    // (isMissingSchemaError) from a real failure.
     if (error) throw Object.assign(new Error(`Failed to load ${label}: ${error.message}`), { code: error.code })
     const page = data ?? []
     out.push(...page)
@@ -323,7 +326,7 @@ export async function loadEngineContext(
 
   // Every one of these is paged: a truncated context makes the engine flag
   // real cleans as `unmatched_task`, and it does so silently. See fetchAllRows.
-  const [propRowsRaw, contactRows, aliasRows, taskRows, trellisRows, overrideRows] = await Promise.all([
+  const [propRowsRaw, contactRows, aliasRows, taskRows, trellisRows, overrideRows, agreementsByContact] = await Promise.all([
     fetchAllRows<{
       id: number
       name: string
@@ -413,6 +416,7 @@ export async function loadEngineContext(
         .order('id'),
       'id',
     ),
+    loadPriceAgreements(supabase),
   ])
 
   const overridesByContact = feeOverridesByContact(overrideRows)
@@ -431,6 +435,7 @@ export async function loadEngineContext(
     billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
     hotTub: p.hot_tub === true,
     feeOverrides: p.contact_id ? overridesByContact.get(p.contact_id) : undefined,
+    priceAgreement: p.contact_id ? agreementsByContact.get(p.contact_id) : undefined,
     archived: p.archived_at != null,
   }))
   const propertyByTrellisId = trellisIdIndex(propRows)
@@ -584,6 +589,27 @@ export async function loadHavenListingPropertyIds(supabase: SupabaseClient): Pro
       e,
     )
     return null
+  }
+}
+
+/** Agreed client prices (client_price_agreements, one row per client). Until
+ *  migration 20261009f is applied the table does not exist: that reads as "no
+ *  agreements", so invoicing behaves exactly as before. Any other failure
+ *  throws like every other context load. */
+export async function loadPriceAgreements(supabase: SupabaseClient): Promise<Map<string, PriceAgreement>> {
+  try {
+    const rows = await fetchAllRows<PriceAgreementRow & { id: string }>(
+      'client_price_agreements',
+      () => supabase
+        .from('client_price_agreements')
+        .select('id, contact_id, accepted_clean_price, linen_fee, onboarding_fee, accepted_date, source_link')
+        .order('id'),
+      'id',
+    )
+    return priceAgreementsByContact(rows)
+  } catch (e) {
+    if (isMissingSchemaError(e)) return new Map()
+    throw e
   }
 }
 

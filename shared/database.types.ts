@@ -1339,6 +1339,7 @@ export type Database = {
       }
       client_fee_overrides: {
         Row: {
+          accepted_date: string | null
           charge: number
           contact_id: string
           created_at: string
@@ -1347,10 +1348,12 @@ export type Database = {
           id: string
           note: string | null
           service_type: string
+          source_link: string | null
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          accepted_date?: string | null
           charge: number
           contact_id: string
           created_at?: string
@@ -1359,10 +1362,12 @@ export type Database = {
           id?: string
           note?: string | null
           service_type: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          accepted_date?: string | null
           charge?: number
           contact_id?: string
           created_at?: string
@@ -1371,6 +1376,7 @@ export type Database = {
           id?: string
           note?: string | null
           service_type?: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -1386,6 +1392,66 @@ export type Database = {
             foreignKeyName: "client_fee_overrides_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_price_agreements: {
+        Row: {
+          accepted_clean_price: number | null
+          accepted_date: string | null
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          linen_fee: number | null
+          note: string | null
+          onboarding_fee: number | null
+          source_link: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
             referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
           },
