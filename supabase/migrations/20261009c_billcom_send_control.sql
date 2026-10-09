@@ -60,9 +60,9 @@ end $$;
 create table if not exists public.client_invoices (
   id uuid primary key default gen_random_uuid(),
   run_id uuid not null references public.invoice_runs(id) on delete cascade,
-  -- RESTRICT: a client with a recorded bill.com invoice cannot be
-  -- permanently deleted out from under it.
-  contact_id uuid not null references public.contacts(id) on delete restrict,
+  -- SET NULL: a client can still be permanently deleted; the row (and its
+  -- sent history) stays with no client.
+  contact_id uuid references public.contacts(id) on delete set null,
   billing_channel text not null default 'bill_com'
     check (billing_channel in ('bill_com', 'qbo_haven')),
   service_month text not null check (service_month ~ '^\d{4}-\d{2}$'),

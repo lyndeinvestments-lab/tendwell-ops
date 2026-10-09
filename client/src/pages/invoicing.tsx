@@ -13,6 +13,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
+import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { EmptyState } from '@/components/EmptyState'
@@ -39,11 +40,16 @@ import {
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
   InvoiceApiError,
-  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf,
+  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf, serviceNeedsEvidence,
   serviceTypeFromTaskTitle, vendorNameOf,
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
+import {
+  REDO_DECISION_LABELS, REDO_PENDING_FLAG, redoDecisionFromNote, withRedoDecision, type RedoDecision,
+} from '@shared/invoice-redo'
+import { RESOLVE_NOTE_FLAGS, flagsNeedingResolveNote, resolveNoteOk } from '@shared/invoice-review'
+import { chargeHasEvidence, evidenceLinkOk } from '@shared/vendor-invoice'
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -351,6 +357,7 @@ export default function InvoicingPage() {
           ) : (
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
+          <OpenCreditsPanel userLabel={userLabel} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -760,14 +767,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // invoice (the penny gate in api/invoices/approve.ts).
   const [vendorTotal, setVendorTotal] = useState('')
   const approveMutation = useMutation({
-    mutationFn: async () => invoicesApi<{ ok: boolean; status: string }>('approve', {
+    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string }>('approve', {
       method: 'POST',
       body: vendorTotal.trim() ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
     }),
     onSuccess: (r) => {
       setApproveBlockers(null)
       setApproveError(null)
-      toast({ title: 'Invoice approved', description: `Status: ${r.status}` })
+      const credits = r.credits_applied
+        ? ` ${r.credits_applied} open client credit(s) added (${fmtMoney(r.credit_total ?? 0)}).`
+        : ''
+      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${credits}` })
+      if (r.credits_warning) toast({ title: 'Client credits not applied', description: r.credits_warning, variant: 'destructive' })
+      qc.invalidateQueries({ queryKey: ['invoicing', 'credits'] })
       invalidate()
     },
     onError: (e: unknown) => {
@@ -869,6 +881,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     ok: lines.filter(l => l.review_status === 'ok').length,
     tasks: taskLines.length,
   }), [lines, issueLines, taskLines])
+  // Needs-review lines that carry a flag requiring a written note: they are
+  // skipped by "Accept remaining" and have to be saved through the dialog.
+  const noteLineCount = useMemo(
+    () => lines.filter(l => l.review_status === 'needs_review' && flagsNeedingResolveNote(l.flags).length > 0).length,
+    [lines],
+  )
   const filteredLines = useMemo(
     () => (lineFilter === 'all'
       ? lines
@@ -929,6 +947,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
 
   const acceptMutation = useGuardedMutation<void, Error, InvoiceLine>('invoicing', {
     mutationFn: async (line: InvoiceLine) => {
+      // A changed charge / non-Haven listing cannot be accepted as-is: the
+      // reviewer has to say why. Open the review dialog, which has the note.
+      if (flagsNeedingResolveNote(line.flags).length > 0 && !resolveNoteOk(line.review_note)) {
+        onReview(line)
+        throw new Error('note_required')
+      }
       const { error } = await supabase
         .from('invoice_lines')
         .update({ review_status: 'resolved', resolved_by: userLabel, resolved_at: new Date().toISOString() })
@@ -939,6 +963,10 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     onSuccess: () => invalidate(),
     onError: (e: Error) => {
       if (e.message === 'edit_blocked') return
+      if (e.message === 'note_required') {
+        toast({ title: 'A review note is required', description: 'Say why the charge changed (or why this property is billed to Haven), then save.' })
+        return
+      }
       toast({ title: 'Accept failed', description: e.message, variant: 'destructive' })
     },
   })
@@ -950,12 +978,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         .update({ review_status: 'resolved', resolved_by: userLabel, resolved_at: new Date().toISOString() })
         .eq('run_id', runId)
         .eq('review_status', 'needs_review')
+        // Lines that need a written explanation are never bulk-accepted.
+        .not('flags', 'ov', `{${RESOLVE_NOTE_FLAGS.join(',')}}`)
         .select('id')
       if (error) throw error
       return (data ?? []).length
     },
     onSuccess: (n) => {
-      toast({ title: `Accepted ${n} line${n === 1 ? '' : 's'} as-is`, description: 'Review queue cleared — Approve is unlocked.' })
+      toast({
+        title: `Accepted ${n} line${n === 1 ? '' : 's'} as-is`,
+        description: noteLineCount > 0
+          ? `${noteLineCount} line${noteLineCount === 1 ? '' : 's'} still need a review note (price change or non-Haven listing).`
+          : 'Review queue cleared. Approve is unlocked.',
+      })
       invalidate()
     },
     onError: (e: Error) => {
@@ -1283,7 +1318,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                 </Button>
               ))}
             </div>
-            {counts.needs_review > 0 && canApprove && (
+            {counts.needs_review - noteLineCount > 0 && canApprove && (
               <Button
                 size="sm"
                 variant={confirmAcceptAll ? 'default' : 'outline'}
@@ -1301,7 +1336,9 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                 data-testid="button-accept-all"
               >
                 {acceptAllMutation.isPending ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1.5" />}
-                {confirmAcceptAll ? `Confirm — accept ${counts.needs_review} as-is` : `Accept remaining (${counts.needs_review})`}
+                {confirmAcceptAll
+                  ? `Confirm: accept ${counts.needs_review - noteLineCount} as-is`
+                  : `Accept remaining (${counts.needs_review - noteLineCount})`}
               </Button>
             )}
           </div>
@@ -1711,6 +1748,11 @@ function AddLineDialog({ runId, nextLineNo, userLabel, onClose, onSaved }: {
           <div className="space-y-1.5">
             <Label>Note</Label>
             <Input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Labor — deep clean assist, 4 hrs" data-testid="add-line-note" />
+            {serviceNeedsEvidence(serviceType) && !evidenceLinkOk(note) && (
+              <p className="text-2xs text-warning" data-testid="add-line-evidence-required">
+                Evidence required: {serviceType} cannot be approved without a photo or the Slack link. Paste it in the note.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
@@ -1799,6 +1841,19 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   const [billingChannel, setBillingChannel] = useState<BillingChannel>(line.billing_channel ?? 'none')
   const [saveChannelToClient, setSaveChannelToClient] = useState(true)
   const isExpenseKind = lineKind === 'operating_expense' || lineKind === 'excluded'
+
+  // A callback / reclean followed this clean: the decision is a token in the
+  // review note (shared/invoice-redo.ts). "No charge" zeroes the client
+  // charge, which is what the Approve gate checks it against.
+  const isRedoLine = (line.flags ?? []).includes(REDO_PENDING_FLAG)
+  const redoDecision = redoDecisionFromNote(reviewNote)
+  function chooseRedoDecision(d: RedoDecision) {
+    setReviewNote(withRedoDecision(reviewNote, d))
+    if (d === 'no_charge') setClientCharge('0')
+    else if (Number(clientCharge || 0) === 0 && line.client_charge_amount != null && Number(line.client_charge_amount) !== 0) {
+      setClientCharge(String(line.client_charge_amount))
+    }
+  }
 
   const clientQuery = useQuery<ClientChannelInfo | null>({
     queryKey: ['invoicing-property-client', propertyId],
@@ -1962,6 +2017,11 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   // threading it through as another prop.
   const saveMutation = useGuardedMutation<void, Error, void>('invoicing', {
     mutationFn: async () => {
+      // Saving resolves the line, so a price change / non-Haven listing needs
+      // its explanation first (the Approve gate enforces the same rule).
+      if (flagsNeedingResolveNote(line.flags).length > 0 && !resolveNoteOk(reviewNote)) {
+        throw new Error('Add a review note: say why the charge changed, or why this property is billed to Haven.')
+      }
       const propertyChanged = propertyId !== (currentProperty?.id ?? null)
       const cleanerPayNum = cleanerPay.trim() === '' ? null : Number(cleanerPay)
       // Tendwell expenses (labor/supplies) and excluded lines are never AR —
@@ -2207,9 +2267,41 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
               )}
             </div>
           )}
+          {isRedoLine && (
+            <div className="space-y-1.5">
+              <Label>
+                Redo decision{' '}
+                <span className="text-muted-foreground font-normal">(required before approving)</span>
+              </Label>
+              <div className="flex flex-wrap gap-2">
+                {(['bill', 'no_charge'] as const).map(d => (
+                  <Button
+                    key={d}
+                    type="button"
+                    size="sm"
+                    variant={redoDecision === d ? 'default' : 'outline'}
+                    onClick={() => chooseRedoDecision(d)}
+                    data-testid={`button-redo-${d}`}
+                  >
+                    {REDO_DECISION_LABELS[d]}
+                  </Button>
+                ))}
+              </div>
+              {redoDecision == null && (
+                <p className="text-2xs text-warning">Pick one: Approve refuses this line until it carries a decision.</p>
+              )}
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label>Review note</Label>
             <Textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={2} data-testid="textarea-review-note" />
+            {serviceNeedsEvidence(serviceType) && (
+              chargeHasEvidence({ ...line, review_note: reviewNote })
+                ? <p className="text-2xs text-success" data-testid="text-evidence-ok">Evidence on file (photo or Slack link).</p>
+                : <p className="text-2xs text-warning" data-testid="text-evidence-required">
+                    Evidence required: {serviceType} cannot be approved without a photo or the Slack link. Paste it here (Slack, Google Drive/Photos, Breezeway, or an image URL).
+                  </p>
+            )}
           </div>
         </div>
         <DialogFooter>

@@ -1,16 +1,20 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { isCreditLine } from './_credits.js'
 import {
   canTransition,
   clientInvoiceKey,
+  creditClientsByLine,
   groupBillComInvoices,
   isBillComArLine,
   isMissingSchemaError,
+  lineClient,
   lineServiceMonth,
   parseBillComAction,
   runAllowsSendControl,
   type BillComLineInput,
   type ClientInvoiceStatus,
+  type CreditClient,
 } from '../../shared/billcom-send.js'
 import {
   isMissingFunctionError,
@@ -117,11 +121,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(missing ? 503 : 500).json({ error: missing ? NOT_SET_UP : 'Failed to load client invoices', detail: ciErr.message })
     return
   }
-  const existing = new Map((ciRows ?? []).map(r => [clientInvoiceKey(r.contact_id, r.service_month), r]))
+  const existing = new Map((ciRows ?? []).filter(r => !!r.contact_id).map(r => [clientInvoiceKey(r.contact_id, r.service_month), r]))
+
+  // A client credit bills the client on its adjustment (it usually has no
+  // property), so it joins and nets that client's invoice, same as the
+  // worksheet. Table missing (20261009a pending) → no credits, as before.
+  let creditClients: Map<string, CreditClient> = new Map()
+  const creditLineIds = rows.filter(r => isCreditLine(r)).map(r => String(r.id))
+  if (creditLineIds.length > 0) {
+    const { data: adjRows, error: adjErr } = await supabase
+      .from('invoice_adjustments')
+      .select('applied_line_id, contact_id, contacts:contact_id(full_name, company)')
+      .in('applied_line_id', creditLineIds)
+    if (adjErr && !isMissingSchemaError(adjErr)) {
+      res.status(500).json({ error: 'Failed to load client credits', detail: adjErr.message })
+      return
+    }
+    creditClients = creditClientsByLine(adjRows)
+  }
 
   const toInput = (r: Record<string, any>): BillComLineInput => {
     const prop = Array.isArray(r.properties) ? r.properties[0] : r.properties
     const contact = prop ? (Array.isArray(prop.contacts) ? prop.contacts[0] : prop.contacts) : null
+    const client = lineClient({
+      id: r.id != null ? String(r.id) : null,
+      propertyContactId: prop?.contact_id ?? null,
+      propertyClientName: contact?.full_name ?? contact?.company ?? null,
+    }, creditClients)
     return {
       lineNo: Number(r.line_no),
       lineKind: r.line_kind,
@@ -129,8 +155,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       billingChannel: r.billing_channel,
       clientChargeAmount: r.client_charge_amount != null ? Number(r.client_charge_amount) : null,
       serviceDate: r.service_date ?? r.raw_date_mentioned ?? null,
-      contactId: prop?.contact_id ?? null,
-      clientName: contact?.full_name ?? contact?.company ?? null,
+      contactId: client.contactId,
+      clientName: client.clientName,
       billHoldReason: r.bill_hold_reason ?? null,
     }
   }

@@ -21,7 +21,7 @@ export const CLIENT_INVOICE_STATUSES: readonly ClientInvoiceStatus[] = ['held', 
 
 /** The stored state of one client invoice (a public.client_invoices row). */
 export interface ClientInvoiceState {
-  contactId: string
+  contactId: string | null // null: client permanently deleted (history only)
   serviceMonth: string // yyyy-mm
   status: ClientInvoiceStatus
   holdReason?: string | null
@@ -88,7 +88,9 @@ export function isMissingSchemaError(err: unknown): boolean {
 }
 
 export function stateMap(states: ReadonlyArray<ClientInvoiceState>): Map<string, ClientInvoiceState> {
-  return new Map(states.map(s => [clientInvoiceKey(s.contactId, s.serviceMonth), s]))
+  // A row whose client was permanently deleted (contact_id SET NULL) keeps its
+  // history but must never approve lines that have no client.
+  return new Map(states.filter(s => !!s.contactId).map(s => [clientInvoiceKey(s.contactId, s.serviceMonth), s]))
 }
 
 /** A client invoice with no stored row has never been approved: held. */
@@ -161,6 +163,46 @@ export function runAllowsSendControl(status: string | null | undefined): boolean
   return status === 'approved' || status === 'exported'
 }
 
+// ─── Who a line bills ────────────────────────────────────────────────────────
+
+/** The client named on a credit's invoice_adjustments row. */
+export interface CreditClient {
+  contactId: string
+  clientName: string | null
+}
+
+/** invoice_adjustments rows (applied_line_id, contact_id, contacts embed) →
+ *  the client of each credit line, keyed by the invoice_lines id it was
+ *  applied as. null/empty (table missing: migration 20261009a pending, or no
+ *  credits on the run) gives an empty map, and every line falls back to its
+ *  property's client exactly as before credits existed. */
+export function creditClientsByLine(
+  rows: ReadonlyArray<{ applied_line_id?: unknown; contact_id?: unknown; contacts?: unknown }> | null | undefined,
+): Map<string, CreditClient> {
+  const m = new Map<string, CreditClient>()
+  for (const r of rows ?? []) {
+    if (!r.applied_line_id || !r.contact_id) continue
+    const rel = r.contacts as { full_name?: string | null; company?: string | null } | Array<{ full_name?: string | null; company?: string | null }> | null | undefined
+    const c = Array.isArray(rel) ? rel[0] : rel
+    m.set(String(r.applied_line_id), { contactId: String(r.contact_id), clientName: c?.full_name ?? c?.company ?? null })
+  }
+  return m
+}
+
+/** Who a line bills. A client credit (flag 'credit', service 'Credit') usually
+ *  has no property: its client is on the adjustment it was applied from. Every
+ *  other line bills its property's client. One rule for the worksheet, the
+ *  send endpoint and the panel, so a credit lands in (and nets) its client's
+ *  invoice everywhere. */
+export function lineClient(
+  line: { id?: string | null; propertyContactId?: string | null; propertyClientName?: string | null },
+  creditClients: ReadonlyMap<string, CreditClient> | null | undefined,
+): { contactId: string | null; clientName: string | null } {
+  const credit = line.id != null ? creditClients?.get(String(line.id)) : undefined
+  if (credit) return { contactId: credit.contactId, clientName: credit.clientName ?? line.propertyClientName ?? null }
+  return { contactId: line.propertyContactId ?? null, clientName: line.propertyClientName ?? null }
+}
+
 // ─── Grouping (UI + endpoint totals) ─────────────────────────────────────────
 
 /** The minimum of an invoice line the grouping needs. */
@@ -225,6 +267,7 @@ export function groupBillComInvoices(lines: ReadonlyArray<BillComLineInput>, run
       g = { key, contactId: l.contactId, clientName: l.clientName, serviceMonth: month, total: 0, heldTotal: 0, lineNos: [], heldLineNos: [] }
       groups.set(key, g)
     }
+    if (!g.clientName && l.clientName) g.clientName = l.clientName
     const amount = Number(l.clientChargeAmount ?? 0)
     if (held.has(l.lineNo)) {
       g.heldTotal = round2(g.heldTotal + amount)
