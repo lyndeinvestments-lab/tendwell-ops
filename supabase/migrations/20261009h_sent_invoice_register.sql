@@ -27,7 +27,8 @@
 -- Contact link: ON DELETE SET NULL plus the client_name snapshot, not
 -- RESTRICT. The register is history: it must never block a permanent client
 -- delete, and it must still say who was billed after one. (client_invoices
--- keeps its own RESTRICT from 20261009c.)
+-- and invoice_adjustments also use ON DELETE SET NULL, from 20261009c and
+-- 20261009a.)
 --
 -- Recipient: what the user typed in the Mark sent dialog, else the client's
 -- contacts.email (bill.com sends to the customer's email on file). There is
