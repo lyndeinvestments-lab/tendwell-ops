@@ -1,23 +1,23 @@
-// End-to-end check of the vendor invoicing portal's server logic against the
-// LIVE database, using a throwaway vendor that is deleted at the end.
+// End-to-end check of the vendor invoicing portal's server logic against a
+// NON-PRODUCTION database, using a throwaway vendor that is deleted at the end.
 //
+//   VERIFY_SUPABASE_URL=https://<non-prod-ref>.supabase.co \
+//   VERIFY_SUPABASE_SERVICE_ROLE_KEY=... VERIFY_SUPABASE_ANON_KEY=... \
 //   npx tsx scripts/verify-vendor-portal.ts [period_start] [period_end]
 //
-// Needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (reads ../../../.env.local
-// when run from a worktree, else ./.env.local). Exits non-zero on any failed
-// check. Safe to re-run: the test vendor's runs and receipts are removed in a
-// finally block, and its draft only ever claims days for a few seconds.
+// NEVER point this at production: section 1b deliberately deletes real
+// invoice lines through invoice_apply_reconcile and relies on the rollback.
+// The target is read ONLY from the VERIFY_* env vars (SUPABASE_URL and
+// .env.local are ignored), and scripts/_nonprod-guard.ts refuses the
+// production project with no override. Email is disabled (NOTIFY_DISABLED=1).
+// Exits non-zero on any failed check. Safe to re-run: the test vendor's runs
+// and receipts are removed in a finally block, and its draft only ever claims
+// days for a few seconds.
 
-import { readFileSync, existsSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import { requireNonProdTarget } from './_nonprod-guard.js'
 
-for (const f of ['.env.local', '../../../.env.local']) {
-  if (!existsSync(f)) continue
-  for (const line of readFileSync(f, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, '')
-  }
-}
+const verifyTarget = requireNonProdTarget()
 
 const { populateDraft, runDetail } = await import('../api/vendor-invoices/runs.js')
 const { rowFor } = await import('../api/vendor-invoices/items.js')
@@ -25,7 +25,7 @@ const { reconcileRun } = await import('../api/invoices/_lib.js')
 const { RUN_COLUMNS, loadRunLines, vendorTotal, isVendorVisible, receiptPrefix, RECEIPT_BUCKET } = await import('../api/vendor-invoices/_lib.js')
 const { validateVendorItem } = await import('../shared/vendor-invoice.js')
 
-const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+const supabase = createClient(verifyTarget.supabaseUrl, verifyTarget.serviceRoleKey)
 const START = process.argv[2] ?? '2026-10-04'
 const END = process.argv[3] ?? '2026-10-07'
 
@@ -118,7 +118,7 @@ try {
     })
     const after2 = await loadRunLines(supabase, (run as any).id)
     check('stale row ids abort the apply without touching the run', /changed while reconciling/.test(staleErr?.message ?? '') && after2.length === before.length, `${staleErr?.code} ${after2.length}`)
-    const anonClient = createClient(process.env.SUPABASE_URL!, process.env.VITE_SUPABASE_ANON_KEY!)
+    const anonClient = createClient(verifyTarget.supabaseUrl, verifyTarget.anonKey)
     const { error: anonErr } = await anonClient.rpc('invoice_apply_reconcile', { p_run_id: (run as any).id, p_delete_ids: [], p_rows: [], p_run: {} })
     check('only the server can call the apply function', !!anonErr, anonErr?.message ?? 'no error')
   }

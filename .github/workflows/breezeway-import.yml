@@ -30,6 +30,27 @@ on:
         description: 'Classify only, do not POST'
         type: boolean
         default: false
+      # Opt-in only (never on the schedule): the selected file is the COMPLETE
+      # Breezeway export for the window, so tasks due in the window that are
+      # missing from it get marked deleted_or_canceled. Needs exactly one file
+      # (use the file_id input) and both window dates.
+      file_id:
+        description: 'Import one specific Drive file id'
+        required: false
+      full_export:
+        description: 'Full export: mark window tasks missing from the file as deleted_or_canceled'
+        type: boolean
+        default: false
+      window_start:
+        description: 'Full export window start (YYYY-MM-DD, by Due date)'
+        required: false
+      window_end:
+        description: 'Full export window end (YYYY-MM-DD, by Due date)'
+        required: false
+      force:
+        description: 'Full export: allow marking more than 25% of the window or 50 tasks'
+        type: boolean
+        default: false
 
 # Two runs importing the same files would race on the same upsert rows.
 concurrency:
@@ -70,4 +91,9 @@ jobs:
           if [ -n "${{ inputs.date }}" ]; then args+=(--date "${{ inputs.date }}"); fi
           if [ -n "${{ inputs.lookback_hours }}" ]; then args+=(--lookback-hours "${{ inputs.lookback_hours }}"); fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then args+=(--dry-run); fi
+          if [ -n "${{ inputs.file_id }}" ]; then args+=(--file-id "${{ inputs.file_id }}"); fi
+          if [ "${{ inputs.full_export }}" = "true" ]; then
+            args+=(--full-export --window-start "${{ inputs.window_start }}" --window-end "${{ inputs.window_end }}")
+            if [ "${{ inputs.force }}" = "true" ]; then args+=(--force); fi
+          fi
           python scripts/breezeway_import.py "${args[@]}"

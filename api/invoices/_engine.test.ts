@@ -1166,6 +1166,61 @@ describe('TEST 3–6 review-queue fixes', () => {
     expect(lines.map(l => l.serviceType)).toEqual(['Reimbursement', 'Reimbursement', 'Reimbursement'])
   })
 
+  // Reimbursements used to bill the flat $50 "standard" charge, which billed a
+  // $12 purchase at $50 and an $86.81 propane tank at $50 (2026-10-09).
+  it('bills a reimbursement at the receipt amount (not a flat $50), both pay and charge', () => {
+    const { lines } = reconcile(input([
+      vendorLine({ lineNo: 1, rawPropertyText: 'Michael Rohwer 2455 - Propane tank 76.81 plus deliver $10', rawAmount: 86.81, rawDateMentioned: null }),
+      vendorLine({ lineNo: 2, rawPropertyText: 'Michael Rohwer 2455 - Bathroom supply buy', rawAmount: 12, rawDateMentioned: null }),
+    ], { tasks: [] }))
+    expect(lines.map(l => [l.serviceType, l.cleanerPayAmount, l.clientChargeAmount])).toEqual([
+      ['Reimbursement', 86.81, 86.81],
+      ['Reimbursement', 12, 12],
+    ])
+    expect(lines.every(l => !l.flags.includes('standard_priced'))).toBe(true)
+    expect(lines.every(l => l.reviewStatus === 'ok')).toBe(true)
+  })
+
+  it('a vendor-portal reimbursement also bills at cost, and a client fee override no longer reprices it', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawNoteText: 'Reimbursement - UPS label for guest charger', rawAmount: 23.45, presetPropertyId: 1, presetServiceType: 'Reimbursement' })],
+      { properties: [{ ...PROPS[0], feeOverrides: { Reimbursement: { charge: 75, hotTubCharge: null } } }, ...PROPS.slice(1)] },
+    ))
+    expect(lines[0].cleanerPayAmount).toBe(23.45)
+    expect(lines[0].clientChargeAmount).toBe(23.45)
+    expect(lines[0].flags).not.toContain('client_priced')
+  })
+
+  it('a reimbursement with no amount queues for the receipt total instead of billing anything', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawNoteText: 'Reimbursement - propane for the grill', rawAmount: 0, presetPropertyId: 1, presetServiceType: 'Reimbursement' })],
+    ))
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].flags).toContain(FLAGS.MISSING_RATE)
+    expect(lines[0].clientChargeAmount).toBeNull()
+    expect(lines[0].cleanerPayAmount).toBeNull()
+    expect(lines[0].engineNote).toMatch(/receipt total/)
+  })
+
+  it('Reimbursement is not on the standard price list any more', () => {
+    expect(STANDARD_EXTRA_PRICING.Reimbursement).toBeUndefined()
+    expect(extraPriceFor('Reimbursement')).toBeNull()
+  })
+
+  it('a Last-Minute Surcharge has no invented price: it passes the amount through and queues', () => {
+    const { lines } = reconcile(input(
+      [vendorLine({ rawNoteText: 'Last-Minute Surcharge - booked at 9pm for a 10am turn', rawAmount: 40, presetPropertyId: 1, presetServiceType: 'Last-Minute Surcharge' })],
+    ))
+    expect(lines).toHaveLength(1)
+    expect(lines[0].serviceType).toBe('Last-Minute Surcharge')
+    expect(lines[0].lineKind).toBe('extra')
+    expect(lines[0].cleanerPayAmount).toBe(40)
+    expect(lines[0].clientChargeAmount).toBe(40)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].flags).toContain(FLAGS.MISSING_RATE)
+    expect(STANDARD_EXTRA_PRICING['Last-Minute Surcharge']).toBeUndefined()
+  })
+
   it('"doh hair" splits a Pet Fee off the clean', () => {
     // Real line (Michael Hooper, TEST 5): Busy Bee's misspelling of "dog
     // hair" — without the rule the $20 overage queued as an unexplained

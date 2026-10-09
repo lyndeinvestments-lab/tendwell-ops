@@ -1,5 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
+import { REDO_PENDING_FLAG, redoBlocker, type RedoCheckLine } from '../../shared/invoice-redo.js'
+import { RESOLVE_NOTE_FLAGS, resolveNoteMissing } from '../../shared/invoice-review.js'
+import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES, evidenceLinkOk } from '../../shared/vendor-invoice.js'
+
+// Re-exported so approve-side callers and tests read the gate from one place.
+export { EVIDENCE_REQUIRED_SERVICES, evidenceLinkOk }
 
 // A line that is holding up Approve. Every guard below reports these, because
 // a bare count ("2 billable line(s) have no billing channel") is unfindable on
@@ -29,6 +35,8 @@ function describeLines(rows: BlockingLine[], max = 5): string {
 // or (b) the line sum doesn't match the stated subtotal to the penny (a
 // vendor CSV must have one: body.stated_subtotal sets it).
 // Nothing ships with unresolved flags — that's the review queue's contract.
+// Later guards: billing channel, property, reimbursement detail, evidence on
+// disputed charges (EVIDENCE_REQUIRED_SERVICES) and cleaner pay coverage.
 
 /** A reimbursement's review note is detailed enough when it names who it was
  *  for (guest / reservation / owner) and carries a link to the evidence. */
@@ -45,6 +53,23 @@ export function reimbursementDetailOk(note: string | null | undefined): boolean 
  *  receipt (1096 #258, John Bryan Trip Fee $50, carried no detail at all). */
 export const DETAIL_REQUIRED_SERVICES = ['Reimbursement', 'Trip Fee', 'Mailed Left Items by the Guest']
 
+export interface EvidenceCandidate extends BlockingLine {
+  source: string | null
+  receipt_path: string | null
+  vendor_detail: Record<string, any> | null
+  review_note: string | null
+  raw_note_text: string | null
+}
+
+/** Billed Pet Fee / Extra Cleaning / Double Clean / Last-Minute Surcharge
+ *  lines with no photo or Slack link behind them. Takes the candidate rows
+ *  (already limited to billable, client-charged lines of those types). */
+export function linesMissingEvidence(rows: ReadonlyArray<EvidenceCandidate>): BlockingLine[] {
+  return rows
+    .filter(r => !chargeHasEvidence(r))
+    .map(r => ({ line_no: r.line_no, raw_property_text: r.raw_property_text, raw_amount: r.raw_amount }))
+}
+
 /** What the vendor invoiced, from the lines as they stand now (a reviewer
  *  may have edited an amount since the last reconcile). Split rows share a
  *  line_no and only the base row carries the vendor's amount; task-derived
@@ -56,6 +81,19 @@ export function vendorInvoicedSum(rows: ReadonlyArray<{ line_no: number; raw_amo
     if (r.split_group == null || r.line_kind !== 'extra') base.set(r.line_no, Number(r.raw_amount ?? 0))
   }
   return Math.round([...base.values()].reduce((a, n) => a + n, 0) * 100) / 100
+}
+
+/** Redo-flagged lines that still lack a usable bill / no-charge decision.
+ *  Rows sharing a line_no are one vendor line, reported once. */
+export function undecidedRedoLines<T extends BlockingLine & RedoCheckLine>(rows: ReadonlyArray<T>): BlockingLine[] {
+  const out: BlockingLine[] = []
+  const seen = new Set<number>()
+  for (const r of rows) {
+    if (seen.has(r.line_no) || redoBlocker(r) == null) continue
+    seen.add(r.line_no)
+    out.push({ line_no: r.line_no, raw_property_text: r.raw_property_text, raw_amount: r.raw_amount })
+  }
+  return out
 }
 
 const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
@@ -227,6 +265,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // Redos: a clean followed by a callback / reclean within a week needs an
+  // explicit decision, "bill" (charge stands) or "no charge" (our fault, client
+  // charge 0). Checked before the generic review count so the message names
+  // the decision, and again on resolved rows: a bulk Resolve must not wave a
+  // redo through without one (shared/invoice-redo.ts).
+  let undecidedRedos: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<BlockingLine & RedoCheckLine>(
+      'invoice_lines (redo decisions)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, flags, review_status, line_kind, review_note, client_charge_amount')
+        .eq('run_id', runId)
+        .contains('flags', [REDO_PENDING_FLAG])
+        .order('line_no'),
+      'line_no',
+    )
+    undecidedRedos = undecidedRedoLines(rows)
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check redo decisions', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (undecidedRedos.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${undecidedRedos.length} clean line(s) were followed by a redo/callback and have no decision. ${describeLines(undecidedRedos)} Open each line and choose "Bill" (the charge stands) or "No charge" (the redo was our fault; client charge 0).`,
+      blocking_lines: undecidedRedos,
+    })
+    return
+  }
+
   const { count, error: cntErr } = await supabase
     .from('invoice_lines')
     .select('id', { count: 'exact', head: true })
@@ -371,6 +439,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(400).json({
       error: `Cannot approve: ${vagueReimbursements.length} reimbursement / trip fee / mailed-item line(s) don't say what they were for. ${describeLines(vagueReimbursements)} In the review note, write what was shipped/delivered, for which guest or reservation (or "owner request"), and paste the Slack or Quo link.`,
       blocking_lines: vagueReimbursements,
+    })
+    return
+  }
+
+  // A price change or a non-Haven property billed to Haven must be explained
+  // in writing. Resolving the flag is not enough: "Accept all" or a quick
+  // Resolve would otherwise wave a changed charge through with no record of
+  // why. The Resolve buttons ask for the note; this is the backstop for any
+  // other way the line got to resolved.
+  let unexplained: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<BlockingLine & { review_note: string | null; flags: string[] | null; review_status: string; line_kind: string }>(
+      'invoice_lines (resolve notes)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, review_note, flags, review_status, line_kind')
+        .eq('run_id', runId)
+        .overlaps('flags', RESOLVE_NOTE_FLAGS as string[])
+        .order('line_no'),
+      'line_no',
+    )
+    unexplained = rows.filter(r => resolveNoteMissing(r))
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check resolve notes', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (unexplained.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${unexplained.length} line(s) changed price since the last invoice or are billed to Haven without a Hostaway listing, and have no written explanation. ${describeLines(unexplained)} Open the line and say in the review note why the charge changed (or why this property is billed to Haven).`,
+      blocking_lines: unexplained,
+    })
+    return
+  }
+
+  // Charges Haven disputes without proof (pet hair, extra cleaning, a second
+  // clean, a last-minute surcharge) need a photo or the Slack thread where the
+  // work was reported. Unlike the detail rule above, the task match does not
+  // excuse a vendor line: a Double Clean matches the day's ordinary clean
+  // task, which proves nothing about the second one. Only lines generated
+  // from a Breezeway/Trellis task (source 'task') carry their own record.
+  let unevidenced: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<EvidenceCandidate>(
+      'invoice_lines (charge evidence)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, source, receipt_path, vendor_detail, review_note, raw_note_text')
+        .eq('run_id', runId)
+        .in('service_type', EVIDENCE_REQUIRED_SERVICES as string[])
+        .not('line_kind', 'in', '(operating_expense,excluded)')
+        .neq('review_status', 'excluded')
+        .gt('client_charge_amount', 0)
+        .order('line_no'),
+      'line_no',
+    )
+    unevidenced = linesMissingEvidence(rows)
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check charge evidence', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (unevidenced.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${unevidenced.length} pet fee / extra cleaning / double clean / last-minute surcharge line(s) have no evidence. ${describeLines(unevidenced)} Paste the Slack link or a photo link (Google Drive/Photos, Breezeway, an image URL) into the review note, or exclude the charge.`,
+      blocking_lines: unevidenced,
     })
     return
   }

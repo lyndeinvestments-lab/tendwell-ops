@@ -4,6 +4,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  havenListingIdsFromRows,
   isExcludedTitle,
   reconcile,
   round2,
@@ -12,6 +13,7 @@ import {
   type BilledClean,
   type BillingChannel,
   type EngineLine,
+  type PreviousCharge,
   type PropertyRates,
   type RawLine,
   type RunSummary,
@@ -31,7 +33,7 @@ import {
 } from '../../shared/aux-tasks.js'
 
 import { priceAgreementsByContact, type PriceAgreement, type PriceAgreementRow } from '../../shared/price-agreements.js'
-import { isMissingSchemaError } from '../../shared/db-errors.js'
+import { isRedoTask } from '../../shared/invoice-redo.js'
 import { PORTAL_REVIEW_FLAGS } from '../../shared/vendor-invoice.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import type { VercelRequest, VercelResponse } from '@vercel/node'
@@ -105,6 +107,12 @@ export interface EngineContext {
   stays: StayRow[]
   /** Trellis's own clean record (see EngineInput.trellisCoverage). */
   trellisCoverage: TrellisCoverage
+  /** Callback / reclean / redo tasks (see EngineInput.redoTasks). */
+  redoTasks: TaskRow[]
+  /** Client charges on approved/exported invoices (charge-changed check). */
+  previousCharges: PreviousCharge[]
+  /** Ops properties with a matched Hostaway listing; null = unavailable. */
+  havenListingPropertyIds: Set<number> | null
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -184,7 +192,7 @@ export function buildEngineTasks(
   taskRows: BreezewayTaskInput[],
   trellisRows: TrellisTaskInput[],
   propertyByTrellisId: Map<string, number>,
-): { tasks: TaskRow[]; trellisTasks: TaskRow[]; trellisCoverage: TrellisCoverage } {
+): { tasks: TaskRow[]; trellisTasks: TaskRow[]; trellisCoverage: TrellisCoverage; redoTasks: TaskRow[] } {
   // A Breezeway row's own is_clean flag predates the engine's title rules
   // ("Post-Owner Stay Clean - HT" imported as not-a-clean), so the engine's
   // rules decide here, the same way they do for Trellis.
@@ -205,7 +213,8 @@ export function buildEngineTasks(
         propertyId: t.property_id,
         dueDate: t.due_date,
         title: t.task_title,
-        isClean: !t.is_deep_clean && (t.is_clean || engineIsClean(t.task_title)),
+        // A redo is the cleaner fixing a clean, never a second billable one.
+        isClean: !t.is_deep_clean && !isRedoTask(t.task_title) && (t.is_clean || engineIsClean(t.task_title)),
         isDeepClean: t.is_deep_clean,
         totalCostRef: Number.isFinite(cost) ? cost : null,
         completed: isTaskCompleted('breezeway', t.status, t.completed_date),
@@ -237,7 +246,7 @@ export function buildEngineTasks(
         // Same rule as Breezeway: an inspection/walkthrough is not a clean.
         // (Chad Williams 223-202, 9/30: a completed "Cleaning Inspection" tied
         // with the real Turn Clean and won the label.)
-        isClean: !excluded && !isDeep && std != null && !std.isExtra && engineIsClean(title),
+        isClean: !excluded && !isDeep && !isRedoTask(title) && std != null && !std.isExtra && engineIsClean(title),
         isDeepClean: isDeep,
         totalCostRef: null,
         completed: isTaskCompleted('trellis', t.status, t.completed_at),
@@ -263,7 +272,29 @@ export function buildEngineTasks(
     else taskDays.set(t.propertyId!, [t.dueDate!])
   }
 
-  return { tasks, trellisTasks, trellisCoverage: { doneCleanDays, taskDays } }
+  // Callbacks / recleans / redos from both systems, whatever their status
+  // (a scheduled callback already says the clean had a problem). Cancelled
+  // and deleted tasks were dropped above.
+  const redoTasks: TaskRow[] = [
+    ...taskRows
+      .filter(t => !isTaskCancelled(t.status) && isRedoTask(t.task_title, t.status) && t.property_id != null && t.due_date != null)
+      .map(t => ({
+        externalId: t.external_id,
+        propertyId: t.property_id,
+        dueDate: t.due_date,
+        title: t.task_title,
+        isClean: false,
+        isDeepClean: false,
+        totalCostRef: null,
+        completed: isTaskCompleted('breezeway', t.status, t.completed_date),
+        source: 'breezeway' as const,
+      })),
+    ...trellisAll
+      .filter(t => isRedoTask(t.title, t.status))
+      .map(({ status: _s, ...t }) => ({ ...t, isClean: false, isDeepClean: false })),
+  ]
+
+  return { tasks, trellisTasks, trellisCoverage: { doneCleanDays, taskDays }, redoTasks }
 }
 
 /** properties.trellis_id → Ops property id. When two Ops rows share a Trellis
@@ -415,7 +446,7 @@ export async function loadEngineContext(
     propertyId: a.property_id,
   }))
 
-  const { tasks, trellisTasks, trellisCoverage } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
+  const { tasks, trellisTasks, trellisCoverage, redoTasks } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
 
   // Onboarding evidence + cross-invoice duplicate guard.
   const [firstRows, billedRows] = await Promise.all([
@@ -462,9 +493,103 @@ export async function loadEngineContext(
     ref: `invoice ${r.invoice_runs?.qbo_invoice_no ?? '(unnumbered)'} line ${r.line_no}`,
   }))
 
-  const stays = await loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId)
+  const [stays, previousCharges, havenListingPropertyIds] = await Promise.all([
+    loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId),
+    loadPreviousCharges(supabase, excludeRunId),
+    loadHavenListingPropertyIds(supabase),
+  ])
 
-  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans, stays, trellisCoverage }
+  return {
+    properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty,
+    billedCleans, stays, trellisCoverage, redoTasks, previousCharges, havenListingPropertyIds,
+  }
+}
+
+/** True for "this table/column/view is not there" errors: Postgres 42P01
+ *  (undefined table), 42703 (undefined column) and PostgREST PGRST204/PGRST205
+ *  (not in the schema cache). Code that depends on a migration that has not
+ *  been applied yet uses this to behave as before instead of failing. */
+export function isMissingSchemaError(e: unknown): boolean {
+  const code = (e as { code?: unknown } | null)?.code
+  if (typeof code === 'string' && ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(code)) return true
+  const msg = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
+  return /does not exist|schema cache/i.test(msg)
+}
+
+/** Client charges on every approved/exported, non-archived invoice (other than
+ *  `excludeRunId`), for the charge-changed check. ONE paged query per
+ *  reconcile; the engine indexes it by property + service. Errors propagate:
+ *  a guard that silently switches itself off is worse than a retry. */
+export async function loadPreviousCharges(supabase: SupabaseClient, excludeRunId: string | null): Promise<PreviousCharge[]> {
+  const rows = await fetchAllRows<{
+    id: string
+    property_id: number | null
+    service_type: string | null
+    client_charge_amount: number | string | null
+    service_date: string | null
+    raw_date_mentioned: string | null
+    run_id: string
+    invoice_runs: { qbo_invoice_no: number | null; invoice_number: string | null; invoice_date: string | null } | null
+  }>(
+    'invoice_lines (previous charges)',
+    () => {
+      let q = supabase
+        .from('invoice_lines')
+        .select('id, property_id, service_type, client_charge_amount, service_date, raw_date_mentioned, run_id, invoice_runs!inner(qbo_invoice_no, invoice_number, invoice_date, status, archived_at)')
+        .in('invoice_runs.status', ['approved', 'exported'])
+        .is('invoice_runs.archived_at', null)
+        .in('line_kind', ['clean', 'combined_split', 'deep_clean', 'extra'])
+        .neq('review_status', 'excluded')
+        .not('property_id', 'is', null)
+        .not('service_type', 'is', null)
+        .gt('client_charge_amount', 0)
+        .order('id')
+      if (excludeRunId) q = q.neq('run_id', excludeRunId)
+      return q
+    },
+    'id',
+  )
+  const out: PreviousCharge[] = []
+  for (const r of rows) {
+    const date = r.service_date ?? r.raw_date_mentioned ?? r.invoice_runs?.invoice_date ?? null
+    const charge = Number(r.client_charge_amount)
+    if (r.property_id == null || !r.service_type || !date || !(charge > 0)) continue
+    const no = r.invoice_runs?.qbo_invoice_no ?? r.invoice_runs?.invoice_number
+    out.push({
+      propertyId: Number(r.property_id),
+      serviceType: r.service_type,
+      charge,
+      date: String(date).slice(0, 10),
+      ref: no != null && no !== '' ? `invoice ${no}` : `run ${r.run_id.slice(0, 8)}`,
+    })
+  }
+  return out
+}
+
+/** Ops properties that have a Hostaway listing (Haven's listings). Reads the
+ *  hostaway_reconciliation view, whose property_id is the manual match when
+ *  there is one and the normalized-address match otherwise, so it covers every
+ *  matched listing, not just the hand-linked ones. Returns null when the
+ *  snapshot is empty or unreadable, which makes the engine skip the check. */
+export async function loadHavenListingPropertyIds(supabase: SupabaseClient): Promise<Set<number> | null> {
+  try {
+    const rows = await fetchAllRows<{ hostaway_id: number; property_id: number | null }>(
+      'hostaway_reconciliation',
+      () => supabase.from('hostaway_reconciliation').select('hostaway_id, property_id').order('hostaway_id'),
+      'hostaway_id',
+    )
+    const ids = havenListingIdsFromRows(rows)
+    if (!ids) console.warn('Hostaway snapshot has no matched listings; not_haven_listing check skipped')
+    return ids
+  } catch (e) {
+    console.error(
+      isMissingSchemaError(e)
+        ? 'Hostaway listings not available; not_haven_listing check skipped:'
+        : 'Hostaway listings unreadable; not_haven_listing check skipped:',
+      e,
+    )
+    return null
+  }
 }
 
 /** Agreed client prices (client_price_agreements, one row per client). Until
@@ -1003,6 +1128,9 @@ export async function reconcileRun(
     billedCleans: ctx.billedCleans,
     stays: ctx.stays,
     trellisCoverage: ctx.trellisCoverage,
+    redoTasks: ctx.redoTasks,
+    previousCharges: ctx.previousCharges,
+    havenListingPropertyIds: ctx.havenListingPropertyIds,
     vendorId: run.vendor_id,
     lines: rawLines,
     aliases: ctx.aliases,
