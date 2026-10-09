@@ -34,3 +34,22 @@ describe('lineIssues — property-less lines', () => {
     expect(lineIssues(line({ line_kind: 'operating_expense', property_id: null, billing_channel: 'none' }))).toEqual([])
   })
 })
+
+describe('lineIssues — guest-recoverable charges need detail', () => {
+  it('a vendor Trip Fee with no note is blocked like a reimbursement (1096 #258)', () => {
+    expect(lineIssues(line({ service_type: 'Trip Fee', client_charge_amount: 50, matched_task_id: null, review_note: null }))).toContain(
+      'Trip Fee needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link',
+    )
+  })
+
+  it('a task-backed Trip Fee already has its evidence', () => {
+    expect(lineIssues(line({ service_type: 'Trip Fee', client_charge_amount: 50, matched_task_id: 'bw-1', review_note: null }))).toEqual([])
+  })
+
+  it('passes once the note names the guest and links the thread', () => {
+    expect(lineIssues(line({
+      service_type: 'Mailed Left Items by the Guest', client_charge_amount: 30, matched_task_id: null,
+      review_note: 'Mailed charger to guest Smith, https://slack.com/archives/x/p1',
+    }))).toEqual([])
+  })
+})

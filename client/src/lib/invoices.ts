@@ -222,6 +222,8 @@ export interface JoinedProperty {
  *
  * Keep in sync with api/invoices/approve.ts.
  */
+const DETAIL_REQUIRED_SERVICES = ['Reimbursement', 'Trip Fee', 'Mailed Left Items by the Guest']
+
 export function lineIssues(l: InvoiceLine): string[] {
   const out: string[] = []
   const excluded = l.line_kind === 'excluded' || l.review_status === 'excluded'
@@ -237,11 +239,12 @@ export function lineIssues(l: InvoiceLine): string[] {
       ? 'Reimbursement needs the property it was for (Haven bills it back to that guest/owner)'
       : 'No property assigned (or bill it to QuickBooks / Haven)')
   }
-  // Mirrors reimbursementDetailOk in api/invoices/approve.ts — keep in sync.
-  if (billable && isReimb && !l.matched_task_id && Number(l.client_charge_amount ?? 0) > 0) {
+  // Mirrors reimbursementDetailOk / DETAIL_REQUIRED_SERVICES in
+  // api/invoices/approve.ts — keep in sync.
+  if (billable && DETAIL_REQUIRED_SERVICES.includes(l.service_type ?? '') && !l.matched_task_id && Number(l.client_charge_amount ?? 0) > 0) {
     const n = (l.review_note ?? '').trim()
     if (!(n.length >= 15 && /https?:\/\//i.test(n) && /\b(guest|reservation|res\b|owner|booking|stay)\b/i.test(n))) {
-      out.push('Reimbursement needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link')
+      out.push(`${l.service_type} needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link`)
     }
   }
   if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {

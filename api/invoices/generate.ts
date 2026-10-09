@@ -84,6 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       aliases: ctx.aliases,
       properties: ctx.properties,
       tasks: ctx.tasks,
+      trellisCoverage: ctx.trellisCoverage,
       periodStart,
       periodEnd,
     })
