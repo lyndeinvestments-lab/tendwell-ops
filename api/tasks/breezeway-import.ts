@@ -21,7 +21,17 @@ import { autoActivateProperties } from './_auto-stage.js'
 //
 // Response (200): { ok, batch, source, rows_seen, rows_upserted, rows_skipped,
 //                    cleans_in_batch, unmatched_addresses_count,
-//                    sample_unmatched_addresses }
+//                    sample_unmatched_addresses, full_export? }
+//
+// OPT-IN full-export mode: ?full_export=true&window_start=YYYY-MM-DD&
+// window_end=YYYY-MM-DD[&force=true] (or the same keys in a JSON body). The
+// caller declares the CSV is Breezeway's COMPLETE list of tasks due in that
+// window, so any breezeway_tasks row due in the window that is missing from
+// it was deleted or cancelled in Breezeway: it is marked
+// status='deleted_or_canceled' + disappeared_at (never deleted). Refused with
+// 409, before anything is written, when it would mark more than
+// disappearanceLimit() rows unless force=true. The daily incremental files
+// never send these params, so nothing is ever marked by them.
 
 interface BreezewayRow {
   'Task title'?: string
@@ -318,6 +328,154 @@ export function buildPropertyMatcherFrom(
   }
 }
 
+// ─── Full-export mode: tasks that disappeared from Breezeway ───────────────
+
+// Mirrors DISAPPEARED_TASK_STATUS in shared/aux-tasks.ts (this endpoint is
+// self-contained; keep the two in sync). The engine treats it as cancelled.
+export const DISAPPEARED_STATUS = 'deleted_or_canceled'
+
+// Safety threshold: a full export may mark at most this share of the window's
+// live tasks, and never more than DISAPPEAR_MAX_COUNT, without force. A wrong
+// window or a truncated export would otherwise wipe out a month of evidence.
+export const DISAPPEAR_MAX_SHARE = 0.25
+export const DISAPPEAR_MAX_COUNT = 50
+// A full export covers a month or two; a longer window is almost certainly a
+// typo (2026 for 2025) and would put a whole year's tasks at risk.
+export const FULL_EXPORT_MAX_SPAN_DAYS = 93
+
+export interface FullExportRequest {
+  start: string
+  end: string
+  force: boolean
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/
+const truthy = (v: unknown) => v === true || (typeof v === 'string' && /^(1|true|yes)$/i.test(v.trim()))
+const firstStr = (v: unknown): string | null =>
+  typeof v === 'string' ? v.trim() : Array.isArray(v) && typeof v[0] === 'string' ? v[0].trim() : null
+
+/** Reads the opt-in flags. `request` is null for an ordinary (daily) import. */
+export function parseFullExportRequest(
+  params: Record<string, unknown>,
+): { request: FullExportRequest | null; error?: undefined } | { request?: undefined; error: string } {
+  const on = truthy(firstStr(params.full_export) ?? params.full_export)
+  if (!on) return { request: null }
+  const start = firstStr(params.window_start) ?? ''
+  const end = firstStr(params.window_end) ?? ''
+  if (!ISO_DAY.test(start) || !ISO_DAY.test(end) || Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) {
+    return { error: 'full_export needs window_start and window_end as YYYY-MM-DD' }
+  }
+  if (start > end) return { error: 'window_start is after window_end' }
+  const span = Math.round((Date.parse(end) - Date.parse(start)) / 86_400_000) + 1
+  if (span > FULL_EXPORT_MAX_SPAN_DAYS) {
+    return { error: `full_export window is ${span} days; the maximum is ${FULL_EXPORT_MAX_SPAN_DAYS}` }
+  }
+  return { request: { start, end, force: truthy(firstStr(params.force) ?? params.force) } }
+}
+
+/** How many tasks a full export may mark without force. */
+export function disappearanceLimit(windowCount: number): number {
+  return Math.min(DISAPPEAR_MAX_COUNT, Math.floor(windowCount * DISAPPEAR_MAX_SHARE))
+}
+
+export interface WindowTask {
+  external_id: string
+  status: string | null
+}
+
+export interface DisappearancePlan {
+  /** Live (not already cancelled/deleted) tasks due in the window. */
+  windowCount: number
+  limit: number
+  toMark: WindowTask[]
+  /** True when toMark exceeds the limit and force was not given. */
+  refused: boolean
+}
+
+const alreadyGone = (status: string | null) => status === DISAPPEARED_STATUS || /cancel|delet/i.test(status ?? '')
+
+/** Which window tasks a full export proves gone. Pure. */
+export function planDisappearances(
+  existing: ReadonlyArray<WindowTask>,
+  presentIds: ReadonlySet<string>,
+  force: boolean,
+): DisappearancePlan {
+  const live = existing.filter(t => !alreadyGone(t.status))
+  const toMark = live.filter(t => !presentIds.has(t.external_id))
+  const limit = disappearanceLimit(live.length)
+  return { windowCount: live.length, limit, toMark, refused: !force && toMark.length > limit }
+}
+
+/** Rows of this CSV due inside the window. Zero means the file is not a
+ *  full export of that window at all, whatever the caller says. */
+export function countRowsInWindow(rows: ReadonlyArray<{ due_date: string | null }>, start: string, end: string): number {
+  return rows.filter(r => r.due_date != null && r.due_date >= start && r.due_date <= end).length
+}
+
+/** PostgREST / Postgres "that table or column doesn't exist": the migration
+ *  adding the disappearance columns hasn't been applied yet. */
+export function isMissingSchemaError(err: { code?: string | null; message?: string | null } | null | undefined): boolean {
+  if (!err) return false
+  if (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(err.code ?? '')) return true
+  return /does not exist|could not find the .* column/i.test(err.message ?? '')
+}
+
+async function loadWindowTasks(
+  supabase: SupabaseClient,
+  start: string,
+  end: string,
+): Promise<{ rows: WindowTask[]; error: { code?: string; message: string } | null }> {
+  const rows: WindowTask[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    // disappeared_at is selected only to prove the migration is applied
+    // before anything is written.
+    const { data, error } = await supabase
+      .from('breezeway_tasks')
+      .select('external_id, status, disappeared_at')
+      .gte('due_date', start)
+      .lte('due_date', end)
+      .order('external_id')
+      .range(from, from + PAGE - 1)
+    if (error) return { rows, error }
+    const page = (data ?? []) as WindowTask[]
+    rows.push(...page.map(r => ({ external_id: r.external_id, status: r.status })))
+    if (page.length < PAGE) return { rows, error: null }
+    if (rows.length >= 100 * PAGE) return { rows, error: { message: 'window holds over 100k tasks; refusing' } }
+  }
+}
+
+/** Marks the planned rows, grouped by their current status so the previous
+ *  status is kept, and only while that status is still what we read (a row
+ *  touched in between is left alone). Returns the number marked. */
+async function markDisappeared(
+  supabase: SupabaseClient,
+  toMark: ReadonlyArray<WindowTask>,
+  batch: string,
+): Promise<number> {
+  const now = new Date().toISOString()
+  const byStatus = new Map<string | null, string[]>()
+  for (const t of toMark) {
+    const arr = byStatus.get(t.status)
+    if (arr) arr.push(t.external_id)
+    else byStatus.set(t.status, [t.external_id])
+  }
+  let marked = 0
+  for (const [prev, ids] of byStatus) {
+    for (let i = 0; i < ids.length; i += 200) {
+      let q = supabase
+        .from('breezeway_tasks')
+        .update({ status: DISAPPEARED_STATUS, disappeared_at: now, disappeared_prev_status: prev, disappeared_batch: batch })
+        .in('external_id', ids.slice(i, i + 200))
+      q = prev == null ? q.is('status', null) : q.eq('status', prev)
+      const { data, error } = await q.select('id')
+      if (error) throw new Error(error.message)
+      marked += data?.length ?? 0
+    }
+  }
+  return marked
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' })
@@ -347,6 +505,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const sourceParam = typeof req.query.source === 'string' ? req.query.source.trim().toLowerCase() : ''
   const sourceLabel = sourceParam === 'current_month' || sourceParam === 'next_month' ? sourceParam : null
+
+  // Opt-in only: without full_export nothing below marks a single row.
+  const bodyParams = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body) ? (req.body as Record<string, unknown>) : {}
+  const fullParsed = parseFullExportRequest({ ...bodyParams, ...(req.query as Record<string, unknown>) })
+  if (fullParsed.error != null) {
+    res.status(400).json({ error: fullParsed.error })
+    return
+  }
+  const fullReq = fullParsed.request
 
   // Body shape options the agent may send:
   //   Content-Type: text/csv         → @vercel/node leaves req.body undefined,
@@ -479,6 +646,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // Full-export mode: decide what disappeared BEFORE writing anything, so a
+  // refusal leaves the table exactly as it was.
+  let disappearancePlan: DisappearancePlan | null = null
+  let fullExportSkipped: string | null = null
+  if (fullReq) {
+    if (countRowsInWindow(rows, fullReq.start, fullReq.end) === 0) {
+      res.status(400).json({ error: `full_export: no row in this CSV is due between ${fullReq.start} and ${fullReq.end}, so it is not a full export of that window` })
+      return
+    }
+    const { rows: existing, error: winErr } = await loadWindowTasks(supabase, fullReq.start, fullReq.end)
+    if (winErr && isMissingSchemaError(winErr)) {
+      // Migration 20261009e not applied yet: import as an ordinary file.
+      fullExportSkipped = 'migration_not_applied'
+    } else if (winErr) {
+      res.status(500).json({ error: 'full_export: failed to read the window', detail: winErr.message })
+      return
+    } else {
+      disappearancePlan = planDisappearances(existing, seenIds, fullReq.force)
+      if (disappearancePlan.refused) {
+        res.status(409).json({
+          error: `full_export would mark ${disappearancePlan.toMark.length} of ${disappearancePlan.windowCount} tasks due ${fullReq.start}..${fullReq.end} as deleted_or_canceled, over the safety limit of ${disappearancePlan.limit}. Check the window and the export; re-run with force=true only if they really were removed in Breezeway. Nothing was written.`,
+          window_start: fullReq.start,
+          window_end: fullReq.end,
+          window_tasks: disappearancePlan.windowCount,
+          would_mark: disappearancePlan.toMark.length,
+          limit: disappearancePlan.limit,
+          sample_external_ids: disappearancePlan.toMark.slice(0, 10).map(t => t.external_id),
+        })
+        return
+      }
+    }
+  }
+
   const CHUNK = 500
   let totalUpserted = 0
   let firstError: string | null = null
@@ -509,8 +709,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
+  // Rows are upserted; now mark the window's missing tasks. A failure here
+  // is reported, never fatal: the import itself already landed.
+  let markedCount = 0
+  let markError: string | null = null
+  if (fullReq && disappearancePlan && disappearancePlan.toMark.length > 0) {
+    try {
+      markedCount = await markDisappeared(supabase, disappearancePlan.toMark, batch)
+    } catch (e) {
+      markError = e instanceof Error ? e.message : String(e)
+    }
+  }
+  const fullExportNote = fullReq
+    ? fullExportSkipped
+      ? `full export ${fullReq.start}..${fullReq.end} NOT applied (${fullExportSkipped})`
+      : `full export ${fullReq.start}..${fullReq.end}: ${markedCount} of ${disappearancePlan?.toMark.length ?? 0} missing task(s) marked ${DISAPPEARED_STATUS}${fullReq.force ? ' (force)' : ''}${markError ? `; mark failed: ${markError.slice(0, 200)}` : ''}`
+    : null
+
   const cleansInBatch = rows.filter(r => r.is_clean).length
   const deepCleansInBatch = rows.filter(r => r.is_deep_clean).length
+  const unmatchedNote = unmatchedAddrs.size > 0
+    ? `${unmatchedAddrs.size} unmatched address(es); first: ${[...unmatchedAddrs].slice(0, 3).join(' | ')}`
+    : null
   await supabase.from('breezeway_import_log').insert({
     source_label: sourceLabel,
     rows_inserted: totalUpserted,
@@ -518,9 +738,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     rows_failed: parsed.data.length - rows.length,
     cleans_in_batch: cleansInBatch,
     deep_cleans_in_batch: deepCleansInBatch,
-    notes: unmatchedAddrs.size > 0
-      ? `${unmatchedAddrs.size} unmatched address(es); first: ${[...unmatchedAddrs].slice(0, 3).join(' | ')}`
-      : null,
+    notes: [unmatchedNote, fullExportNote].filter(Boolean).join(' · ') || null,
   })
 
   // Auto-activate pre-Active properties that now have a turn/departure clean.
@@ -544,5 +762,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     unmatched_addresses_count: unmatchedAddrs.size,
     sample_unmatched_addresses: [...unmatchedAddrs].slice(0, 5),
     auto_activated: autoActivated.map(a => a.name),
+    ...(fullReq
+      ? {
+          full_export: {
+            window_start: fullReq.start,
+            window_end: fullReq.end,
+            applied: fullExportSkipped == null && markError == null,
+            skipped_reason: fullExportSkipped,
+            window_tasks: disappearancePlan?.windowCount ?? null,
+            missing: disappearancePlan?.toMark.length ?? null,
+            marked: markedCount,
+            limit: disappearancePlan?.limit ?? null,
+            forced: fullReq.force,
+            error: markError,
+          },
+        }
+      : {}),
   })
 }

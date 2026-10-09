@@ -251,6 +251,9 @@ export async function sendEmail(opts: {
   subject: string
   html: string
 }): Promise<{ ok: boolean; error?: string }> {
+  // Same kill switch as notifyStaff, here too so every email path honors it
+  // (api/notify/send.ts and the crons call sendEmail directly).
+  if (notificationsDisabled()) return { ok: false, error: 'NOTIFY_DISABLED is set' }
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY not configured' }
 
@@ -407,6 +410,14 @@ export function renderEmailLayout(opts: { title: string; bodyHtml: string; ctaUr
 </table></body></html>`
 }
 
+/** Global kill switch: NOTIFY_DISABLED=1 (or "true") stops notifyStaff from
+ *  sending anything. Set it on any deployment or process that test scripts
+ *  drive (the verify scripts set it for their own process). */
+export function notificationsDisabled(env: Record<string, string | undefined> = process.env): boolean {
+  const v = (env.NOTIFY_DISABLED ?? '').trim().toLowerCase()
+  return v === '1' || v === 'true'
+}
+
 // Fan a server-initiated notification out to the staff who should get it.
 //
 // For events with no user session behind them — a webhook, a cron sweep, a
@@ -426,6 +437,10 @@ export async function notifyStaff(sb: SupabaseClient, opts: {
   ctaLabel?: string
   meta?: Record<string, any>
 }): Promise<{ sent: number; failed: number; recipients: number }> {
+  if (notificationsDisabled()) {
+    console.log(`notifyStaff(${opts.eventType}) skipped: NOTIFY_DISABLED is set`)
+    return { sent: 0, failed: 0, recipients: 0 }
+  }
   try {
     const [users, prefs] = await Promise.all([
       getAllUsersWithViews(sb),

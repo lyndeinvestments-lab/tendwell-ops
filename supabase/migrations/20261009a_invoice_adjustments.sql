@@ -43,7 +43,10 @@
 
 create table if not exists public.invoice_adjustments (
   id                   uuid primary key default gen_random_uuid(),
-  contact_id           uuid not null references public.contacts(id),
+  -- Required on insert (trigger below). SET NULL on delete so a client can be
+  -- permanently deleted; its credits keep their history with no client and
+  -- can no longer be applied.
+  contact_id           uuid null references public.contacts(id) on delete set null,
   original_line_id     uuid null references public.invoice_lines(id) on delete set null,
   amount               numeric(12,2) not null check (amount < 0),
   reason               text not null check (btrim(reason) <> ''),
@@ -85,6 +88,22 @@ drop trigger if exists invoice_adjustments_touch on public.invoice_adjustments;
 create trigger invoice_adjustments_touch
   before update on public.invoice_adjustments
   for each row execute function public.invoice_adjustments_touch();
+
+create or replace function public.invoice_adjustments_require_client()
+returns trigger language plpgsql set search_path = public as $fn$
+begin
+  if new.contact_id is null then
+    raise exception 'A client credit needs a client' using errcode = '23502';
+  end if;
+  return new;
+end $fn$;
+
+revoke execute on function public.invoice_adjustments_require_client() from public;
+
+drop trigger if exists invoice_adjustments_require_client on public.invoice_adjustments;
+create trigger invoice_adjustments_require_client
+  before insert on public.invoice_adjustments
+  for each row execute function public.invoice_adjustments_require_client();
 
 -- ─── 2. Audit ────────────────────────────────────────────────────────────────
 -- Every change moves money on a client invoice, so it leaves a trail whichever

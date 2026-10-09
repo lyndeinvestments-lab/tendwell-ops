@@ -7,7 +7,10 @@
 // flag + review_status='needs_review' and surfaces in the review queue.
 
 import type { FeeOverride } from '../../shared/aux-tasks.js'
-export type { FeeOverride }
+import type { PriceAgreement } from '../../shared/price-agreements.js'
+import { REDO_PENDING_FLAG, REDO_WINDOW_DAYS } from '../../shared/invoice-redo.js'
+import { CHARGE_CHANGED_FLAG, NOT_HAVEN_LISTING_FLAG } from '../../shared/invoice-review.js'
+export type { FeeOverride, PriceAgreement }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +30,11 @@ export interface PropertyRates {
   // Resolved from the property's contact exactly the way billingChannel is,
   // so every property of one client shares the same map.
   feeOverrides?: Readonly<Record<string, FeeOverride>>
+  // The prices this property's CLIENT accepted (client_price_agreements),
+  // resolved through contact_id like feeOverrides. Never sets a price: a line
+  // billing something else is sent to review (price_mismatch_agreement).
+  // Absent = no agreement on file, never flagged.
+  priceAgreement?: PriceAgreement
   // Archived duplicate kept for history. Only consulted when several Ops rows
   // share one name (Kelly Armsworth 3634: #499 active, #507 archived).
   archived?: boolean
@@ -174,6 +182,26 @@ export interface EngineInput {
   // Trellis clean whenever Breezeway has a completed one that day). Absent =
   // no Trellis data → Breezeway completions are taken at face value.
   trellisCoverage?: TrellisCoverage
+  // Callback / reclean / redo tasks (Breezeway and Trellis, any status except
+  // cancelled or deleted). A billed clean followed by one within a week goes
+  // to review as redo_pending. Absent = no redo check.
+  redoTasks?: ReadonlyArray<TaskRow>
+  // Client charges on the most recent approved/exported invoices, for the
+  // charge-changed check. Absent or empty = no history, nothing is flagged.
+  previousCharges?: ReadonlyArray<PreviousCharge>
+  // Ops properties that have a matched Hostaway listing (Haven's listings).
+  // null/absent = the snapshot is empty or unreadable: the check is skipped so
+  // a failed Hostaway sync cannot put every Haven line into review.
+  havenListingPropertyIds?: ReadonlySet<number> | null
+}
+
+/** A client charge billed on an approved/exported invoice. */
+export interface PreviousCharge {
+  propertyId: number
+  serviceType: string
+  charge: number
+  date: string // yyyy-mm-dd service date (falls back to the invoice date)
+  ref: string // human label, e.g. "invoice 1095"
 }
 
 export interface TrellisCoverage {
@@ -266,6 +294,22 @@ export const FLAGS = {
   // as "Owner Stay - Departure Clean" / "Owner Stay - Turn Clean" so Haven's
   // QBO class rules route it to the owner.
   OWNER_STAY: 'owner_stay',
+  // The client charge differs from the price this client accepted (agreed
+  // clean price, linen fee or onboarding fee in client_price_agreements).
+  // See priceAgreementMismatch.
+  PRICE_MISMATCH_AGREEMENT: 'price_mismatch_agreement',
+  // A callback / reclean / redo task at the property on the clean's day or
+  // within REDO_WINDOW_DAYS after it. Needs an explicit "bill" or "no charge"
+  // decision before Approve (shared/invoice-redo.ts).
+  REDO_PENDING: REDO_PENDING_FLAG,
+  // The client charge differs from the one on the most recent approved/exported
+  // line for the same property and service. A price that moves between
+  // invoices should be a decision someone wrote down, never a side effect of
+  // an edit to the property's rate. Resolving it requires a note.
+  CHARGE_CHANGED_SINCE_LAST_INVOICE: CHARGE_CHANGED_FLAG,
+  // Billed to Haven (QuickBooks channel) but the property has no matched
+  // Hostaway listing, so it is probably not Haven's. Resolving requires a note.
+  NOT_HAVEN_LISTING: NOT_HAVEN_LISTING_FLAG,
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -312,6 +356,7 @@ export const APPROVED_EXTRA_SERVICES = [
   'Mailed Left Items by the Guest',
   'Hot Tub Refresh Requested by Guest',
   'Pet Fee',
+  'Last-Minute Surcharge',
 ] as const
 
 // Base services a vendor may also bill on their own, without a clean, from the
@@ -578,11 +623,16 @@ export function standardizeTitle(text: string | null): { title: string; isExtra:
 //     └ 2026-10-08: deliveries moved to Trip Fee (Haven's title for a trip
 //       to the property). Trip Fee takes the same $50 deliveries were
 //       already billed at, so no client price changed.
+//     └ 2026-10-09: Reimbursement left this list. A reimbursement is money
+//       the vendor fronted, so it bills at the receipt amount (client charge
+//       = cleaner pay = the vendor's line amount), never a flat $50 that
+//       over-billed a $12 purchase and under-billed an $86 propane tank. See
+//       reimbursementAtCost.
 //   Pet / Dog-hair Fee            44.44 → 45        23.50 → 25
 //
 // Types with no history (Mailed Left Items, Extra Cleaning / maintenance,
-// Double Clean) are deliberately absent: they keep the old
-// pass-through-and-review behavior rather than getting an invented price.
+// Double Clean, Last-Minute Surcharge) are deliberately absent: they keep the
+// old pass-through-and-review behavior rather than getting an invented price.
 export interface StandardFee {
   charge: number
   // Price when the property has a hot tub, for fees whose work includes it.
@@ -596,7 +646,6 @@ export const STANDARD_EXTRA_PRICING: Readonly<Record<string, StandardFee>> = {
   'Excessive Trash Pickup': { charge: 50, costRef: 30 },
   'Vacancy Clean / Touch Up Clean': { charge: 50, hotTubCharge: 65, costRef: 25 },
   'Linen Pull': { charge: 50, costRef: 40 },
-  'Reimbursement': { charge: 50, costRef: 25 },
   'Trip Fee': { charge: 50, costRef: 25 },
   'Pet Fee': { charge: 45, costRef: 25 },
 }
@@ -1045,15 +1094,41 @@ function requireReason(line: EngineLine, note: string | null): EngineLine {
   return line
 }
 
+/** A reimbursement bills at the receipt amount: the client is charged exactly
+ *  what the vendor fronted and the vendor is paid it back. With no amount
+ *  there is nothing to bill, so the line queues for a human to enter the
+ *  receipt total. */
+export function reimbursementAtCost(rawAmount: number): { amount: number | null; review: boolean } {
+  if (!Number.isFinite(rawAmount) || rawAmount <= PENNY) return { amount: null, review: true }
+  return { amount: round2(rawAmount), review: false }
+}
+
 // Price a standalone extra from the fee list (or the client's override).
 // Returns null for an unpriced type so the caller keeps its own fallback.
 // On the unprofitable case the note names the price that was compared
-// against, never the floor the charge was bumped to.
+// against, never the floor the charge was bumped to. Reimbursements bill at
+// cost and a Last-Minute Surcharge (no price yet) always queues, so neither
+// falls back to a caller's generic path.
 function priceStandaloneExtra(
   line: EngineLine,
   rawAmount: number,
   property: PropertyRates | null,
 ): EngineLine | null {
+  if (line.serviceType === 'Reimbursement') {
+    const cost = reimbursementAtCost(rawAmount)
+    const out: EngineLine = { ...line, cleanerPayAmount: cost.amount, clientChargeAmount: cost.amount }
+    if (!cost.review) return out
+    return withNote(
+      needsReview(out, FLAGS.MISSING_RATE),
+      'Reimbursement with no amount: enter the receipt total as both the invoiced amount and the client charge (it bills at cost).',
+    )
+  }
+  if (line.serviceType === 'Last-Minute Surcharge') {
+    return withNote(
+      needsReview({ ...line, clientChargeAmount: round2(rawAmount) }, FLAGS.MISSING_RATE),
+      `Last-Minute Surcharge billed ${usd(rawAmount)}: there is no standard price yet, so confirm the pay and set the client charge.`,
+    )
+  }
   const priced = standardExtraCharge(line.serviceType, rawAmount, property)
   if (!priced) return null
   let out: EngineLine = { ...line, clientChargeAmount: round2(priced.charge) }
@@ -1764,6 +1839,32 @@ function applyEvidenceRules(line: EngineLine, c: EvidenceCtx): EngineLine {
   return l
 }
 
+/** The redo task that puts a clean at `propertyId` on `cleanDate` in
+ *  question: a callback/reclean/redo on that day or up to REDO_WINDOW_DAYS
+ *  after. A redo belongs to the most recent clean before it, so one that
+ *  comes after a later completed clean at the property (`cleanDays`) is that
+ *  clean's problem, not this one's. Earliest redo wins. */
+export function findRedoAfterClean(
+  propertyId: number,
+  cleanDate: string,
+  redoTasks: ReadonlyArray<TaskRow>,
+  cleanDays: ReadonlyArray<string> = [],
+): TaskRow | null {
+  const end = addDays(cleanDate, REDO_WINDOW_DAYS)
+  const hits = redoTasks
+    .filter(t => t.propertyId === propertyId && t.dueDate != null && t.dueDate >= cleanDate && t.dueDate <= end)
+    .filter(t => !cleanDays.some(d => d > cleanDate && d <= t.dueDate!))
+    .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!) || a.externalId.localeCompare(b.externalId))
+  return hits[0] ?? null
+}
+
+function markRedoPending(line: EngineLine, redo: TaskRow, cleanDate: string): EngineLine {
+  const where = redo.source === 'trellis' ? 'Trellis' : 'Breezeway'
+  const msg = `A redo task followed this clean: "${redo.title}" (${where}) on ${redo.dueDate}, clean on ${cleanDate}. Decide before approving: "bill" (the charge stands) or "no charge" (the redo was our fault, client charge set to 0).`
+  const out = needsReview(line, FLAGS.REDO_PENDING)
+  return { ...out, engineNote: out.engineNote ? `${out.engineNote} ${msg}` : msg }
+}
+
 /** Flag the rows of one vendor line that are an owner charge. The base clean
  *  is checked against the owner's checkout; a split extra rides with its base
  *  (it was billed on the same visit); a standalone extra is checked against
@@ -1791,6 +1892,150 @@ function markOwnerStay(
     if (l.serviceType === 'Onboarding Clean') return l
     return ownerStayDuring(l.propertyId!, date, stays) ? flag(l, FLAGS.OWNER_STAY) : l
   })
+}
+
+// ─── Agreed client prices ─────────────────────────────────────────────────────
+
+export type AgreedPriceKind = 'clean' | 'linen' | 'onboarding'
+
+/** Which agreed price (if any) a line's client charge should equal. Only
+ *  billed rows count: excluded, operating-expense and uncharged rows never do.
+ *  The onboarding fee is the split surcharge row (the $50 next to the base
+ *  clean); the disputed $0 "not first clean" row is deliberately unbilled. A
+ *  deep clean is its own price and is not checked against the clean price. */
+export function agreedPriceKind(line: EngineLine): AgreedPriceKind | null {
+  if (line.propertyId == null || line.clientChargeAmount == null) return null
+  if (line.reviewStatus === 'excluded' || line.lineKind === 'excluded' || line.lineKind === 'operating_expense') return null
+  if (line.serviceType != null && /linen\s*fee/i.test(line.serviceType)) return 'linen'
+  if (line.lineKind === 'extra') {
+    if (line.serviceType === 'Onboarding Clean' && line.splitGroup != null &&
+        !line.flags.includes(FLAGS.ONBOARDING_NOT_FIRST_CLEAN)) return 'onboarding'
+    return null
+  }
+  if (line.lineKind === 'clean' || line.lineKind === 'combined_split') return 'clean'
+  return null
+}
+
+const AGREED_PRICE_LABEL: Record<AgreedPriceKind, string> = {
+  clean: 'clean price',
+  linen: 'linen fee',
+  onboarding: 'onboarding fee',
+}
+
+/** The mismatch between a line's client charge and the client's agreed price,
+ *  or null when they agree (within $0.01), the client has no agreement, or the
+ *  agreement does not cover this kind of line. */
+export function priceAgreementMismatch(
+  line: EngineLine,
+  agreement: PriceAgreement | null | undefined,
+): { kind: AgreedPriceKind; agreed: number; billed: number; note: string } | null {
+  if (!agreement) return null
+  const kind = agreedPriceKind(line)
+  if (!kind) return null
+  const agreed = kind === 'clean' ? agreement.cleanPrice : kind === 'linen' ? agreement.linenFee : agreement.onboardingFee
+  if (agreed == null) return null
+  const billed = round2(line.clientChargeAmount!)
+  if (Math.abs(billed - agreed) <= 0.01 + Number.EPSILON) return null
+  const note = `Agreed ${usd(agreed)}${agreement.acceptedDate ? ` on ${agreement.acceptedDate}` : ''}` +
+    `${agreement.sourceLink ? ` (${agreement.sourceLink})` : ''}, billed ${usd(billed)}` +
+    ` (${AGREED_PRICE_LABEL[kind]}). Fix the client charge, or update the agreement if the price changed.`
+  return { kind, agreed, billed, note }
+}
+
+/** Send every line whose client charge disagrees with its client's agreed
+ *  price to review. The note is appended rather than first-writer-wins: the
+ *  line may already explain something else, and this has to be seen too. */
+export function applyPriceAgreements(lines: EngineLine[], propsById: ReadonlyMap<number, PropertyRates>): EngineLine[] {
+  return lines.map(l => {
+    const agreement = l.propertyId != null ? propsById.get(l.propertyId)?.priceAgreement : undefined
+    const m = priceAgreementMismatch(l, agreement)
+    if (!m) return l
+    const out = needsReview(l, FLAGS.PRICE_MISMATCH_AGREEMENT)
+    return { ...out, engineNote: out.engineNote ? `${out.engineNote} ${m.note}` : m.note }
+  })
+}
+
+// ─── Rate-change guard + Haven-listing check ─────────────────────────────────
+
+/** Lines the two checks apply to: billed to a client and tied to a property. */
+function isBilledPropertyLine(l: EngineLine): boolean {
+  return l.propertyId != null && l.lineKind !== 'excluded' && l.lineKind !== 'operating_expense' && l.reviewStatus !== 'excluded'
+}
+
+// Unlike withNote (first writer wins), these checks run after classification,
+// so they append to whatever explanation is already there.
+function appendNote(line: EngineLine, text: string): EngineLine {
+  return { ...line, engineNote: line.engineNote ? `${line.engineNote} ${text}` : text }
+}
+
+/** What a property+service was last billed at. Several lines can share the
+ *  latest date with different charges (an onboarding clean is a base row plus
+ *  a $50 surcharge row), so every distinct charge on that date is kept. */
+export interface LastCharge {
+  date: string
+  ref: string
+  charges: number[]
+}
+
+const lastChargeKey = (propertyId: number, serviceType: string) => `${propertyId}|${serviceType}`
+
+/** Index the client charges by property + service, keeping the most recent
+ *  date. Zero/blank charges are skipped: a $0 row is a deliberate no-charge
+ *  (onboarding_not_first_clean, owner comps), not a price to compare against. */
+export function lastChargeIndex(prev: ReadonlyArray<PreviousCharge> | undefined): Map<string, LastCharge> {
+  const out = new Map<string, LastCharge>()
+  for (const p of prev ?? []) {
+    if (!(p.charge > 0) || !p.serviceType) continue
+    const key = lastChargeKey(p.propertyId, p.serviceType)
+    const charge = round2(p.charge)
+    const cur = out.get(key)
+    if (!cur || p.date > cur.date) out.set(key, { date: p.date, ref: p.ref, charges: [charge] })
+    else if (p.date === cur.date && !cur.charges.some(c => Math.abs(c - charge) <= PENNY)) cur.charges.push(charge)
+  }
+  return out
+}
+
+/** Flag a line whose client charge differs from the last approved/exported
+ *  charge for the same property and service. Skips lines with no charge, and
+ *  properties/services with no history. */
+export function checkChargeChanged(line: EngineLine, index: ReadonlyMap<string, LastCharge>): EngineLine {
+  if (!isBilledPropertyLine(line) || line.serviceType == null) return line
+  const charge = line.clientChargeAmount
+  if (charge == null || !(charge > 0)) return line
+  const last = index.get(lastChargeKey(line.propertyId!, line.serviceType))
+  if (!last) return line
+  const now = round2(charge)
+  if (last.charges.some(c => Math.abs(c - now) <= PENNY)) return line
+  const was = last.charges.map(usd).join(' / ')
+  return appendNote(
+    needsReview(line, FLAGS.CHARGE_CHANGED_SINCE_LAST_INVOICE),
+    `Charge changed: was ${was} on ${last.date} (${last.ref}), now ${usd(now)}. Confirm the new price is intended and say why in the review note.`,
+  )
+}
+
+/** Property ids that have a Hostaway listing, from the reconciliation rows.
+ *  Returns null when no listing is matched to a property (empty or never-synced
+ *  snapshot), so the caller skips the check instead of flagging every line. */
+export function havenListingIdsFromRows(
+  rows: ReadonlyArray<{ property_id: number | string | null }> | null | undefined,
+): Set<number> | null {
+  const ids = new Set<number>()
+  for (const r of rows ?? []) if (r.property_id != null) ids.add(Number(r.property_id))
+  return ids.size > 0 ? ids : null
+}
+
+/** Flag a Haven-billed line whose property has no matched Hostaway listing.
+ *  `listingPropertyIds` null/empty means the snapshot is unavailable, so
+ *  nothing is flagged (a failed sync must not block every Haven line). Lines
+ *  with no property (courier reimbursements) have nothing to look up. */
+export function checkHavenListing(line: EngineLine, listingPropertyIds: ReadonlySet<number> | null | undefined): EngineLine {
+  if (listingPropertyIds == null || listingPropertyIds.size === 0) return line
+  if (line.billingChannel !== 'qbo_haven' || !isBilledPropertyLine(line)) return line
+  if (listingPropertyIds.has(line.propertyId!)) return line
+  return appendNote(
+    needsReview(line, FLAGS.NOT_HAVEN_LISTING),
+    `Billed to Haven, but this property has no matched Hostaway listing, so it may not be a Haven property. Confirm it is Haven's (or change the billing channel) and say why in the review note.`,
+  )
 }
 
 export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: RunSummary } {
@@ -1887,12 +2132,27 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
         const cur = firstClean.get(base.propertyId)
         if (!cur || d < cur) firstClean.set(base.propertyId, d)
       }
+      // A redo/callback after the clean: the base row (it carries the
+      // client charge for the visit) waits for a bill / no-charge decision.
+      if (d && base.propertyId != null && input.redoTasks?.length) {
+        const cleanDays = (tasksByProperty.get(base.propertyId) ?? [])
+          .filter(t => isDone(t) && t.dueDate != null)
+          .map(t => t.dueDate!)
+        const redo = findRedoAfterClean(base.propertyId, d, input.redoTasks, cleanDays)
+        if (redo) {
+          classified = classified.map(l =>
+            (l.splitGroup == null || l.lineKind !== 'extra') && l.reviewStatus !== 'excluded'
+              ? markRedoPending(l, redo, d)
+              : l)
+        }
+      }
     }
     if (input.stays?.length) classified = markOwnerStay(classified, serviceDate ?? noteDate, input.stays, input.tasks)
     outByIndex.set(i, classified.map(l => ({ ...l, serviceDate })))
   }
-  const outLines: EngineLine[] = []
+  let outLines: EngineLine[] = []
   for (let i = 0; i < input.lines.length; i++) outLines.push(...(outByIndex.get(i) ?? []))
+  outLines = applyPriceAgreements(outLines, propsById)
 
   for (const w of detectMisdatedBlocks(outLines, input.tasks)) {
     for (const l of outLines) {
@@ -1903,8 +2163,13 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
     }
   }
 
+  const lastCharges = lastChargeIndex(input.previousCharges)
+  for (let i = 0; i < outLines.length; i++) {
+    outLines[i] = checkHavenListing(checkChargeChanged(outLines[i], lastCharges), input.havenListingPropertyIds)
+  }
+
   const active = outLines.filter(l => l.lineKind !== 'excluded')
-  const matched = active.filter(l => l.lineKind !== 'operating_expense')
+  const matched =active.filter(l => l.lineKind !== 'operating_expense')
   const totalInvoiced = round2(input.lines.reduce((a, l) => a + l.rawAmount, 0))
   const totalCleanerPay = round2(active.reduce((a, l) => a + (l.cleanerPayAmount ?? 0), 0))
   const totalClientCharge = round2(matched.reduce((a, l) => a + (l.clientChargeAmount ?? 0), 0))

@@ -114,7 +114,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (!ciErr) {
       billComInvoices = (ciRows ?? []).map(r => ({
-        contactId: String(r.contact_id),
+        contactId: r.contact_id != null ? String(r.contact_id) : null,
         serviceMonth: String(r.service_month),
         status: r.status as ClientInvoiceStatus,
         billcomInvoiceNumber: r.billcom_invoice_number ?? null,

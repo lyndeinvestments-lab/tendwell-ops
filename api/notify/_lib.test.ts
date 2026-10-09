@@ -1,5 +1,54 @@
-import { describe, expect, it } from 'vitest'
-import { DEFAULT_NOTIF_PREFS, filterRecipients, type NotifPrefs } from './_lib.js'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_NOTIF_PREFS, filterRecipients, notificationsDisabled, notifyStaff, sendEmail, type NotifPrefs } from './_lib.js'
+
+describe('NOTIFY_DISABLED kill switch', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  it('reads "1" and "true" (any case) as disabled, anything else as enabled', () => {
+    expect(notificationsDisabled({ NOTIFY_DISABLED: '1' })).toBe(true)
+    expect(notificationsDisabled({ NOTIFY_DISABLED: 'true' })).toBe(true)
+    expect(notificationsDisabled({ NOTIFY_DISABLED: ' TRUE ' })).toBe(true)
+    expect(notificationsDisabled({ NOTIFY_DISABLED: '0' })).toBe(false)
+    expect(notificationsDisabled({ NOTIFY_DISABLED: '' })).toBe(false)
+    expect(notificationsDisabled({})).toBe(false)
+  })
+
+  const fakeDb = () => ({ from: vi.fn(() => { throw new Error('db must not be touched') }) })
+  const opts = { eventType: 'vendor_invoice_submitted', subject: 's', lines: ['l'] }
+
+  it('notifyStaff sends nothing and touches nothing when disabled', async () => {
+    vi.stubEnv('NOTIFY_DISABLED', '1')
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const sb = fakeDb()
+    const r = await notifyStaff(sb as any, opts)
+    expect(r).toEqual({ sent: 0, failed: 0, recipients: 0 })
+    expect(sb.from).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('sendEmail itself refuses when disabled, even with a provider key set', async () => {
+    vi.stubEnv('NOTIFY_DISABLED', 'true')
+    vi.stubEnv('RESEND_API_KEY', 'test-key-not-real')
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const r = await sendEmail({ to: 'nobody@example.com', subject: 's', html: '<p>x</p>' })
+    expect(r.ok).toBe(false)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('without the switch, notifyStaff does reach the (stubbed) recipient lookup', async () => {
+    vi.stubEnv('NOTIFY_DISABLED', '')
+    const fetchSpy = vi.fn(async () => { throw new Error('offline') })
+    vi.stubGlobal('fetch', fetchSpy)
+    const r = await notifyStaff(fakeDb() as any, opts)
+    expect(fetchSpy).toHaveBeenCalled()
+    expect(r).toEqual({ sent: 0, failed: 0, recipients: 0 })
+  })
+})
 
 const user = (id: number, role: string, views: string[]) => ({
   id, role, google_email: `u${id}@example.com`, label: `U${id}`, custom_views: null, allowedViews: views,
