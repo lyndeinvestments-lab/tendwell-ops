@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
+import { isMissingSchemaError } from './_credits.js'
 import { REDO_PENDING_FLAG, redoBlocker, type RedoCheckLine } from '../../shared/invoice-redo.js'
 import { RESOLVE_NOTE_FLAGS, resolveNoteMissing } from '../../shared/invoice-review.js'
 import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES, evidenceLinkOk } from '../../shared/vendor-invoice.js'
@@ -550,5 +551,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ error: 'Failed to approve', detail: updErr.message })
     return
   }
-  res.status(200).json({ ok: true, run_id: runId, status: 'approved' })
+
+  // Every gate passed and the run is approved: put each billed client's OPEN
+  // credits (invoice_adjustments) on it. One SQL transaction that locks the
+  // credits, so one can never land on two invoices; capped so no client's
+  // invoice goes below zero (the rest stays open for their next run). A
+  // failure here never un-approves the run: the credits simply stay open and
+  // go on the client's next approved run.
+  const credits = await applyOpenCredits(supabase, runId, actor.email)
+  res.status(200).json({ ok: true, run_id: runId, status: 'approved', ...credits })
+}
+
+/** Runs invoice_apply_open_credits. Before migration 20261009a is applied the
+ *  function does not exist: that is "no credits", not an error. */
+export async function applyOpenCredits(
+  supabase: NonNullable<ReturnType<typeof getServiceClient>>,
+  runId: string,
+  actorEmail: string | null,
+): Promise<{ credits_applied: number; credit_total: number; credits_warning?: string }> {
+  const { data, error } = await supabase.rpc('invoice_apply_open_credits', { p_run_id: runId, p_actor: actorEmail })
+  if (error) {
+    if (isMissingSchemaError(error)) return { credits_applied: 0, credit_total: 0 }
+    console.error('[invoices/approve] applying open credits failed', runId, error.message)
+    return {
+      credits_applied: 0,
+      credit_total: 0,
+      credits_warning: "Approved, but the open client credits could not be added to this run. They stay open and will go on the client's next approved run.",
+    }
+  }
+  const applied: Array<{ amount: number | string }> = Array.isArray(data?.applied) ? data.applied : []
+  const total = Math.round(applied.reduce((a, x) => a + Number(x.amount ?? 0), 0) * 100) / 100
+  return { credits_applied: applied.length, credit_total: total }
 }

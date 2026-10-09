@@ -11,6 +11,7 @@
 import Papa from 'papaparse'
 import { extraReasonFromNote, REASON_REQUIRED_EXTRAS } from './_engine.js'
 import type { BillingChannel, LineKind } from './_engine.js'
+import { CREDIT_SERVICE_TYPE, isCreditLine } from './_credits.js'
 
 export interface ExportRun {
   vendorName: string
@@ -121,6 +122,12 @@ export function lineReason(l: Pick<ExportLine, 'serviceType' | 'reviewNote' | 'n
   return cleanReason(l.reviewNote) ?? cleanReason(extraReasonFromNote(cleanReason(l.note), t))
 }
 
+/** A credit line's reason: the adjustment's reason is stored as the line note
+ *  (the review note carries the same reason plus the evidence link). */
+function creditReason(l: Pick<ExportLine, 'note' | 'reviewNote'>): string | null {
+  return cleanReason(l.note) ?? cleanReason(l.reviewNote)
+}
+
 const isOwnerStay = (l: Pick<ExportLine, 'flags'>) => !!l.flags?.includes('owner_stay')
 
 /** Client-facing description. An owner-stay line LEADS with "Owner Stay -
@@ -130,6 +137,11 @@ const isOwnerStay = (l: Pick<ExportLine, 'flags'>) => !!l.flags?.includes('owner
  *  fee) and, for owner-or-Haven charges, the evidence link. Haven's AP bot
  *  copies this text straight into Ramp, so it has to be right on its own. */
 export function clientDescription(l: ExportLine): string {
+  // A client credit (invoice_adjustments) says what it is for and links the
+  // evidence, so the client can match it to the complaint or overcharge.
+  if (isCreditLine(l)) {
+    return ['Credit', l.propertyName ?? '', creditReason(l) ?? '', ...linksIn(l.reviewNote)].filter(Boolean).join(' – ')
+  }
   const parts: string[] = []
   if (isOwnerStay(l)) parts.push(`Owner Stay - ${l.serviceType ?? 'Clean'}`)
   parts.push(l.propertyName ?? '')
@@ -177,6 +189,10 @@ function collapseSplits(
 // A missing reason was already flagged for review upstream, so a bare title
 // here means a human explicitly approved it without one.
 export function serviceTitle(l: ExportLine): string {
+  if (isCreditLine(l)) {
+    const reason = creditReason(l)
+    return reason ? `${CREDIT_SERVICE_TYPE} (${reason})` : CREDIT_SERVICE_TYPE
+  }
   const title = l.serviceType ?? ''
   if (!title) return title
   let out = title

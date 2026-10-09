@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { isCreditLine, isMissingSchemaError } from './_credits.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
 //                          [&preview=1]
@@ -77,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       'invoice_lines',
       () => supabase
         .from('invoice_lines')
-        .select('line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
+        .select('id, line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
         .eq('run_id', runId)
         .order('line_no'),
       'line_no',
@@ -85,6 +86,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch (e) {
     res.status(500).json({ error: 'Failed to load lines', detail: e instanceof Error ? e.message : String(e) })
     return
+  }
+
+  // A client credit (invoice_adjustments) names its client on the adjustment,
+  // not through a property: most credits carry none. Without this the
+  // bill.com worksheet would list the credit under a blank customer.
+  const creditClientByLine = new Map<string, string>()
+  const creditLineIds = lineRows.filter(r => isCreditLine(r)).map(r => String(r.id))
+  if (creditLineIds.length > 0) {
+    const { data: adjRows, error: adjErr } = await supabase
+      .from('invoice_adjustments')
+      .select('applied_line_id, contacts:contact_id(full_name, company)')
+      .in('applied_line_id', creditLineIds)
+    if (adjErr && !isMissingSchemaError(adjErr)) {
+      res.status(500).json({ error: 'Failed to load client credits', detail: adjErr.message })
+      return
+    }
+    for (const a of (adjRows ?? []) as Array<Record<string, any>>) {
+      const c = Array.isArray(a.contacts) ? a.contacts[0] : a.contacts
+      const name = c?.full_name ?? c?.company ?? null
+      if (a.applied_line_id && name) creditClientByLine.set(String(a.applied_line_id), name)
+    }
   }
 
   const vendorRel = (run as unknown as { vendors: { name: string } | Array<{ name: string }> | null }).vendors
@@ -100,7 +122,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       propertyName: prop?.name ?? null,
       rawPropertyText: r.raw_property_text ?? null,
       propertyId: r.property_id != null ? Number(r.property_id) : null,
-      clientName: contact?.full_name ?? contact?.company ?? null,
+      clientName: creditClientByLine.get(String(r.id)) ?? contact?.full_name ?? contact?.company ?? null,
       billingChannel: r.billing_channel as BillingChannel | null,
       cleanerPayAmount: r.cleaner_pay_amount != null ? Number(r.cleaner_pay_amount) : null,
       clientChargeAmount: r.client_charge_amount != null ? Number(r.client_charge_amount) : null,
