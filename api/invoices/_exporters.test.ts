@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import Papa from 'papaparse'
+import { creditClientsByLine, lineClient } from '../../shared/billcom-send.js'
 import { cleanReason, clientDescription, fmtUsd, fmtUsDate, qboClassFor, sanitizeCell, serviceTitle, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 
 const RUN: ExportRun = {
@@ -557,6 +558,53 @@ describe('toBillComCsv with bill.com send control', () => {
     const orphan = mk(7, '', 'Nobody', 'Orphan 303', '2026-08-06', 99, { contactId: null })
     const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [...lines, orphan]))
     expect(rows.slice(1).map(r => r[5])).toEqual(['Jane 101', 'Jane 101'])
+  })
+})
+
+describe('toBillComCsv: client credits under bill.com send control', () => {
+  const JANE = '11111111-1111-4111-8111-111111111111'
+  const CREDIT_LINE_ID = '44444444-4444-4444-8444-444444444444'
+  const clean: ExportLine = {
+    lineKind: 'clean', serviceType: 'Turn Clean', serviceDate: '2026-08-05', propertyName: 'Jane 101', clientName: 'Jane Owner',
+    billingChannel: 'bill_com', cleanerPayAmount: 60, clientChargeAmount: 120, note: null, reviewStatus: 'ok', lineNo: 1, contactId: JANE,
+  }
+  // A credit line as invoice_apply_open_credits writes it: no property, its
+  // client only on the adjustment row (applied_line_id = the line id).
+  const creditLine = (credits: ReturnType<typeof creditClientsByLine>): ExportLine => {
+    const client = lineClient({ id: CREDIT_LINE_ID, propertyContactId: null, propertyClientName: null }, credits)
+    return {
+      lineKind: 'extra', serviceType: 'Credit', serviceDate: '2026-08-05', propertyName: null, clientName: client.clientName,
+      billingChannel: 'bill_com', cleanerPayAmount: 0, clientChargeAmount: -40, note: null, reviewNote: 'Bad clean refund',
+      reviewStatus: 'resolved', flags: ['credit'], lineNo: 2, contactId: client.contactId,
+    }
+  }
+  const adjustments = creditClientsByLine([
+    { applied_line_id: CREDIT_LINE_ID, contact_id: JANE, contacts: { full_name: 'Jane Owner', company: null } },
+  ])
+  const parse = (csv: string) => Papa.parse<string[]>(csv, { skipEmptyLines: true }).data
+  const runWith = (states: ExportRun['billComInvoices']): ExportRun => ({ ...RUN, billComInvoices: states })
+
+  it('an approved client invoice keeps its credit line, negative, under the client', () => {
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [clean, creditLine(adjustments)]))
+    expect(rows.slice(1).map(r => [r[0], r[3], r[7]])).toEqual([
+      ['Jane Owner', 'Turn Clean', '120.00'],
+      ['Jane Owner', 'Credit (Bad clean refund)', '-40.00'],
+    ])
+  })
+
+  it('a held client invoice drops the credit with the rest of it', () => {
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'held' }]), [clean, creditLine(adjustments)]))
+    expect(rows).toHaveLength(1) // header only
+  })
+
+  it('adjustment lookup missing (migration pending): behaves as before', () => {
+    const orphan = creditLine(creditClientsByLine(null))
+    expect(orphan.contactId).toBeNull()
+    // No send-control state: listed (blank customer sorts first), as before send control existed.
+    expect(parse(toBillComCsv(RUN, [clean, orphan])).slice(1).map(r => [r[0], r[7]])).toEqual([['', '-40.00'], ['Jane Owner', '120.00']])
+    // Send control on: a line with no client can't go out, as before this fix.
+    const rows = parse(toBillComCsv(runWith([{ contactId: JANE, serviceMonth: '2026-08', status: 'approved' }]), [clean, orphan]))
+    expect(rows.slice(1).map(r => r[7])).toEqual(['120.00'])
   })
 })
 

@@ -12,9 +12,11 @@ import { StatusBadge } from '@/components/StatusBadge'
 import type { StatusTone } from '@/lib/status-colors'
 import { invoicesApi, propertyOf, type InvoiceLine, type InvoiceRun } from '@/lib/invoices'
 import {
+  creditClientsByLine,
   groupBillComInvoices,
   isBillComArLine,
   isMissingSchemaError,
+  lineClient,
   normalizeBillcomInvoiceNumber,
   normalizeHoldReason,
   runAllowsSendControl,
@@ -23,6 +25,7 @@ import {
   type BillComGroup,
   type ClientInvoiceState,
   type ClientInvoiceStatus,
+  type CreditClient,
 } from '@shared/billcom-send'
 
 /**
@@ -122,6 +125,28 @@ export function BillComSendPanel({ run, lines, onChanged }: {
     },
   })
 
+  // Client credits bill the client on their adjustment (usually no property),
+  // so they join and net that client's invoice, same as the worksheet.
+  const creditLineIds = useMemo(
+    () => billComLines.filter(l => (l.flags ?? []).includes('credit')).map(l => l.id).sort(),
+    [billComLines],
+  )
+  const creditsQuery = useQuery<Map<string, CreditClient>>({
+    queryKey: ['invoicing-credit-clients', creditLineIds],
+    enabled: enabled && creditLineIds.length > 0 && invoicesQuery.data != null,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('invoice_adjustments')
+        .select('applied_line_id, contact_id, contacts:contact_id(full_name, company)')
+        .in('applied_line_id', creditLineIds)
+      if (error) {
+        if (isMissingSchemaError(error)) return new Map()
+        throw error
+      }
+      return creditClientsByLine(data)
+    },
+  })
+
   const clientByProperty = useMemo(() => {
     const m = new Map<number, { contactId: string | null; name: string | null }>()
     for (const p of clientsQuery.data ?? []) {
@@ -133,7 +158,8 @@ export function BillComSendPanel({ run, lines, onChanged }: {
 
   const groups = useMemo(() => groupBillComInvoices(
     billComLines.map(l => {
-      const client = l.property_id != null ? clientByProperty.get(l.property_id) : undefined
+      const prop = l.property_id != null ? clientByProperty.get(l.property_id) : undefined
+      const client = lineClient({ id: l.id, propertyContactId: prop?.contactId, propertyClientName: prop?.name }, creditsQuery.data)
       return {
         lineNo: l.line_no,
         lineKind: l.line_kind,
@@ -141,13 +167,13 @@ export function BillComSendPanel({ run, lines, onChanged }: {
         billingChannel: l.billing_channel,
         clientChargeAmount: l.client_charge_amount,
         serviceDate: l.service_date ?? l.raw_date_mentioned,
-        contactId: client?.contactId ?? null,
-        clientName: client?.name ?? null,
+        contactId: client.contactId,
+        clientName: client.clientName,
         billHoldReason: l.bill_hold_reason ?? null,
       }
     }),
     run.invoice_date,
-  ), [billComLines, clientByProperty, run.invoice_date])
+  ), [billComLines, clientByProperty, creditsQuery.data, run.invoice_date])
 
   const states = useMemo(() => stateMap(invoicesQuery.data ?? []), [invoicesQuery.data])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -208,7 +234,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
           </div>
         </div>
 
-        {clientsQuery.isLoading ? (
+        {clientsQuery.isLoading || creditsQuery.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading clients…</div>
         ) : (
           <div className="divide-y divide-border/60 rounded-xl border border-border/60">

@@ -86,6 +86,7 @@ export const FLAG_LABELS: Record<string, string> = {
   rate_stale: 'Rate may be stale',
   deep_mismatch: 'Deep-clean note/task mismatch',
   credit_line: 'Credit line',
+  credit: 'Client credit applied',
   reason_required: 'Reason required',
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
   standard_priced: 'Standard price applied',
@@ -239,7 +240,10 @@ export function lineIssues(l: InvoiceLine): string[] {
   // A QBO/Haven line needs no property (Haven is the one QBO customer) —
   // mirrors the exception in approve.ts.
   const isReimb = l.service_type === 'Reimbursement'
-  if (billable && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
+  // A client credit (invoice_adjustments) names its client on the adjustment,
+  // so it needs no property; it is added after every approve gate has passed.
+  const isClientCredit = (l.flags ?? []).includes('credit')
+  if (billable && !isClientCredit && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
     out.push(isReimb
       ? 'Reimbursement needs the property it was for (Haven bills it back to that guest/owner)'
       : 'No property assigned (or bill it to QuickBooks / Haven)')

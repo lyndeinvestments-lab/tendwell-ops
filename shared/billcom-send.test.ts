@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   billComLineSendable,
   canTransition,
+  creditClientsByLine,
   groupBillComInvoices,
   isMissingSchemaError,
+  lineClient,
   normalizeBillcomInvoiceNumber,
   normalizeHoldReason,
   parseBillComAction,
@@ -160,5 +162,56 @@ describe('groupBillComInvoices', () => {
   it('lines without a client form their own (unsendable) group', () => {
     const groups = groupBillComInvoices([mk(1, null, null, '2026-08-07', 90)], '2026-08-10')
     expect(groups).toEqual([expect.objectContaining({ contactId: null, total: 90 })])
+  })
+})
+
+describe('client credits join their client (lineClient + creditClientsByLine)', () => {
+  const CREDIT_LINE_ID = '44444444-4444-4444-8444-444444444444'
+  const CLEAN_LINE_ID = '55555555-5555-4555-8555-555555555555'
+  // Raw rows as the API/panel get them: a clean on Jane's property, and a
+  // credit with no property whose client lives on its adjustment.
+  const raw = [
+    { id: CLEAN_LINE_ID, lineNo: 1, propertyContactId: JANE, propertyClientName: 'Jane Owner', date: '2026-09-02', amt: 150 },
+    { id: CREDIT_LINE_ID, lineNo: 9, propertyContactId: null, propertyClientName: null, date: '2026-09-02', amt: -40 },
+  ]
+  const toInputs = (credits: ReturnType<typeof creditClientsByLine> | null | undefined): BillComLineInput[] => raw.map(r => {
+    const client = lineClient(r, credits)
+    return {
+      lineNo: r.lineNo, lineKind: r.lineNo === 9 ? 'extra' : 'clean', reviewStatus: 'ok', billingChannel: 'bill_com',
+      clientChargeAmount: r.amt, serviceDate: r.date, contactId: client.contactId, clientName: client.clientName,
+    }
+  })
+
+  it('reads adjustment rows (object or array embed), skipping incomplete ones', () => {
+    const m = creditClientsByLine([
+      { applied_line_id: CREDIT_LINE_ID, contact_id: JANE, contacts: [{ full_name: null, company: 'Jane Co' }] },
+      { applied_line_id: null, contact_id: BOB, contacts: null },
+      { applied_line_id: CLEAN_LINE_ID, contact_id: null, contacts: null },
+    ])
+    expect(Array.from(m.entries())).toEqual([[CREDIT_LINE_ID, { contactId: JANE, clientName: 'Jane Co' }]])
+  })
+
+  it('a credit with no property lands in its client\'s month group and nets the total', () => {
+    const credits = creditClientsByLine([{ applied_line_id: CREDIT_LINE_ID, contact_id: JANE, contacts: { full_name: 'Jane Owner', company: null } }])
+    const groups = groupBillComInvoices(toInputs(credits), '2026-09-05')
+    expect(groups).toEqual([expect.objectContaining({ contactId: JANE, clientName: 'Jane Owner', serviceMonth: '2026-09', total: 110, lineNos: [1, 9] })])
+  })
+
+  it('the adjustment wins over a property the credit happens to carry', () => {
+    const credits = creditClientsByLine([{ applied_line_id: CREDIT_LINE_ID, contact_id: JANE, contacts: null }])
+    expect(lineClient({ id: CREDIT_LINE_ID, propertyContactId: BOB, propertyClientName: 'Bob Owner' }, credits))
+      .toEqual({ contactId: JANE, clientName: 'Bob Owner' })
+    expect(lineClient({ id: CLEAN_LINE_ID, propertyContactId: BOB, propertyClientName: 'Bob Owner' }, credits))
+      .toEqual({ contactId: BOB, clientName: 'Bob Owner' })
+  })
+
+  it('adjustment lookup missing (migration pending): every line falls back to its property, as before', () => {
+    for (const missing of [null, undefined, creditClientsByLine(null)]) {
+      const groups = groupBillComInvoices(toInputs(missing), '2026-09-05')
+      expect(groups.map(g => [g.contactId, g.total, g.lineNos])).toEqual([
+        [null, -40, [9]],
+        [JANE, 150, [1]],
+      ])
+    }
   })
 })
