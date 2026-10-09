@@ -274,6 +274,12 @@ export function isEvidenceUrl(s: string): boolean {
   }
 }
 
+/** Throwaway vendors created by the verify scripts ("ZZ E2E Vendor 123",
+ *  "ZZ Portal Test Vendor 123"). Their activity must never email staff. */
+export function isTestVendorName(name: string | null | undefined): boolean {
+  return typeof name === 'string' && /^zz /i.test(name.trimStart())
+}
+
 export type PeriodError = 'invalid_date' | 'period_order' | 'date_in_future' | 'period_too_long'
 
 /** The invoice period a vendor may create: real dates, start <= end, ending
