@@ -1,4 +1,7 @@
 import { supabase } from '@/lib/supabase'
+import { redoBlocker } from '@shared/invoice-redo'
+import { resolveNoteMissing } from '@shared/invoice-review'
+import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES } from '@shared/vendor-invoice'
 
 /**
  * Shared domain types + API helpers for the Invoicing feature (client-side
@@ -65,7 +68,15 @@ export const SERVICE_TYPES: string[] = [
   'Mailed Left Items by the Guest',
   'Hot Tub Refresh Requested by Guest',
   'Pet Fee',
+  'Last-Minute Surcharge',
 ]
+
+/** Whether this service type needs a photo or Slack link before Approve
+ *  (EVIDENCE_REQUIRED_SERVICES in shared/vendor-invoice.ts). Used by the
+ *  review and add-line dialogs to say so up front. */
+export function serviceNeedsEvidence(serviceType: string | null | undefined): boolean {
+  return EVIDENCE_REQUIRED_SERVICES.includes(serviceType ?? '')
+}
 
 // ─── Flags ───────────────────────────────────────────────────────────────────
 
@@ -86,16 +97,21 @@ export const FLAG_LABELS: Record<string, string> = {
   rate_stale: 'Rate may be stale',
   deep_mismatch: 'Deep-clean note/task mismatch',
   credit_line: 'Credit line',
+  credit: 'Client credit applied',
   reason_required: 'Reason required',
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
   standard_priced: 'Standard price applied',
   client_priced: "Client's agreed price applied",
+  price_mismatch_agreement: "Differs from client's agreed price",
   suspect_service_date: 'Service date looks wrong',
   aux_task: 'Billable task — not on vendor invoice',
   vendor_added: 'Added by vendor — check it',
   possible_duplicate: 'Possible duplicate task that day',
   late_item: 'Dated before the invoice period',
   completed_off_date: 'Task closed on a different day',
+  redo_pending: 'Redo after this clean: bill or no charge?',
+  charge_changed_since_last_invoice: 'Charge changed since last invoice',
+  not_haven_listing: 'Not a Haven listing (no Hostaway match)',
 }
 
 export function flagLabel(flag: string): string {
@@ -172,6 +188,8 @@ export interface InvoiceLine {
   raw_note_text: string | null
   raw_amount: number
   raw_date_mentioned: string | null
+  /** Task date when the vendor's date was a day off; null on older rows. */
+  service_date?: string | null
   property_id: number | null
   alias_confidence: number | null
   matched_task_id: string | null
@@ -195,6 +213,9 @@ export interface InvoiceLine {
   vendor_category?: string | null
   vendor_detail?: Record<string, any> | null
   receipt_path?: string | null
+  /** Non-blank → held back from the bill.com worksheet (bill.com send
+   *  control, shared/billcom-send.ts). Absent until migration 20261009c. */
+  bill_hold_reason?: string | null
 }
 
 /**
@@ -234,7 +255,10 @@ export function lineIssues(l: InvoiceLine): string[] {
   // A QBO/Haven line needs no property (Haven is the one QBO customer) —
   // mirrors the exception in approve.ts.
   const isReimb = l.service_type === 'Reimbursement'
-  if (billable && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
+  // A client credit (invoice_adjustments) names its client on the adjustment,
+  // so it needs no property; it is added after every approve gate has passed.
+  const isClientCredit = (l.flags ?? []).includes('credit')
+  if (billable && !isClientCredit && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
     out.push(isReimb
       ? 'Reimbursement needs the property it was for (Haven bills it back to that guest/owner)'
       : 'No property assigned (or bill it to QuickBooks / Haven)')
@@ -247,11 +271,22 @@ export function lineIssues(l: InvoiceLine): string[] {
       out.push(`${l.service_type} needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link`)
     }
   }
+  // Mirrors the charge-evidence guard in api/invoices/approve.ts.
+  if (billable && serviceNeedsEvidence(l.service_type) && Number(l.client_charge_amount ?? 0) > 0 && !chargeHasEvidence(l)) {
+    out.push(`${l.service_type} needs evidence: paste the Slack link or a photo link into the review note`)
+  }
   if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {
     out.push('No cleaner pay — would be missing from the Ramp export')
   }
   if ((l.flags ?? []).includes('suspect_service_date')) {
     out.push('Service date looks wrong')
+  }
+  // Mirrors the redo-decision guard in api/invoices/approve.ts.
+  const redo = redoBlocker(l)
+  if (redo) out.push(redo)
+  // Mirrors the resolve-note guard in api/invoices/approve.ts.
+  if (resolveNoteMissing(l)) {
+    out.push('Add a review note: say why the charge changed or why this property is billed to Haven')
   }
   if (l.review_status === 'needs_review') {
     out.push('Needs review')

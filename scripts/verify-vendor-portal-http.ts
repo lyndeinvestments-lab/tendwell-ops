@@ -1,7 +1,20 @@
-// HTTP end-to-end check of the vendor invoicing portal against a DEPLOYED
-// build (preview or production), as a real signed-in vendor login.
+// HTTP end-to-end check of the vendor invoicing portal against a PREVIEW
+// deployment, as a real signed-in vendor login.
 //
-//   npx tsx scripts/verify-vendor-portal-http.ts https://<deployment-host> [period_start] [period_end]
+//   VERIFY_SUPABASE_URL=https://<preview-db-ref>.supabase.co \
+//   VERIFY_SUPABASE_SERVICE_ROLE_KEY=... VERIFY_SUPABASE_ANON_KEY=... \
+//   npx tsx scripts/verify-vendor-portal-http.ts https://<preview-host> [period_start] [period_end]
+//
+// NEVER point this at production (DB or app). On 2026-10-08 it was run against
+// app.tendwellcleaningco.com and the live server emailed the admins that the
+// test vendor had submitted an invoice. Now: the DB comes ONLY from the
+// VERIFY_* env vars (SUPABASE_URL and .env.local are ignored),
+// scripts/_nonprod-guard.ts refuses the production project and any
+// *.tendwellcleaningco.com deployment with no override, and VERIFY_SUPABASE_URL
+// must be the database the preview deployment itself uses: the run aborts
+// before any write through the deployment if the deployment does not accept a
+// session issued by VERIFY_SUPABASE_URL. Set NOTIFY_DISABLED=1 on the preview
+// too; test vendors ("ZZ ...") never trigger the submit email regardless.
 //
 // Creates, then always removes: a throwaway vendor, a temporary password
 // auth user + `supervisor` app_users row linked to it, and the vendor's
@@ -9,24 +22,16 @@
 // VERCEL_BYPASS env = protection-bypass secret, or VERCEL_COOKIE = a
 // `_vercel_jwt=…` cookie from a share link, for protected previews.
 
-import { readFileSync, existsSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import { requireNonProdTarget } from './_nonprod-guard.js'
 
-for (const f of ['.env.local', '../../../.env.local']) {
-  if (!existsSync(f)) continue
-  for (const line of readFileSync(f, 'utf8').split('\n')) {
-    const m = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim())
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^"|"$/g, '')
-  }
-}
-
-const BASE = (process.argv[2] ?? '').replace(/\/$/, '')
-if (!/^https:\/\//.test(BASE)) throw new Error('usage: verify-vendor-portal-http.ts https://<host> [start] [end]')
+const target = requireNonProdTarget({ requireDeployment: true, deploymentUrl: process.argv[2] })
+const BASE = target.deploymentUrl!
 const START = process.argv[3] ?? '2026-10-04'
 const END = process.argv[4] ?? '2026-10-07'
-const SB_URL = process.env.SUPABASE_URL!
-const admin = createClient(SB_URL, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } })
-const anon = createClient(SB_URL, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false } })
+const SB_URL = target.supabaseUrl
+const admin = createClient(SB_URL, target.serviceRoleKey, { auth: { persistSession: false } })
+const anon = createClient(SB_URL, target.anonKey, { auth: { persistSession: false } })
 
 let failures = 0
 function check(name: string, ok: boolean, detail = '') {
@@ -75,6 +80,12 @@ try {
 
   // ── Not linked yet ──
   const unlinked = await api('vendor-invoices/runs')
+  // The deployment only recognises this session if it uses VERIFY_SUPABASE_URL
+  // as its database. Anything but "not linked" means it does not (or is
+  // broken): stop before any write goes through it.
+  if (unlinked.status !== 403 || unlinked.json.error !== 'not_linked') {
+    throw new Error(`deployment ${BASE} did not accept a session from ${SB_URL} (${unlinked.status} ${unlinked.json.error ?? ''}); it must use VERIFY_SUPABASE_URL as its database`)
+  }
   check('an unlinked supervisor is refused', unlinked.status === 403 && unlinked.json.error === 'not_linked', `${unlinked.status} ${unlinked.json.error}`)
 
   await admin.from('vendor_users').insert({ vendor_id: vendor!.id, email, created_by: 'e2e' })
@@ -162,7 +173,7 @@ try {
   check("cannot add items to someone else's run", poke.status === 404, `${poke.status}`)
   const approve = await api('invoices/approve', { method: 'POST', body: { run_id: runId } })
   check('vendor login cannot call admin approve', approve.status === 403, `${approve.status}`)
-  const authed = createClient(SB_URL, process.env.VITE_SUPABASE_ANON_KEY!, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${token}` } } })
+  const authed = createClient(SB_URL, target.anonKey, { auth: { persistSession: false }, global: { headers: { Authorization: `Bearer ${token}` } } })
   const { data: directLines } = await authed.from('invoice_lines').select('id, client_charge_amount').limit(5)
   const { data: directRuns } = await authed.from('invoice_runs').select('id').limit(5)
   check('vendor session reads no invoice rows directly (RLS)', (directLines ?? []).length === 0 && (directRuns ?? []).length === 0, `${directLines?.length}/${directRuns?.length}`)

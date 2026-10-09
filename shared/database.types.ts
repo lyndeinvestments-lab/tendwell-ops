@@ -530,6 +530,9 @@ export type Database = {
           completed_date: string | null
           created_date: string | null
           department: string | null
+          disappeared_at: string | null
+          disappeared_batch: string | null
+          disappeared_prev_status: string | null
           due_date: string | null
           external_id: string
           id: string
@@ -553,6 +556,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id: string
           id?: string
@@ -576,6 +582,9 @@ export type Database = {
           completed_date?: string | null
           created_date?: string | null
           department?: string | null
+          disappeared_at?: string | null
+          disappeared_batch?: string | null
+          disappeared_prev_status?: string | null
           due_date?: string | null
           external_id?: string
           id?: string
@@ -1330,6 +1339,7 @@ export type Database = {
       }
       client_fee_overrides: {
         Row: {
+          accepted_date: string | null
           charge: number
           contact_id: string
           created_at: string
@@ -1338,10 +1348,12 @@ export type Database = {
           id: string
           note: string | null
           service_type: string
+          source_link: string | null
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          accepted_date?: string | null
           charge: number
           contact_id: string
           created_at?: string
@@ -1350,10 +1362,12 @@ export type Database = {
           id?: string
           note?: string | null
           service_type: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          accepted_date?: string | null
           charge?: number
           contact_id?: string
           created_at?: string
@@ -1362,6 +1376,7 @@ export type Database = {
           id?: string
           note?: string | null
           service_type?: string
+          source_link?: string | null
           updated_at?: string
           updated_by?: string | null
         }
@@ -1377,6 +1392,139 @@ export type Database = {
             foreignKeyName: "client_fee_overrides_contact_id_fkey"
             columns: ["contact_id"]
             isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_invoices: {
+        Row: {
+          billcom_invoice_number: string | null
+          billing_channel: string
+          contact_id: string | null
+          created_at: string
+          hold_reason: string | null
+          id: string
+          run_id: string
+          sent_at: string | null
+          sent_by: string | null
+          service_month: string
+          status: string
+          total: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          billcom_invoice_number?: string | null
+          billing_channel?: string
+          contact_id?: string | null
+          created_at?: string
+          hold_reason?: string | null
+          id?: string
+          run_id: string
+          sent_at?: string | null
+          sent_by?: string | null
+          service_month: string
+          status?: string
+          total?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          billcom_invoice_number?: string | null
+          billing_channel?: string
+          contact_id?: string
+          created_at?: string
+          hold_reason?: string | null
+          id?: string
+          run_id?: string
+          sent_at?: string | null
+          sent_by?: string | null
+          service_month?: string
+          status?: string
+          total?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_invoices_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_price_agreements: {
+        Row: {
+          accepted_clean_price: number | null
+          accepted_date: string | null
+          contact_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          linen_fee: number | null
+          note: string | null
+          onboarding_fee: number | null
+          source_link: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          accepted_clean_price?: number | null
+          accepted_date?: string | null
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          linen_fee?: number | null
+          note?: string | null
+          onboarding_fee?: number | null
+          source_link?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_price_agreements_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: true
             referencedRelation: "crm_client_360"
             referencedColumns: ["id"]
           },
@@ -2355,9 +2503,106 @@ export type Database = {
         }
         Relationships: []
       }
+      invoice_adjustments: {
+        Row: {
+          amount: number
+          applied_at: string | null
+          applied_line_id: string | null
+          applied_run_id: string | null
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          evidence_url: string | null
+          id: string
+          original_line_id: string | null
+          parent_adjustment_id: string | null
+          reason: string
+          status: string
+          updated_at: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          amount: number
+          applied_at?: string | null
+          applied_line_id?: string | null
+          applied_run_id?: string | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          id?: string
+          original_line_id?: string | null
+          parent_adjustment_id?: string | null
+          reason: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          amount?: number
+          applied_at?: string | null
+          applied_line_id?: string | null
+          applied_run_id?: string | null
+          contact_id?: string
+          created_at?: string
+          created_by?: string | null
+          evidence_url?: string | null
+          id?: string
+          original_line_id?: string | null
+          parent_adjustment_id?: string | null
+          reason?: string
+          status?: string
+          updated_at?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_adjustments_applied_run_id_fkey"
+            columns: ["applied_run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_original_line_id_fkey"
+            columns: ["original_line_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_lines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoice_adjustments_parent_adjustment_id_fkey"
+            columns: ["parent_adjustment_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_adjustments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       invoice_lines: {
         Row: {
           alias_confidence: number | null
+          bill_hold_reason: string | null
           billing_channel: string | null
           clean_claim_key: string | null
           cleaner_pay_amount: number | null
@@ -2389,6 +2634,7 @@ export type Database = {
         }
         Insert: {
           alias_confidence?: number | null
+          bill_hold_reason?: string | null
           billing_channel?: string | null
           clean_claim_key?: string | null
           cleaner_pay_amount?: number | null
@@ -2420,6 +2666,7 @@ export type Database = {
         }
         Update: {
           alias_confidence?: number | null
+          bill_hold_reason?: string | null
           billing_channel?: string | null
           clean_claim_key?: string | null
           cleaner_pay_amount?: number | null
@@ -6097,6 +6344,47 @@ export type Database = {
           },
         ]
       }
+      property_rate_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          field: string
+          id: string
+          new_value: number | null
+          old_value: number | null
+          property_id: number
+          reason: string | null
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          field: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id: number
+          reason?: string | null
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          field?: string
+          id?: string
+          new_value?: number | null
+          old_value?: number | null
+          property_id?: number
+          reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "property_rate_history_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       property_supplies: {
         Row: {
           current_qty: number | null
@@ -6549,6 +6837,105 @@ export type Database = {
           title?: string
         }
         Relationships: []
+      }
+      sent_invoices: {
+        Row: {
+          billing_channel: string
+          client_invoice_id: string | null
+          client_name: string
+          contact_id: string | null
+          created_at: string
+          id: string
+          invoice_number: string
+          note: string | null
+          pdf_sha256: string | null
+          period_end: string
+          period_start: string
+          recipient: string | null
+          run_id: string | null
+          run_source: string | null
+          sent_at: string
+          sent_by: string | null
+          total: number
+          voids_id: string | null
+        }
+        Insert: {
+          billing_channel: string
+          client_invoice_id?: string | null
+          client_name: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_number: string
+          note?: string | null
+          pdf_sha256?: string | null
+          period_end: string
+          period_start: string
+          recipient?: string | null
+          run_id?: string | null
+          run_source?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          total: number
+          voids_id?: string | null
+        }
+        Update: {
+          billing_channel?: string
+          client_invoice_id?: string | null
+          client_name?: string
+          contact_id?: string | null
+          created_at?: string
+          id?: string
+          invoice_number?: string
+          note?: string | null
+          pdf_sha256?: string | null
+          period_end?: string
+          period_start?: string
+          recipient?: string | null
+          run_id?: string | null
+          run_source?: string | null
+          sent_at?: string
+          sent_by?: string | null
+          total?: number
+          voids_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sent_invoices_client_invoice_id_fkey"
+            columns: ["client_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "client_invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "crm_client_360"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "invoice_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sent_invoices_voids_id_fkey"
+            columns: ["voids_id"]
+            isOneToOne: false
+            referencedRelation: "sent_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       stage_transitions: {
         Row: {
@@ -9132,6 +9519,17 @@ export type Database = {
       archive_stale_quotes: { Args: { max_age_days?: number }; Returns: number }
       can_view_financials: { Args: never; Returns: boolean }
       canonical_trellis_property_id: { Args: { p: string }; Returns: string }
+      client_invoice_mark_sent: {
+        Args: {
+          p_actor?: string
+          p_client_invoice_id: string
+          p_number: string
+          p_pdf_sha256?: string
+          p_recipient?: string
+          p_total?: number
+        }
+        Returns: Json
+      }
       compute_monthly_estimate: {
         Args: { target_month: string }
         Returns: {
@@ -9324,6 +9722,10 @@ export type Database = {
         Args: { p_organization_id: string; p_owner_id: string }
         Returns: number
       }
+      invoice_apply_open_credits: {
+        Args: { p_actor?: string; p_run_id: string }
+        Returns: Json
+      }
       invoice_apply_reconcile: {
         Args: {
           p_delete_ids: string[]
@@ -9436,6 +9838,15 @@ export type Database = {
       set_my_locale: { Args: { p_locale: string }; Returns: undefined }
       set_my_ui_pref: {
         Args: { p_key: string; p_value: Json }
+        Returns: undefined
+      }
+      set_rate_with_reason: {
+        Args: {
+          p_field: string
+          p_property_id: number
+          p_reason: string
+          p_value: number
+        }
         Returns: undefined
       }
       staff_has_financial_view: { Args: never; Returns: boolean }

@@ -64,6 +64,8 @@ import {
   type AuxTaskSource,
   type FeeOverride,
 } from '@shared/aux-tasks'
+import { isMissingSchemaError } from '@shared/db-errors'
+import { parseSourceLink, isHttpsLink } from '@shared/price-agreements'
 import {
   AlertTriangle, Ban, CheckCircle2, ClipboardList, DollarSign, ExternalLink, Loader2, Pencil, Plus, Receipt, Trash2, Users,
 } from 'lucide-react'
@@ -79,9 +81,39 @@ interface ClientFeeOverride {
   charge: number
   hot_tub_charge: number | null
   note: string | null
+  // Evidence (migration 20261009f). Absent until that migration is applied.
+  accepted_date?: string | null
+  source_link?: string | null
   updated_by: string | null
   updated_at: string | null
   contacts?: { full_name: string | null; company: string | null } | { full_name: string | null; company: string | null }[] | null
+}
+
+interface OverridesData {
+  rows: ClientFeeOverride[]
+  // False until migration 20261009f adds accepted_date / source_link: the
+  // dialog then hides those fields instead of failing every save.
+  hasEvidence: boolean
+}
+
+interface ClientPriceAgreement {
+  id: string
+  contact_id: string
+  accepted_clean_price: number | null
+  linen_fee: number | null
+  onboarding_fee: number | null
+  accepted_date: string | null
+  source_link: string | null
+  note: string | null
+  updated_by: string | null
+  updated_at: string | null
+  contacts?: { full_name: string | null; company: string | null } | { full_name: string | null; company: string | null }[] | null
+}
+
+interface AgreementsData {
+  rows: ClientPriceAgreement[]
+  // False until migration 20261009f creates client_price_agreements.
+  available: boolean
 }
 
 interface ContactLite { id: string; full_name: string | null; company: string | null }
@@ -194,13 +226,14 @@ function categoryOf(c: string): AuxCategory {
 // PostgREST caps a response at 1000 rows and reports it only in a header —
 // same trap as api/invoices/_lib.ts fetchAllRows. Page until a short page.
 async function fetchAll<T>(
-  build: () => { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }> },
+  build: () => { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string; code?: string } | null }> },
 ): Promise<T[]> {
   const PAGE = 1000
   const out: T[] = []
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await build().range(from, from + PAGE - 1)
-    if (error) throw new Error(error.message)
+    // Keep the code so isMissingSchemaError can spot a not-yet-applied migration.
+    if (error) throw Object.assign(new Error(error.message), { code: error.code })
     const page = data ?? []
     out.push(...page)
     if (page.length < PAGE || out.length > 50_000) return out
@@ -255,13 +288,40 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
       return resolveAuxSettings({ pricing: by.get(APP_SETTING_EXTRA_PRICING), billable: by.get(APP_SETTING_AUX_BILLABLE) })
     },
   })
-  const overridesQuery = useQuery<ClientFeeOverride[]>({
+  const overridesQuery = useQuery<OverridesData>({
     queryKey: ['task-audit', 'fee-overrides'],
-    queryFn: () => fetchAll<ClientFeeOverride>(() => db
-      .from('client_fee_overrides')
-      .select('id, contact_id, service_type, charge, hot_tub_charge, note, updated_by, updated_at, contacts(full_name, company)')
-      .order('id')),
+    queryFn: async () => {
+      const base = 'id, contact_id, service_type, charge, hot_tub_charge, note, updated_by, updated_at, contacts(full_name, company)'
+      try {
+        const rows = await fetchAll<ClientFeeOverride>(() => db
+          .from('client_fee_overrides')
+          .select(`${base}, accepted_date, source_link`)
+          .order('id'))
+        return { rows, hasEvidence: true }
+      } catch (e) {
+        if (!isMissingSchemaError(e)) throw e
+        const rows = await fetchAll<ClientFeeOverride>(() => db.from('client_fee_overrides').select(base).order('id'))
+        return { rows, hasEvidence: false }
+      }
+    },
     staleTime: 300_000,
+  })
+  const agreementsQuery = useQuery<AgreementsData>({
+    queryKey: ['task-audit', 'price-agreements'],
+    queryFn: async () => {
+      try {
+        const rows = await fetchAll<ClientPriceAgreement>(() => db
+          .from('client_price_agreements')
+          .select('id, contact_id, accepted_clean_price, linen_fee, onboarding_fee, accepted_date, source_link, note, updated_by, updated_at, contacts(full_name, company)')
+          .order('id'))
+        return { rows, available: true }
+      } catch (e) {
+        if (isMissingSchemaError(e)) return { rows: [], available: false }
+        throw e
+      }
+    },
+    staleTime: 300_000,
+    enabled: showOverrides,
   })
   const bwQuery = useQuery({
     queryKey: ['task-audit', 'breezeway', from, to],
@@ -325,7 +385,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
   const properties = propertiesQuery.data ?? []
   const propById = useMemo(() => new Map(properties.map(p => [p.id, p])), [properties])
   const overridesByContact = useMemo(
-    () => feeOverridesByContact((overridesQuery.data ?? []).map(o => ({ ...o, charge: Number(o.charge), hot_tub_charge: o.hot_tub_charge == null ? null : Number(o.hot_tub_charge) }))),
+    () => feeOverridesByContact((overridesQuery.data?.rows ?? []).map(o => ({ ...o, charge: Number(o.charge), hot_tub_charge: o.hot_tub_charge == null ? null : Number(o.hot_tub_charge) }))),
     [overridesQuery.data],
   )
   // Same lookup the reconcile uses (shared/aux-tasks auxPrice): the client's
@@ -514,16 +574,27 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
       )}
 
       {showOverrides && (
-        <ClientOverridesCard
-          overrides={overridesQuery.data ?? []}
-          loading={overridesQuery.isLoading}
-          error={overridesQuery.error as Error | null}
-          onRetry={() => overridesQuery.refetch()}
-          settings={settings}
-          isAdmin={isAdmin}
-          userLabel={userLabel}
-          onSaved={invalidate}
-        />
+        <>
+          <ClientOverridesCard
+            overrides={overridesQuery.data?.rows ?? []}
+            hasEvidence={overridesQuery.data?.hasEvidence ?? false}
+            loading={overridesQuery.isLoading}
+            error={overridesQuery.error as Error | null}
+            onRetry={() => overridesQuery.refetch()}
+            settings={settings}
+            isAdmin={isAdmin}
+            userLabel={userLabel}
+            onSaved={invalidate}
+          />
+          <ClientAgreementsCard
+            data={agreementsQuery.data ?? null}
+            loading={agreementsQuery.isLoading}
+            error={agreementsQuery.error as Error | null}
+            onRetry={() => agreementsQuery.refetch()}
+            isAdmin={isAdmin}
+            userLabel={userLabel}
+          />
+        </>
       )}
 
       <div className="flex items-center gap-1 flex-wrap">
@@ -1175,8 +1246,25 @@ function PricingCard({ settings, isAdmin, onSaved }: { settings: AuxBillingSetti
 // of their properties — on vendor-invoice extras and on billable task lines
 // alike. Changes are audit-logged by a DB trigger into activity_log.
 
-function ClientOverridesCard({ overrides, loading, error, onRetry, settings, isAdmin, userLabel, onSaved }: {
+/** Accepted date + source link, compact. The link renders only when it passes
+ *  the same https rule the DB enforces. */
+function EvidenceCell({ date, link }: { date: string | null | undefined; link: string | null | undefined }) {
+  if (!date && !link) return <span className="text-muted-foreground">not recorded</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {date ? fmtDate(date) : <span className="text-muted-foreground">no date</span>}
+      {link && isHttpsLink(link) && (
+        <a href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5" title={link}>
+          source <ExternalLink className="w-3 h-3" />
+        </a>
+      )}
+    </span>
+  )
+}
+
+function ClientOverridesCard({ overrides, hasEvidence, loading, error, onRetry, settings, isAdmin, userLabel, onSaved }: {
   overrides: ClientFeeOverride[]
+  hasEvidence: boolean
   loading: boolean
   error: Error | null
   onRetry: () => void
@@ -1239,6 +1327,7 @@ function ClientOverridesCard({ overrides, loading, error, onRetry, settings, isA
                   <th className="px-2 py-1.5 font-medium text-right">Price</th>
                   <th className="px-2 py-1.5 font-medium text-right">With hot tub</th>
                   <th className="px-2 py-1.5 font-medium">Standard</th>
+                  {hasEvidence && <th className="px-2 py-1.5 font-medium">Accepted</th>}
                   <th className="px-2 py-1.5 font-medium">Note</th>
                   <th className="px-2 py-1.5 w-20" />
                 </tr>
@@ -1256,6 +1345,7 @@ function ClientOverridesCard({ overrides, loading, error, onRetry, settings, isA
                       <td className="px-2 py-1.5 text-2xs text-muted-foreground whitespace-nowrap">
                         {std == null ? 'not on the list — override ignored' : `${fmtMoney(std)}${stdHot != null ? ` / ${fmtMoney(stdHot)} HT` : ''}`}
                       </td>
+                      {hasEvidence && <td className="px-2 py-1.5 text-2xs"><EvidenceCell date={o.accepted_date} link={o.source_link} /></td>}
                       <td className="px-2 py-1.5 max-w-48 truncate text-muted-foreground" title={o.note ?? ''}>{o.note ?? ''}</td>
                       <td className="px-2 py-1.5 text-right whitespace-nowrap">
                         {isAdmin && (
@@ -1281,6 +1371,7 @@ function ClientOverridesCard({ overrides, loading, error, onRetry, settings, isA
         <OverrideDialog
           existing={editing === 'new' ? null : editing}
           taken={overrides}
+          hasEvidence={hasEvidence}
           settings={settings}
           userLabel={userLabel}
           onClose={() => setEditing(null)}
@@ -1291,9 +1382,258 @@ function ClientOverridesCard({ overrides, loading, error, onRetry, settings, isA
   )
 }
 
-function OverrideDialog({ existing, taken, settings, userLabel, onClose, onSaved }: {
+// ── Agreed client prices ──────────────────────────────────────────────────────
+//
+// What a client accepted (clean price, linen fee, onboarding fee), with when
+// and where. These never change a price: reconcile compares each billed line
+// against them and sends a difference over $0.01 to review
+// (price_mismatch_agreement). Audit-logged by a DB trigger.
+
+function ClientAgreementsCard({ data, loading, error, onRetry, isAdmin, userLabel }: {
+  data: AgreementsData | null
+  loading: boolean
+  error: Error | null
+  onRetry: () => void
+  isAdmin: boolean
+  userLabel: string
+}) {
+  const { toast } = useToast()
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState<ClientPriceAgreement | 'new' | null>(null)
+  const rows = data?.rows ?? []
+
+  const refresh = () => qc.invalidateQueries({ queryKey: ['task-audit', 'price-agreements'] })
+
+  const remove = useGuardedMutation<void, Error, ClientPriceAgreement>('invoicing', {
+    mutationFn: async (a) => {
+      const { error: e } = await db.from('client_price_agreements').delete().eq('id', a.id)
+      if (e) throw e
+    },
+    onSuccess: () => { toast({ title: 'Agreement removed', description: 'Their lines are no longer checked against it.' }); refresh() },
+    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Remove failed', description: e.message, variant: 'destructive' }) },
+  })
+
+  const sorted = [...rows].sort((a, b) => clientName(one(a.contacts)).localeCompare(clientName(one(b.contacts))))
+  const money = (v: number | null) => v == null ? <span className="text-muted-foreground">not agreed</span> : fmtMoney(Number(v))
+
+  return (
+    <Card className="border-card-border shadow-sm" data-testid="audit-agreements-card">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Agreed client prices</p>
+            <p className="text-xs text-muted-foreground">
+              The clean price, linen fee and onboarding fee a client accepted. These don't change any price: on the next generate or reconcile, a line that bills that client something different (by more than a cent) is held for review.
+              {!isAdmin && <span className="text-warning"> Only admins can change these.</span>}
+            </p>
+          </div>
+          {isAdmin && data?.available && (
+            <Button size="sm" onClick={() => setEditing('new')} data-testid="button-add-agreement">
+              <Plus className="w-4 h-4 mr-1.5" /> Add agreement
+            </Button>
+          )}
+        </div>
+        {error ? (
+          <ErrorState title="Couldn't load agreed prices" description={error.message} onRetry={onRetry} />
+        ) : loading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : !data?.available ? (
+          <p className="text-sm text-muted-foreground py-2">Not set up yet: agreed prices need migration 20261009f_client_agreed_prices.sql to be applied.</p>
+        ) : sorted.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-2">No agreed prices recorded. Nothing is checked.</p>
+        ) : (
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
+                  <th className="px-2 py-1.5 font-medium">Client</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Clean</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Linen fee</th>
+                  <th className="px-2 py-1.5 font-medium text-right">Onboarding fee</th>
+                  <th className="px-2 py-1.5 font-medium">Accepted</th>
+                  <th className="px-2 py-1.5 font-medium">Note</th>
+                  <th className="px-2 py-1.5 w-20" />
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map(a => (
+                  <tr key={a.id} className="border-t border-border/60" data-testid={`agreement-${a.id}`}>
+                    <td className="px-2 py-1.5">{clientName(one(a.contacts))}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.accepted_clean_price)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.linen_fee)}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.onboarding_fee)}</td>
+                    <td className="px-2 py-1.5 text-2xs"><EvidenceCell date={a.accepted_date} link={a.source_link} /></td>
+                    <td className="px-2 py-1.5 max-w-48 truncate text-muted-foreground" title={a.note ?? ''}>{a.note ?? ''}</td>
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      {isAdmin && (
+                        <>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(a)} aria-label="Edit agreement" data-testid={`agreement-edit-${a.id}`}>
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={remove.isPending} onClick={() => remove.mutate(a)} aria-label="Remove agreement" data-testid={`agreement-delete-${a.id}`}>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+      {editing && (
+        <AgreementDialog
+          existing={editing === 'new' ? null : editing}
+          taken={rows}
+          userLabel={userLabel}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); refresh() }}
+        />
+      )}
+    </Card>
+  )
+}
+
+function AgreementDialog({ existing, taken, userLabel, onClose, onSaved }: {
+  existing: ClientPriceAgreement | null
+  taken: ClientPriceAgreement[]
+  userLabel: string
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const { toast } = useToast()
+  const [contactId, setContactId] = useState<string | null>(existing?.contact_id ?? null)
+  const asText = (v: number | null | undefined) => v == null ? '' : String(v)
+  const [cleanPrice, setCleanPrice] = useState(asText(existing?.accepted_clean_price))
+  const [linenFee, setLinenFee] = useState(asText(existing?.linen_fee))
+  const [onboardingFee, setOnboardingFee] = useState(asText(existing?.onboarding_fee))
+  const [acceptedDate, setAcceptedDate] = useState(existing?.accepted_date ?? '')
+  const [sourceLink, setSourceLink] = useState(existing?.source_link ?? '')
+  const [note, setNote] = useState(existing?.note ?? '')
+  const linkInvalid = !parseSourceLink(sourceLink).ok
+
+  const contactsQuery = useQuery<ContactLite[]>({
+    queryKey: ['task-audit', 'contacts'],
+    queryFn: () => fetchAll<ContactLite>(() => db.from('contacts').select('id, full_name, company').order('id')),
+    staleTime: 300_000,
+  })
+  const contactOptions = useMemo(
+    () => (contactsQuery.data ?? [])
+      .map(c => ({ value: c.id, label: clientName(c) }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [contactsQuery.data],
+  )
+  const duplicate = !existing && contactId != null && taken.some(t => t.contact_id === contactId)
+
+  const save = useGuardedMutation<void, Error, void>('invoicing', {
+    mutationFn: async () => {
+      if (!contactId) throw new Error('Pick a client')
+      const price = (s: string, what: string): number | null => {
+        if (s.trim() === '') return null
+        const n = Number(s)
+        if (!Number.isFinite(n) || n < 0) throw new Error(`Enter a valid ${what}, or leave it blank`)
+        return Math.round(n * 100) / 100
+      }
+      const clean = price(cleanPrice, 'clean price')
+      const linen = price(linenFee, 'linen fee')
+      const onboarding = price(onboardingFee, 'onboarding fee')
+      if (clean == null && linen == null && onboarding == null) throw new Error('Enter at least one agreed price')
+      const link = parseSourceLink(sourceLink)
+      if (!link.ok) throw new Error('The source link must be a full https:// link')
+      const row = {
+        contact_id: contactId,
+        accepted_clean_price: clean,
+        linen_fee: linen,
+        onboarding_fee: onboarding,
+        accepted_date: acceptedDate || null,
+        source_link: link.value,
+        note: note.trim() || null,
+        updated_by: userLabel,
+      }
+      const { error } = existing
+        ? await db.from('client_price_agreements').update(row).eq('id', existing.id)
+        : await db.from('client_price_agreements').insert({ ...row, created_by: userLabel })
+      if (error) {
+        if (/duplicate key|unique/i.test(error.message)) throw new Error('This client already has an agreement. Edit that one instead.')
+        throw error
+      }
+    },
+    onSuccess: () => { toast({ title: existing ? 'Agreement updated' : 'Agreement added', description: 'Checked the next time a run is generated or reconciled.' }); onSaved() },
+    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Save failed', description: e.message, variant: 'destructive' }) },
+  })
+
+  return (
+    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existing ? 'Edit agreed prices' : 'Add agreed prices'}</DialogTitle>
+          <DialogDescription>What this client accepted. Leave a price blank if it wasn't part of the agreement; blank prices are never checked.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Client</Label>
+            {existing ? (
+              <p className="text-sm py-1.5">{clientName(one(existing.contacts))}</p>
+            ) : (
+              <SearchSelect
+                value={contactId ?? ''}
+                onSelect={v => setContactId(v || null)}
+                options={contactOptions}
+                placeholder={contactsQuery.isLoading ? 'Loading clients…' : 'Pick a client'}
+                searchPlaceholder="Search clients…"
+                emptyText="No matching clients"
+              />
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label>Clean price</Label>
+              <Input type="number" step="0.01" min="0" value={cleanPrice} onChange={e => setCleanPrice(e.target.value)} data-testid="agreement-clean" />
+            </div>
+            <div className="space-y-1">
+              <Label>Linen fee</Label>
+              <Input type="number" step="0.01" min="0" value={linenFee} onChange={e => setLinenFee(e.target.value)} data-testid="agreement-linen" />
+            </div>
+            <div className="space-y-1">
+              <Label>Onboarding fee</Label>
+              <Input type="number" step="0.01" min="0" value={onboardingFee} onChange={e => setOnboardingFee(e.target.value)} data-testid="agreement-onboarding" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Accepted on</Label>
+              <Input type="date" value={acceptedDate} onChange={e => setAcceptedDate(e.target.value)} data-testid="agreement-accepted-date" />
+            </div>
+            <div className="space-y-1">
+              <Label>Source link</Label>
+              <Input type="url" value={sourceLink} onChange={e => setSourceLink(e.target.value)} placeholder="https://" data-testid="agreement-source-link" />
+            </div>
+          </div>
+          {linkInvalid && <p className="text-xs text-destructive">The source link must be a full https:// link (quote, email or Slack thread).</p>}
+          <div className="space-y-1">
+            <Label>Note <span className="text-muted-foreground font-normal">(optional)</span></Label>
+            <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. accepted the October quote" data-testid="agreement-note" />
+          </div>
+          {duplicate && <p className="text-xs text-warning">This client already has an agreement. Edit that one instead.</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => save.mutate()} disabled={save.isPending || duplicate || linkInvalid} data-testid="agreement-save">
+              {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
+              Save
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function OverrideDialog({ existing, taken, hasEvidence, settings, userLabel, onClose, onSaved }: {
   existing: ClientFeeOverride | null
   taken: ClientFeeOverride[]
+  hasEvidence: boolean
   settings: AuxBillingSettings
   userLabel: string
   onClose: () => void
@@ -1305,6 +1645,9 @@ function OverrideDialog({ existing, taken, settings, userLabel, onClose, onSaved
   const [charge, setCharge] = useState(existing ? String(existing.charge) : '')
   const [hotCharge, setHotCharge] = useState(existing?.hot_tub_charge != null ? String(existing.hot_tub_charge) : '')
   const [note, setNote] = useState(existing?.note ?? '')
+  const [acceptedDate, setAcceptedDate] = useState(existing?.accepted_date ?? '')
+  const [sourceLink, setSourceLink] = useState(existing?.source_link ?? '')
+  const linkInvalid = !parseSourceLink(sourceLink).ok
 
   const contactsQuery = useQuery<ContactLite[]>({
     queryKey: ['task-audit', 'contacts'],
@@ -1330,12 +1673,16 @@ function OverrideDialog({ existing, taken, settings, userLabel, onClose, onSaved
       if (charge.trim() === '' || !Number.isFinite(n) || n < 0) throw new Error('Enter a valid price')
       const h = hotCharge.trim() === '' ? null : Number(hotCharge)
       if (h != null && (!Number.isFinite(h) || h < 0)) throw new Error('Enter a valid hot tub price, or leave it blank')
+      const link = parseSourceLink(sourceLink)
+      if (!link.ok) throw new Error('The source link must be a full https:// link')
       const row = {
         contact_id: contactId,
         service_type: serviceType,
         charge: n,
         hot_tub_charge: h,
         note: note.trim() || null,
+        // Only sent once migration 20261009f has added the columns.
+        ...(hasEvidence ? { accepted_date: acceptedDate || null, source_link: link.value } : {}),
         updated_by: userLabel,
       }
       const { error } = existing
@@ -1399,10 +1746,23 @@ function OverrideDialog({ existing, taken, settings, userLabel, onClose, onSaved
             <Label>Note <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. agreed on the 2026 contract" data-testid="override-note" />
           </div>
+          {hasEvidence && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Accepted on <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input type="date" value={acceptedDate} onChange={e => setAcceptedDate(e.target.value)} data-testid="override-accepted-date" />
+              </div>
+              <div className="space-y-1">
+                <Label>Source link <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                <Input type="url" value={sourceLink} onChange={e => setSourceLink(e.target.value)} placeholder="https://" data-testid="override-source-link" />
+              </div>
+            </div>
+          )}
+          {hasEvidence && linkInvalid && <p className="text-xs text-destructive">The source link must be a full https:// link (quote, email or Slack thread).</p>}
           {duplicate && <p className="text-xs text-warning">This client already has a price for that fee — edit that one instead.</p>}
           <div className="flex justify-end gap-2 pt-1">
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || duplicate} data-testid="override-save">
+            <Button onClick={() => save.mutate()} disabled={save.isPending || duplicate || (hasEvidence && linkInvalid)} data-testid="override-save">
               {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
               Save
             </Button>
