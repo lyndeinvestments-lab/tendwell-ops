@@ -14,6 +14,7 @@ import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
+import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
@@ -161,7 +162,11 @@ export default function InvoicingPage() {
   // Runs = the vendor-invoice workflow. Task audit = billable work that is
   // NOT on the vendor invoice (completed Breezeway/Trellis tasks, Slack/Quo
   // observations logged by Cowork) and what still needs billing.
-  const [view, setView] = useState<'runs' | 'audit'>('runs')
+  // Sent invoices = the append-only register of client invoices marked sent;
+  // hidden until migration 20261009h is applied (the query returns null).
+  const [view, setView] = useState<'runs' | 'audit' | 'sent'>('runs')
+  const registerQuery = useSentInvoicesRegister()
+  const registerAvailable = registerQuery.data != null
 
   const userLabel = effectiveUser?.label || 'Unknown'
   const isAdmin = effectiveUser?.role === 'admin'
@@ -309,10 +314,14 @@ export default function InvoicingPage() {
             title="Invoice Reconciliation"
             subtitle={view === 'audit'
               ? 'Billable work that is not on the vendor invoice: completed tasks, what was seen in Slack / Quo, and what still needs billing.'
-              : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
+              : view === 'sent'
+                ? 'The register of client invoices sent: number, client, period, total, recipient and when.'
+                : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
             beneath={
               <div className="flex items-center gap-1" data-testid="invoicing-view-toggle">
-                {([['runs', 'Invoice runs'], ['audit', 'Task audit']] as const).map(([id, label]) => (
+                {([['runs', 'Invoice runs'], ['audit', 'Task audit'], ['sent', 'Sent invoices']] as const)
+                  .filter(([id]) => id !== 'sent' || registerAvailable)
+                  .map(([id, label]) => (
                   <Button
                     key={id}
                     size="sm"
@@ -343,6 +352,8 @@ export default function InvoicingPage() {
 
           {view === 'audit' ? (
             <TaskAudit userLabel={userLabel} isAdmin={isAdmin} />
+          ) : view === 'sent' && registerAvailable ? (
+            <SentInvoicesRegister />
           ) : (
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
