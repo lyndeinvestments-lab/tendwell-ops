@@ -14,6 +14,24 @@ const line = (over: Partial<InvoiceLine>): InvoiceLine =>
     ...over,
   }) as InvoiceLine
 
+describe('lineIssues: disputed charges need evidence', () => {
+  const pet = { service_type: 'Pet Fee', client_charge_amount: 45, source: 'vendor', raw_note_text: 'Pet Fee - dog hair' }
+
+  it('a Pet Fee with no photo or Slack link blocks approval', () => {
+    expect(lineIssues(line(pet))).toContain('Pet Fee needs evidence: paste the Slack link or a photo link into the review note')
+  })
+
+  it('a Slack link in the review note, or an uploaded photo, clears it', () => {
+    expect(lineIssues(line({ ...pet, review_note: 'https://tendwell.slack.com/archives/C1/p2' }))).toEqual([])
+    expect(lineIssues(line({ ...pet, receipt_path: 'vendor-portal/v/r/p.jpg' }))).toEqual([])
+  })
+
+  it('a billable-task line and a $0 charge are not gated', () => {
+    expect(lineIssues(line({ ...pet, source: 'task' }))).toEqual([])
+    expect(lineIssues(line({ ...pet, client_charge_amount: 0 }))).toEqual([])
+  })
+})
+
 describe('lineIssues — property-less lines', () => {
   it('a QBO/Haven line needs no property (courier reimbursement, invoice 1261003821)', () => {
     expect(lineIssues(line({ property_id: null, billing_channel: 'qbo_haven' }))).toEqual([])

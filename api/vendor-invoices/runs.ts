@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchAllRows, loadEngineContext, reconcileRun, describeLineInsertError, withRunLease } from '../invoices/_lib.js'
-import { validatePeriod } from '../../shared/vendor-invoice.js'
+import { isTestVendorName, validatePeriod } from '../../shared/vendor-invoice.js'
 import { getSupabaseConfig, notifyStaff } from '../notify/_lib.js'
 import { archivedDuplicateMap, buildPortalDraft, dayKey, type DraftProperty, type SkippedDay } from './_draft.js'
 import {
@@ -118,13 +118,15 @@ const money = (n: number | null | undefined) =>
 
 /** Email the admins who keep "Vendor invoice submitted" on. Never throws
  *  (notifyStaff swallows and logs failures): a mail outage must not stop an
- *  invoice from being submitted. */
-async function notifySubmitted(
+ *  invoice from being submitted. Test vendors ("ZZ ...", created by the verify
+ *  scripts) never email anyone. */
+export async function notifySubmitted(
   actor: VendorActor,
   run: RunRow,
   detail: Awaited<ReturnType<typeof runDetail>>,
   needsReview: boolean,
 ): Promise<void> {
+  if (isTestVendorName(actor.vendorName)) return
   const active = detail.lines.filter(l => !l.removed)
   const cleans = active.filter(l => l.category === 'clean').length
   const items = active.length - cleans

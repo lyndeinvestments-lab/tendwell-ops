@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
 import { resolveNoteMissing } from '@shared/invoice-review'
+import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES } from '@shared/vendor-invoice'
 
 /**
  * Shared domain types + API helpers for the Invoicing feature (client-side
@@ -66,7 +67,15 @@ export const SERVICE_TYPES: string[] = [
   'Mailed Left Items by the Guest',
   'Hot Tub Refresh Requested by Guest',
   'Pet Fee',
+  'Last-Minute Surcharge',
 ]
+
+/** Whether this service type needs a photo or Slack link before Approve
+ *  (EVIDENCE_REQUIRED_SERVICES in shared/vendor-invoice.ts). Used by the
+ *  review and add-line dialogs to say so up front. */
+export function serviceNeedsEvidence(serviceType: string | null | undefined): boolean {
+  return EVIDENCE_REQUIRED_SERVICES.includes(serviceType ?? '')
+}
 
 // ─── Flags ───────────────────────────────────────────────────────────────────
 
@@ -249,6 +258,10 @@ export function lineIssues(l: InvoiceLine): string[] {
     if (!(n.length >= 15 && /https?:\/\//i.test(n) && /\b(guest|reservation|res\b|owner|booking|stay)\b/i.test(n))) {
       out.push(`${l.service_type} needs detail: what it was, for which guest/reservation (or owner), and the Slack/Quo link`)
     }
+  }
+  // Mirrors the charge-evidence guard in api/invoices/approve.ts.
+  if (billable && serviceNeedsEvidence(l.service_type) && Number(l.client_charge_amount ?? 0) > 0 && !chargeHasEvidence(l)) {
+    out.push(`${l.service_type} needs evidence: paste the Slack link or a photo link into the review note`)
   }
   if (!excluded && Number(l.raw_amount ?? 0) !== 0 && !Number(l.cleaner_pay_amount ?? 0)) {
     out.push('No cleaner pay — would be missing from the Ramp export')
