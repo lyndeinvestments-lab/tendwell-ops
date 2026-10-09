@@ -26,7 +26,8 @@ function describeLines(rows: BlockingLine[], max = 5): string {
 // POST /api/invoices/approve  Body: { run_id }
 //
 // The gate before any export: refuses while (a) any line still needs review,
-// or (b) a stated subtotal exists and doesn't match the line sum to the penny.
+// or (b) the line sum doesn't match the stated subtotal to the penny (a
+// vendor CSV must have one: body.stated_subtotal sets it).
 // Nothing ships with unresolved flags — that's the review queue's contract.
 
 /** A reimbursement's review note is detailed enough when it names who it was
@@ -37,6 +38,24 @@ export function reimbursementDetailOk(note: string | null | undefined): boolean 
   const hasLink = /https?:\/\//i.test(n)
   const hasWho = /\b(guest|reservation|res\b|owner|booking|stay)\b/i.test(n)
   return hasLink && hasWho
+}
+
+/** Charges Haven recovers from a guest or owner, so each must say who it was
+ *  for: a Trip Fee or a mailed left item is as much a guest claim as a UPS
+ *  receipt (1096 #258, John Bryan Trip Fee $50, carried no detail at all). */
+export const DETAIL_REQUIRED_SERVICES = ['Reimbursement', 'Trip Fee', 'Mailed Left Items by the Guest']
+
+/** What the vendor invoiced, from the lines as they stand now (a reviewer
+ *  may have edited an amount since the last reconcile). Split rows share a
+ *  line_no and only the base row carries the vendor's amount; task-derived
+ *  rows were never on the vendor's invoice. */
+export function vendorInvoicedSum(rows: ReadonlyArray<{ line_no: number; raw_amount: number | string | null; split_group: number | null; line_kind: string; source: string | null }>): number {
+  const base = new Map<number, number>()
+  for (const r of rows) {
+    if (r.source === 'task') continue
+    if (r.split_group == null || r.line_kind !== 'extra') base.set(r.line_no, Number(r.raw_amount ?? 0))
+  }
+  return Math.round([...base.values()].reduce((a, n) => a + n, 0) * 100) / 100
 }
 
 const CLEAN_KINDS = ['clean', 'deep_clean', 'combined_split']
@@ -121,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: run, error: runErr } = await supabase
     .from('invoice_runs')
-    .select('id, status, stated_subtotal, computed_subtotal')
+    .select('id, source, status, stated_subtotal, computed_subtotal')
     .eq('id', runId)
     .single()
   if (runErr || !run) {
@@ -143,7 +162,60 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  if (run.stated_subtotal != null && run.computed_subtotal != null) {
+  // Penny gate. A vendor CSV IS the vendor's invoice, so its lines must add
+  // up to the total printed on that invoice before anything is paid or billed.
+  // Every run since August had no stated total, so the gate never ran and
+  // $347.15 of in-Ops amount edits on 1096 went through unexplained. The total
+  // is required here (entered at upload, or with this approve).
+  if (run.source === 'vendor_csv') {
+    const givenRaw = (req.body as any)?.stated_subtotal
+    const given = givenRaw == null || givenRaw === '' ? null : Number(givenRaw)
+    if (given != null && !Number.isFinite(given)) {
+      res.status(400).json({ error: 'stated_subtotal must be a number' })
+      return
+    }
+    // A total typed at approve time replaces the stored one (it corrects a
+    // typo at upload); it is saved even when the gate then fails.
+    if (given != null && given !== (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)) {
+      const { error: setErr } = await supabase.from('invoice_runs').update({ stated_subtotal: given }).eq('id', runId)
+      if (setErr) {
+        res.status(500).json({ error: 'Failed to save the vendor invoice total', detail: setErr.message })
+        return
+      }
+    }
+    const stated = given ?? (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)
+    if (stated == null) {
+      res.status(400).json({
+        error: "Cannot approve: enter the total printed on the vendor's invoice — the lines must add up to it to the penny.",
+        code: 'stated_subtotal_required',
+      })
+      return
+    }
+    let lineSum: number
+    try {
+      const rows = await fetchAllRows<{ id: string; line_no: number; raw_amount: number | null; split_group: number | null; line_kind: string; source: string | null }>(
+        'invoice_lines (penny gate)',
+        () => supabase
+          .from('invoice_lines')
+          .select('id, line_no, raw_amount, split_group, line_kind, source')
+          .eq('run_id', runId)
+          .order('id'),
+        'id',
+      )
+      lineSum = vendorInvoicedSum(rows)
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to total the invoice lines', detail: e instanceof Error ? e.message : String(e) })
+      return
+    }
+    if (Math.abs(stated - lineSum) > 0.005) {
+      res.status(400).json({
+        error: `Subtotal gate failed — the lines add up to $${lineSum.toFixed(2)} but the vendor's invoice says $${stated.toFixed(2)}. Find the edited or missing amount (or get a corrected invoice from the vendor) before approving.`,
+        stated_subtotal: stated,
+        computed_subtotal: lineSum,
+      })
+      return
+    }
+  } else if (run.stated_subtotal != null && run.computed_subtotal != null) {
     const diff = Math.abs(Number(run.stated_subtotal) - Number(run.computed_subtotal))
     if (diff > 0.005) {
       res.status(400).json({
@@ -279,7 +351,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('invoice_lines')
         .select('line_no, raw_property_text, raw_amount, review_note, raw_note_text')
         .eq('run_id', runId)
-        .eq('service_type', 'Reimbursement')
+        .in('service_type', DETAIL_REQUIRED_SERVICES)
         // A line backed by a Breezeway/Trellis task ("Cleaning: Supply
         // Delivery") already has its evidence; only free-text vendor lines
         // (UPS/FedEx receipts) need the note.
@@ -297,7 +369,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   if (vagueReimbursements.length > 0) {
     res.status(400).json({
-      error: `Cannot approve: ${vagueReimbursements.length} reimbursement line(s) don't say what they were for. ${describeLines(vagueReimbursements)} In the review note, write what was shipped/delivered, for which guest or reservation (or "owner request"), and paste the Slack or Quo link.`,
+      error: `Cannot approve: ${vagueReimbursements.length} reimbursement / trip fee / mailed-item line(s) don't say what they were for. ${describeLines(vagueReimbursements)} In the review note, write what was shipped/delivered, for which guest or reservation (or "owner request"), and paste the Slack or Quo link.`,
       blocking_lines: vagueReimbursements,
     })
     return

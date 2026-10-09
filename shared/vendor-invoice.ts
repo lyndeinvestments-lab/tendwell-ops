@@ -326,6 +326,7 @@ export function validateVendorItem(input: VendorItemInput, ctx: ItemContext): It
  *  and never leaves the server. */
 const VENDOR_NOTICE_BY_FLAG: Record<string, string> = {
   task_not_completed: 'task_not_completed',
+  trellis_not_completed: 'task_not_completed',
   date_mismatch: 'date_mismatch',
   already_billed: 'already_billed',
   unmatched_task: 'no_task',

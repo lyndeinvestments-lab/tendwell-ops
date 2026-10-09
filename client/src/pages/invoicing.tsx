@@ -656,7 +656,7 @@ function UploadDialog({ open, onOpenChange, vendors, pending, onSubmit }: {
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Stated subtotal (optional)</Label>
+            <Label>Vendor invoice total (needed to approve)</Label>
             <Input
               type="number"
               step="0.01"
@@ -744,8 +744,14 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   const [approveBlockers, setApproveBlockers] = useState<BlockingLine[] | null>(null)
   const [approveError, setApproveError] = useState<string | null>(null)
 
+  // A vendor CSV can't be approved without the total printed on the vendor's
+  // invoice (the penny gate in api/invoices/approve.ts).
+  const [vendorTotal, setVendorTotal] = useState('')
   const approveMutation = useMutation({
-    mutationFn: async () => invoicesApi<{ ok: boolean; status: string }>('approve', { method: 'POST', body: { run_id: runId } }),
+    mutationFn: async () => invoicesApi<{ ok: boolean; status: string }>('approve', {
+      method: 'POST',
+      body: vendorTotal.trim() ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
+    }),
     onSuccess: (r) => {
       setApproveBlockers(null)
       setApproveError(null)
@@ -955,6 +961,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
 
   // A vendor's draft is still being written (or was returned to them).
   const canApprove = !!run && !['approved', 'exported', 'void', 'draft'].includes(run.status)
+  const needsVendorTotal = run?.source === 'vendor_csv' && run.stated_subtotal == null
+  const vendorTotalValid = vendorTotal.trim() !== '' && Number.isFinite(Number(vendorTotal))
   const showDownloads = !!run && (run.status === 'approved' || run.status === 'exported')
   const subtotalMismatch = run?.stated_subtotal != null && run?.computed_subtotal != null
     && Math.abs(run.stated_subtotal - run.computed_subtotal) > 0.005
@@ -1022,12 +1030,26 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
               <FileText className="w-4 h-4 mr-1.5" />
               Preview export
             </Button>
+            {canApprove && needsVendorTotal && (
+              <Input
+                type="number"
+                step="0.01"
+                className="h-9 w-40"
+                placeholder="Vendor invoice total"
+                title="The total printed on the vendor's invoice — the lines must add up to it to the penny"
+                value={vendorTotal}
+                onChange={e => setVendorTotal(e.target.value)}
+                data-testid="input-approve-vendor-total"
+              />
+            )}
             {canApprove && (
               <Button
                 size="sm"
                 onClick={() => approveMutation.mutate()}
-                disabled={approveMutation.isPending || hasNeedsReview}
-                title={hasNeedsReview ? 'Resolve all needs-review lines before approving' : undefined}
+                disabled={approveMutation.isPending || hasNeedsReview || (needsVendorTotal && !vendorTotalValid)}
+                title={hasNeedsReview
+                  ? 'Resolve all needs-review lines before approving'
+                  : needsVendorTotal && !vendorTotalValid ? "Enter the total from the vendor's invoice first" : undefined}
                 data-testid="button-approve"
               >
                 {approveMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}

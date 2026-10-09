@@ -23,11 +23,13 @@ import {
   similarity,
   standardizeTitle,
   validateSubtotal,
+  trellisMissedClean,
   type AliasRow,
   type EngineInput,
   type PropertyRates,
   type RawLine,
   type TaskRow,
+  type TrellisCoverage,
 } from './_engine.js'
 import { DEFAULT_EXTRA_PRICING, DEFAULT_HOT_TUB_PRICING } from '../../shared/aux-tasks'
 
@@ -1749,5 +1751,77 @@ describe('vendor-portal preset lines', () => {
       vendorLine({ rawNoteText: 'Departure Clean on 2026-08-05', rawAmount: 100, presetPropertyId: 1, presetServiceType: 'Bogus Fee' }),
     ]))
     expect(lines[0].lineKind).toBe('clean')
+  })
+})
+
+// ─── Verification gaps (2026-10-08) ──────────────────────────────────────────
+describe('verification gaps — Trellis cross-check, shared names', () => {
+  const P: PropertyRates[] = [
+    { id: 4159, name: 'Jessica Jarboe 4159', ceCharged: 300, cleanerPay: 150, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 499, name: 'Kelly Armsworth 3634', ceCharged: 320, cleanerPay: 160, deepClean3xCe: null, billingChannel: 'qbo_haven' },
+    { id: 507, name: 'Kelly Armsworth 3634', ceCharged: 320, cleanerPay: 160, deepClean3xCe: null, billingChannel: 'qbo_haven', archived: true },
+  ]
+  const T = (id: string, pid: number, d: string, title = 'Departure Clean'): TaskRow =>
+    ({ externalId: id, propertyId: pid, dueDate: d, title, isClean: true, isDeepClean: false, totalCostRef: null, completed: true, source: 'breezeway' })
+  const line = (prop: string, d: string, amt: number): RawLine =>
+    ({ lineNo: 1, source: 'vendor', rawPropertyText: prop, rawNoteText: null, rawAmount: amt, rawDateMentioned: d })
+  const cov = (done: string[], taskDays: Array<[number, string[]]>): TrellisCoverage =>
+    ({ doneCleanDays: new Set(done), taskDays: new Map(taskDays) })
+  const run = (lines: RawLine[], tasks: TaskRow[], extra: Partial<EngineInput> = {}, props = P) =>
+    reconcile({ vendorId: 'busybee', lines, aliases: [], properties: props, tasks, periodStart: '2026-09-27', periodEnd: '2026-10-03', ...extra })
+
+  it('flags a Breezeway-closed clean Trellis never completed (Jessica Jarboe 4159, 9/29)', () => {
+    const { lines } = run(
+      [line('Jessica Jarboe 4159', '2026-09-29', 150)],
+      [T('bw', 4159, '2026-09-29')],
+      { trellisCoverage: cov([], [[4159, ['2026-09-28']]]) },
+    )
+    expect(lines[0].flags).toContain(FLAGS.TRELLIS_NOT_COMPLETED)
+    expect(lines[0].reviewStatus).toBe('needs_review')
+    expect(lines[0].engineNote).toContain('Trellis has no completed clean')
+  })
+
+  it('passes when Trellis completed the clean within a day', () => {
+    const { lines } = run(
+      [line('Jessica Jarboe 4159', '2026-09-29', 150)],
+      [T('bw', 4159, '2026-09-29')],
+      { trellisCoverage: cov(['4159|2026-09-30'], [[4159, ['2026-09-30']]]) },
+    )
+    expect(lines[0].flags).not.toContain(FLAGS.TRELLIS_NOT_COMPLETED)
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('ignores properties Trellis does not run, and dates before Trellis kept completions', () => {
+    expect(trellisMissedClean(cov([], []), 4159, '2026-09-29')).toBe(false)
+    expect(trellisMissedClean(cov([], [[4159, ['2026-09-10']]]), 4159, '2026-09-29')).toBe(false)
+    expect(trellisMissedClean(cov([], [[4159, ['2026-09-05']]]), 4159, '2026-09-05')).toBe(false)
+    expect(trellisMissedClean(cov([], [[4159, ['2026-09-25']]]), 4159, '2026-09-29')).toBe(true)
+  })
+
+  it('no Trellis data at all keeps Breezeway at face value', () => {
+    const { lines } = run([line('Jessica Jarboe 4159', '2026-09-29', 150)], [T('bw', 4159, '2026-09-29')])
+    expect(lines[0].reviewStatus).toBe('ok')
+  })
+
+  it('a name shared with an archived duplicate resolves to the active record', () => {
+    expect(resolveProperty('Kelly Armsworth 3634', [], P, null).propertyId).toBe(499)
+    expect(resolveProperty('Kelly Armsworth 3634', [], [P[2], P[1]], null).propertyId).toBe(499)
+    // Typo: the archived twin no longer ties the fuzzy match.
+    expect(resolveProperty('Kelly Armsworth 3643', [], P, null).propertyId).toBe(499)
+  })
+
+  it('a name shared by two active properties goes to review with the candidates', () => {
+    const both = P.map(p => ({ ...p, archived: false }))
+    const r = resolveProperty('Kelly Armsworth 3634', [], both, null)
+    expect(r.propertyId).toBeNull()
+    expect(r.candidates).toEqual([499, 507])
+    const { lines } = run([line('Kelly Armsworth 3634', '2026-09-29', 160)], [], {}, both)
+    expect(lines[0].flags).toContain(FLAGS.UNRESOLVED_PROPERTY)
+    expect(lines[0].engineNote).toContain('#499, #507')
+  })
+
+  it('generated draft lines keep their task\'s property id', () => {
+    const drafts = generateDraftLines([T('t', 507, '2026-09-29')], new Map(P.map(p => [p.id, p])))
+    expect(drafts[0].presetPropertyId).toBe(507)
   })
 })

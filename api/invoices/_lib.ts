@@ -17,6 +17,7 @@ import {
   type RunSummary,
   type StayRow,
   type TaskRow,
+  type TrellisCoverage,
 } from './_engine.js'
 import { buildTaskLines, isHumanTouchedTaskLine, type AuxTaskRow, type ExistingLineRef } from './_aux.js'
 import {
@@ -100,6 +101,8 @@ export interface EngineContext {
   billedCleans: BilledClean[]
   /** Haven reservations around the period (owner blocks flagged). */
   stays: StayRow[]
+  /** Trellis's own clean record (see EngineInput.trellisCoverage). */
+  trellisCoverage: TrellisCoverage
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -177,12 +180,14 @@ export function buildEngineTasks(
   taskRows: BreezewayTaskInput[],
   trellisRows: TrellisTaskInput[],
   propertyByTrellisId: Map<string, number>,
-): { tasks: TaskRow[]; trellisTasks: TaskRow[] } {
+): { tasks: TaskRow[]; trellisTasks: TaskRow[]; trellisCoverage: TrellisCoverage } {
   // A Breezeway row's own is_clean flag predates the engine's title rules
   // ("Post-Owner Stay Clean - HT" imported as not-a-clean), so the engine's
   // rules decide here, the same way they do for Trellis.
   const engineIsClean = (title: string) => {
-    if (isExcludedTitle(title) || /deep\s*clean/i.test(title)) return false
+    // The raw title too: "Cleaner inspection — assess touch-up vs. Departure
+    // Clean" standardizes to Departure Clean (Jessica Jarboe 4159, 9/28).
+    if (isExcludedTitle(title) || /deep\s*clean|in?spection|walkthrough/i.test(title)) return false
     const std = standardizeTitle(title)
     return std != null && !std.isExtra && !/in?spection|walkthrough/i.test(std.title)
   }
@@ -213,7 +218,7 @@ export function buildEngineTasks(
     tasks.filter(t => (t.isClean || t.isDeepClean) && t.completed && t.propertyId != null && t.dueDate != null)
       .map(t => `${t.propertyId}|${t.dueDate}`),
   )
-  const trellisTasks: TaskRow[] = trellisRows
+  const trellisAll = trellisRows
     .map(t => {
       const propertyId = t.trellis_property_id ? propertyByTrellisId.get(t.trellis_property_id) ?? null : null
       const title = t.title ?? ''
@@ -237,16 +242,24 @@ export function buildEngineTasks(
         status: t.status ?? '',
       }
     })
-    .filter(t =>
-      (t.isClean || t.isDeepClean) &&
-      t.propertyId != null &&
-      t.dueDate != null &&
-      !isTaskCancelled(t.status) &&
-      !bwDoneCleanDays.has(`${t.propertyId}|${t.dueDate}`),
-    )
+    .filter(t => t.propertyId != null && t.dueDate != null && !isTaskCancelled(t.status))
+  const trellisTasks: TaskRow[] = trellisAll
+    .filter(t => (t.isClean || t.isDeepClean) && !bwDoneCleanDays.has(`${t.propertyId}|${t.dueDate}`))
     .map(({ status: _s, ...t }) => t)
 
-  return { tasks, trellisTasks }
+  // Trellis's view on its own, before Breezeway wins the day above — it is
+  // how a Breezeway clean Trellis never completed gets caught.
+  const doneCleanDays = new Set(
+    trellisAll.filter(t => (t.isClean || t.isDeepClean) && t.completed).map(t => `${t.propertyId}|${t.dueDate}`),
+  )
+  const taskDays = new Map<number, string[]>()
+  for (const t of trellisAll) {
+    const arr = taskDays.get(t.propertyId!)
+    if (arr) arr.push(t.dueDate!)
+    else taskDays.set(t.propertyId!, [t.dueDate!])
+  }
+
+  return { tasks, trellisTasks, trellisCoverage: { doneCleanDays, taskDays } }
 }
 
 /** properties.trellis_id → Ops property id. When two Ops rows share a Trellis
@@ -386,6 +399,7 @@ export async function loadEngineContext(
     billingChannel: p.contact_id ? channelByContact.get(p.contact_id) ?? null : null,
     hotTub: p.hot_tub === true,
     feeOverrides: p.contact_id ? overridesByContact.get(p.contact_id) : undefined,
+    archived: p.archived_at != null,
   }))
   const propertyByTrellisId = trellisIdIndex(propRows)
 
@@ -395,7 +409,7 @@ export async function loadEngineContext(
     propertyId: a.property_id,
   }))
 
-  const { tasks, trellisTasks } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
+  const { tasks, trellisTasks, trellisCoverage } = buildEngineTasks(taskRows, trellisRows, propertyByTrellisId)
 
   // Onboarding evidence + cross-invoice duplicate guard.
   const [firstRows, billedRows] = await Promise.all([
@@ -444,7 +458,7 @@ export async function loadEngineContext(
 
   const stays = await loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId)
 
-  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans, stays }
+  return { properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty, billedCleans, stays, trellisCoverage }
 }
 
 /** Reservations that overlap the window, mapped onto Ops properties (primary
@@ -938,7 +952,9 @@ export async function reconcileRun(
     .sort((a, b) => a.line_no - b.line_no)
     .map(r => {
       const carry = vendorCarry.get(r.line_no)
-      const presetPid = carry?.vendor_detail?.property_id
+      // A generated line was built from its task's Ops property id, so it
+      // keeps it rather than being re-resolved by (possibly shared) name.
+      const presetPid = carry?.vendor_detail?.property_id ?? (r.source === 'generated' ? r.property_id : null)
       return {
         lineNo: r.line_no,
         source: r.source === 'manual' ? 'manual' : r.source,
@@ -959,6 +975,7 @@ export async function reconcileRun(
     firstCleanByProperty: ctx.firstCleanByProperty,
     billedCleans: ctx.billedCleans,
     stays: ctx.stays,
+    trellisCoverage: ctx.trellisCoverage,
     vendorId: run.vendor_id,
     lines: rawLines,
     aliases: ctx.aliases,

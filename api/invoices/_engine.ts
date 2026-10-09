@@ -27,6 +27,9 @@ export interface PropertyRates {
   // Resolved from the property's contact exactly the way billingChannel is,
   // so every property of one client shares the same map.
   feeOverrides?: Readonly<Record<string, FeeOverride>>
+  // Archived duplicate kept for history. Only consulted when several Ops rows
+  // share one name (Kelly Armsworth 3634: #499 active, #507 archived).
+  archived?: boolean
 }
 
 
@@ -167,6 +170,39 @@ export interface EngineInput {
   // reservation data → owner stays only come from a "Post-Owner Stay Clean"
   // task title.
   stays?: ReadonlyArray<StayRow>
+  // Trellis's own record of cleans, kept apart from `tasks` (which drops a
+  // Trellis clean whenever Breezeway has a completed one that day). Absent =
+  // no Trellis data → Breezeway completions are taken at face value.
+  trellisCoverage?: TrellisCoverage
+}
+
+export interface TrellisCoverage {
+  /** `${propertyId}|yyyy-mm-dd` with a COMPLETED Trellis clean. */
+  doneCleanDays: ReadonlySet<string>
+  /** Property → dates with any Trellis task: the property is run in Trellis. */
+  taskDays: ReadonlyMap<number, ReadonlyArray<string>>
+}
+
+// Trellis completed tasks are only kept from here on: the sync pruned them
+// until 2026-10-08 and the nightly backfill reaches back 30 days, so before
+// this date a missing Trellis completion says nothing (97 of 98 Breezeway-only
+// cleans Sep 1–Oct 7 fell on 9/2–9/7).
+export const TRELLIS_COMPLETED_SINCE = '2026-09-08'
+
+// A property counts as run in Trellis on a date when Trellis has any task for
+// it within this many days.
+const TRELLIS_ACTIVE_WINDOW_DAYS = 7
+
+/** True when Breezeway's completed clean at `propertyId` on `date` has no
+ *  completed Trellis clean within a day, on a property Trellis runs. */
+export function trellisMissedClean(cov: TrellisCoverage, propertyId: number, date: string): boolean {
+  if (date < TRELLIS_COMPLETED_SINCE) return false
+  const days = cov.taskDays.get(propertyId)
+  if (!days?.some(d => Math.abs(dayDiff(d, date)) <= TRELLIS_ACTIVE_WINDOW_DAYS)) return false
+  for (const off of [-1, 0, 1]) {
+    if (cov.doneCleanDays.has(`${propertyId}|${addDays(date, off)}`)) return false
+  }
+  return true
 }
 
 // ─── Flag taxonomy (client renders badges from these) ───────────────────────
@@ -213,6 +249,11 @@ export const FLAGS = {
   ONBOARDING_NOT_FIRST_CLEAN: 'onboarding_not_first_clean',
   // The only task near the billed date was never completed.
   TASK_NOT_COMPLETED: 'task_not_completed',
+  // Breezeway shows the clean closed, but Trellis — which runs the property —
+  // has no completed clean within a day of it (Jessica Jarboe 4159, 9/29:
+  // Breezeway Closed, Trellis had only a "touch-up vs. Departure Clean"
+  // inspection and no departure). See trellisMissedClean.
+  TRELLIS_NOT_COMPLETED: 'trellis_not_completed',
   // No completed clean on the billed date; the nearest one is 2–3 days off.
   DATE_MISMATCH: 'date_mismatch',
   // This clean was already billed on another invoice (or earlier on this one).
@@ -711,6 +752,9 @@ export interface PropertyResolution {
   propertyId: number | null
   confidence: number | null
   via: 'alias' | 'exact' | 'fuzzy' | null
+  // Set when the text names several Ops properties exactly and none is the
+  // single active one — a human picks, the engine never guesses.
+  candidates?: number[]
 }
 
 /** Vendors write the note into the property cell: "Ashley May 1619 - Deep
@@ -803,15 +847,25 @@ function resolvePropertyText(
     aliases.find(a => a.vendorId == null && normalizeText(a.aliasRaw) === needle)
   if (aliasHit) return { propertyId: aliasHit.propertyId, confidence: 1, via: 'alias' }
 
-  // 2. Exact canonical-name match.
-  const exact = properties.find(p => normalizeText(p.name) === needle)
-  if (exact) return { propertyId: exact.id, confidence: 1, via: 'exact' }
+  // 2. Exact canonical-name match. Several rows can share a name (an archived
+  // duplicate kept for history): the single active one wins; otherwise it is
+  // a review case, never "whichever row came first".
+  const exact = properties.filter(p => normalizeText(p.name) === needle)
+  if (exact.length === 1) return { propertyId: exact[0].id, confidence: 1, via: 'exact' }
+  if (exact.length > 1) {
+    const active = exact.filter(p => !p.archived)
+    if (active.length === 1) return { propertyId: active[0].id, confidence: 1, via: 'exact' }
+    return { propertyId: null, confidence: null, via: null, candidates: exact.map(p => p.id) }
+  }
 
   // 3. Fuzzy — best score wins, but only above threshold, and never when the
   // runner-up is within 0.03 (ambiguous match is a review case, not a guess).
+  // An archived twin of an active name would always tie with it.
+  const activeNames = new Set(properties.filter(p => !p.archived).map(p => normalizeText(p.name)))
   let best: { id: number; score: number } | null = null
   let second = 0
   for (const p of properties) {
+    if (p.archived && activeNames.has(normalizeText(p.name))) continue
     const score = similarity(rawText, p.name)
     if (!best || score > best.score) {
       second = best?.score ?? 0
@@ -1116,7 +1170,9 @@ export function classifyLine(
       return [withChannel(flag(line, FLAGS.OPERATING_EXPENSE), null)]
     }
     line.lineKind = 'clean'
-    line = withNote(line, `"${(raw.rawPropertyText ?? '').trim()}" doesn't match any Ops property or saved alias — fixing it here saves the match forever.`)
+    line = withNote(line, resolution.candidates?.length
+      ? `"${(raw.rawPropertyText ?? '').trim()}" names ${resolution.candidates.length} Ops properties (#${resolution.candidates.join(', #')}) — pick the right one; fixing it here saves the match forever.`
+      : `"${(raw.rawPropertyText ?? '').trim()}" doesn't match any Ops property or saved alias — fixing it here saves the match forever.`)
     return [withChannel(needsReview(line, FLAGS.UNRESOLVED_PROPERTY), null)]
   }
 
@@ -1511,6 +1567,7 @@ export function generateDraftLines(
         rawNoteText: `Deep clean on ${t.dueDate ?? 'unknown date'} (${t.title})`,
         rawAmount: pay != null ? round2(pay * 3) : 0,
         rawDateMentioned: t.dueDate,
+        presetPropertyId: t.propertyId,
       })
     } else {
       // Onboarding cleans pay the normal Cleaner Pay rate (Jordan 2026-08-22
@@ -1523,6 +1580,7 @@ export function generateDraftLines(
         rawNoteText: `${t.title} on ${t.dueDate ?? 'unknown date'}`,
         rawAmount: pay != null ? round2(pay) : 0,
         rawDateMentioned: t.dueDate,
+        presetPropertyId: t.propertyId,
       })
     }
   }
@@ -1661,6 +1719,7 @@ interface EvidenceCtx {
   billedDay: ReadonlyMap<string, string>
   hasCoverage: boolean
   tasksForProperty: TaskRow[]
+  trellis?: TrellisCoverage
 }
 
 /** Haven's rule (Jo, 2026-10-06): "strictly follow what's written in
@@ -1692,6 +1751,10 @@ function applyEvidenceRules(line: EngineLine, c: EvidenceCtx): EngineLine {
       near.length
         ? `No unbilled completed clean on ${c.noteDate}: ${near.join('; ')}. Likely a duplicate or mis-dated line — remove it or correct it.`
         : `No completed clean in Breezeway/Trellis on or near ${c.noteDate} — confirm the clean happened (an inspection or a deleted task is not a clean) before billing it.`)
+  } else if (task && pick && task.source === 'breezeway' && task.propertyId != null && task.dueDate && c.trellis &&
+      trellisMissedClean(c.trellis, task.propertyId, task.dueDate)) {
+    l = withNote(needsReview(l, FLAGS.TRELLIS_NOT_COMPLETED),
+      `Breezeway shows the ${task.title} on ${task.dueDate} closed, but Trellis has no completed clean within a day of it. Confirm the clean actually happened (Haven can close a Breezeway task without one) before billing it.`)
   }
   const day = task && isDone(task) && pick && pick.dateGap <= 1 ? task.dueDate : c.noteDate
   const prior = l.propertyId != null && day ? c.billedDay.get(`${l.propertyId}|${day}`) : undefined
@@ -1812,6 +1875,7 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
         raw, task, pick, noteDate, claimedBy, billedDay,
         hasCoverage: (tasksByProperty.get(base.propertyId!)?.length ?? 0) > 0,
         tasksForProperty: tasksByProperty.get(base.propertyId!) ?? [],
+        trellis: input.trellisCoverage,
       }))
       if (task && isDone(task) && pick!.dateGap <= 1) {
         serviceDate = task.dueDate
