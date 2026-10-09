@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, refreshBillingChannels, requireInvoicingBearer } from './_lib.js'
+import { RESOLVE_NOTE_FLAGS, resolveNoteMissing } from '../../shared/invoice-review.js'
 import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES, evidenceLinkOk } from '../../shared/vendor-invoice.js'
 
 // Re-exported so approve-side callers and tests read the gate from one place.
@@ -394,6 +395,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(400).json({
       error: `Cannot approve: ${vagueReimbursements.length} reimbursement / trip fee / mailed-item line(s) don't say what they were for. ${describeLines(vagueReimbursements)} In the review note, write what was shipped/delivered, for which guest or reservation (or "owner request"), and paste the Slack or Quo link.`,
       blocking_lines: vagueReimbursements,
+    })
+    return
+  }
+
+  // A price change or a non-Haven property billed to Haven must be explained
+  // in writing. Resolving the flag is not enough: "Accept all" or a quick
+  // Resolve would otherwise wave a changed charge through with no record of
+  // why. The Resolve buttons ask for the note; this is the backstop for any
+  // other way the line got to resolved.
+  let unexplained: BlockingLine[]
+  try {
+    const rows = await fetchAllRows<BlockingLine & { review_note: string | null; flags: string[] | null; review_status: string; line_kind: string }>(
+      'invoice_lines (resolve notes)',
+      () => supabase
+        .from('invoice_lines')
+        .select('line_no, raw_property_text, raw_amount, review_note, flags, review_status, line_kind')
+        .eq('run_id', runId)
+        .overlaps('flags', RESOLVE_NOTE_FLAGS as string[])
+        .order('line_no'),
+      'line_no',
+    )
+    unexplained = rows.filter(r => resolveNoteMissing(r))
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to check resolve notes', detail: e instanceof Error ? e.message : String(e) })
+    return
+  }
+  if (unexplained.length > 0) {
+    res.status(400).json({
+      error: `Cannot approve: ${unexplained.length} line(s) changed price since the last invoice or are billed to Haven without a Hostaway listing, and have no written explanation. ${describeLines(unexplained)} Open the line and say in the review note why the charge changed (or why this property is billed to Haven).`,
+      blocking_lines: unexplained,
     })
     return
   }

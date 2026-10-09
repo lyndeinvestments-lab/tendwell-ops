@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import { resolveNoteMissing } from '@shared/invoice-review'
 import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES } from '@shared/vendor-invoice'
 
 /**
@@ -105,6 +106,8 @@ export const FLAG_LABELS: Record<string, string> = {
   possible_duplicate: 'Possible duplicate task that day',
   late_item: 'Dated before the invoice period',
   completed_off_date: 'Task closed on a different day',
+  charge_changed_since_last_invoice: 'Charge changed since last invoice',
+  not_haven_listing: 'Not a Haven listing (no Hostaway match)',
 }
 
 export function flagLabel(flag: string): string {
@@ -265,6 +268,10 @@ export function lineIssues(l: InvoiceLine): string[] {
   }
   if ((l.flags ?? []).includes('suspect_service_date')) {
     out.push('Service date looks wrong')
+  }
+  // Mirrors the resolve-note guard in api/invoices/approve.ts.
+  if (resolveNoteMissing(l)) {
+    out.push('Add a review note: say why the charge changed or why this property is billed to Haven')
   }
   if (l.review_status === 'needs_review') {
     out.push('Needs review')
