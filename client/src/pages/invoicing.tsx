@@ -37,11 +37,12 @@ import {
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
   InvoiceApiError,
-  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf,
+  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf, serviceNeedsEvidence,
   serviceTypeFromTaskTitle, vendorNameOf,
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
+import { chargeHasEvidence, evidenceLinkOk } from '@shared/vendor-invoice'
 
 // ── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -1689,6 +1690,11 @@ function AddLineDialog({ runId, nextLineNo, userLabel, onClose, onSaved }: {
           <div className="space-y-1.5">
             <Label>Note</Label>
             <Input value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Labor — deep clean assist, 4 hrs" data-testid="add-line-note" />
+            {serviceNeedsEvidence(serviceType) && !evidenceLinkOk(note) && (
+              <p className="text-2xs text-warning" data-testid="add-line-evidence-required">
+                Evidence required: {serviceType} cannot be approved without a photo or the Slack link. Paste it in the note.
+              </p>
+            )}
           </div>
         </div>
         <div className="flex justify-end gap-2 pt-2">
@@ -2188,6 +2194,13 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
           <div className="space-y-1.5">
             <Label>Review note</Label>
             <Textarea value={reviewNote} onChange={e => setReviewNote(e.target.value)} rows={2} data-testid="textarea-review-note" />
+            {serviceNeedsEvidence(serviceType) && (
+              chargeHasEvidence({ ...line, review_note: reviewNote })
+                ? <p className="text-2xs text-success" data-testid="text-evidence-ok">Evidence on file (photo or Slack link).</p>
+                : <p className="text-2xs text-warning" data-testid="text-evidence-required">
+                    Evidence required: {serviceType} cannot be approved without a photo or the Slack link. Paste it here (Slack, Google Drive/Photos, Breezeway, or an image URL).
+                  </p>
+            )}
           </div>
         </div>
         <DialogFooter>

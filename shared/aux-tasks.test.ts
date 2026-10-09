@@ -177,7 +177,9 @@ describe('billability & pricing settings', () => {
     expect(auxCharge('Trip Fee', s)).toBe(50)
     expect(auxCharge('Extra Cleaning', s)).toBeNull()
     expect(auxCharge('Mailed Left Items by the Guest', s)).toBeNull()
-    expect(Object.keys(DEFAULT_EXTRA_PRICING)).toHaveLength(7)
+    // Reimbursement left the list (bills at the receipt amount, 2026-10-09).
+    expect(auxCharge('Reimbursement', s)).toBeNull()
+    expect(Object.keys(DEFAULT_EXTRA_PRICING)).toHaveLength(6)
   })
 
   it('stored JSON overrides win, malformed values are ignored, null clears a default', () => {
