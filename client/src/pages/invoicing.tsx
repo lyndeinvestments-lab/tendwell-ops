@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
+import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
@@ -1193,6 +1194,10 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         </Card>
       )}
 
+      {/* bill.com send control: hides itself until migration 20261009c is
+          applied and on runs that are not approved. */}
+      {run && <BillComSendPanel run={run} lines={lines} onChanged={invalidate} />}
+
       {linesQuery.error ? (
         <ErrorState title="Couldn't load invoice lines" onRetry={() => linesQuery.refetch()} />
       ) : linesQuery.isLoading ? (
@@ -1419,6 +1424,9 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                             {line.engine_note && (line.review_status === 'needs_review' || hasIssues(line)) && (
                               <p className="w-full text-2xs text-muted-foreground">{line.engine_note}</p>
                             )}
+                            {line.bill_hold_reason && (
+                              <p className="w-full text-2xs text-warning">Held from bill.com: {line.bill_hold_reason}</p>
+                            )}
                             {lineIssues(line)
                               .filter(msg => msg !== 'Needs review')
                               .map(msg => (
@@ -1503,6 +1511,9 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                     )}
                     {line.engine_note && (line.review_status === 'needs_review' || hasIssues(line)) && (
                       <p className="text-2xs text-muted-foreground">{line.engine_note}</p>
+                    )}
+                    {line.bill_hold_reason && (
+                      <p className="text-2xs text-warning">Held from bill.com: {line.bill_hold_reason}</p>
                     )}
                     <VendorLineDetail line={line} />
                     {lineIssues(line)

@@ -11,6 +11,7 @@
 import Papa from 'papaparse'
 import { extraReasonFromNote, REASON_REQUIRED_EXTRAS } from './_engine.js'
 import type { BillingChannel, LineKind } from './_engine.js'
+import { billComLineSendable, heldLineNumbers, stateMap, type ClientInvoiceState } from '../../shared/billcom-send.js'
 
 export interface ExportRun {
   vendorName: string
@@ -23,6 +24,12 @@ export interface ExportRun {
   // Absent → every row uses qboInvoiceNo (single-month runs, old runs).
   qboInvoiceNos?: Readonly<Record<string, number>> | null
   periodEnd: string | null
+  // bill.com send control (shared/billcom-send.ts): the run's stored client
+  // invoices. Present → the bill.com worksheet lists only lines whose client
+  // invoice is APPROVED (not held, not already sent) and that carry no hold
+  // reason. Absent/null → the client_invoices table isn't there yet
+  // (migration pending) and the worksheet lists every bill.com line, as before.
+  billComInvoices?: ReadonlyArray<ClientInvoiceState> | null
 }
 
 export interface ExportLine {
@@ -43,6 +50,9 @@ export interface ExportLine {
   reviewStatus: string
   splitGroup?: number | null // links base+extra rows split from one vendor line
   flags?: string[] | null
+  lineNo?: number | null // vendor line number (split rows share it)
+  contactId?: string | null // the property's client: who the bill.com invoice is for
+  billHoldReason?: string | null // non-blank → held back from bill.com
 }
 
 // ─── Month split ──────────────────────────────────────────────────────────────
@@ -469,9 +479,18 @@ const BILLCOM_HEADERS = [
 ]
 
 export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
+  // A hold set on any row of a split vendor line holds the whole line, so it
+  // has to be read before the rows collapse onto their base.
+  const held = heldLineNumbers(lines.filter(l => l.lineNo != null).map(l => ({ lineNo: l.lineNo!, billHoldReason: l.billHoldReason })))
   const collapsed = collapseSplits(lines, l => l.clientChargeAmount, (l, total) => ({ ...l, clientChargeAmount: total }))
+  const states = run.billComInvoices ? stateMap(run.billComInvoices) : null
   const rows = collapsed
     .filter(l => isArLine(l, 'bill_com'))
+    .filter(l => !states || billComLineSendable({
+      contactId: l.contactId,
+      serviceMonth: serviceMonth(l, run.invoiceDate),
+      billHoldReason: l.billHoldReason ?? (l.lineNo != null && held.has(l.lineNo) ? 'held' : null),
+    }, states))
     // Client, then MONTH (one bill.com invoice per client per month), then date.
     .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') ||
       serviceMonth(a, run.invoiceDate).localeCompare(serviceMonth(b, run.invoiceDate)) ||

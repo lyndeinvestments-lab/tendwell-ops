@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { isMissingSchemaError, type ClientInvoiceState, type ClientInvoiceStatus } from '../../shared/billcom-send.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
 //                          [&preview=1]
@@ -71,20 +72,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Paged: PostgREST caps a response at 1000 rows, and a silently truncated
   // export is the worst failure here — a CSV that looks complete while
   // under-billing the client and under-paying the cleaner.
+  const LINE_COLUMNS = 'line_no, line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contact_id, contacts:contact_id(full_name, company))'
+  const loadLines = (columns: string) => fetchAllRows<Record<string, any>>(
+    'invoice_lines',
+    () => supabase
+      .from('invoice_lines')
+      .select(columns)
+      .eq('run_id', runId)
+      .order('line_no'),
+    'line_no',
+  )
   let lineRows: Array<Record<string, any>>
+  // bill.com send control needs invoice_lines.bill_hold_reason and the
+  // client_invoices table (20261009c). Until that migration is applied both
+  // are missing, and the export behaves exactly as it did before.
+  let sendControl = true
   try {
-    lineRows = await fetchAllRows<Record<string, any>>(
-      'invoice_lines',
-      () => supabase
-        .from('invoice_lines')
-        .select('line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contacts:contact_id(full_name, company))')
-        .eq('run_id', runId)
-        .order('line_no'),
-      'line_no',
-    )
+    try {
+      lineRows = await loadLines(`${LINE_COLUMNS}, bill_hold_reason`)
+    } catch (e) {
+      if (!isMissingSchemaError(e)) throw e
+      sendControl = false
+      lineRows = await loadLines(LINE_COLUMNS)
+    }
   } catch (e) {
     res.status(500).json({ error: 'Failed to load lines', detail: e instanceof Error ? e.message : String(e) })
     return
+  }
+
+  let billComInvoices: ClientInvoiceState[] | null = null
+  if (sendControl && format === 'billcom') {
+    const { data: ciRows, error: ciErr } = await supabase
+      .from('client_invoices')
+      .select('contact_id, service_month, status, billcom_invoice_number')
+      .eq('run_id', runId)
+      .eq('billing_channel', 'bill_com')
+    if (ciErr && !isMissingSchemaError(ciErr)) {
+      res.status(500).json({ error: 'Failed to load client invoices', detail: ciErr.message })
+      return
+    }
+    if (!ciErr) {
+      billComInvoices = (ciRows ?? []).map(r => ({
+        contactId: String(r.contact_id),
+        serviceMonth: String(r.service_month),
+        status: r.status as ClientInvoiceStatus,
+        billcomInvoiceNumber: r.billcom_invoice_number ?? null,
+      }))
+    }
   }
 
   const vendorRel = (run as unknown as { vendors: { name: string } | Array<{ name: string }> | null }).vendors
@@ -109,6 +143,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       reviewStatus: r.review_status,
       splitGroup: r.split_group != null ? Number(r.split_group) : null,
       flags: Array.isArray(r.flags) ? r.flags : [],
+      lineNo: r.line_no != null ? Number(r.line_no) : null,
+      contactId: prop?.contact_id ?? null,
+      billHoldReason: r.bill_hold_reason ?? null,
     }
   })
 
@@ -147,6 +184,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     qboInvoiceNo,
     qboInvoiceNos,
     periodEnd: run.period_end,
+    billComInvoices,
   }
 
   // Known QBO classes (nightly qbo-classes-sync snapshot) with any manual
