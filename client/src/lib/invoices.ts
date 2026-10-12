@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase'
 import { redoBlocker } from '@shared/invoice-redo'
 import { resolveNoteMissing } from '@shared/invoice-review'
 import { chargeHasEvidence, EVIDENCE_REQUIRED_SERVICES } from '@shared/vendor-invoice'
+import type { ServiceDetail } from '@shared/service-detail'
 
 /**
  * Shared domain types + API helpers for the Invoicing feature (client-side
@@ -415,3 +416,14 @@ export async function downloadExport(runId: string, format: ExportFormat): Promi
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+/** What each line of a run actually was (the task behind it, who was staying,
+ *  warnings), keyed by line id. Codes are masked server-side. The first view
+ *  of a run may take a few seconds while missing add-on detail is fetched
+ *  from Trellis; later views read the cached copy. */
+export async function fetchLineDetails(runId: string): Promise<Record<string, ServiceDetail>> {
+  const r = await invoicesApi<{ details: Record<string, ServiceDetail> }>(`line-details?run_id=${encodeURIComponent(runId)}`)
+  return r.details ?? {}
+}
+
+export const lineDetailsKey = (runId: string) => ['invoicing-line-details', runId] as const

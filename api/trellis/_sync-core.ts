@@ -178,6 +178,37 @@ async function upsert(
 // ── Row shape helpers ────────────────────────────────────────────────────────
 
 const TASK_SELECT = ['id', 'title', 'property_id', 'property_name', 'department_name', 'status', 'priority', 'assigned_to_id', 'assigned_to_name', 'scheduled_date', 'completed_at']
+// What a reviewer needs to judge a billed task (invoice service detail,
+// 20261012a): what was asked, when, for which stay, who did it. The task's
+// `cost` is left out on purpose: trellis_task_snapshot is readable by crews.
+export const TASK_DETAIL_SELECT = [
+  ...TASK_SELECT,
+  'description', 'summary', 'reservation_id', 'created_at', 'scheduled_time', 'source', 'external_id',
+  'external_provider_slug', 'assignees', 'checklist_total', 'checklist_completed', 'linked_issue_tasks', 'is_no_charge',
+]
+
+/** Full detail for specific tasks, fetched on demand (invoice service detail).
+ *  NOT part of the bulk sync: Trellis caps each response at ~12 KB, so the
+ *  detailed field list returns ~8 tasks a page instead of 25 and the nightly
+ *  sync would blow its 300 s budget. Rows come back keyed by task id, mapped
+ *  to trellis_task_snapshot detail columns. */
+export async function fetchTaskDetails(
+  workspace: 'A' | 'B',
+  taskIds: ReadonlyArray<string>,
+  opts: { deadlineMs?: number } = {},
+): Promise<Map<string, Record<string, unknown>>> {
+  const keys = trellisKeys()
+  const apiKey = workspace === 'A' ? keys.A : keys.B
+  const out = new Map<string, Record<string, unknown>>()
+  const BATCH = 40
+  for (let i = 0; i < taskIds.length; i += BATCH) {
+    if (opts.deadlineMs && Date.now() > opts.deadlineMs) break
+    const ids = taskIds.slice(i, i + BATCH)
+    const rows = await queryAll(apiKey, 'tasks', ['id', ...TASK_DETAIL_SELECT.filter(f => !TASK_SELECT.includes(f))], { id: { in: ids } }, 50)
+    for (const r of rows) if (typeof r.id === 'string') out.set(r.id, taskDetailColumns(r))
+  }
+  return out
+}
 const PROP_SELECT = ['id', 'name', 'status', 'city']
 const RESERVATION_SELECT = ['id', 'property_id', 'property_name', 'guest_name', 'checkin_date', 'checkout_date', 'status', 'source', 'total_amount']
 
@@ -203,7 +234,31 @@ const taskRow = (t: Record<string, unknown>, ws: string) => ({
   department_name: t.department_name ?? null, status: t.status ?? null, priority: t.priority ?? null,
   assigned_to_id: t.assigned_to_id ?? null, assigned_to_name: t.assigned_to_name ?? null,
   scheduled_date: t.scheduled_date ?? null, completed_at: t.completed_at ?? null, synced_at: now(),
+  ...taskDetailColumns(t),
 })
+
+/** Detail columns, only for a row fetched with the detailed select. Bulk-sync
+ *  rows carry none, so the nightly upsert never blanks out cached detail. */
+export function taskDetailColumns(t: Record<string, unknown>): Record<string, unknown> {
+  if (!('description' in t)) return {}
+  const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null)
+  const int = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.trunc(v) : null)
+  return {
+    description: str(t.description),
+    summary: str(t.summary),
+    reservation_id: str(t.reservation_id),
+    task_created_at: str(t.created_at),
+    scheduled_time: str(t.scheduled_time),
+    task_source: str(t.source),
+    external_id: str(t.external_id),
+    external_provider: str(t.external_provider_slug),
+    assignees: Array.isArray(t.assignees) ? t.assignees : null,
+    checklist_total: int(t.checklist_total),
+    checklist_completed: int(t.checklist_completed),
+    linked_issue_count: Array.isArray(t.linked_issue_tasks) ? t.linked_issue_tasks.length : null,
+    is_no_charge: typeof t.is_no_charge === 'boolean' ? t.is_no_charge : null,
+  }
+}
 
 function dedupeById(arr: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
   const m = new Map<unknown, Record<string, unknown>>()

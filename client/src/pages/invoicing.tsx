@@ -16,6 +16,7 @@ import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
+import { ServiceDetailPanel, ServiceDetailSummary } from '@/components/invoicing/ServiceDetail'
 import { EmptyState } from '@/components/EmptyState'
 import { SearchSelect } from '@/components/issues/SearchSelect'
 import { Button } from '@/components/ui/button'
@@ -40,7 +41,7 @@ import {
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
   InvoiceApiError,
-  downloadExport, flagLabel, hasIssues, invoicesApi, lineIssues, propertyOf, serviceNeedsEvidence,
+  downloadExport, fetchLineDetails, flagLabel, hasIssues, invoicesApi, lineDetailsKey, lineIssues, propertyOf, serviceNeedsEvidence,
   serviceTypeFromTaskTitle, vendorNameOf,
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
@@ -742,9 +743,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     },
   })
 
+  // What each line's task actually was (shared with the Review dialog via
+  // the cache key). Detail is a nicety: failure leaves the lines usable.
+  const detailsQuery = useQuery({
+    queryKey: lineDetailsKey(runId),
+    queryFn: () => fetchLineDetails(runId),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  })
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['invoicing-run', runId] })
     qc.invalidateQueries({ queryKey: ['invoicing-lines', runId] })
+    qc.invalidateQueries({ queryKey: lineDetailsKey(runId) })
     onRunsChanged()
   }
 
@@ -1463,6 +1474,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                             <p className="text-2xs text-muted-foreground truncate">raw: {line.raw_property_text}</p>
                           )}
                           <VendorLineDetail line={line} />
+                          <ServiceDetailSummary detail={detailsQuery.data?.[line.id]} isExtra={line.line_kind === 'extra'} serviceType={line.service_type} lineId={line.id} />
                         </td>
                         <td className="px-2 py-2 max-w-36 truncate">{line.service_type ?? '—'}</td>
                         <td className="px-2 py-2 whitespace-nowrap text-muted-foreground" title={fmtDate(line.raw_date_mentioned)}>{fmtDateShort(line.raw_date_mentioned)}</td>
@@ -1614,6 +1626,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                       <p className="text-2xs text-warning">Held from bill.com: {line.bill_hold_reason}</p>
                     )}
                     <VendorLineDetail line={line} />
+                    <ServiceDetailSummary detail={detailsQuery.data?.[line.id]} isExtra={line.line_kind === 'extra'} serviceType={line.service_type} lineId={line.id} />
                     {lineIssues(line)
                       .filter(msg => msg !== 'Needs review')
                       .map(msg => (
@@ -1860,6 +1873,14 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
   onSaved: () => void
 }) {
   const { toast } = useToast()
+
+  // Same cache entry as the run table, so opening a line costs nothing.
+  const detailsQuery = useQuery({
+    queryKey: lineDetailsKey(runId),
+    queryFn: () => fetchLineDetails(runId),
+    staleTime: 5 * 60_000,
+    retry: 1,
+  })
 
   const propertiesQuery = useQuery<Array<{ id: number; name: string | null; cleaner_pay: number | null; ce_charged: number | null; deep_clean_3x_ce: number | null; trellis_id: string | null }>>({
     queryKey: ['invoicing-properties-rates'],
@@ -2207,6 +2228,7 @@ function LineReviewDialogContainer({ line, runId, userLabel, onClose, onSaved }:
             {line.engine_note}
           </div>
         )}
+        <ServiceDetailPanel detail={detailsQuery.data?.[line.id]} loading={detailsQuery.isLoading} />
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>Property</Label>
