@@ -150,6 +150,11 @@ export interface BuildInput {
 
 const DONE_STATUSES = /^(completed|closed|done|finished)$/i
 
+/** Add-ons whose task needs no request text: the onboarding fee is billed for
+ *  the property's first Tendwell clean itself (~20 such lines a run had no
+ *  description and would otherwise each carry a warning). */
+const SELF_EVIDENT_EXTRAS: ReadonlySet<string> = new Set(['Onboarding Clean'])
+
 /** Postgres / Trellis timestamps ("2026-10-09 16:48:22.35+00:00") to strict
  *  ISO, which every browser parses (Safari rejects the space form). */
 export function toIso(v: string | null | undefined): string | null {
@@ -170,7 +175,7 @@ export function buildServiceDetail(input: BuildInput): ServiceDetail {
     if (task.noCharge && charged) warnings.push('Trellis marks this task "no charge", but the client is charged')
     // requestedAt is only present once the detailed sync has stored this
     // task, so a task synced before 20261012a is not called "undescribed".
-    if (input.isExtra && charged && !task.description && task.source === 'trellis' && task.requestedAt) warnings.push('The task has no description: nothing says why this was needed')
+    if (input.isExtra && charged && !task.description && task.source === 'trellis' && task.requestedAt && !SELF_EVIDENT_EXTRAS.has(input.serviceType ?? '')) warnings.push('The task has no description: nothing says why this was needed')
     if (task.source === 'breezeway' && !input.fromTrellisTwin) warnings.push('Only the Breezeway export row was found: no description or request time')
     // An unticked checklist is shown as a fact (the UI prints the count), not
     // a warning: crews often skip ticking routine clean checklists, and a

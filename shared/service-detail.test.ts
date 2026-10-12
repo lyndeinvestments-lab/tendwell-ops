@@ -156,6 +156,10 @@ describe('buildServiceDetail', () => {
     expect(buildServiceDetail({ ...base, task: task({ description: null, requestedAt: null }), stays: [] }).warnings).toEqual([])
   })
 
+  it('no description warning for the onboarding fee', () => {
+    expect(buildServiceDetail({ ...base, serviceType: 'Onboarding Clean', task: task({ description: null }), stays: [] }).warnings).toEqual([])
+  })
+
   it('warns when the matched task is gone', () => {
     expect(buildServiceDetail({ ...base, task: null, stays: [] }).warnings)
       .toContain('The matched task is no longer in the synced task data')
