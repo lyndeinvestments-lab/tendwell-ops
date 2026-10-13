@@ -12,9 +12,11 @@ import { StatusBadge } from '@/components/StatusBadge'
 import type { StatusTone } from '@/lib/status-colors'
 import { invoicesApi, propertyOf, type InvoiceLine, type InvoiceRun } from '@/lib/invoices'
 import {
+  channelLabel,
+  CLIENT_INVOICE_CHANNELS,
   creditClientsByLine,
   groupBillComInvoices,
-  isBillComArLine,
+  isClientInvoiceArLine,
   isMissingSchemaError,
   lineClient,
   normalizeBillcomInvoiceNumber,
@@ -24,6 +26,7 @@ import {
   stateMap,
   statusFor,
   type BillComGroup,
+  type ClientInvoiceChannel,
   type ClientInvoiceState,
   type ClientInvoiceStatus,
   type CreditClient,
@@ -37,6 +40,10 @@ import { MarkSentDialog } from './MarkSentDialog'
  * is entered in bill.com by hand, "Mark sent" records bill.com's invoice
  * number and takes it off the worksheet for good. Single lines can be held
  * back with a reason while the rest of that client's invoice goes out.
+ *
+ * Clients billed from QuickBooks (channel qbo_client, e.g. Kristy Horn) go
+ * through the same rows: approve, create the invoice in QuickBooks, mark it
+ * sent with QuickBooks' number. Haven's QBO import is not shown here.
  *
  * Hidden entirely until migration 20261009c is applied (client_invoices
  * missing), and on runs that are not approved yet.
@@ -137,7 +144,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
   const { toast } = useToast()
   const enabled = runAllowsSendControl(run.status)
   const billComLines = useMemo(
-    () => lines.filter(l => isBillComArLine({
+    () => lines.filter(l => isClientInvoiceArLine({
       lineKind: l.line_kind,
       reviewStatus: l.review_status,
       billingChannel: l.billing_channel,
@@ -158,15 +165,16 @@ export function BillComSendPanel({ run, lines, onChanged }: {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('client_invoices')
-        .select('contact_id, service_month, status, hold_reason, billcom_invoice_number, sent_at, sent_by, total')
+        .select('contact_id, billing_channel, service_month, status, hold_reason, billcom_invoice_number, sent_at, sent_by, total')
         .eq('run_id', run.id)
-        .eq('billing_channel', 'bill_com')
+        .in('billing_channel', CLIENT_INVOICE_CHANNELS as unknown as string[])
       if (error) {
         if (isMissingSchemaError(error)) return null
         throw error
       }
       return (data ?? []).map(r => ({
         contactId: r.contact_id,
+        channel: r.billing_channel as ClientInvoiceChannel,
         serviceMonth: r.service_month,
         status: r.status as ClientInvoiceStatus,
         holdReason: r.hold_reason,
@@ -250,9 +258,9 @@ export function BillComSendPanel({ run, lines, onChanged }: {
     mutationFn: (body: Record<string, unknown>) => invoicesApi('billcom', { method: 'POST', body: { run_id: run.id, ...body } }),
     onSuccess: (_d, body) => {
       const titles: Record<string, string> = {
-        hold_line: body.reason ? 'Line held from bill.com' : 'Line released',
+        hold_line: body.reason ? 'Line held from billing' : 'Line released',
         set_status: body.status === 'approved' ? 'Client invoice approved to send' : 'Client invoice held',
-        mark_sent: 'Marked sent to bill.com',
+        mark_sent: `Marked sent through ${channelLabel(body.channel as ClientInvoiceChannel)}`,
         set_charge: 'Amount updated',
       }
       toast({ title: titles[String(body.action)] ?? 'Saved' })
@@ -261,7 +269,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
       invoicesQuery.refetch()
       onChanged()
     },
-    onError: (e: unknown) => toast({ title: 'bill.com update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Client invoice update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
   if (!enabled || billComLines.length === 0 || invoicesQuery.isLoading || invoicesQuery.data == null) return null
@@ -269,7 +277,9 @@ export function BillComSendPanel({ run, lines, onChanged }: {
   const linesByNo = new Map<number, InvoiceLine[]>()
   for (const l of billComLines) linesByNo.set(l.line_no, [...(linesByNo.get(l.line_no) ?? []), l])
   const counts = { held: 0, approved: 0, sent: 0 }
-  for (const g of groups) counts[statusFor(states, g.contactId, g.serviceMonth)] += 1
+  for (const g of groups) counts[statusFor(states, g.contactId, g.serviceMonth, g.channel)] += 1
+  const hasQbo = groups.some(g => g.channel === 'qbo_client')
+  const hasBillCom = groups.some(g => g.channel === 'bill_com')
 
   // Mark sent has its own dialog (MarkSentDialog: pre-send check, recipient,
   // PDF fingerprint); this prompt only asks for hold reasons.
@@ -280,7 +290,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
     if (prompt.kind === 'hold_line') {
       actionMutation.mutate({ action: 'hold_line', line_no: prompt.line.line_no, reason: promptValue })
     } else if (prompt.kind === 'hold_invoice') {
-      actionMutation.mutate({ action: 'set_status', contact_id: prompt.group.contactId, service_month: prompt.group.serviceMonth, status: 'held', hold_reason: promptValue })
+      actionMutation.mutate({ action: 'set_status', contact_id: prompt.group.contactId, service_month: prompt.group.serviceMonth, channel: prompt.group.channel, status: 'held', hold_reason: promptValue })
     }
   }
 
@@ -289,9 +299,11 @@ export function BillComSendPanel({ run, lines, onChanged }: {
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div>
-            <p className="text-sm font-medium">bill.com client invoices</p>
+            <p className="text-sm font-medium">{hasQbo && !hasBillCom ? 'QuickBooks client invoices' : hasQbo ? 'Client invoices (bill.com and QuickBooks)' : 'bill.com client invoices'}</p>
             <p className="text-xs text-muted-foreground">
-              Only approved invoices appear on the bill.com manual-entry list. After entering one in bill.com, mark it sent with bill.com's invoice number.
+              {hasBillCom && 'Only approved invoices appear on the bill.com manual-entry list. After entering one in bill.com, mark it sent with bill.com\'s invoice number.'}
+              {hasBillCom && hasQbo && ' '}
+              {hasQbo && 'QuickBooks clients: approve, create the invoice in QuickBooks, then mark it sent with the QuickBooks invoice number.'}
             </p>
           </div>
           <div className="flex items-center gap-1.5 text-2xs">
@@ -307,7 +319,8 @@ export function BillComSendPanel({ run, lines, onChanged }: {
           <div className="divide-y divide-border/60 rounded-xl border border-border/60">
             {groups.map(g => {
               const state = g.contactId ? states.get(g.key) : undefined
-              const status = statusFor(states, g.contactId, g.serviceMonth)
+              const status = statusFor(states, g.contactId, g.serviceMonth, g.channel)
+              const where = channelLabel(g.channel)
               const isOpen = expanded.has(g.key)
               return (
                 <div key={g.key} className="p-3 space-y-2" data-testid={`billcom-invoice-${g.key}`}>
@@ -325,6 +338,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
                       {isOpen ? <ChevronDown className="w-4 h-4 shrink-0" /> : <ChevronRight className="w-4 h-4 shrink-0" />}
                       <span className="font-medium truncate">{g.clientName ?? 'No client on the property'}</span>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">· {fmtMonth(g.serviceMonth)} · {g.lineNos.length} line{g.lineNos.length === 1 ? '' : 's'}</span>
+                      {g.channel === 'qbo_client' && <StatusBadge tone="primary">QuickBooks</StatusBadge>}
                     </button>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm tabular-nums font-medium">{fmtMoney(status === 'sent' && state?.total != null ? state.total : g.total)}</span>
@@ -335,8 +349,8 @@ export function BillComSendPanel({ run, lines, onChanged }: {
                           variant="outline"
                           className="h-7"
                           disabled={actionMutation.isPending || g.total <= 0}
-                          title={g.total <= 0 ? 'Every line is held; release a line first' : 'Put this invoice on the bill.com manual-entry list'}
-                          onClick={() => actionMutation.mutate({ action: 'set_status', contact_id: g.contactId, service_month: g.serviceMonth, status: 'approved' })}
+                          title={g.total <= 0 ? 'Every line is held; release a line first' : g.channel === 'qbo_client' ? 'Approve it to be created in QuickBooks' : 'Put this invoice on the bill.com manual-entry list'}
+                          onClick={() => actionMutation.mutate({ action: 'set_status', contact_id: g.contactId, service_month: g.serviceMonth, channel: g.channel, status: 'approved' })}
                           data-testid={`button-billcom-approve-${g.key}`}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Approve
@@ -369,20 +383,20 @@ export function BillComSendPanel({ run, lines, onChanged }: {
                   </div>
 
                   {!g.contactId && (
-                    <p className="text-2xs text-destructive">These lines' property has no client, so they can't go to bill.com. Set the client on the property first.</p>
+                    <p className="text-2xs text-destructive">These lines' property has no client, so they can't be invoiced. Set the client on the property first.</p>
                   )}
                   {status === 'held' && state?.holdReason && (
                     <p className="text-2xs text-warning">Held: {state.holdReason}</p>
                   )}
                   {status === 'sent' && (
                     <p className="text-2xs text-muted-foreground">
-                      bill.com invoice <span className="font-medium text-foreground">#{state?.billcomInvoiceNumber}</span>
+                      {where} invoice <span className="font-medium text-foreground">#{state?.billcomInvoiceNumber}</span>
                       {' · '}sent {fmtDateTime(state?.sentAt)}{state?.sentBy ? ` by ${state.sentBy}` : ''}
                     </p>
                   )}
                   {g.heldLineNos.length > 0 && (
                     <p className="text-2xs text-warning">
-                      {g.heldLineNos.length} line{g.heldLineNos.length === 1 ? '' : 's'} held back ({fmtMoney(g.heldTotal)}), not on the bill.com list
+                      {g.heldLineNos.length} line{g.heldLineNos.length === 1 ? '' : 's'} held back ({fmtMoney(g.heldTotal)}), not billed
                     </p>
                   )}
 
@@ -437,7 +451,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
                                   />
                                 </div>
                               ))}
-                              {hold && <p className="text-2xs text-warning">Held from bill.com: {hold}</p>}
+                              {hold && <p className="text-2xs text-warning">Held from {where}: {hold}</p>}
                             </div>
                             {status !== 'sent' && (
                               hold ? (
@@ -484,8 +498,8 @@ export function BillComSendPanel({ run, lines, onChanged }: {
             </DialogTitle>
             <DialogDescription>
               {prompt?.kind === 'hold_line'
-                ? 'The line stays on the run but is left off the bill.com list until released. While it is held, its client invoice cannot be marked sent.'
-                : 'It comes off the bill.com list until approved again. A reason is optional.'}
+                ? 'The line stays on the run but is left off the client invoice until released. While it is held, its client invoice cannot be marked sent.'
+                : 'It goes back to held until approved again. A reason is optional.'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">

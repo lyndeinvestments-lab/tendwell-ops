@@ -103,7 +103,7 @@ function reviewStatusTone(status: ReviewStatus): StatusTone {
 
 function channelTone(channel: BillingChannel | null): StatusTone {
   if (channel === 'qbo_haven') return 'info'
-  if (channel === 'bill_com') return 'primary'
+  if (channel === 'bill_com' || channel === 'qbo_client') return 'primary'
   return 'neutral'
 }
 
@@ -1862,6 +1862,7 @@ async function loadClientForProperty(propertyId: number): Promise<ClientChannelI
 const PAYMENT_METHOD_FOR_CHANNEL: Record<BillingChannel, string | null> = {
   bill_com: 'Bill.com',
   qbo_haven: 'QuickBooks',
+  qbo_client: 'QuickBooks',
   none: null,
 }
 

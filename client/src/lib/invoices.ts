@@ -19,7 +19,7 @@ import type { ServiceDetail } from '@shared/service-detail'
 export type InvoiceRunSource = 'vendor_csv' | 'generated' | 'vendor_portal'
 export type InvoiceRunStatus = 'draft' | 'ingested' | 'reconciled' | 'review_needed' | 'approved' | 'exported' | 'void'
 export type LineKind = 'clean' | 'deep_clean' | 'extra' | 'combined_split' | 'operating_expense' | 'excluded'
-export type BillingChannel = 'qbo_haven' | 'bill_com' | 'none'
+export type BillingChannel = 'qbo_haven' | 'qbo_client' | 'bill_com' | 'none'
 export type ReviewStatus = 'ok' | 'needs_review' | 'resolved' | 'excluded'
 export type ExportFormat = 'ramp' | 'qbo_flat' | 'qbo_multiline' | 'billcom'
 
@@ -46,6 +46,8 @@ export const LINE_KINDS: Array<{ id: LineKind; label: string }> = [
 export const BILLING_CHANNELS: Array<{ id: BillingChannel; label: string }> = [
   { id: 'qbo_haven', label: 'QBO (Haven)' },
   { id: 'bill_com', label: 'bill.com' },
+  // Invoiced to the client itself from QuickBooks, by hand (e.g. Kristy Horn).
+  { id: 'qbo_client', label: 'QuickBooks (to client)' },
   { id: 'none', label: 'None' },
 ]
 
