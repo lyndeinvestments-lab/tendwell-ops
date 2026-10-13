@@ -14,6 +14,26 @@
 //
 // Nothing here talks to bill.com: "sent" is bookkeeping a human records after
 // entering the invoice in bill.com by hand.
+//
+// QuickBooks clients (2026-10-13): a client who wants their invoices from
+// QuickBooks (Kristy Horn) is routed 'qbo_client' instead. Same flow, same
+// table: approve, create the invoice in QuickBooks by hand, mark it sent with
+// QuickBooks' invoice number. QuickBooks numbers it, so it can never collide
+// with the Haven import numbers. Haven itself stays 'qbo_haven' (its CSV
+// import), which this panel never touches.
+
+/** Channels billed one client invoice at a time through this send control. */
+export type ClientInvoiceChannel = 'bill_com' | 'qbo_client'
+export const CLIENT_INVOICE_CHANNELS: readonly ClientInvoiceChannel[] = ['bill_com', 'qbo_client']
+
+export function isClientInvoiceChannel(v: unknown): v is ClientInvoiceChannel {
+  return v === 'bill_com' || v === 'qbo_client'
+}
+
+/** Where the invoice is created, for messages: "bill.com" or "QuickBooks". */
+export function channelLabel(channel: ClientInvoiceChannel | null | undefined): string {
+  return channel === 'qbo_client' ? 'QuickBooks' : 'bill.com'
+}
 
 export type ClientInvoiceStatus = 'held' | 'approved' | 'sent'
 
@@ -22,6 +42,8 @@ export const CLIENT_INVOICE_STATUSES: readonly ClientInvoiceStatus[] = ['held', 
 /** The stored state of one client invoice (a public.client_invoices row). */
 export interface ClientInvoiceState {
   contactId: string | null // null: client permanently deleted (history only)
+  /** Absent → 'bill_com' (rows read before the QuickBooks channel existed). */
+  channel?: ClientInvoiceChannel
   serviceMonth: string // yyyy-mm
   status: ClientInvoiceStatus
   holdReason?: string | null
@@ -31,8 +53,12 @@ export interface ClientInvoiceState {
   total?: number | null
 }
 
-export function clientInvoiceKey(contactId: string | null | undefined, serviceMonth: string): string {
-  return `${contactId ?? ''}|${serviceMonth}`
+export function clientInvoiceKey(
+  contactId: string | null | undefined,
+  serviceMonth: string,
+  channel: ClientInvoiceChannel = 'bill_com',
+): string {
+  return `${channel}|${contactId ?? ''}|${serviceMonth}`
 }
 
 /** yyyy-mm of a line's service date, falling back to the run's invoice date
@@ -90,7 +116,7 @@ export function isMissingSchemaError(err: unknown): boolean {
 export function stateMap(states: ReadonlyArray<ClientInvoiceState>): Map<string, ClientInvoiceState> {
   // A row whose client was permanently deleted (contact_id SET NULL) keeps its
   // history but must never approve lines that have no client.
-  return new Map(states.filter(s => !!s.contactId).map(s => [clientInvoiceKey(s.contactId, s.serviceMonth), s]))
+  return new Map(states.filter(s => !!s.contactId).map(s => [clientInvoiceKey(s.contactId, s.serviceMonth, s.channel), s]))
 }
 
 /** A client invoice with no stored row has never been approved: held. */
@@ -98,9 +124,10 @@ export function statusFor(
   states: ReadonlyMap<string, ClientInvoiceState>,
   contactId: string | null | undefined,
   serviceMonth: string,
+  channel: ClientInvoiceChannel = 'bill_com',
 ): ClientInvoiceStatus {
   if (!contactId) return 'held'
-  return states.get(clientInvoiceKey(contactId, serviceMonth))?.status ?? 'held'
+  return states.get(clientInvoiceKey(contactId, serviceMonth, channel))?.status ?? 'held'
 }
 
 /** May this (already bill.com, already billable) line go on the worksheet?
@@ -119,9 +146,9 @@ export function billComLineSendable(
 
 export type BillComAction =
   | { action: 'hold_line'; runId: string; lineNo: number; reason: string | null }
-  | { action: 'set_status'; runId: string; contactId: string; serviceMonth: string; status: 'held' | 'approved'; holdReason: string | null }
-  | { action: 'mark_sent'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string }
-  | { action: 'presend_check'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string | null }
+  | { action: 'set_status'; runId: string; contactId: string; serviceMonth: string; channel: ClientInvoiceChannel; status: 'held' | 'approved'; holdReason: string | null }
+  | { action: 'mark_sent'; runId: string; contactId: string; serviceMonth: string; channel: ClientInvoiceChannel; billcomInvoiceNumber: string }
+  | { action: 'presend_check'; runId: string; contactId: string; serviceMonth: string; channel: ClientInvoiceChannel; billcomInvoiceNumber: string | null }
   | { action: 'set_charge'; runId: string; lineId: string; charge: number; reason: string }
 
 /** Largest client charge one line can be set to from the send panel. */
@@ -164,18 +191,21 @@ export function parseBillComAction(body: unknown): { ok: true; value: BillComAct
     return { ok: false, error: 'action must be hold_line, set_charge, set_status, mark_sent or presend_check' }
   }
   const contactId = typeof b.contact_id === 'string' ? b.contact_id : ''
-  if (!UUID_RE.test(contactId)) return { ok: false, error: 'contact_id is required (a bill.com invoice needs a client)' }
+  if (!UUID_RE.test(contactId)) return { ok: false, error: 'contact_id is required (a client invoice needs a client)' }
   const serviceMonth = typeof b.service_month === 'string' ? b.service_month : ''
   if (!MONTH_RE.test(serviceMonth)) return { ok: false, error: 'service_month must look like 2026-09' }
+  // Absent → bill.com (callers from before the QuickBooks channel).
+  const channel = b.channel == null ? 'bill_com' : b.channel
+  if (!isClientInvoiceChannel(channel)) return { ok: false, error: 'channel must be bill_com or qbo_client' }
   if (action === 'set_status') {
     if (b.status !== 'held' && b.status !== 'approved') return { ok: false, error: 'status must be held or approved' }
-    return { ok: true, value: { action, runId, contactId, serviceMonth, status: b.status, holdReason: b.status === 'held' ? normalizeHoldReason(b.hold_reason) : null } }
+    return { ok: true, value: { action, runId, contactId, serviceMonth, channel, status: b.status, holdReason: b.status === 'held' ? normalizeHoldReason(b.hold_reason) : null } }
   }
   const billcomInvoiceNumber = normalizeBillcomInvoiceNumber(b.billcom_invoice_number)
   // presend_check: the number is optional (the dialog checks before one is typed).
-  if (action === 'presend_check') return { ok: true, value: { action, runId, contactId, serviceMonth, billcomInvoiceNumber } }
-  if (!billcomInvoiceNumber) return { ok: false, error: 'Enter the bill.com invoice number (up to 64 characters)' }
-  return { ok: true, value: { action, runId, contactId, serviceMonth, billcomInvoiceNumber } }
+  if (action === 'presend_check') return { ok: true, value: { action, runId, contactId, serviceMonth, channel, billcomInvoiceNumber } }
+  if (!billcomInvoiceNumber) return { ok: false, error: `Enter the ${channelLabel(channel)} invoice number (up to 64 characters)` }
+  return { ok: true, value: { action, runId, contactId, serviceMonth, channel, billcomInvoiceNumber } }
 }
 
 /** Send control works on approved (or exported) runs only: those are the
@@ -244,8 +274,14 @@ export interface BillComLineInput {
  *  per group, so split rows need no collapsing here (their charges add up to
  *  the collapsed line's charge either way). */
 export function isBillComArLine(l: Pick<BillComLineInput, 'lineKind' | 'reviewStatus' | 'billingChannel' | 'clientChargeAmount'>): boolean {
+  return l.billingChannel === 'bill_com' && isClientInvoiceArLine(l)
+}
+
+/** A billable line on any client-invoiced channel (bill.com or QuickBooks to
+ *  the client): what the send panel and endpoint group into client invoices. */
+export function isClientInvoiceArLine(l: Pick<BillComLineInput, 'lineKind' | 'reviewStatus' | 'billingChannel' | 'clientChargeAmount'>): boolean {
   return (
-    l.billingChannel === 'bill_com' &&
+    isClientInvoiceChannel(l.billingChannel) &&
     l.lineKind !== 'excluded' &&
     l.reviewStatus !== 'excluded' &&
     l.lineKind !== 'operating_expense' &&
@@ -256,6 +292,7 @@ export function isBillComArLine(l: Pick<BillComLineInput, 'lineKind' | 'reviewSt
 
 export interface BillComGroup {
   key: string
+  channel: ClientInvoiceChannel
   contactId: string | null
   clientName: string | null
   serviceMonth: string
@@ -276,17 +313,19 @@ export function heldLineNumbers(lines: ReadonlyArray<{ lineNo: number; billHoldR
   return new Set(lines.filter(l => normalizeHoldReason(l.billHoldReason)).map(l => l.lineNo))
 }
 
-/** One group per (client, service month), sorted by client then month. */
+/** One group per (channel, client, service month), sorted by client then
+ *  month. bill.com and QuickBooks lines of one client never share an invoice. */
 export function groupBillComInvoices(lines: ReadonlyArray<BillComLineInput>, runInvoiceDate: string | null): BillComGroup[] {
   const held = heldLineNumbers(lines)
   const groups = new Map<string, BillComGroup>()
   for (const l of lines) {
-    if (!isBillComArLine(l)) continue
+    if (!isClientInvoiceArLine(l)) continue
+    const channel = l.billingChannel as ClientInvoiceChannel
     const month = lineServiceMonth(l.serviceDate, runInvoiceDate)
-    const key = clientInvoiceKey(l.contactId, month)
+    const key = clientInvoiceKey(l.contactId, month, channel)
     let g = groups.get(key)
     if (!g) {
-      g = { key, contactId: l.contactId, clientName: l.clientName, serviceMonth: month, total: 0, heldTotal: 0, lineNos: [], heldLineNos: [] }
+      g = { key, channel, contactId: l.contactId, clientName: l.clientName, serviceMonth: month, total: 0, heldTotal: 0, lineNos: [], heldLineNos: [] }
       groups.set(key, g)
     }
     if (!g.clientName && l.clientName) g.clientName = l.clientName
@@ -300,5 +339,5 @@ export function groupBillComInvoices(lines: ReadonlyArray<BillComLineInput>, run
     if (!g.lineNos.includes(l.lineNo)) g.lineNos.push(l.lineNo)
   }
   return Array.from(groups.values()).sort((a, b) =>
-    (a.clientName ?? '').localeCompare(b.clientName ?? '') || a.serviceMonth.localeCompare(b.serviceMonth))
+    (a.clientName ?? '').localeCompare(b.clientName ?? '') || a.serviceMonth.localeCompare(b.serviceMonth) || a.channel.localeCompare(b.channel))
 }

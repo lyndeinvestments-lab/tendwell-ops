@@ -3,16 +3,20 @@ import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.j
 import { isCreditLine } from './_credits.js'
 import {
   canTransition,
+  channelLabel,
+  CLIENT_INVOICE_CHANNELS,
   clientInvoiceKey,
   creditClientsByLine,
   groupBillComInvoices,
-  isBillComArLine,
+  isClientInvoiceArLine,
+  isClientInvoiceChannel,
   isMissingSchemaError,
   lineClient,
   lineServiceMonth,
   parseBillComAction,
   runAllowsSendControl,
   type BillComLineInput,
+  type ClientInvoiceChannel,
   type ClientInvoiceStatus,
   type CreditClient,
 } from '../../shared/billcom-send.js'
@@ -45,8 +49,12 @@ import {
 //
 // bill.com send control: bookkeeping only. bill.com has no import and this
 // never calls bill.com; a human enters the invoice there, then records it
-// here so the worksheet stops listing it. One client invoice = one client's
-// bill.com lines on this run for one service month (shared/billcom-send.ts).
+// here so the worksheet stops listing it. QuickBooks clients (channel
+// 'qbo_client', 2026-10-13) work the same way: the invoice is created in
+// QuickBooks by hand and marked sent with QuickBooks' number. set_status,
+// mark_sent and presend_check take `channel` (absent → bill_com). One client
+// invoice = one client's lines on one channel, on this run, for one service
+// month (shared/billcom-send.ts).
 // Only approved/exported runs: reconcile refuses those, so a hold can never be
 // wiped by a rebuild. "sent" is final (also enforced by a DB trigger).
 
@@ -88,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
   if (!runAllowsSendControl(run.status)) {
-    res.status(409).json({ error: `Run is ${run.status}: approve it before sending client invoices to bill.com` })
+    res.status(409).json({ error: `Run is ${run.status}: approve it before sending client invoices` })
     return
   }
 
@@ -116,13 +124,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from('client_invoices')
     .select('*')
     .eq('run_id', a.runId)
-    .eq('billing_channel', 'bill_com')
+    .in('billing_channel', CLIENT_INVOICE_CHANNELS as unknown as string[])
   if (ciErr) {
     const missing = isMissingSchemaError(ciErr)
     res.status(missing ? 503 : 500).json({ error: missing ? NOT_SET_UP : 'Failed to load client invoices', detail: ciErr.message })
     return
   }
-  const existing = new Map((ciRows ?? []).filter(r => !!r.contact_id).map(r => [clientInvoiceKey(r.contact_id, r.service_month), r]))
+  const existing = new Map((ciRows ?? []).filter(r => !!r.contact_id).map(r => [clientInvoiceKey(r.contact_id, r.service_month, r.billing_channel), r]))
+  const lineKey = (l: BillComLineInput) => clientInvoiceKey(
+    l.contactId,
+    lineServiceMonth(l.serviceDate, run.invoice_date),
+    isClientInvoiceChannel(l.billingChannel) ? l.billingChannel : 'bill_com',
+  )
+  const sentAs = (r: { billing_channel?: string | null; billcom_invoice_number?: string | null }) =>
+    `${channelLabel(r.billing_channel as ClientInvoiceChannel)} as ${r.billcom_invoice_number}`
 
   // A client credit bills the client on its adjustment (it usually has no
   // property), so it joins and nets that client's invoice, same as the
@@ -180,10 +195,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
     // The client invoice(s) this line belongs to: a sent one is closed.
-    const keys = new Set(lineInputs.map(l => clientInvoiceKey(l.contactId, lineServiceMonth(l.serviceDate, run.invoice_date))))
+    const keys = new Set(lineInputs.map(lineKey))
     const sent = Array.from(keys).map(k => existing.get(k)).find(r => r?.status === 'sent')
     if (sent) {
-      res.status(409).json({ error: `This line's client invoice was already sent to bill.com as ${sent.billcom_invoice_number}` })
+      res.status(409).json({ error: `This line's client invoice was already sent through ${sentAs(sent)}` })
       return
     }
     // Every row of the vendor line (split rows share line_no) gets the hold.
@@ -225,14 +240,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(409).json({ error: 'Credits are changed under Open credits owed, not here' })
       return
     }
-    if (!isBillComArLine(l)) {
-      res.status(409).json({ error: 'Only lines on a bill.com client invoice can be changed here' })
+    if (!isClientInvoiceArLine(l)) {
+      res.status(409).json({ error: 'Only lines on a bill.com or QuickBooks client invoice can be changed here' })
       return
     }
-    const key = clientInvoiceKey(l.contactId, lineServiceMonth(l.serviceDate, run.invoice_date))
+    const key = lineKey(l)
     const ci = existing.get(key)
     if (ci?.status === 'sent') {
-      res.status(409).json({ error: `This client invoice was already sent to bill.com as ${ci.billcom_invoice_number}` })
+      res.status(409).json({ error: `This client invoice was already sent through ${sentAs(ci)}` })
       return
     }
     const before = Number(r.client_charge_amount)
@@ -268,7 +283,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       old_value: before.toFixed(2),
       new_value: a.charge.toFixed(2),
       changed_by: who,
-      metadata: { line_id: a.lineId, run_id: a.runId, line_no: r.line_no, reason: a.reason, via: 'bill.com send panel' },
+      metadata: { line_id: a.lineId, run_id: a.runId, line_no: r.line_no, reason: a.reason, via: 'client invoices panel', channel: l.billingChannel },
     })
     // Keep a stored (not yet sent) invoice's total in step with its lines.
     if (ci) {
@@ -281,9 +296,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // ── client invoice status ─────────────────────────────────────────────────
-  const group = groupBillComInvoices(inputs, run.invoice_date).find(g => g.key === clientInvoiceKey(a.contactId, a.serviceMonth))
+  const group = groupBillComInvoices(inputs, run.invoice_date).find(g => g.key === clientInvoiceKey(a.contactId, a.serviceMonth, a.channel))
   if (!group) {
-    res.status(404).json({ error: 'No bill.com lines for this client and month on this run' })
+    res.status(404).json({ error: `No ${channelLabel(a.channel)} lines for this client and month on this run` })
     return
   }
   const row = existing.get(group.key)
@@ -295,7 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const groupLines = rows
       .filter((r, i) => {
         const l = inputs[i]
-        return isBillComArLine(l) && l.contactId === a.contactId && lineServiceMonth(l.serviceDate, run.invoice_date) === a.serviceMonth
+        return isClientInvoiceArLine(l) && l.billingChannel === a.channel && l.contactId === a.contactId && lineServiceMonth(l.serviceDate, run.invoice_date) === a.serviceMonth
       })
       .map(toPreSend)
     // The register lookup doubles as the "is 20261009h applied" probe. With no
@@ -303,7 +318,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { data: regRows, error: regErr } = await supabase
       .from('sent_invoices')
       .select('client_name, sent_at')
-      .eq('billing_channel', 'bill_com')
+      .eq('billing_channel', a.channel)
       .eq('invoice_number', a.billcomInvoiceNumber ?? '')
       .is('voids_id', null)
       .limit(1)
@@ -334,7 +349,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const to: ClientInvoiceStatus = a.action === 'mark_sent' ? 'sent' : a.status
 
   if (from === 'sent') {
-    res.status(409).json({ error: `Already sent to bill.com as ${row?.billcom_invoice_number}` })
+    res.status(409).json({ error: `Already sent through ${channelLabel(a.channel)} as ${row?.billcom_invoice_number}` })
     return
   }
   if (a.action === 'set_status' && from === to) {
@@ -424,7 +439,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // refused above.
   const { data: ins, error: insErr } = await supabase
     .from('client_invoices')
-    .insert({ run_id: a.runId, contact_id: a.contactId, billing_channel: 'bill_com', service_month: a.serviceMonth, ...patch })
+    .insert({ run_id: a.runId, contact_id: a.contactId, billing_channel: a.channel, service_month: a.serviceMonth, ...patch })
     .select('*')
   if (insErr) {
     if (insErr.code === '23505') {

@@ -111,13 +111,13 @@ describe('parseBillComAction', () => {
   })
   it('set_status: held or approved only; the hold reason rides only on held', () => {
     const r = parseBillComAction({ action: 'set_status', run_id: RUN, contact_id: JANE, service_month: '2026-08', status: 'approved', hold_reason: 'ignored' })
-    expect(r).toEqual({ ok: true, value: { action: 'set_status', runId: RUN, contactId: JANE, serviceMonth: '2026-08', status: 'approved', holdReason: null } })
+    expect(r).toEqual({ ok: true, value: { action: 'set_status', runId: RUN, contactId: JANE, serviceMonth: '2026-08', channel: 'bill_com', status: 'approved', holdReason: null } })
     expect(parseBillComAction({ action: 'set_status', run_id: RUN, contact_id: JANE, service_month: '2026-08', status: 'sent' }).ok).toBe(false)
     expect(parseBillComAction({ action: 'set_status', run_id: RUN, contact_id: JANE, service_month: '2026-13', status: 'held' }).ok).toBe(false)
   })
   it('mark_sent: the bill.com invoice number is required and trimmed', () => {
     expect(parseBillComAction({ action: 'mark_sent', run_id: RUN, contact_id: JANE, service_month: '2026-08', billcom_invoice_number: '  INV-77 ' }))
-      .toEqual({ ok: true, value: { action: 'mark_sent', runId: RUN, contactId: JANE, serviceMonth: '2026-08', billcomInvoiceNumber: 'INV-77' } })
+      .toEqual({ ok: true, value: { action: 'mark_sent', runId: RUN, contactId: JANE, serviceMonth: '2026-08', channel: 'bill_com', billcomInvoiceNumber: 'INV-77' } })
     expect(parseBillComAction({ action: 'mark_sent', run_id: RUN, contact_id: JANE, service_month: '2026-08', billcom_invoice_number: '  ' }).ok).toBe(false)
     expect(parseBillComAction({ action: 'mark_sent', run_id: RUN, contact_id: JANE, service_month: '2026-08' }).ok).toBe(false)
   })
@@ -244,5 +244,46 @@ describe('set_charge (change a line amount from the send panel)', () => {
   })
   it('needs a real line id', () => {
     expect(parseBillComAction({ action: 'set_charge', run_id: RUN, line_id: '7', charge: 155, reason: 'x' })).toEqual({ ok: false, error: 'line_id is required' })
+  })
+})
+
+describe('QuickBooks clients (qbo_client, Kristy Horn 2026-10-13)', () => {
+  const mk = (lineNo: number, channel: string, date: string, amt: number): BillComLineInput => ({
+    lineNo, lineKind: 'clean', reviewStatus: 'ok', billingChannel: channel, clientChargeAmount: amt,
+    serviceDate: date, contactId: JANE, clientName: 'Jane Owner',
+  })
+
+  it('groups QuickBooks lines into their own client invoice, never with bill.com or Haven', () => {
+    const groups = groupBillComInvoices([
+      mk(1, 'qbo_client', '2026-10-10', 235),
+      mk(2, 'qbo_client', '2026-10-11', 50),
+      mk(3, 'bill_com', '2026-10-12', 100),
+      mk(4, 'qbo_haven', '2026-10-12', 999),
+    ], '2026-10-11')
+    expect(groups.map(g => [g.channel, g.serviceMonth, g.total, g.lineNos])).toEqual([
+      ['bill_com', '2026-10', 100, [3]],
+      ['qbo_client', '2026-10', 285, [1, 2]],
+    ])
+    expect(groups[0].key).not.toBe(groups[1].key)
+  })
+
+  it('a bill.com approval never approves the QuickBooks invoice for the same client and month', () => {
+    const states = stateMap([{ contactId: JANE, serviceMonth: '2026-10', status: 'approved' }]) // stored before the channel existed → bill.com
+    expect(statusFor(states, JANE, '2026-10')).toBe('approved')
+    expect(statusFor(states, JANE, '2026-10', 'qbo_client')).toBe('held')
+    const qbo = stateMap([{ contactId: JANE, serviceMonth: '2026-10', status: 'sent', channel: 'qbo_client' }])
+    expect(statusFor(qbo, JANE, '2026-10', 'qbo_client')).toBe('sent')
+    expect(billComLineSendable({ contactId: JANE, serviceMonth: '2026-10' }, qbo)).toBe(false)
+  })
+
+  it('actions carry the channel; absent means bill.com; anything else is refused', () => {
+    const base = { run_id: RUN, contact_id: JANE, service_month: '2026-10', status: 'approved' }
+    const a = parseBillComAction({ ...base, action: 'set_status' })
+    expect(a.ok && a.value.action === 'set_status' && a.value.channel).toBe('bill_com')
+    const b = parseBillComAction({ ...base, action: 'set_status', channel: 'qbo_client' })
+    expect(b.ok && b.value.action === 'set_status' && b.value.channel).toBe('qbo_client')
+    expect(parseBillComAction({ ...base, action: 'set_status', channel: 'qbo_haven' })).toEqual({ ok: false, error: 'channel must be bill_com or qbo_client' })
+    expect(parseBillComAction({ ...base, action: 'mark_sent', channel: 'qbo_client' }))
+      .toEqual({ ok: false, error: 'Enter the QuickBooks invoice number (up to 64 characters)' })
   })
 })

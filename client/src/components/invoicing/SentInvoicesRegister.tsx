@@ -65,7 +65,7 @@ const fmtDate = (d: string) => {
 }
 const fmtDateTime = (d: string) =>
   new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-const CHANNEL_LABEL: Record<string, string> = { bill_com: 'bill.com', qbo_haven: 'QBO (Haven)' }
+const CHANNEL_LABEL: Record<string, string> = { bill_com: 'bill.com', qbo_haven: 'QBO (Haven)', qbo_client: 'QuickBooks' }
 const SOURCE_LABEL: Record<string, string> = { vendor_portal: 'Vendor portal', vendor_csv: 'Vendor CSV', generated: 'Generated' }
 
 export function SentInvoicesRegister() {

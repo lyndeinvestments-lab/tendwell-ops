@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { InvoiceApiError, invoicesApi, type InvoiceRun } from '@/lib/invoices'
-import { normalizeBillcomInvoiceNumber, type BillComGroup } from '@shared/billcom-send'
+import { channelLabel, normalizeBillcomInvoiceNumber, type BillComGroup } from '@shared/billcom-send'
 import { normalizeRecipient, shortHash, type PreSendException } from '@shared/sent-invoice-register'
 
 /**
@@ -59,6 +59,8 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
 }) {
   const { toast } = useToast()
   const qc = useQueryClient()
+  // bill.com or QuickBooks (a client invoiced from QuickBooks by hand).
+  const where = channelLabel(group?.channel)
   const [number, setNumber] = useState('')
   const [recipient, setRecipient] = useState('')
   const [recipientTouched, setRecipientTouched] = useState(false)
@@ -81,7 +83,7 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
     staleTime: 0,
     queryFn: () => invoicesApi<PreSendResult>('billcom', {
       method: 'POST',
-      body: { action: 'presend_check', run_id: run.id, contact_id: group!.contactId, service_month: group!.serviceMonth },
+      body: { action: 'presend_check', run_id: run.id, contact_id: group!.contactId, service_month: group!.serviceMonth, channel: group!.channel },
     }),
   })
   const result = check.data
@@ -98,6 +100,7 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
         run_id: run.id,
         contact_id: group!.contactId,
         service_month: group!.serviceMonth,
+        channel: group!.channel,
         billcom_invoice_number: normalizeBillcomInvoiceNumber(number),
       }
       if (registerOn) {
@@ -109,7 +112,7 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
       return invoicesApi('billcom', { method: 'POST', body })
     },
     onSuccess: () => {
-      toast({ title: registerOn ? 'Marked sent and recorded in the register' : 'Marked sent to bill.com' })
+      toast({ title: registerOn ? 'Marked sent and recorded in the register' : `Marked sent through ${where}` })
       qc.invalidateQueries({ queryKey: ['invoicing-sent-invoices'] })
       onSent()
       onClose()
@@ -120,7 +123,7 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
         setServerExceptions(listed)
         return
       }
-      toast({ title: 'bill.com update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
+      toast({ title: 'Client invoice update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' })
     },
   })
 
@@ -149,10 +152,10 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
     <Dialog open={group != null} onOpenChange={open => { if (!open) onClose() }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Mark sent to bill.com</DialogTitle>
+          <DialogTitle>Mark sent through {where}</DialogTitle>
           <DialogDescription>
             {group
-              ? `${group.clientName ?? 'Client'}, ${fmtMonth(group.serviceMonth)}, ${fmtMoney(registerOn ? result?.total : group.total)}. Enter the invoice number bill.com gave it. This can't be undone.`
+              ? `${group.clientName ?? 'Client'}, ${fmtMonth(group.serviceMonth)}, ${fmtMoney(registerOn ? result?.total : group.total)}. Enter the invoice number ${where} gave it. This can't be undone.`
               : ''}
           </DialogDescription>
         </DialogHeader>
@@ -186,7 +189,7 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
 
         <div className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="mark-sent-number">bill.com invoice number</Label>
+            <Label htmlFor="mark-sent-number">{where} invoice number</Label>
             <Input
               id="mark-sent-number"
               autoFocus
@@ -210,10 +213,10 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
                   onChange={e => { setRecipient(e.target.value); setRecipientTouched(true) }}
                   data-testid="input-mark-sent-recipient"
                 />
-                <p className="text-2xs text-muted-foreground">Defaults to the client's email on file. Change it if bill.com sent it elsewhere.</p>
+                <p className="text-2xs text-muted-foreground">Defaults to the client's email on file. Change it if {where} sent it elsewhere.</p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="mark-sent-pdf">bill.com PDF (optional)</Label>
+                <Label htmlFor="mark-sent-pdf">{where} PDF (optional)</Label>
                 <Input
                   id="mark-sent-pdf"
                   type="file"

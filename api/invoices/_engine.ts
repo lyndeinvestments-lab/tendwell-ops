@@ -21,7 +21,9 @@ export type { FeeOverride, PriceAgreement }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type BillingChannel = 'qbo_haven' | 'bill_com' | 'none'
+// qbo_client: invoiced to the client itself from QuickBooks (Kristy Horn,
+// 2026-10-13), entered by hand like bill.com. qbo_haven is Haven's CSV import.
+export type BillingChannel = 'qbo_haven' | 'qbo_client' | 'bill_com' | 'none'
 
 export interface PropertyRates {
   id: number
