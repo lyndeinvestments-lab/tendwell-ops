@@ -12,6 +12,7 @@ import {
   isBillableCategory,
   isTaskCancelled,
   isTaskCompleted,
+  isTendwellTask,
   matchObservationToTask,
   resolveAuxSettings,
   type AuxCategory,
@@ -305,5 +306,51 @@ describe('matchObservationToTask', () => {
     expect(daysBetween('2026-09-20', '2026-09-18')).toBe(2)
     expect(daysBetween('2026-09-18', '2026-09-20')).toBe(2)
     expect(daysBetween('2026-10-01', '2026-09-30')).toBe(1)
+  })
+})
+
+describe('isTendwellTask', () => {
+  // Real assignments from I261009823 (Oct 4-10). Ids are synthetic.
+  const roster = new Set(['avery-id', 'joshua-id'])
+  const trellis = (over: Record<string, unknown>) => ({ source: 'trellis' as const, workspace: 'B', ...over })
+
+  it('trusts Breezeway: it is our own export', () => {
+    expect(isTendwellTask({ source: 'breezeway' }, roster)).toBe(true)
+  })
+
+  it("counts everything in Tendwell's own workspace", () => {
+    expect(isTendwellTask(trellis({ workspace: 'A', assignedToName: 'avery jones', assignedToId: 'avery-id' }), roster)).toBe(true)
+  })
+
+  it('counts Haven tasks assigned to the Tendwell vendor or a crew member', () => {
+    expect(isTendwellTask(trellis({ assignedToName: 'Tendwell Cleaning Co.' }), roster)).toBe(true)
+    expect(isTendwellTask(trellis({ assignedToName: 'Joshua Cruz', assignedToId: 'joshua-id' }), roster)).toBe(true)
+  })
+
+  it('finds Tendwell in the full assignee list when the snapshot kept someone else', () => {
+    expect(isTendwellTask(trellis({
+      assignedToName: 'Joshua Cruz',
+      assignedToId: 'someone-else',
+      assignees: [
+        { role: 'PRIMARY', assignee_id: 'x', assignee_name: null, assignee_type: 'MEMBER' },
+        { role: 'PRIMARY', assignee_id: 'vendor-id', assignee_name: 'Tendwell Cleaning Co.', assignee_type: 'VENDOR' },
+      ],
+    }), roster)).toBe(true)
+  })
+
+  it("rejects Haven's maintenance, runner and front-office work", () => {
+    expect(isTendwellTask(trellis({ assignedToName: 'Cooper Collins', assignedToId: 'cooper-id' }), roster)).toBe(false) // hot tub door
+    expect(isTendwellTask(trellis({ assignedToName: 'Isaac Hurst', assignedToId: 'isaac-id' }), roster)).toBe(false)     // lockbox reset
+    expect(isTendwellTask(trellis({
+      assignedToName: null,
+      assignees: [
+        { role: 'SECONDARY', assignee_id: 'tanya-id', assignee_name: 'Tanya Desalisa', assignee_type: 'MEMBER' },
+        { role: 'SECONDARY', assignee_id: 'regine-id', assignee_name: 'Regine Ruales', assignee_type: 'MEMBER' },
+      ],
+    }), roster)).toBe(false) // subbed-out hot tub
+  })
+
+  it('rejects an unassigned Haven task', () => {
+    expect(isTendwellTask(trellis({ assignedToName: null, assignedToId: null }), roster)).toBe(false)
   })
 })
