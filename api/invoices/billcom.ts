@@ -28,6 +28,7 @@ import {
 
 // POST /api/invoices/billcom
 //   { action: 'hold_line',  run_id, line_no, reason }        reason blank → release
+//   { action: 'set_charge', run_id, line_id, charge, reason } change one line's client charge
 //   { action: 'set_status', run_id, contact_id, service_month, status: 'held'|'approved', hold_reason? }
 //   { action: 'mark_sent',  run_id, contact_id, service_month, billcom_invoice_number,
 //     recipient?, pdf_sha256?, total? }
@@ -205,6 +206,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     res.status(200).json({ ok: true, line_no: a.lineNo, bill_hold_reason: a.reason })
+    return
+  }
+
+  // ── change one line's client charge ───────────────────────────────────────
+  // Only before that client's invoice is sent. Cleaner pay is never touched.
+  // The change and its reason go on the line's review note (the pre-send
+  // check reads it) and in activity_log.
+  if (a.action === 'set_charge') {
+    const idx = rows.findIndex(r => String(r.id) === a.lineId)
+    if (idx < 0) {
+      res.status(404).json({ error: 'That line is not on this run' })
+      return
+    }
+    const r = rows[idx]
+    const l = inputs[idx]
+    if (isCreditLine(r)) {
+      res.status(409).json({ error: 'Credits are changed under Open credits owed, not here' })
+      return
+    }
+    if (!isBillComArLine(l)) {
+      res.status(409).json({ error: 'Only lines on a bill.com client invoice can be changed here' })
+      return
+    }
+    const key = clientInvoiceKey(l.contactId, lineServiceMonth(l.serviceDate, run.invoice_date))
+    const ci = existing.get(key)
+    if (ci?.status === 'sent') {
+      res.status(409).json({ error: `This client invoice was already sent to bill.com as ${ci.billcom_invoice_number}` })
+      return
+    }
+    const before = Number(r.client_charge_amount)
+    if (Math.abs(before - a.charge) < 0.005) {
+      res.status(200).json({ ok: true, line_id: a.lineId, client_charge_amount: before, unchanged: true })
+      return
+    }
+    const usd = (n: number) => `$${n.toFixed(2)}`
+    const note = `Charge changed ${usd(before)} → ${usd(a.charge)} by ${who}: ${a.reason}`
+    const reviewNote = (r.review_note ? `${r.review_note} ${note}` : note).slice(0, 2000)
+    // Conditional on the amount we read, so two edits at once cannot both win.
+    const { data: upd, error: updErr } = await supabase
+      .from('invoice_lines')
+      .update({ client_charge_amount: a.charge, review_note: reviewNote })
+      .eq('id', a.lineId)
+      .eq('run_id', a.runId)
+      .eq('client_charge_amount', before)
+      .select('id')
+    if (updErr) {
+      res.status(500).json({ error: 'Failed to update the line', detail: updErr.message })
+      return
+    }
+    if (!upd || upd.length === 0) {
+      res.status(409).json({ error: 'This line changed meanwhile; refresh and try again' })
+      return
+    }
+    await supabase.from('activity_log').insert({
+      entity_type: 'other',
+      entity_id: a.runId,
+      entity_name: `Invoice line ${r.line_no}`,
+      action: 'client_charge_changed',
+      field_name: 'client_charge_amount',
+      old_value: before.toFixed(2),
+      new_value: a.charge.toFixed(2),
+      changed_by: who,
+      metadata: { line_id: a.lineId, run_id: a.runId, line_no: r.line_no, reason: a.reason, via: 'bill.com send panel' },
+    })
+    // Keep a stored (not yet sent) invoice's total in step with its lines.
+    if (ci) {
+      const after = groupBillComInvoices(inputs.map((x, i) => (i === idx ? { ...x, clientChargeAmount: a.charge } : x)), run.invoice_date)
+        .find(g => g.key === key)
+      if (after) await supabase.from('client_invoices').update({ total: after.total, updated_by: who }).eq('id', ci.id).neq('status', 'sent')
+    }
+    res.status(200).json({ ok: true, line_id: a.lineId, client_charge_amount: a.charge })
     return
   }
 

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, ChevronRight, Loader2, PauseCircle, PlayCircle, Send } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, Loader2, PauseCircle, Pencil, PlayCircle, Send, Tag } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import {
   lineClient,
   normalizeBillcomInvoiceNumber,
   normalizeHoldReason,
+  parseLineCharge,
   runAllowsSendControl,
   stateMap,
   statusFor,
@@ -45,6 +46,11 @@ const fmtMoney = (n: number | null | undefined) =>
   n == null ? '-' : Number(n).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 const fmtDateTime = (d: string | null | undefined) =>
   d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '-'
+const fmtDay = (d: string | null | undefined) => {
+  if (!d) return null
+  const [y, mo, da] = d.slice(0, 10).split('-').map(Number)
+  return y && mo && da ? new Date(y, mo - 1, da).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : null
+}
 const fmtMonth = (m: string) => {
   const [y, mo] = m.split('-').map(Number)
   return y && mo ? new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : m || '-'
@@ -63,6 +69,65 @@ type Prompt =
   | { kind: 'hold_invoice'; group: BillComGroup }
   | { kind: 'hold_line'; line: InvoiceLine }
   | { kind: 'mark_sent'; group: BillComGroup }
+
+/** One line's client charge, editable until its invoice is sent. */
+function ChargeEditor({ line, editable, pending, onSave }: {
+  line: InvoiceLine
+  editable: boolean
+  pending: boolean
+  onSave: (charge: number, reason: string, done: () => void) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const charge = parseLineCharge(amount)
+  const why = normalizeHoldReason(reason)
+  const current = Number(line.client_charge_amount ?? 0)
+  if (!open) {
+    return editable ? (
+      <button
+        type="button"
+        className="tabular-nums underline decoration-dotted underline-offset-2 hover:text-foreground inline-flex items-center gap-1"
+        title="Change what this client is billed for this line"
+        onClick={() => { setAmount(current.toFixed(2)); setReason(''); setOpen(true) }}
+        data-testid={`button-billcom-edit-charge-${line.id}`}
+      >
+        {fmtMoney(current)} <Pencil className="w-3 h-3 opacity-60" />
+      </button>
+    ) : <span className="tabular-nums">{fmtMoney(current)}</span>
+  }
+  const save = () => { if (charge != null && why && Math.abs(charge - current) >= 0.005) onSave(charge, why, () => setOpen(false)) }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 align-middle">
+      <span className="text-muted-foreground">$</span>
+      <Input
+        autoFocus
+        inputMode="decimal"
+        value={amount}
+        onChange={e => setAmount(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setOpen(false) }}
+        className="h-7 w-24 text-xs tabular-nums"
+        aria-label="New amount"
+        data-testid={`input-billcom-charge-${line.id}`}
+      />
+      <Input
+        value={reason}
+        maxLength={500}
+        placeholder="Why? (e.g. special rate)"
+        onChange={e => setReason(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') setOpen(false) }}
+        className="h-7 w-56 text-xs"
+        aria-label="Reason for the change"
+        data-testid={`input-billcom-charge-reason-${line.id}`}
+      />
+      <Button size="sm" className="h-7 px-2" disabled={pending || charge == null || !why || Math.abs((charge ?? current) - current) < 0.005} onClick={save} data-testid={`button-billcom-save-charge-${line.id}`}>
+        {pending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}Save
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setOpen(false)}>Cancel</Button>
+      {amount !== '' && charge == null && <span className="text-2xs text-destructive w-full">Enter an amount above $0, like 155 or 155.50. To not bill it, hold the line.</span>}
+    </span>
+  )
+}
 
 export function BillComSendPanel({ run, lines, onChanged }: {
   run: InvoiceRun
@@ -188,6 +253,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
         hold_line: body.reason ? 'Line held from bill.com' : 'Line released',
         set_status: body.status === 'approved' ? 'Client invoice approved to send' : 'Client invoice held',
         mark_sent: 'Marked sent to bill.com',
+        set_charge: 'Amount updated',
       }
       toast({ title: titles[String(body.action)] ?? 'Saved' })
       setPrompt(null)
@@ -321,19 +387,56 @@ export function BillComSendPanel({ run, lines, onChanged }: {
                   )}
 
                   {isOpen && (
-                    <ul className="text-xs space-y-1 pl-5">
-                      {g.lineNos.map(no => {
-                        const rows = linesByNo.get(no) ?? []
+                    <ul className="text-xs space-y-1.5 pl-5">
+                      {[...g.lineNos]
+                        .map(no => ({ no, rows: linesByNo.get(no) ?? [] }))
+                        .filter(x => x.rows.length > 0)
+                        .sort((a, b) => {
+                          const da = a.rows[0].service_date ?? a.rows[0].raw_date_mentioned ?? ''
+                          const db = b.rows[0].service_date ?? b.rows[0].raw_date_mentioned ?? ''
+                          return da.localeCompare(db) || a.no - b.no
+                        })
+                        .map(({ no, rows }) => {
                         const base = rows.find(r => r.line_kind !== 'extra') ?? rows[0]
-                        if (!base) return null
-                        const charge = rows.reduce((a, r) => a + Number(r.client_charge_amount ?? 0), 0)
                         const hold = rows.map(r => r.bill_hold_reason).find(r => normalizeHoldReason(r)) ?? null
+                        const day = fmtDay(base.service_date ?? base.raw_date_mentioned)
+                        const special = rows.find(r => (r.flags ?? []).includes('special_rate'))
+                        const editable = status !== 'sent' && !hold
                         return (
                           <li key={no} className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <span className="tabular-nums text-muted-foreground mr-1.5">#{no}</span>
-                              <span>{propertyOf(base)?.name ?? base.raw_property_text ?? '-'}</span>
-                              <span className="text-muted-foreground"> · {base.service_type ?? '-'} · {fmtMoney(charge)}</span>
+                            <div className="min-w-0 space-y-0.5">
+                              <div>
+                                <span className="tabular-nums text-muted-foreground mr-1.5">#{no}</span>
+                                <span className="tabular-nums font-medium mr-1.5" data-testid={`text-billcom-line-date-${no}`}>{day ?? 'No date'}</span>
+                                <span>{propertyOf(base)?.name ?? base.raw_property_text ?? '-'}</span>
+                                {rows.length === 1 && (
+                                  <span className="text-muted-foreground"> · {base.service_type ?? '-'} · </span>
+                                )}
+                                {rows.length === 1 && (
+                                  <ChargeEditor
+                                    line={base}
+                                    editable={editable}
+                                    pending={actionMutation.isPending}
+                                    onSave={(charge, reason, done) => actionMutation.mutate({ action: 'set_charge', line_id: base.id, charge, reason }, { onSuccess: done })}
+                                  />
+                                )}
+                                {special && (
+                                  <span className="ml-1.5 inline-flex items-center gap-0.5 text-2xs text-info" title={special.engine_note ?? undefined}>
+                                    <Tag className="w-3 h-3" /> Special rate
+                                  </span>
+                                )}
+                              </div>
+                              {rows.length > 1 && rows.map(r => (
+                                <div key={r.id} className="pl-6 text-muted-foreground">
+                                  {r.service_type ?? '-'} ·{' '}
+                                  <ChargeEditor
+                                    line={r}
+                                    editable={editable}
+                                    pending={actionMutation.isPending}
+                                    onSave={(charge, reason, done) => actionMutation.mutate({ action: 'set_charge', line_id: r.id, charge, reason }, { onSuccess: done })}
+                                  />
+                                </div>
+                              ))}
                               {hold && <p className="text-2xs text-warning">Held from bill.com: {hold}</p>}
                             </div>
                             {status !== 'sent' && (

@@ -10,6 +10,13 @@ import type { FeeOverride } from '../../shared/aux-tasks.js'
 import type { PriceAgreement } from '../../shared/price-agreements.js'
 import { REDO_PENDING_FLAG, REDO_WINDOW_DAYS } from '../../shared/invoice-redo.js'
 import { CHARGE_CHANGED_FLAG, NOT_HAVEN_LISTING_FLAG } from '../../shared/invoice-review.js'
+import {
+  SPECIAL_RATE_FLAG,
+  isRateEligibleService,
+  planReservationRates,
+  specialRateNote,
+  type ReservationRate,
+} from '../../shared/reservation-rates.js'
 export type { FeeOverride, PriceAgreement }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -193,6 +200,9 @@ export interface EngineInput {
   // null/absent = the snapshot is empty or unreadable: the check is skipped so
   // a failed Hostaway sync cannot put every Haven line into review.
   havenListingPropertyIds?: ReadonlySet<number> | null
+  // Special cleaning rates on specific guest reservations
+  // (client_reservation_rates). Absent = none.
+  reservationRates?: ReadonlyArray<ReservationRate>
 }
 
 /** A client charge billed on an approved/exported invoice. */
@@ -310,6 +320,10 @@ export const FLAGS = {
   // Billed to Haven (QuickBooks channel) but the property has no matched
   // Hostaway listing, so it is probably not Haven's. Resolving requires a note.
   NOT_HAVEN_LISTING: NOT_HAVEN_LISTING_FLAG,
+  // Billed at the client's special rate for this reservation
+  // (client_reservation_rates; informational, no review). Exempt from the
+  // agreed-price and charge-changed checks: the price is meant to differ.
+  SPECIAL_RATE: SPECIAL_RATE_FLAG,
 } as const
 
 export const FUZZY_CONFIRM_THRESHOLD = 0.82
@@ -1942,11 +1956,40 @@ export function priceAgreementMismatch(
   return { kind, agreed, billed, note }
 }
 
+/** Bill the client's special rate on the clean after each listed reservation
+ *  checks out (shared/reservation-rates.ts). Only the base row of a clean
+ *  (never a deep clean, extra or onboarding surcharge) on a charged,
+ *  non-excluded line. Cleaner pay is untouched. */
+export function applyReservationRates(lines: EngineLine[], rates: ReadonlyArray<ReservationRate> | undefined): EngineLine[] {
+  if (!rates?.length) return lines
+  const eligible = (l: EngineLine) =>
+    l.propertyId != null &&
+    (l.lineKind === 'clean' || l.lineKind === 'combined_split') &&
+    l.reviewStatus !== 'excluded' &&
+    l.clientChargeAmount != null &&
+    isRateEligibleService(l.serviceType) &&
+    !!(l.serviceDate ?? l.rawDateMentioned)
+  const plan = planReservationRates(
+    lines.flatMap((l, i) => (eligible(l) ? [{ key: String(i), propertyId: l.propertyId!, date: String(l.serviceDate ?? l.rawDateMentioned).slice(0, 10) }] : [])),
+    rates,
+  )
+  if (plan.size === 0) return lines
+  return lines.map((l, i) => {
+    const r = plan.get(String(i))
+    if (!r) return l
+    return appendNote(
+      { ...l, clientChargeAmount: r.specialCharge, flags: l.flags.includes(FLAGS.SPECIAL_RATE) ? l.flags : [...l.flags, FLAGS.SPECIAL_RATE] },
+      specialRateNote(r, l.clientChargeAmount),
+    )
+  })
+}
+
 /** Send every line whose client charge disagrees with its client's agreed
  *  price to review. The note is appended rather than first-writer-wins: the
  *  line may already explain something else, and this has to be seen too. */
 export function applyPriceAgreements(lines: EngineLine[], propsById: ReadonlyMap<number, PropertyRates>): EngineLine[] {
   return lines.map(l => {
+    if (l.flags.includes(FLAGS.SPECIAL_RATE)) return l
     const agreement = l.propertyId != null ? propsById.get(l.propertyId)?.priceAgreement : undefined
     const m = priceAgreementMismatch(l, agreement)
     if (!m) return l
@@ -2000,6 +2043,7 @@ export function lastChargeIndex(prev: ReadonlyArray<PreviousCharge> | undefined)
  *  properties/services with no history. */
 export function checkChargeChanged(line: EngineLine, index: ReadonlyMap<string, LastCharge>): EngineLine {
   if (!isBilledPropertyLine(line) || line.serviceType == null) return line
+  if (line.flags.includes(FLAGS.SPECIAL_RATE)) return line
   const charge = line.clientChargeAmount
   if (charge == null || !(charge > 0)) return line
   const last = index.get(lastChargeKey(line.propertyId!, line.serviceType))
@@ -2152,6 +2196,7 @@ export function reconcile(input: EngineInput): { lines: EngineLine[]; summary: R
   }
   let outLines: EngineLine[] = []
   for (let i = 0; i < input.lines.length; i++) outLines.push(...(outByIndex.get(i) ?? []))
+  outLines = applyReservationRates(outLines, input.reservationRates)
   outLines = applyPriceAgreements(outLines, propsById)
 
   for (const w of detectMisdatedBlocks(outLines, input.tasks)) {

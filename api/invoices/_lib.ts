@@ -22,6 +22,7 @@ import {
   type TrellisCoverage,
 } from './_engine.js'
 import { buildTaskLines, isHumanTouchedTaskLine, type AuxTaskRow, type ExistingLineRef } from './_aux.js'
+import { SPECIAL_RATE_FLAG, type ReservationRate } from '../../shared/reservation-rates.js'
 import {
   APP_SETTING_AUX_BILLABLE,
   APP_SETTING_EXTRA_PRICING,
@@ -114,6 +115,8 @@ export interface EngineContext {
   previousCharges: PreviousCharge[]
   /** Ops properties with a matched Hostaway listing; null = unavailable. */
   havenListingPropertyIds: Set<number> | null
+  /** Special cleaning rates on listed guest reservations. */
+  reservationRates: ReservationRate[]
 }
 
 // Tasks are pulled with a ±14-day pad around the invoice period so catch-up
@@ -494,15 +497,47 @@ export async function loadEngineContext(
     ref: `invoice ${r.invoice_runs?.qbo_invoice_no ?? '(unnumbered)'} line ${r.line_no}`,
   }))
 
-  const [stays, previousCharges, havenListingPropertyIds] = await Promise.all([
+  const [stays, previousCharges, havenListingPropertyIds, reservationRates] = await Promise.all([
     loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId),
     loadPreviousCharges(supabase, excludeRunId),
     loadHavenListingPropertyIds(supabase),
+    loadReservationRates(supabase, taskWindowStart, taskWindowEnd),
   ])
 
   return {
     properties, aliases, tasks: [...tasks, ...trellisTasks], propertyByTrellisId, firstCleanByProperty,
-    billedCleans, stays, trellisCoverage, redoTasks, previousCharges, havenListingPropertyIds,
+    billedCleans, stays, trellisCoverage, redoTasks, previousCharges, havenListingPropertyIds, reservationRates,
+  }
+}
+
+/** Special-rate reservations checking out in the (padded) window. Missing
+ *  table (20261012c not applied) = none. */
+export async function loadReservationRates(supabase: SupabaseClient, start: string, end: string): Promise<ReservationRate[]> {
+  try {
+    const rows = await fetchAllRows<{
+      id: string; property_id: number; confirmation_code: string; checkin_date: string; checkout_date: string
+      standard_charge: number | string | null; special_charge: number | string
+    }>(
+      'client_reservation_rates',
+      () => supabase
+        .from('client_reservation_rates')
+        .select('id, property_id, confirmation_code, checkin_date, checkout_date, standard_charge, special_charge')
+        .gte('checkout_date', shiftDate(start, -2))
+        .lte('checkout_date', end)
+        .order('id'),
+      'id',
+    )
+    return rows.map(r => ({
+      propertyId: Number(r.property_id),
+      confirmationCode: r.confirmation_code,
+      checkin: String(r.checkin_date).slice(0, 10),
+      checkout: String(r.checkout_date).slice(0, 10),
+      standardCharge: r.standard_charge == null ? null : Number(r.standard_charge),
+      specialCharge: Number(r.special_charge),
+    }))
+  } catch (e) {
+    if (isMissingSchemaError(e)) return []
+    throw e
   }
 }
 
@@ -544,6 +579,8 @@ export async function loadPreviousCharges(supabase: SupabaseClient, excludeRunId
         .not('property_id', 'is', null)
         .not('service_type', 'is', null)
         .gt('client_charge_amount', 0)
+        // A special reservation rate is not the property's price.
+        .not('flags', 'cs', `{${SPECIAL_RATE_FLAG}}`)
         .order('id')
       if (excludeRunId) q = q.neq('run_id', excludeRunId)
       return q
@@ -1157,6 +1194,7 @@ export async function reconcileRun(
     redoTasks: ctx.redoTasks,
     previousCharges: ctx.previousCharges,
     havenListingPropertyIds: ctx.havenListingPropertyIds,
+    reservationRates: ctx.reservationRates,
     vendorId: run.vendor_id,
     lines: rawLines,
     aliases: ctx.aliases,
