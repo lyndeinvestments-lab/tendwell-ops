@@ -4,6 +4,7 @@ import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, typ
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 import { creditClientsByLine, isMissingSchemaError, lineClient, type ClientInvoiceState, type ClientInvoiceStatus, type CreditClient } from '../../shared/billcom-send.js'
 import { isCreditLine } from './_credits.js'
+import { allocateClearNumber, docNumberTaken, qboConnection, raiseCounterToQbo } from './_qbo-numbers.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
 //                          [&preview=1]
@@ -190,8 +191,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const missing = qboMonths.filter(m => qboInvoiceNos[m] == null)
   if (!preview && (format === 'qbo_flat' || format === 'qbo_multiline') && missing.length > 0) {
+    // Ask QuickBooks first (_qbo-numbers.ts): move our counter past Haven's
+    // highest invoice there, and skip any number QuickBooks already has.
+    // QuickBooks unreachable → our counter alone, as before.
+    let qbo: Awaited<ReturnType<typeof qboConnection>> = null
     try {
-      for (const m of missing) qboInvoiceNos[m] = await nextQboInvoiceNo(supabase)
+      qbo = await qboConnection(supabase)
+      if (qbo) await raiseCounterToQbo(supabase, qbo)
+    } catch (e) {
+      console.warn('QBO invoice numbering: QuickBooks check skipped:', e instanceof Error ? e.message : e)
+      qbo = null
+    }
+    const conn = qbo
+    try {
+      for (const m of missing) {
+        const { number, skipped } = await allocateClearNumber(
+          () => nextQboInvoiceNo(supabase),
+          conn ? n => docNumberTaken(conn, n) : null,
+        )
+        if (skipped.length > 0) console.warn(`QBO invoice numbering: skipped ${skipped.join(', ')} (already in QuickBooks)`)
+        qboInvoiceNos[m] = number
+      }
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
       return

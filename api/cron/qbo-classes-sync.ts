@@ -1,12 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { getFreshQboTokens, getSupabaseConfig, qboApiBase, requireAdminBearer } from '../qbo/_lib.js'
+import { raiseCounterToQbo } from '../invoices/_qbo-numbers.js'
 
 // GET /api/cron/qbo-classes-sync
 //
 // Nightly QBO Class list snapshot into public.qbo_classes (04:15 UTC). The
 // invoicing exporters use this list to fill the Class column only when the
 // class actually exists in QBO (see api/invoices/_exporters.ts qboClassFor).
+// It also moves the Haven invoice counter past Haven's highest invoice number
+// in QuickBooks (api/invoices/_qbo-numbers.ts), so the next export can't reuse
+// a number someone entered or renumbered by hand.
 //
 // Auth mirrors the other crons (`Authorization: Bearer ${CRON_SECRET}` or
 // x-cron-secret), plus an admin session bearer for on-demand runs.
@@ -77,7 +81,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sb.from('qbo_classes').update({ active: false }).lt('synced_at', nowIso)
     }
 
-    return res.json({ ok: true, classes: rows.length, active: rows.filter(r => r.active).length, environment: env })
+    // Never fails the class sync: the export repeats this check anyway.
+    let invoiceCounter: { qboHighest: number | null; next: number | null } | { error: string }
+    try {
+      invoiceCounter = await raiseCounterToQbo(sb, { base, realmId, headers })
+    } catch (e: any) {
+      invoiceCounter = { error: e?.message || String(e) }
+    }
+    console.log('QBO invoice counter check:', JSON.stringify(invoiceCounter))
+
+    return res.json({ ok: true, classes: rows.length, active: rows.filter(r => r.active).length, environment: env, invoice_counter: invoiceCounter })
   } catch (err: any) {
     console.error('QBO CLASSES SYNC FAILED:', err?.message || err)
     const needsAuth = String(err?.message ?? '').includes('reconnect')
