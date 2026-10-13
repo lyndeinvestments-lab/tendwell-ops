@@ -122,6 +122,19 @@ export type BillComAction =
   | { action: 'set_status'; runId: string; contactId: string; serviceMonth: string; status: 'held' | 'approved'; holdReason: string | null }
   | { action: 'mark_sent'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string }
   | { action: 'presend_check'; runId: string; contactId: string; serviceMonth: string; billcomInvoiceNumber: string | null }
+  | { action: 'set_charge'; runId: string; lineId: string; charge: number; reason: string }
+
+/** Largest client charge one line can be set to from the send panel. */
+export const MAX_LINE_CHARGE = 100_000
+
+/** A client charge typed in the send panel: dollars and cents, above zero
+ *  ($0 means "don't bill it": hold the line instead). null when unusable. */
+export function parseLineCharge(v: unknown): number | null {
+  const s = typeof v === 'number' ? String(v) : typeof v === 'string' ? v.replace(/[$,\s]/g, '') : ''
+  if (!/^\d+(\.\d{1,2})?$/.test(s)) return null
+  const n = Number(s)
+  return n > 0 && n <= MAX_LINE_CHARGE ? Math.round(n * 100) / 100 : null
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/
@@ -138,8 +151,17 @@ export function parseBillComAction(body: unknown): { ok: true; value: BillComAct
     if (!Number.isInteger(lineNo) || lineNo < 0) return { ok: false, error: 'line_no is required' }
     return { ok: true, value: { action, runId, lineNo, reason: normalizeHoldReason(b.reason) } }
   }
+  if (action === 'set_charge') {
+    const lineId = typeof b.line_id === 'string' ? b.line_id : ''
+    if (!UUID_RE.test(lineId)) return { ok: false, error: 'line_id is required' }
+    const charge = parseLineCharge(b.charge)
+    if (charge == null) return { ok: false, error: `Enter an amount above $0 and up to $${MAX_LINE_CHARGE.toLocaleString('en-US')} (to not bill a line, hold it instead)` }
+    const reason = normalizeHoldReason(b.reason)
+    if (!reason) return { ok: false, error: 'Say why the amount changed' }
+    return { ok: true, value: { action, runId, lineId, charge, reason } }
+  }
   if (action !== 'set_status' && action !== 'mark_sent' && action !== 'presend_check') {
-    return { ok: false, error: 'action must be hold_line, set_status, mark_sent or presend_check' }
+    return { ok: false, error: 'action must be hold_line, set_charge, set_status, mark_sent or presend_check' }
   }
   const contactId = typeof b.contact_id === 'string' ? b.contact_id : ''
   if (!UUID_RE.test(contactId)) return { ok: false, error: 'contact_id is required (a bill.com invoice needs a client)' }

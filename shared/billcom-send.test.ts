@@ -9,6 +9,7 @@ import {
   normalizeBillcomInvoiceNumber,
   normalizeHoldReason,
   parseBillComAction,
+  parseLineCharge,
   runAllowsSendControl,
   stateMap,
   statusFor,
@@ -224,5 +225,24 @@ describe('client credits join their client (lineClient + creditClientsByLine)', 
         [JANE, 150, [1]],
       ])
     }
+  })
+})
+
+describe('set_charge (change a line amount from the send panel)', () => {
+  const LINE = '44444444-4444-4444-8444-444444444444'
+  it('accepts dollars and cents with a reason', () => {
+    expect(parseBillComAction({ action: 'set_charge', run_id: RUN, line_id: LINE, charge: '155', reason: ' Special rate GY-D94htZfk ' }))
+      .toEqual({ ok: true, value: { action: 'set_charge', runId: RUN, lineId: LINE, charge: 155, reason: 'Special rate GY-D94htZfk' } })
+  })
+  it('needs a reason', () => {
+    expect(parseBillComAction({ action: 'set_charge', run_id: RUN, line_id: LINE, charge: 155, reason: '  ' })).toEqual({ ok: false, error: 'Say why the amount changed' })
+  })
+  it('refuses $0, negatives, fractions of a cent and junk', () => {
+    for (const bad of ['0', '-5', '155.555', 'abc', '', '100001']) expect(parseLineCharge(bad)).toBeNull()
+    expect(parseLineCharge('$1,155.50')).toBe(1155.5)
+    expect(parseBillComAction({ action: 'set_charge', run_id: RUN, line_id: LINE, charge: '0', reason: 'x' }).ok).toBe(false)
+  })
+  it('needs a real line id', () => {
+    expect(parseBillComAction({ action: 'set_charge', run_id: RUN, line_id: '7', charge: 155, reason: 'x' })).toEqual({ ok: false, error: 'line_id is required' })
   })
 })

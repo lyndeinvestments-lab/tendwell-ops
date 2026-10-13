@@ -46,6 +46,7 @@ import { cn } from '@/lib/utils'
 import { localISODate } from '@/lib/local-date'
 import type { StatusTone } from '@/lib/status-colors'
 import { invoicesApi, type BillingChannel } from '@/lib/invoices'
+import { ReservationRatesCard } from './ReservationRatesCard'
 import {
   APP_SETTING_AUX_BILLABLE,
   APP_SETTING_EXTRA_PRICING,
@@ -618,6 +619,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
             isAdmin={isAdmin}
             userLabel={userLabel}
           />
+          <ReservationRatesCard isAdmin={isAdmin} userLabel={userLabel} />
         </>
       )}
 
