@@ -390,6 +390,50 @@ export function isTaskCancelled(status: string | null | undefined): boolean {
   return s === DISAPPEARED_TASK_STATUS || /cancel|delet/i.test(s)
 }
 
+// ─── Who did the work ──────────────────────────────────────────────────────
+//
+// Only work Tendwell did bills (Jordan 2026-10-12). Haven's Trellis workspace
+// holds Haven's own maintenance, runner and front-office tasks too, and on
+// I261009823 ten of them (hot tub repairs, a lockbox reset, a deck light bulb,
+// a bromine floater) were billed as $50 Tendwell add-ons.
+
+/** Tendwell's vendor entity in Haven's Trellis workspace. */
+export const TRELLIS_TENDWELL_VENDOR = 'Tendwell Cleaning Co.'
+
+export interface TaskAttribution {
+  source: AuxTaskSource
+  workspace?: string | null
+  assignedToId?: string | null
+  assignedToName?: string | null
+  /** trellis_task_snapshot.assignees (filled on demand), when present. */
+  assignees?: unknown
+}
+
+/**
+ * Whether Tendwell did a task, and so may bill it.
+ * - Breezeway: always. The import is Tendwell's own Breezeway export, and
+ *   every row in it is assigned to Busy Bee, Tendwell or a Tendwell crew
+ *   member.
+ * - Trellis: Tendwell's workspace (A), or assigned to the Tendwell vendor or
+ *   to someone on Tendwell's roster. Same rule as the trellis_task_attributed
+ *   view (KEEP IN SYNC). The bulk sync keeps one assignee per task, so the
+ *   full assignee list is checked too when it has been fetched.
+ */
+export function isTendwellTask(t: TaskAttribution, tendwellMemberIds: ReadonlySet<string>): boolean {
+  if (t.source === 'breezeway') return true
+  if (t.workspace === 'A') return true
+  const isOurs = (id: unknown, name: unknown) =>
+    (typeof name === 'string' && name.trim().toLowerCase() === TRELLIS_TENDWELL_VENDOR.toLowerCase()) ||
+    (typeof id === 'string' && tendwellMemberIds.has(id))
+  if (isOurs(t.assignedToId, t.assignedToName)) return true
+  if (!Array.isArray(t.assignees)) return false
+  return t.assignees.some(a => {
+    if (a == null || typeof a !== 'object') return false
+    const { assignee_id, assignee_name } = a as { assignee_id?: unknown; assignee_name?: unknown }
+    return isOurs(assignee_id, assignee_name)
+  })
+}
+
 // ─── Observation matching ──────────────────────────────────────────────────
 //
 // A Slack/Quo observation ("Norma refreshed the hot tub at Tara Rao 116 on

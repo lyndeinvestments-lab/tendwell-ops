@@ -3,7 +3,8 @@
 // Busy Bee no longer bills auxiliary work (Jordan 2026-09-22), so a hot tub
 // refresh or trash pickup never appears on the vendor CSV — but the task is
 // done and the client owes for it. For every run, reconcile adds one line per
-// COMPLETED billable auxiliary task inside the run's period:
+// COMPLETED billable auxiliary task Tendwell did inside the run's period (work
+// by Haven's own team is never ours to bill — isTendwellTask):
 //
 //   source              'task'   (provenance: Breezeway / Trellis, not the vendor file)
 //   line_kind           'extra'
@@ -47,6 +48,8 @@ export interface AuxTaskRow {
   department: string | null
   completed: boolean
   cancelled: boolean
+  /** Tendwell did it (isTendwellTask). Haven's own maintenance never bills. */
+  doneByTendwell: boolean
 }
 
 /** The slice of an existing invoice line the builder needs to avoid duplicates. */
@@ -87,6 +90,7 @@ export type SkipReason =
   | 'not_billable'
   | 'no_property'
   | 'outside_period'
+  | 'not_tendwell_work'
   | 'already_on_run'
   | 'duplicate_source'
   | 'covered_by_vendor_line'
@@ -163,6 +167,8 @@ export function buildTaskLines(input: BuildTaskLinesInput): BuildTaskLinesResult
     const serviceType = AUX_CATEGORIES[category].serviceType!
     if (t.propertyId == null) { skip('no_property'); continue }
     if (t.date == null || t.date < periodStart || t.date > periodEnd) { skip('outside_period'); continue }
+    // Before the dedup key is taken, so Haven's copy never blocks Tendwell's.
+    if (!t.doneByTendwell) { skip('not_tendwell_work'); continue }
     if (representedTaskIds.has(t.externalId)) { skip('already_on_run'); continue }
     const key = `${t.propertyId}|${t.date}|${serviceType}`
     if (seenKeys.has(key)) { skip('duplicate_source'); continue }

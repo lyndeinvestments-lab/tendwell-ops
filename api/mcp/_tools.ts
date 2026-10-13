@@ -821,7 +821,7 @@ const listBillableTasks: Tool = {
       const category = classifyAuxTask(t.title)
       if (category === 'clean' && !includeCleans) continue
       if (category === 'no_clean') continue
-      const billable = isBillableCategory(category, settings)
+      const billable = isBillableCategory(category, settings) && t.doneByTendwell
       if (!billable && category !== 'clean' && category !== 'unclassified' && !includeNonBillable) continue
       const pname = t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? '' : ''
       if (propFilter && !pname.toLowerCase().includes(propFilter) && !t.title.toLowerCase().includes(propFilter)) continue
@@ -848,11 +848,13 @@ const listBillableTasks: Tool = {
       const def = AUX_CATEGORIES[category]
       const pname = t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? `property #${t.propertyId}` : 'UNRESOLVED PROPERTY'
       const state = t.cancelled ? 'cancelled' : t.completed ? 'completed' : 'open / not completed'
-      const billable = isBillableCategory(category, settings)
-      const bill = billable && t.completed && !t.cancelled ? ` · ${describeBilling(billing.get(t.externalId))}` : billable ? '' : ' · not billable'
+      const billable = isBillableCategory(category, settings) && t.doneByTendwell
+      const bill = billable && t.completed && !t.cancelled
+        ? ` · ${describeBilling(billing.get(t.externalId))}`
+        : billable ? '' : t.doneByTendwell ? ' · not billable' : " · done by Haven's team, not billable"
       return `- ${t.date ?? '????-??-??'} · ${pname} · ${def.label}${def.serviceType ? ` (${def.serviceType})` : ''} · ${t.source} "${t.title}" · ${state}${bill} · id ${t.externalId}`
     })
-    const completedBillable = deduped.filter(r => r.task.completed && !r.task.cancelled && isBillableCategory(r.category, settings))
+    const completedBillable = deduped.filter(r => r.task.completed && !r.task.cancelled && r.task.doneByTendwell && isBillableCategory(r.category, settings))
     const unbilled = completedBillable.filter(r => !billing.get(r.task.externalId) || billing.get(r.task.externalId)!.state === 'needs_price')
     const header =
       `${deduped.length} task(s) ${from} → ${to}: ${completedBillable.length} completed & billable, ` +
@@ -864,7 +866,7 @@ const listBillableTasks: Tool = {
         ...t,
         category,
         service_type: AUX_CATEGORIES[category].serviceType,
-        billable: isBillableCategory(category, settings),
+        billable: isBillableCategory(category, settings) && t.doneByTendwell,
         billing: billing.get(t.externalId) ?? null,
         property_name: t.propertyId != null ? pctx.byId.get(t.propertyId)?.name ?? null : null,
       })),
@@ -1021,7 +1023,7 @@ const taskAuditSummary: Tool = {
       ),
     ])
     const tasks = await loadAuxiliaryTasks(supabase, from, to, pctx.byTrellisId)
-    const billableDone = tasks.filter(t => t.completed && !t.cancelled && t.propertyId != null && isBillableCategory(classifyAuxTask(t.title), settings))
+    const billableDone = tasks.filter(t => t.completed && !t.cancelled && t.doneByTendwell && t.propertyId != null && isBillableCategory(classifyAuxTask(t.title), settings))
     const seen = new Set<string>()
     const deduped = billableDone
       .sort((a, b) => (a.source === b.source ? 0 : a.source === 'breezeway' ? -1 : 1))

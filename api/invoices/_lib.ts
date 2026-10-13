@@ -28,6 +28,7 @@ import {
   isTaskCancelled,
   feeOverridesByContact,
   isTaskCompleted,
+  isTendwellTask,
   resolveAuxSettings,
   type AuxBillingSettings,
 } from '../../shared/aux-tasks.js'
@@ -700,7 +701,7 @@ export async function loadAuxiliaryTasks(
   end: string,
   propertyByTrellisId: ReadonlyMap<string, number>,
 ): Promise<AuxTaskRow[]> {
-  const [bw, tr] = await Promise.all([
+  const [bw, tr, tendwellMembers] = await Promise.all([
     fetchAllRows<{
       external_id: string
       property_id: number | null
@@ -727,16 +728,21 @@ export async function loadAuxiliaryTasks(
       status: string | null
       scheduled_date: string | null
       completed_at: string | null
+      workspace: string | null
+      assigned_to_id: string | null
+      assigned_to_name: string | null
+      assignees: unknown
     }>(
       'trellis_task_snapshot (aux)',
       () => supabase
         .from('trellis_task_snapshot')
-        .select('trellis_task_id, trellis_property_id, title, department_name, status, scheduled_date, completed_at')
+        .select('trellis_task_id, trellis_property_id, title, department_name, status, scheduled_date, completed_at, workspace, assigned_to_id, assigned_to_name, assignees')
         .gte('scheduled_date', start)
         .lte('scheduled_date', end)
         .order('trellis_task_id'),
       'trellis_task_id',
     ),
+    loadTendwellMemberIds(supabase),
   ])
   const rows: AuxTaskRow[] = []
   for (const t of bw) {
@@ -749,6 +755,7 @@ export async function loadAuxiliaryTasks(
       department: t.department,
       completed: isTaskCompleted('breezeway', t.status, t.completed_date),
       cancelled: isTaskCancelled(t.status),
+      doneByTendwell: isTendwellTask({ source: 'breezeway' }, tendwellMembers),
     })
   }
   for (const t of tr) {
@@ -761,9 +768,28 @@ export async function loadAuxiliaryTasks(
       department: t.department_name,
       completed: isTaskCompleted('trellis', t.status, t.completed_at),
       cancelled: isTaskCancelled(t.status),
+      doneByTendwell: isTendwellTask({
+        source: 'trellis',
+        workspace: t.workspace,
+        assignedToId: t.assigned_to_id,
+        assignedToName: t.assigned_to_name,
+        assignees: t.assignees,
+      }, tendwellMembers),
     })
   }
   return rows
+}
+
+/** Trellis user ids on Tendwell's own roster (workspace A). Admin-only RLS,
+ *  so this needs the service client; a failed read throws rather than
+ *  silently treating every crew member's Haven task as Haven's. */
+export async function loadTendwellMemberIds(supabase: SupabaseClient): Promise<Set<string>> {
+  const rows = await fetchAllRows<{ user_id: string }>(
+    'trellis_roster (Tendwell members)',
+    () => supabase.from('trellis_roster').select('user_id').eq('workspace', 'A').order('user_id'),
+    'user_id',
+  )
+  return new Set(rows.map(r => r.user_id).filter(Boolean))
 }
 
 export interface TaskLineSyncResult {

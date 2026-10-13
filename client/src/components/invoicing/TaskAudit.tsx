@@ -55,6 +55,7 @@ import {
   classifyAuxTask,
   feeOverridesByContact,
   isBillableCategory,
+  isTendwellTask,
   isTaskCancelled,
   isTaskCompleted,
   matchObservationToTask,
@@ -188,6 +189,8 @@ interface AuditTask {
   category: AuxCategory
   serviceType: string | null
   billable: boolean
+  /** isTendwellTask: work by Haven's own team is never ours to bill. */
+  doneByTendwell: boolean
   billing: TaskBilling | null
 }
 
@@ -337,13 +340,25 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
   })
   const trQuery = useQuery({
     queryKey: ['task-audit', 'trellis', from, to],
-    queryFn: () => fetchAll<{ trellis_task_id: string; trellis_property_id: string | null; title: string | null; department_name: string | null; status: string | null; scheduled_date: string | null; completed_at: string | null }>(
+    queryFn: () => fetchAll<{ trellis_task_id: string; trellis_property_id: string | null; title: string | null; department_name: string | null; status: string | null; scheduled_date: string | null; completed_at: string | null; workspace: string | null; assigned_to_id: string | null; assigned_to_name: string | null; assignees: unknown }>(
       () => db
         .from('trellis_task_snapshot')
-        .select('trellis_task_id, trellis_property_id, title, department_name, status, scheduled_date, completed_at')
+        .select('trellis_task_id, trellis_property_id, title, department_name, status, scheduled_date, completed_at, workspace, assigned_to_id, assigned_to_name, assignees')
         .gte('scheduled_date', from).lte('scheduled_date', to)
         .order('trellis_task_id'),
     ),
+  })
+  // Tendwell's Trellis roster. Admin-only RLS: for anyone else this comes back
+  // empty, which only hides more tasks from "to bill" (the invoice itself is
+  // built server-side with the full roster).
+  const rosterQuery = useQuery({
+    queryKey: ['task-audit', 'tendwell-roster'],
+    queryFn: async () => {
+      const { data, error } = await db.from('trellis_roster').select('user_id').eq('workspace', 'A')
+      if (error) throw error
+      return new Set<string>((data ?? []).map((r: { user_id: string }) => r.user_id))
+    },
+    staleTime: 10 * 60_000,
   })
   const taskLinesQuery = useQuery<TaskLineRow[]>({
     queryKey: ['task-audit', 'task-lines', from, to],
@@ -430,6 +445,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
   )
 
   const tasks: AuditTask[] = useMemo(() => {
+    const roster = rosterQuery.data ?? new Set<string>()
     const rows: AuditTask[] = []
     const push = (t: Omit<AuditTask, 'category' | 'serviceType' | 'billable' | 'billing' | 'propertyName'>) => {
       const category = classifyAuxTask(t.title)
@@ -439,18 +455,26 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
         propertyName: t.propertyId != null ? propById.get(t.propertyId)?.name ?? `Property #${t.propertyId}` : null,
         category,
         serviceType: AUX_CATEGORIES[category].serviceType,
-        billable: isBillableCategory(category, settings),
+        billable: isBillableCategory(category, settings) && t.doneByTendwell,
         billing,
       })
     }
     for (const t of bwQuery.data ?? []) {
-      push({ externalId: t.external_id, source: 'breezeway', propertyId: t.property_id, date: t.due_date, title: t.task_title, department: t.department, completed: isTaskCompleted('breezeway', t.status, t.completed_date), cancelled: isTaskCancelled(t.status) })
+      push({ externalId: t.external_id, source: 'breezeway', propertyId: t.property_id, date: t.due_date, title: t.task_title, department: t.department, completed: isTaskCompleted('breezeway', t.status, t.completed_date), cancelled: isTaskCancelled(t.status), doneByTendwell: isTendwellTask({ source: 'breezeway' }, roster) })
     }
     for (const t of trQuery.data ?? []) {
-      push({ externalId: `trellis:${t.trellis_task_id}`, source: 'trellis', propertyId: t.trellis_property_id ? propByTrellis.get(t.trellis_property_id) ?? null : null, date: t.scheduled_date, title: t.title ?? '', department: t.department_name, completed: isTaskCompleted('trellis', t.status, t.completed_at), cancelled: isTaskCancelled(t.status) })
+      push({
+        externalId: `trellis:${t.trellis_task_id}`, source: 'trellis', propertyId: t.trellis_property_id ? propByTrellis.get(t.trellis_property_id) ?? null : null, date: t.scheduled_date, title: t.title ?? '', department: t.department_name, completed: isTaskCompleted('trellis', t.status, t.completed_at), cancelled: isTaskCancelled(t.status),
+        doneByTendwell: isTendwellTask({ source: 'trellis', workspace: t.workspace, assignedToId: t.assigned_to_id, assignedToName: t.assigned_to_name, assignees: t.assignees }, roster),
+      })
     }
-    // One row per (property, day, category) — Breezeway wins, like the invoice.
-    rows.sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '') || (a.source === b.source ? 0 : a.source === 'breezeway' ? -1 : 1))
+    // One row per (property, day, category) — Breezeway wins, like the invoice,
+    // and Tendwell's copy beats Haven's.
+    rows.sort((a, b) =>
+      (b.date ?? '').localeCompare(a.date ?? '') ||
+      (a.source === b.source ? 0 : a.source === 'breezeway' ? -1 : 1) ||
+      Number(b.doneByTendwell) - Number(a.doneByTendwell),
+    )
     const seen = new Set<string>()
     return rows.filter(r => {
       if (r.category === 'clean' || r.category === 'no_clean' || r.cancelled) return false
@@ -460,7 +484,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
       seen.add(k)
       return true
     })
-  }, [bwQuery.data, trQuery.data, billingByTask, dismissedTaskIds, propById, propByTrellis, settings])
+  }, [bwQuery.data, trQuery.data, rosterQuery.data, billingByTask, dismissedTaskIds, propById, propByTrellis, settings])
 
   const lists = useMemo(() => {
     const done = tasks.filter(t => t.completed)
@@ -520,7 +544,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
     onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Update failed', description: e.message, variant: 'destructive' }) },
   })
 
-  const loading = propertiesQuery.isLoading || bwQuery.isLoading || trQuery.isLoading || taskLinesQuery.isLoading || obsQuery.isLoading
+  const loading = propertiesQuery.isLoading || bwQuery.isLoading || trQuery.isLoading || rosterQuery.isLoading || taskLinesQuery.isLoading || obsQuery.isLoading
   const error = propertiesQuery.error ?? bwQuery.error ?? trQuery.error ?? taskLinesQuery.error ?? obsQuery.error
 
   const tabs: Array<[Tab, string, number, StatusTone]> = [

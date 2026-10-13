@@ -16,6 +16,7 @@ const task = (over: Partial<AuxTaskRow> & Pick<AuxTaskRow, 'externalId' | 'title
   department: 'Cleaning',
   completed: true,
   cancelled: false,
+  doneByTendwell: true,
   ...over,
 })
 
@@ -240,5 +241,29 @@ describe('isHumanTouchedTaskLine', () => {
     expect(isHumanTouchedTaskLine({ source: 'task', review_status: 'ok', line_kind: 'excluded' })).toBe(true)
     expect(isHumanTouchedTaskLine({ source: 'task', review_status: 'ok', resolved_by: 'Nina' })).toBe(true)
     expect(isHumanTouchedTaskLine({ source: 'vendor', review_status: 'resolved', resolved_by: 'Nina' })).toBe(false)
+  })
+})
+
+describe('buildTaskLines: only work Tendwell did bills', () => {
+  // I261009823 line 674: Haven's maintenance tech fixed a hot tub that would
+  // not heat, and it was billed as a $50 Tendwell hot tub refresh.
+  it("skips a task done by Haven's own team", () => {
+    const r = buildTaskLines({
+      ...base,
+      tasks: [task({ externalId: 'trellis:haven-1', source: 'trellis', title: 'Maintenance: Hot Tub', department: 'Maintenance', doneByTendwell: false })],
+    })
+    expect(r.inserts).toHaveLength(0)
+    expect(r.skipped).toEqual([{ externalId: 'trellis:haven-1', reason: 'not_tendwell_work' }])
+  })
+
+  it("does not let Haven's task block Tendwell's on the same day", () => {
+    const r = buildTaskLines({
+      ...base,
+      tasks: [
+        task({ externalId: 'trellis:haven-2', source: 'trellis', title: 'Hot Tub Refresh', doneByTendwell: false }),
+        task({ externalId: 'trellis:ours-2', source: 'trellis', title: 'Hot Tub Refresh' }),
+      ],
+    })
+    expect(r.inserts.map(l => l.matched_task_id)).toEqual(['trellis:ours-2'])
   })
 })
