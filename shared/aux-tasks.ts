@@ -142,6 +142,10 @@ const RULES: Array<{ re: RegExp; category: AuxCategory }> = [
   // Markers and placeholders first, so "NO CLEAN NEEDED - Departure Clean"
   // does not read as a clean.
   { re: /do\s*not\s*clean|no\s*clean\s*needed|\[test\b|test\s*tecnico/i, category: 'no_clean' },
+  // "Leave the dirty linens" (Hostimo) tells the cleaner NOT to take the
+  // linens. Before the linen_pull rule, whose "dirty linens" would otherwise
+  // bill it as a $50 Linen Pull (Jordan excluded all 18 by hand, 2026-10).
+  { re: /\bleave\s+(the\s+)?(dirty\s+)?linens?\b/i, category: 'no_clean' },
 
   // The scheduled clean family — everything the vendor invoice already
   // covers. "Post-Owner Stay Clean - HT" and "Owner Stay - Turn Clean" are
@@ -167,7 +171,10 @@ const RULES: Array<{ re: RegExp; category: AuxCategory }> = [
   { re: /\bdeliver(y|ed|ies)?\b|\bdrop\s*-?\s*off\b/i, category: 'delivery' },
   { re: /\b(hot|cool)\s*tub\b|\btub\s*(refresh|refill)/i, category: 'hot_tub' },
   { re: /trash\s*pick|mid.?stay.*trash|remove\s*trash|trash\s*removal|excessive\s*trash|scattered\s*trash|^trash\s*pickup$/i, category: 'trash' },
-  { re: /linen\s*pull|dirty\s*linens?|linen\s*back|grab\s*(dirty\s*)?linens?/i, category: 'linen_pull' },
+  // Offboarding = taking Tendwell's linens back out with no clean (Jordan,
+  // 2026-10-14), so "Offboarding - no cleaning" is a Linen Pull, not an
+  // Extra Cleaning. Before the catch-all clean rule for that reason.
+  { re: /linen\s*pull|dirty\s*linens?|linen\s*back|grab\s*(dirty\s*)?linens?|\bremove\s+(our|the|all)?\s*linens?\b|\boff\s*-?\s*board(ing)?\b/i, category: 'linen_pull' },
   { re: /\bpet\s*(fee|hair|charge)\b|\bd(og|oh)\s*hair\b/i, category: 'pet' },
   { re: /lock\s*box|\blockbox\b|key\s*check|lock\s*batter/i, category: 'lockbox' },
   // "Needs 6 king pillows", "Need 4 pillow replacements", "Needs 3 king bed
