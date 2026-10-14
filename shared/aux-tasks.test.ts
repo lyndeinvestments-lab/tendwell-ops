@@ -49,6 +49,9 @@ const VOCABULARY: Array<[string, AuxCategory]> = [
   ["DO NOT CLEAN - Owner's Doing it.", 'no_clean'],
   ['DO NOT CLEAN - Maintenance', 'no_clean'],
   ['[TEST TECNICO - IGNORARE] PROD-8207 checklist sync 2026-07-23', 'no_clean'],
+  // Hostimo instruction to the cleaner, not a linen pull: Jordan excluded all
+  // 18 billed as $50 Linen Pulls (runs 09-27 and 10-04, 2026).
+  ['Leave the dirty linens', 'no_clean'],
   // ── non-billable ──────────────────────────────────────────────────────
   ['Air Filter Change', 'air_filter'],
   ['Monthly Air Filter Change', 'air_filter'],
@@ -103,6 +106,11 @@ const VOCABULARY: Array<[string, AuxCategory]> = [
   ['Linen Pull', 'linen_pull'],
   ['Grab Dirty Linens, No Cleaning', 'linen_pull'],
   ['Linen back request', 'linen_pull'],
+  // Offboarding: taking Tendwell's linens back out, no clean (Jordan's
+  // Hostimo list 2026-10-14: "Linen pull/offboarding with no cleaning").
+  ['Remove our linens', 'linen_pull'],
+  ['Offboarding linen pull', 'linen_pull'],
+  ['Offboarding - no cleaning', 'linen_pull'],
   ['Needs 6 king pillows and two king Dubai', 'delivery'],
   ['Needs 3 king bed bug covers', 'delivery'],
   ['missing bed bug cover for queen bed', 'unclassified'], // a report, not a delivery task
