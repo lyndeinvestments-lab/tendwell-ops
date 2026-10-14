@@ -11,11 +11,15 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
-import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X, Square, History, Clock } from 'lucide-react'
+import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X, Square, History, Clock, Tags, Trash2, ArrowRight, Type } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, fetchTasks, stripTrellisRegionTag, trellisNameDiffers, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow, type ExceptionRow, type ReconRow, type PropertyAliasRow } from '@/hooks/use-trellis-sync'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { Label } from '@/components/ui/label'
+import { usePropertyModal } from '@/hooks/use-property-modal'
 import { HostawaySyncTab } from '@/components/HostawaySyncTab'
 import { QboSyncTab } from '@/components/QboSyncTab'
 
@@ -111,21 +115,24 @@ function MatchPicker({ opsId, opsName, currentTrellisId, options, disabled, onAp
   )
 }
 
-// Searchable Ops-property picker for resolving Breezeway orphans.
-// Mirrors MatchPicker above but maps a Breezeway property_raw → Ops property id.
-function BreezewayMatchPicker({ propertyRaw, options, disabled, onApply }: {
-  propertyRaw: string
+// Searchable Ops-property picker (non-deleted properties). Used to resolve
+// Breezeway orphans and to link "In Trellis, not in Ops" rows.
+function OpsPropertyPicker({ label, testId, options, disabled, showTrellisLink, onSelect }: {
+  label: string
+  testId?: string
   options: OpsPropertyOption[]
   disabled: boolean
-  onApply: (propertyRaw: string, propertyId: number) => void
+  /** Tag properties that already have a Trellis link (linking another one makes an alias). */
+  showTrellisLink?: boolean
+  onSelect: (property: OpsPropertyOption) => void
 }) {
   const [open, setOpen] = useState(false)
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button size="sm" variant="ghost" disabled={disabled}>
+        <Button size="sm" variant="ghost" disabled={disabled} data-testid={testId}>
           <Link2 className="w-3.5 h-3.5 mr-1.5" />
-          Match
+          {label}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">
@@ -138,9 +145,12 @@ function BreezewayMatchPicker({ propertyRaw, options, disabled, onApply }: {
                 <CommandItem
                   key={o.id}
                   value={`${o.name} ${o.id}`}
-                  onSelect={() => { onApply(propertyRaw, o.id); setOpen(false) }}
+                  onSelect={() => { onSelect(o); setOpen(false) }}
                 >
                   <span className="flex-1 truncate">{o.name}</span>
+                  {showTrellisLink && o.trellis_id && (
+                    <span className="ml-2 shrink-0 text-2xs text-muted-foreground">Trellis linked</span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -151,8 +161,251 @@ function BreezewayMatchPicker({ propertyRaw, options, disabled, onApply }: {
   )
 }
 
-function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismissals, dismissRow, restoreRow, userLabel }: {
+function errorText(e: unknown): string {
+  if (e instanceof Error) return e.message
+  if (e && typeof e === 'object' && 'message' in e) return String((e as { message: unknown }).message)
+  return String(e)
+}
+
+// Confirm step for "Link to Ops property": says up front whether this sets the
+// property's Trellis link or saves the Trellis record as an alias.
+function LinkTrellisDialog({ target, pending, onCancel, onConfirm }: {
+  target: { exception: ExceptionRow; property: OpsPropertyOption } | null
+  pending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const isAlias = !!target?.property.trellis_id
+  return (
+    <AlertDialog open={!!target} onOpenChange={open => { if (!open && !pending) onCancel() }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Link to Ops property</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="flex flex-wrap items-center gap-1.5 text-foreground">
+                <span className="font-medium">{target?.exception.name}</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+                <span className="font-medium">{target?.property.name}</span>
+              </p>
+              {isAlias ? (
+                <p>
+                  {target?.property.name} is already linked to another Trellis record, so "{target?.exception.name}" is
+                  saved as an alias. Its {target?.exception.tendwell_task_count ?? 0} Tendwell task(s) and any synced
+                  reservations move onto {target?.property.name} now, and future syncs follow automatically.
+                </p>
+              ) : (
+                <p>
+                  {target?.property.name} has no Trellis link yet, so this Trellis record becomes its link.
+                </p>
+              )}
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={pending} onClick={e => { e.preventDefault(); onConfirm() }} data-testid="confirm-link-trellis">
+            {pending ? 'Linking…' : isAlias ? 'Save alias' : 'Link'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+// "Use Trellis name": rename the Ops property to the linked Trellis name.
+// Offers the name without its region tag (preselected) and the full name.
+function RenameToTrellisDialog({ row, opsOptions, pending, onCancel, onConfirm }: {
+  row: ReconRow | null
+  opsOptions: OpsPropertyOption[]
+  pending: boolean
+  onCancel: () => void
+  onConfirm: (newName: string) => void
+}) {
+  const full = (row?.linked_trellis_name ?? '').replace(/\s+/g, ' ').trim()
+  const stripped = stripTrellisRegionTag(full)
+  const choices = Array.from(new Set([stripped, full])).filter(Boolean)
+  const [choice, setChoice] = useState(stripped)
+  useEffect(() => { setChoice(stripped) }, [stripped])
+  const duplicate = row
+    ? opsOptions.find(o => o.id !== row.ops_property_id && o.name.trim().toLowerCase() === choice.toLowerCase())
+    : undefined
+
+  return (
+    <AlertDialog open={!!row} onOpenChange={open => { if (!open && !pending) onCancel() }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Use Trellis name</AlertDialogTitle>
+          <AlertDialogDescription>
+            Renames the Ops property. The change is recorded in the activity log.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-3 text-sm">
+          <p className="flex flex-wrap items-center gap-1.5">
+            <span className="text-muted-foreground line-through">{row?.ops_name}</span>
+            <ArrowRight className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="font-medium">{choice}</span>
+          </p>
+          <RadioGroup value={choice} onValueChange={setChoice} className="gap-2">
+            {choices.map((c, i) => (
+              <div key={c} className="flex items-center gap-2">
+                <RadioGroupItem value={c} id={`rename-choice-${i}`} />
+                <Label htmlFor={`rename-choice-${i}`} className="font-normal">
+                  {c}
+                  <span className="ml-1.5 text-2xs text-muted-foreground">
+                    {c === stripped && c !== full ? 'without region tag' : 'exactly as in Trellis'}
+                  </span>
+                </Label>
+              </div>
+            ))}
+          </RadioGroup>
+          {duplicate && (
+            <p className="rounded-md bg-warning/10 px-3 py-2 text-xs text-warning">
+              Another Ops property (#{duplicate.id}) already uses this name.
+            </p>
+          )}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          <AlertDialogAction disabled={pending || !choice} onClick={e => { e.preventDefault(); onConfirm(choice) }} data-testid="confirm-rename-trellis">
+            {pending ? 'Renaming…' : 'Rename'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function AliasesCard({ aliases, trellisProps, opsProperties, unlinkAlias }: {
+  aliases: ReturnType<typeof useTrellisSync>['aliases']
+  trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
+  opsProperties: ReturnType<typeof useTrellisSync>['opsProperties']
+  unlinkAlias: ReturnType<typeof useTrellisSync>['unlinkAlias']
+}) {
+  const { toast } = useToast()
+  const { openPropertyModal } = usePropertyModal()
+  const [removing, setRemoving] = useState<PropertyAliasRow | null>(null)
+  const rows = aliases.data ?? []
+  const workspaceById = useMemo(() => new Map((trellisProps.data ?? []).map(t => [t.trellis_id, t.workspace])), [trellisProps.data])
+  const nameById = useMemo(() => new Map((opsProperties.data ?? []).map(o => [o.id, o.name])), [opsProperties.data])
+  const propertyLabel = (id: number) => nameById.get(id) ?? `#${id}`
+
+  const confirmRemove = async () => {
+    if (!removing) return
+    try {
+      await unlinkAlias.mutateAsync(removing.id)
+      toast({ title: 'Alias removed', description: removing.alias })
+      setRemoving(null)
+    } catch (e) {
+      toast({ title: 'Remove failed', description: errorText(e), variant: 'destructive' })
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border/50">
+        <Tags className="w-4 h-4 text-muted-foreground" />
+        <h2 className="text-sm font-semibold">Aliases ({rows.length})</h2>
+        <span className="text-2xs text-muted-foreground">Other names and extra Trellis records that map to one Ops property.</span>
+      </div>
+      {aliases.error ? (
+        <ErrorState onRetry={() => aliases.refetch()} />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40"><tr className="text-2xs uppercase text-muted-foreground text-left">
+              <th className="py-2 px-3">Alias</th>
+              <th className="py-2 px-3">Trellis</th>
+              <th className="py-2 px-3">Ops property</th>
+              <th className="py-2 px-3">Note</th>
+              <th className="py-2 px-3">Added</th>
+              <th className="py-2 px-3 text-right">Action</th>
+            </tr></thead>
+            <tbody>
+              {aliases.isLoading ? (
+                <tr><td colSpan={6} className="py-6 text-center text-muted-foreground text-xs">Loading…</td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={6}><EmptyState icon={Tags} title="No aliases" description="Linking a Trellis property to an Ops property that already has a Trellis link creates one." /></td></tr>
+              ) : rows.map(a => (
+                <tr key={a.id} className="border-t border-border/50">
+                  <td className="py-1.5 px-3 font-medium">{a.alias}</td>
+                  <td className="py-1.5 px-3">
+                    {a.trellis_id
+                      ? (workspaceBadge(workspaceById.get(a.trellis_id) ?? null) ?? <span className="text-2xs text-muted-foreground">not in snapshot</span>)
+                      : <span className="text-2xs text-muted-foreground">name only</span>}
+                  </td>
+                  <td className="py-1.5 px-3">
+                    <button
+                      type="button"
+                      className="text-left underline-offset-2 hover:underline"
+                      onClick={() => openPropertyModal(String(a.property_id), 'api-sync')}
+                    >
+                      {propertyLabel(a.property_id)}
+                    </button>
+                  </td>
+                  <td className="py-1.5 px-3 text-muted-foreground text-2xs max-w-[260px] truncate" title={a.note ?? ''}>{a.note ?? '—'}</td>
+                  <td className="py-1.5 px-3 text-muted-foreground text-2xs whitespace-nowrap">
+                    {a.created_by ?? '—'}
+                    {a.created_at && <span className="block tabular-nums">{new Date(a.created_at).toLocaleDateString()}</span>}
+                  </td>
+                  <td className="py-1.5 px-3 text-right">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 text-2xs text-muted-foreground hover:text-destructive"
+                      onClick={() => setRemoving(a)}
+                      data-testid={`remove-alias-${a.id}`}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Remove
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <AlertDialog open={!!removing} onOpenChange={open => { if (!open && !unlinkAlias.isPending) setRemoving(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove alias?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p>
+                  "{removing?.alias}" will no longer map to {removing ? propertyLabel(removing.property_id) : ''}.
+                  {removing?.trellis_id ? ' Its Trellis record can show up under "In Trellis, not in Ops" again.' : ''}
+                </p>
+                <p>
+                  Removing an alias does not move tasks already re-pointed back to the old Trellis record. The next
+                  Trellis sync rewrites the tasks it still returns.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={unlinkAlias.isPending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={unlinkAlias.isPending}
+              onClick={e => { e.preventDefault(); confirmRemove() }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="confirm-remove-alias"
+            >
+              {unlinkAlias.isPending ? 'Removing…' : 'Remove alias'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  )
+}
+
+function ReconciliationTab({ recon, exceptions, trellisProps, opsProperties, linkMatch, linkTrellisProperty, renameProperty, dismissals, dismissRow, restoreRow, userLabel }: {
   recon: ReturnType<typeof useTrellisSync>['recon']
+  opsProperties: ReturnType<typeof useTrellisSync>['opsProperties']
+  linkTrellisProperty: ReturnType<typeof useTrellisSync>['linkTrellisProperty']
+  renameProperty: ReturnType<typeof useTrellisSync>['renameProperty']
   exceptions: ReturnType<typeof useTrellisSync>['exceptions']
   trellisProps: ReturnType<typeof useTrellisSync>['trellisProps']
   linkMatch: ReturnType<typeof useTrellisSync>['linkMatch']
@@ -165,8 +418,40 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
   const [pendingId, setPendingId] = useState<number | null>(null)
   const [showDismissed, setShowDismissed] = useState(false)
   const [pendingDismiss, setPendingDismiss] = useState<string | null>(null)
+  const [linkTarget, setLinkTarget] = useState<{ exception: ExceptionRow; property: OpsPropertyOption } | null>(null)
+  const [renameRow, setRenameRow] = useState<ReconRow | null>(null)
 
   if (recon.error) return <ErrorState onRetry={() => recon.refetch()} />
+
+  const opsOptions = opsProperties.data ?? []
+
+  const confirmLink = async () => {
+    if (!linkTarget) return
+    const { exception, property } = linkTarget
+    try {
+      const res = await linkTrellisProperty.mutateAsync({ trellisId: exception.trellis_id, propertyId: property.id, alias: exception.name })
+      toast({
+        title: res.mode === 'alias' ? 'Alias saved' : res.mode === 'noop' ? 'Already linked' : 'Trellis link set',
+        description: res.mode === 'alias'
+          ? `${exception.name} → ${property.name} (${res.tasks_repointed ?? 0} task(s) moved)`
+          : `${exception.name} → ${property.name}`,
+      })
+      setLinkTarget(null)
+    } catch (e) {
+      toast({ title: 'Link failed', description: errorText(e), variant: 'destructive' })
+    }
+  }
+
+  const confirmRename = async (newName: string) => {
+    if (!renameRow) return
+    try {
+      await renameProperty.mutateAsync({ opsId: renameRow.ops_property_id, oldName: renameRow.ops_name, newName })
+      toast({ title: 'Property renamed', description: `${renameRow.ops_name} → ${newName}` })
+      setRenameRow(null)
+    } catch (e) {
+      toast({ title: 'Rename failed', description: errorText(e), variant: 'destructive' })
+    }
+  }
 
   const rows = recon.data ?? []
   const exRows = exceptions.data ?? []
@@ -328,17 +613,27 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                             Restore
                           </Button>
                         ) : (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-6 text-2xs text-muted-foreground hover:text-foreground"
-                            disabled={pendingDismiss === `ex-${e.trellis_id}`}
-                            onClick={() => handleDismissEx(e.trellis_id, e.name)}
-                            title="Dismiss this exception"
-                          >
-                            <X className="w-3 h-3 mr-1" />
-                            Dismiss
-                          </Button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            <OpsPropertyPicker
+                              label="Link to Ops property"
+                              testId={`link-ops-${e.trellis_id}`}
+                              options={opsOptions}
+                              showTrellisLink
+                              disabled={linkTrellisProperty.isPending || pendingDismiss === `ex-${e.trellis_id}`}
+                              onSelect={property => setLinkTarget({ exception: e, property })}
+                            />
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-2xs text-muted-foreground hover:text-foreground"
+                              disabled={pendingDismiss === `ex-${e.trellis_id}`}
+                              onClick={() => handleDismissEx(e.trellis_id, e.name)}
+                              title="Dismiss this exception"
+                            >
+                              <X className="w-3 h-3 mr-1" />
+                              Dismiss
+                            </Button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -408,6 +703,19 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
                                 Confirm
                               </Button>
                             )}
+                            {r.match_status === 'matched' && trellisNameDiffers(r.ops_name, r.linked_trellis_name) && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setRenameRow(r)}
+                                disabled={renameProperty.isPending}
+                                title={`Rename to the Trellis name: ${r.linked_trellis_name}`}
+                                data-testid={`use-trellis-name-${r.ops_property_id}`}
+                              >
+                                <Type className="w-3.5 h-3.5 mr-1.5" />
+                                Use Trellis name
+                              </Button>
+                            )}
                             <MatchPicker
                               opsId={r.ops_property_id}
                               opsName={r.ops_name}
@@ -440,6 +748,20 @@ function ReconciliationTab({ recon, exceptions, trellisProps, linkMatch, dismiss
           </table>
         </div>
       </div>
+
+      <LinkTrellisDialog
+        target={linkTarget}
+        pending={linkTrellisProperty.isPending}
+        onCancel={() => setLinkTarget(null)}
+        onConfirm={confirmLink}
+      />
+      <RenameToTrellisDialog
+        row={renameRow}
+        opsOptions={opsOptions}
+        pending={renameProperty.isPending}
+        onCancel={() => setRenameRow(null)}
+        onConfirm={confirmRename}
+      />
     </div>
   )
 }
@@ -493,8 +815,7 @@ function BreezewayTab({ recon, breezewayCoverage, breezewayExceptions, opsProper
   return (
     <div className="space-y-5">
       <p className="text-xs text-muted-foreground">
-        Breezeway data comes from the weekly task import (system of record for Haven cleans).
-        Matching fixes here apply immediately; new task data arrives with the next import.
+        Breezeway data is kept as history; Trellis is the live source.
       </p>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -538,11 +859,11 @@ function BreezewayTab({ recon, breezewayCoverage, breezewayExceptions, opsProper
                     </td>
                     <td className="py-1.5 pr-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <BreezewayMatchPicker
-                          propertyRaw={e.property_raw}
+                        <OpsPropertyPicker
+                          label="Match"
                           options={opsOptions}
                           disabled={pendingBzMatch === e.property_raw || pendingBzDismiss === e.property_raw}
-                          onApply={handleMatchBreezeway}
+                          onSelect={o => handleMatchBreezeway(e.property_raw, o.id)}
                         />
                         <Button
                           size="sm"
@@ -795,7 +1116,7 @@ export default function TrellisSyncPage() {
   const { user } = useAuth()
   const { toast } = useToast()
   const qc = useQueryClient()
-  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, matchBreezeway, dismissBreezeway, triggerSync, cancelSync } = useTrellisSync()
+  const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, aliases, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, linkTrellisProperty, unlinkAlias, renameProperty, matchBreezeway, dismissBreezeway, triggerSync, cancelSync } = useTrellisSync()
 
   // When a sync finishes (done or canceled), refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
@@ -809,6 +1130,7 @@ export default function TrellisSyncPage() {
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'history'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'breezewayCoverage'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'breezewayExceptions'] })
+      qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'aliases'] })
     }
     if (syncStatus === 'canceled' && prevSyncStatus.current !== 'canceled') {
       toast({ title: 'Sync canceled', description: 'The sync was stopped. Partial data is retained.' })
@@ -875,7 +1197,7 @@ export default function TrellisSyncPage() {
       <Tabs defaultValue="trellis" className="w-full">
         <TabsList>
           <TabsTrigger value="trellis" data-testid="tab-reconciliation">Trellis</TabsTrigger>
-          <TabsTrigger value="breezeway" data-testid="tab-breezeway">Breezeway</TabsTrigger>
+          <TabsTrigger value="breezeway" data-testid="tab-breezeway">Breezeway (legacy)</TabsTrigger>
           <TabsTrigger value="hostaway" data-testid="tab-hostaway">Hostaway</TabsTrigger>
           <TabsTrigger value="quickbooks" data-testid="tab-quickbooks">QuickBooks</TabsTrigger>
           <TabsTrigger value="workflows" data-testid="tab-workflows">Trellis Workflows</TabsTrigger>
@@ -932,11 +1254,21 @@ export default function TrellisSyncPage() {
             recon={recon}
             exceptions={exceptions}
             trellisProps={trellisProps}
+            opsProperties={opsProperties}
             linkMatch={linkMatch}
+            linkTrellisProperty={linkTrellisProperty}
+            renameProperty={renameProperty}
             dismissals={dismissals}
             dismissRow={dismissRow}
             restoreRow={restoreRow}
             userLabel={user?.label || 'admin'}
+          />
+
+          <AliasesCard
+            aliases={aliases}
+            trellisProps={trellisProps}
+            opsProperties={opsProperties}
+            unlinkAlias={unlinkAlias}
           />
         </TabsContent>
         <TabsContent value="breezeway">

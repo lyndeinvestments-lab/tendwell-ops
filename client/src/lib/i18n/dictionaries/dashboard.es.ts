@@ -83,7 +83,7 @@ export const dashboardEs: typeof dashboardEn = {
     trellisDueToday: 'hoy',
     trellisDue: 'vence {{date}}',
     trellisErrorHint: 'No se pudo cargar la instantánea de Trellis: {{message}}',
-    trellisHint: 'Tareas de Trellis abiertas que vencen hoy (América/Chicago), contadas desde la instantánea sincronizada. Haz clic para ver el rastreador completo de tareas.',
+    trellisHint: 'Tareas de Trellis abiertas que vencen hoy (América/Chicago), contadas desde la instantánea sincronizada. Los administradores pueden abrir API Sync con un clic.',
   },
   activityMetrics: {
     newProperties: 'Propiedades Nuevas ({{period}})',

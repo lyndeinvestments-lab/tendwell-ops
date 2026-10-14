@@ -370,7 +370,6 @@ export const settingsPageEs: typeof settingsPageEn = {
       notify_watcher_update: 'Actualizaciones de tareas que sigues',
       notify_list_added: 'Agregado a una lista de tareas',
       notify_issue_logged: 'Nueva incidencia registrada',
-      notify_verification_due: 'Verificación pendiente',
       notify_onboarding_submitted: 'Incorporación enviada',
       notify_follow_up_due: 'Seguimiento pendiente',
       notify_property_note_mention: 'Mencionado en una nota de propiedad',

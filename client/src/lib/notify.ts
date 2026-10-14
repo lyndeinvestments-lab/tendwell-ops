@@ -9,7 +9,6 @@ export type NotificationEventType =
   | 'watcher_update'
   | 'list_added'
   | 'issue_logged'
-  | 'verification_due'
   | 'onboarding_submitted'
   | 'follow_up_due'
   | 'property_note_mention'
@@ -23,7 +22,6 @@ export const EVENT_LABELS: Record<NotificationEventType, string> = {
   watcher_update: 'Watcher update',
   list_added: 'Added to a task list',
   issue_logged: 'New issue logged',
-  verification_due: 'Verification due',
   onboarding_submitted: 'Onboarding form submitted',
   follow_up_due: 'Follow-up due',
   property_note_mention: 'Mentioned in a property note',
@@ -38,7 +36,6 @@ export const EVENT_VIEW_REQUIREMENT: Record<NotificationEventType, string> = {
   watcher_update: 'tasks',
   list_added: 'tasks',
   issue_logged: 'issues',
-  verification_due: 'property-verifications',
   onboarding_submitted: 'onboarding-queue',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
@@ -53,7 +50,6 @@ export const EVENT_PREF_FIELD: Record<NotificationEventType, string> = {
   watcher_update: 'notify_watcher_update',
   list_added: 'notify_list_added',
   issue_logged: 'notify_issue_logged',
-  verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',
   follow_up_due: 'notify_follow_up_due',
   property_note_mention: 'notify_property_note_mention',

@@ -5,7 +5,7 @@ import { runSync, makeServiceSupabase } from '../trellis/_sync-core.js'
 //
 // Hourly tasks-only Trellis → Supabase refresh (Vercel Cron). Keeps the
 // trellis_task_snapshot fresh through the business day so the dashboard tile
-// and /trellis-tasks page are at most ~1h stale. Roster + property snapshots
+// and invoicing/API Sync views are at most ~1h stale. Roster + property snapshots
 // are NOT touched — the nightly full sync (api/cron/trellis-sync.ts) owns those;
 // this run reads the workspace-A roster ids from the DB.
 //

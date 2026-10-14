@@ -12,8 +12,6 @@ import { accessCodesEn } from './accessCodes.en'
 import { accessCodesEs } from './accessCodes.es'
 import { acFiltersEn } from './acFilters.en'
 import { acFiltersEs } from './acFilters.es'
-import { verificationsEn } from './verifications.en'
-import { verificationsEs } from './verifications.es'
 import { inspectionsEn } from './inspections.en'
 import { inspectionsEs } from './inspections.es'
 import { lostItemsEn } from './lostItems.en'
@@ -40,8 +38,6 @@ import { activityEn } from './activity.en'
 import { activityEs } from './activity.es'
 import { tasksEn } from './tasks.en'
 import { tasksEs } from './tasks.es'
-import { trellisTasksEn } from './trellisTasks.en'
-import { trellisTasksEs } from './trellisTasks.es'
 import { reviewsEn } from './reviews.en'
 import { reviewsEs } from './reviews.es'
 import { ownerPortalEn } from './ownerPortal.en'
@@ -76,7 +72,6 @@ export const dictionaryEn = {
   weighIns: weighInsEn,
   accessCodes: accessCodesEn,
   acFilters: acFiltersEn,
-  verifications: verificationsEn,
   inspections: inspectionsEn,
   lostItems: lostItemsEn,
   shipments: shipmentsEn,
@@ -90,7 +85,6 @@ export const dictionaryEn = {
   alerts: alertsEn,
   activity: activityEn,
   tasks: tasksEn,
-  trellisTasks: trellisTasksEn,
   reviews: reviewsEn,
   ownerPortal: ownerPortalEn,
   financials: financialsEn,
@@ -116,7 +110,6 @@ export const dictionaryEs: typeof dictionaryEn = {
   weighIns: weighInsEs,
   accessCodes: accessCodesEs,
   acFilters: acFiltersEs,
-  verifications: verificationsEs,
   inspections: inspectionsEs,
   lostItems: lostItemsEs,
   shipments: shipmentsEs,
@@ -130,7 +123,6 @@ export const dictionaryEs: typeof dictionaryEn = {
   alerts: alertsEs,
   activity: activityEs,
   tasks: tasksEs,
-  trellisTasks: trellisTasksEs,
   reviews: reviewsEs,
   ownerPortal: ownerPortalEs,
   financials: financialsEs,

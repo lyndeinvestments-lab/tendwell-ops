@@ -40,7 +40,6 @@ export const propertyModalEs: typeof propertyModalEn = {
     operations: 'Operaciones',
     access: 'Acceso',
     notes: 'Notas',
-    verification: 'Verificación',
     photos: 'Fotos',
   },
   overview: {
@@ -81,7 +80,7 @@ export const propertyModalEs: typeof propertyModalEn = {
     poolCheckboxLabel: 'Piscina',
     poolChipLabel: 'Piscina:',
     poolUnknown: 'Sin definir',
-    inspectionExemptTooltip: 'Cuando está activado, esta propiedad se oculta del panel de prioridad de inspecciones y de las verificaciones de propiedades.',
+    inspectionExemptTooltip: 'Cuando está activado, esta propiedad se oculta del panel de prioridad de inspecciones.',
     inspectionExemptChipLabel: 'Exento de inspección:',
     followUpChipLabel: 'Seguimiento:',
     markFollowUpDoneTooltip: 'Marcar seguimiento como hecho (borra la fecha)',
@@ -221,10 +220,6 @@ export const propertyModalEs: typeof propertyModalEn = {
     noNotesYet: 'Aún no hay notas.',
     unknownAuthor: 'Desconocido',
     ownerBadge: 'Propietario',
-  },
-  verification: {
-    noneYet: 'Aún no se han completado verificaciones.',
-    fieldsUpdated: '{{count}} campo(s) actualizado(s)',
   },
   photos: {
     uploading: 'Subiendo…',

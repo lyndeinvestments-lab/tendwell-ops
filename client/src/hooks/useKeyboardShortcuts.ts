@@ -17,7 +17,7 @@ const NAV_MAP: Record<string, string> = {
   a: '/ac-filters',
   m: '/master-list',
   r: '/revenue-report',
-  i: '/property-verifications',
+  i: '/inspections',
   s: '/settings',
 }
 

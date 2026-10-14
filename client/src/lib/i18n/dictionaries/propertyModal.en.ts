@@ -40,7 +40,6 @@ export const propertyModalEn = {
     operations: 'Operations',
     access: 'Access',
     notes: 'Notes',
-    verification: 'Verification',
     photos: 'Photos',
   },
   overview: {
@@ -77,7 +76,7 @@ export const propertyModalEn = {
     poolCheckboxLabel: 'Pool',
     poolChipLabel: 'Pool:',
     poolUnknown: 'Not set',
-    inspectionExemptTooltip: 'When on, this property is hidden from the inspection priority dashboard and property verifications.',
+    inspectionExemptTooltip: 'When on, this property is hidden from the inspection priority dashboard.',
     inspectionExemptChipLabel: 'Inspection exempt:',
     followUpChipLabel: 'Follow-up:',
     markFollowUpDoneTooltip: 'Mark follow-up done (clears the date)',
@@ -217,10 +216,6 @@ export const propertyModalEn = {
     noNotesYet: 'No notes yet.',
     unknownAuthor: 'Unknown',
     ownerBadge: 'Owner',
-  },
-  verification: {
-    noneYet: 'No verifications completed yet.',
-    fieldsUpdated: '{{count}} field(s) updated',
   },
   photos: {
     uploading: 'Uploading…',

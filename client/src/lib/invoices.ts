@@ -10,8 +10,8 @@ import type { ServiceDetail } from '@shared/service-detail'
  * `invoice_runs`/`invoice_lines`/`vendor_property_aliases` tables).
  *
  * These domain types narrow the generated `Row` types (status/kind unions,
- * joined vendor/property shapes) — same pattern as `SnapshotTask` in
- * trellis-tasks.tsx. Query results are cast at the boundary.
+ * joined vendor/property shapes), the same pattern as the retired
+ * Trellis task tracker. Query results are cast at the boundary.
  */
 
 // ─── Enums ───────────────────────────────────────────────────────────────────

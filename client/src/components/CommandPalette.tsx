@@ -32,7 +32,6 @@ const PAGE_ROUTES = [
   // route now hosts a unified Pro Forma wrapper.
   { name: 'Live Pro Forma', path: '/forecaster', viewId: 'pro-forma', keywords: ['forecaster', 'live', 'pro forma', 'proforma', 'variance', 'forecast'], icon: TrendingUp },
   { name: 'Settings', path: '/settings', viewId: 'settings', keywords: ['settings', 'users', 'config', 'configuration'], icon: Settings },
-  { name: 'Property Verifications', path: '/property-verifications', viewId: 'property-verifications', keywords: ['verification', 'verify', 'walkthrough', 'checklist', 'property verifications'], icon: ClipboardCheck },
   { name: 'Inspections', path: '/inspections', viewId: 'inspections', keywords: ['inspection', 'inspections', 'quality', 'score', 'clean quality', 'ratings'], icon: Star },
   { name: 'Cleaners', path: '/cleaners', viewId: 'cleaners', keywords: ['cleaners', 'cleaning', 'roster', 'calendar', 'reconciliation'], icon: Brush },
   { name: 'Alerts', path: '/alerts', viewId: 'alerts', keywords: ['alerts', 'warnings', 'critical', 'notifications'], icon: Bell },

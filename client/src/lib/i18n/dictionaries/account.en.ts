@@ -60,7 +60,6 @@ export const accountEn = {
     notify_watcher_update: 'Watcher updates',
     notify_list_added: 'Added to a task list',
     notify_issue_logged: 'New issue logged',
-    notify_verification_due: 'Verification due',
     notify_onboarding_submitted: 'Onboarding submitted',
     notify_follow_up_due: 'Follow-up due',
     notify_property_note_mention: 'Mentioned in a property note',
