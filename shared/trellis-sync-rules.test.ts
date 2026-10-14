@@ -100,6 +100,14 @@ describe('planRosterDeactivation', () => {
     // deferred members keep counting misses
     expect(p.missed.filter(m => m.missed_runs === 6)).toHaveLength(16)
   })
+  it('drains the least recently seen first when capped', () => {
+    const existing = [
+      ...rows(10).map(r => ({ ...r, missed_runs: 4, last_seen_at: '2026-10-01' })),
+      { user_id: 'zz-old', is_active: true, missed_runs: 4, last_seen_at: '2026-06-01' },
+    ]
+    const p = planRosterDeactivation(existing, new Set(), true)
+    expect(p.deactivate).toEqual(['zz-old'])
+  })
   it('inactive rows are ignored', () => {
     const p = planRosterDeactivation([{ user_id: 'x', is_active: false, missed_runs: 9 }], new Set(['y']), true)
     expect(p).toEqual({ missed: [], deactivate: [], deferred: [] })

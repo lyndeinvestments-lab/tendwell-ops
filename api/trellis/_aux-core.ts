@@ -349,7 +349,7 @@ export async function runAuxSync(opts: AuxOptions): Promise<AuxResult> {
         log(`${step}: error ${msg}`)
       }
     } finally {
-      if (sub !== ctx) { ctx.calls += sub.calls; ctx.retries429 += sub.retries429; ctx.lastCallAt = sub.lastCallAt }
+      if (sub !== ctx) { ctx.calls += sub.calls; ctx.retries429 += sub.retries429; ctx.retries5xx += sub.retries5xx; ctx.lastCallAt = sub.lastCallAt }
     }
   }
 

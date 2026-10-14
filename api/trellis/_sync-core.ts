@@ -49,6 +49,7 @@ export interface SyncCounts {
   elapsed_s?: number
   trellis_calls?: number
   retries_429?: number
+  retries_5xx?: number
   roster_complete?: boolean
   roster_deactivated?: number
   roster_deferred?: number
@@ -125,10 +126,11 @@ export interface TrellisRunContext {
   lastCallAt: number
   calls: number
   retries429: number
+  retries5xx: number
 }
 
 export function makeRunContext(deadlineMs: number, opts: { minGapMs?: number; jitterMs?: number } = {}): TrellisRunContext {
-  return { deadlineMs, minGapMs: opts.minGapMs ?? 200, jitterMs: opts.jitterMs ?? 150, lastCallAt: 0, calls: 0, retries429: 0 }
+  return { deadlineMs, minGapMs: opts.minGapMs ?? 200, jitterMs: opts.jitterMs ?? 150, lastCallAt: 0, calls: 0, retries429: 0, retries5xx: 0 }
 }
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, Math.max(0, ms)))
@@ -173,11 +175,15 @@ async function callTool(
   const text = await res.text()
   // Trellis rate-limits bursts ("Rate limit exceeded. Retry shortly."). Back
   // off with jitter and retry, but never past the run deadline.
-  if (res.status === 429 && attempt < 5) {
+  // Gateway errors (502/503/504) are transient on Trellis's side (seen
+  // 2026-10-14 mid-backfill): same backoff, fewer attempts.
+  const transient = res.status === 429 || ((res.status === 502 || res.status === 503 || res.status === 504) && attempt < 3)
+  if (transient && attempt < 5) {
     const wait = backoffMs(attempt)
     if (ctx) {
-      ctx.retries429++
-      if (wait > remaining(ctx) - 5_000) throw new SyncDeadlineError('Run deadline reached while rate limited (429)')
+      if (res.status === 429) ctx.retries429++
+      else ctx.retries5xx++
+      if (wait > remaining(ctx) - 5_000) throw new SyncDeadlineError(`Run deadline reached while retrying (HTTP ${res.status})`)
     }
     await sleep(wait)
     return callTool(apiKey, name, args, ctx, attempt + 1)
@@ -591,7 +597,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
       // Deactivate members missing from complete pulls (never delete).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const { data: existing, error } = await (supabase as any).from('trellis_roster')
-        .select('user_id, is_active, missed_runs').eq('workspace', 'A')
+        .select('user_id, is_active, missed_runs, last_seen_at').eq('workspace', 'A')
       if (error) throw new Error(`trellis_roster read: ${error.message}`)
       const seen = new Set(rows.map(r => String(r.user_id)))
       const plan = planRosterDeactivation(existing ?? [], seen, pull.complete)
@@ -791,6 +797,7 @@ export async function runSync(opts: SyncOptions): Promise<SyncCounts> {
     elapsed_s: Math.round((Date.now() - t0) / 100) / 10,
     trellis_calls: ctx.calls,
     retries_429: ctx.retries429,
+    retries_5xx: ctx.retries5xx,
   }
   await emit('done', estimatedTotal, estimatedTotal,
     `Sync ${partial ? `stopped early (deadline, at ${stoppedPhase})` : 'complete'} in ${((Date.now() - t0) / 1000).toFixed(1)}s`)

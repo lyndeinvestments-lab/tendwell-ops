@@ -110,6 +110,7 @@ export interface RosterRowState {
   user_id: string
   is_active: boolean
   missed_runs: number | null
+  last_seen_at?: string | null
 }
 
 export interface RosterPlan {
@@ -133,16 +134,17 @@ export function planRosterDeactivation(
   const fraction = opts.maxFraction ?? ROSTER_MAX_REMOVAL_FRACTION
   const active = existing.filter(r => r.is_active)
   const cap = Math.max(1, Math.floor(active.length * fraction))
-  const candidates: Array<{ user_id: string; missed_runs: number }> = []
+  const candidates: Array<{ user_id: string; missed_runs: number; last_seen_at: string }> = []
   for (const r of active) {
     if (seenIds.has(r.user_id)) continue
     const missed = (r.missed_runs ?? 0) + 1
-    if (missed >= misses) candidates.push({ user_id: r.user_id, missed_runs: missed })
+    if (missed >= misses) candidates.push({ user_id: r.user_id, missed_runs: missed, last_seen_at: r.last_seen_at ?? '' })
     else plan.missed.push({ user_id: r.user_id, missed_runs: missed })
   }
-  // Longest-missing first, so the cap drains the oldest ghosts first.
-  candidates.sort((a, b) => b.missed_runs - a.missed_runs || a.user_id.localeCompare(b.user_id))
-  for (const c of candidates) {
+  // Longest-missing first (then least recently seen), so the cap drains the
+  // oldest ghosts first.
+  candidates.sort((a, b) => b.missed_runs - a.missed_runs || a.last_seen_at.localeCompare(b.last_seen_at) || a.user_id.localeCompare(b.user_id))
+  for (const { last_seen_at: _seen, ...c } of candidates) {
     if (plan.deactivate.length < cap) plan.deactivate.push(c.user_id)
     else {
       plan.deferred.push(c.user_id)
