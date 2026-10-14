@@ -1404,8 +1404,10 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
             )}
           </div>
 
-          {/* Desktop table */}
-          <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden md:flex-1 md:min-h-0">
+          {/* Desktop table. The floor keeps it from being squeezed to zero
+              height when the client invoice panel above is long (approved
+              runs with many clients); the page scrolls instead. */}
+          <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden md:flex-1 md:min-h-[32rem]">
             <div className="overflow-auto md:h-full">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted/60 backdrop-blur">

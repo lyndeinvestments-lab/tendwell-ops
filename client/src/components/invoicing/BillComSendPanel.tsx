@@ -251,6 +251,7 @@ export function BillComSendPanel({ run, lines, onChanged }: {
 
   const states = useMemo(() => stateMap(invoicesQuery.data ?? []), [invoicesQuery.data])
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [collapsed, setCollapsed] = useState(false)
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [promptText, setPromptText] = useState('')
 
@@ -299,12 +300,21 @@ export function BillComSendPanel({ run, lines, onChanged }: {
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-2 flex-wrap">
           <div>
-            <p className="text-sm font-medium">{hasQbo && !hasBillCom ? 'QuickBooks client invoices' : hasQbo ? 'Client invoices (bill.com and QuickBooks)' : 'bill.com client invoices'}</p>
-            <p className="text-xs text-muted-foreground">
+            <button
+              type="button"
+              className="flex items-center gap-1.5 text-left"
+              onClick={() => setCollapsed(c => !c)}
+              aria-expanded={!collapsed}
+              data-testid="billcom-panel-toggle"
+            >
+              {collapsed ? <ChevronRight className="w-4 h-4 shrink-0" /> : <ChevronDown className="w-4 h-4 shrink-0" />}
+              <span className="text-sm font-medium">{hasQbo && !hasBillCom ? 'QuickBooks client invoices' : hasQbo ? 'Client invoices (bill.com and QuickBooks)' : 'bill.com client invoices'}</span>
+            </button>
+            {!collapsed && <p className="text-xs text-muted-foreground">
               {hasBillCom && 'Only approved invoices appear on the bill.com manual-entry list. After entering one in bill.com, mark it sent with bill.com\'s invoice number.'}
               {hasBillCom && hasQbo && ' '}
               {hasQbo && 'QuickBooks clients: approve, create the invoice in QuickBooks, then mark it sent with the QuickBooks invoice number.'}
-            </p>
+            </p>}
           </div>
           <div className="flex items-center gap-1.5 text-2xs">
             <StatusBadge tone="warning">{counts.held} held</StatusBadge>
@@ -313,10 +323,10 @@ export function BillComSendPanel({ run, lines, onChanged }: {
           </div>
         </div>
 
-        {clientsQuery.isLoading || creditsQuery.isLoading ? (
+        {collapsed ? null : clientsQuery.isLoading || creditsQuery.isLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="w-4 h-4 animate-spin" /> Loading clients…</div>
         ) : (
-          <div className="divide-y divide-border/60 rounded-xl border border-border/60">
+          <div className="divide-y divide-border/60 rounded-xl border border-border/60 max-h-[60vh] overflow-y-auto">
             {groups.map(g => {
               const state = g.contactId ? states.get(g.key) : undefined
               const status = statusFor(states, g.contactId, g.serviceMonth, g.channel)
