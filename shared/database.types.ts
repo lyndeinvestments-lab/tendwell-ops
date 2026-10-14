@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.4"
   }
   public: {
     Tables: {
@@ -712,6 +712,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "clean_assignments_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["inspector_cleaner_id"]
+          },
+          {
             foreignKeyName: "clean_assignments_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
@@ -834,6 +841,13 @@ export type Database = {
             referencedRelation: "cleaners"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cleaner_coaching_flags_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["inspector_cleaner_id"]
+          },
         ]
       }
       cleaners: {
@@ -847,8 +861,13 @@ export type Database = {
           invite_sent_at: string | null
           is_active: boolean
           notes: string | null
+          offboarded_at: string | null
+          offboarded_by: string | null
           pay_rate: number | null
           phone: string | null
+          source: string
+          status: string
+          trellis_user_id: string | null
         }
         Insert: {
           alt_email?: string | null
@@ -860,8 +879,13 @@ export type Database = {
           invite_sent_at?: string | null
           is_active?: boolean
           notes?: string | null
+          offboarded_at?: string | null
+          offboarded_by?: string | null
           pay_rate?: number | null
           phone?: string | null
+          source?: string
+          status?: string
+          trellis_user_id?: string | null
         }
         Update: {
           alt_email?: string | null
@@ -873,8 +897,13 @@ export type Database = {
           invite_sent_at?: string | null
           is_active?: boolean
           notes?: string | null
+          offboarded_at?: string | null
+          offboarded_by?: string | null
           pay_rate?: number | null
           phone?: string | null
+          source?: string
+          status?: string
+          trellis_user_id?: string | null
         }
         Relationships: []
       }
@@ -1530,6 +1559,125 @@ export type Database = {
           },
         ]
       }
+      client_reservation_rates: {
+        Row: {
+          checkin_date: string
+          checkout_date: string
+          confirmation_code: string
+          created_at: string
+          created_by: string | null
+          id: string
+          listing_nickname: string | null
+          note: string | null
+          property_id: number
+          special_charge: number
+          standard_charge: number | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          checkin_date: string
+          checkout_date: string
+          confirmation_code: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          listing_nickname?: string | null
+          note?: string | null
+          property_id: number
+          special_charge: number
+          standard_charge?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          checkin_date?: string
+          checkout_date?: string
+          confirmation_code?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          listing_nickname?: string | null
+          note?: string | null
+          property_id?: number
+          special_charge?: number
+          standard_charge?: number | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "crm_stale_quote_properties"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "operational_property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_view"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_breezeway_stats"
+            referencedColumns: ["property_id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_ops"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "property_proforma"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_reconciliation"
+            referencedColumns: ["ops_property_id"]
+          },
+          {
+            foreignKeyName: "client_reservation_rates_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "v_haven_ops"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_stage_transitions: {
         Row: {
           changed_by: string | null
@@ -1870,6 +2018,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cleaners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "damaged_linens_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["inspector_cleaner_id"]
           },
           {
             foreignKeyName: "damaged_linens_property_id_fkey"
@@ -2305,10 +2460,18 @@ export type Database = {
             referencedRelation: "inspections"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "inspection_photos_inspection_id_fkey"
+            columns: ["inspection_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["ops_inspection_id"]
+          },
         ]
       }
       inspections: {
         Row: {
+          cleaner_auto_filled: boolean
           cleaner_id: string | null
           cleaner_name: string | null
           cleanliness_score: number | null
@@ -2324,14 +2487,17 @@ export type Database = {
           overall_score: number | null
           photos_url: string[] | null
           property_id: number | null
+          rated_clean_task_id: string | null
           reinspect_by: string | null
           reinspect_urgency: string
           scheduled_for: string | null
           share_token: string
           status: string
           supplies_score: number | null
+          trellis_task_id: string | null
         }
         Insert: {
+          cleaner_auto_filled?: boolean
           cleaner_id?: string | null
           cleaner_name?: string | null
           cleanliness_score?: number | null
@@ -2347,14 +2513,17 @@ export type Database = {
           overall_score?: number | null
           photos_url?: string[] | null
           property_id?: number | null
+          rated_clean_task_id?: string | null
           reinspect_by?: string | null
           reinspect_urgency?: string
           scheduled_for?: string | null
           share_token?: string
           status?: string
           supplies_score?: number | null
+          trellis_task_id?: string | null
         }
         Update: {
+          cleaner_auto_filled?: boolean
           cleaner_id?: string | null
           cleaner_name?: string | null
           cleanliness_score?: number | null
@@ -2370,12 +2539,14 @@ export type Database = {
           overall_score?: number | null
           photos_url?: string[] | null
           property_id?: number | null
+          rated_clean_task_id?: string | null
           reinspect_by?: string | null
           reinspect_urgency?: string
           scheduled_for?: string | null
           share_token?: string
           status?: string
           supplies_score?: number | null
+          trellis_task_id?: string | null
         }
         Relationships: [
           {
@@ -2386,11 +2557,25 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "inspections_cleaner_id_fkey"
+            columns: ["cleaner_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["inspector_cleaner_id"]
+          },
+          {
             foreignKeyName: "inspections_inspector_id_fkey"
             columns: ["inspector_id"]
             isOneToOne: false
             referencedRelation: "cleaners"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inspections_inspector_id_fkey"
+            columns: ["inspector_id"]
+            isOneToOne: false
+            referencedRelation: "trellis_inspection_tasks"
+            referencedColumns: ["inspector_cleaner_id"]
           },
           {
             foreignKeyName: "inspections_property_id_fkey"
@@ -7852,6 +8037,42 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_aux_sync_log: {
+        Row: {
+          counts: Json | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          started_at: string
+          state: Json | null
+          status: string
+          trigger: string | null
+        }
+        Insert: {
+          counts?: Json | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind: string
+          started_at?: string
+          state?: Json | null
+          status?: string
+          trigger?: string | null
+        }
+        Update: {
+          counts?: Json | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          started_at?: string
+          state?: Json | null
+          status?: string
+          trigger?: string | null
+        }
+        Relationships: []
+      }
       trellis_property_snapshot: {
         Row: {
           city: string | null
@@ -7951,13 +8172,88 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_review_snapshot: {
+        Row: {
+          category_ratings: Json | null
+          checkin_date: string | null
+          checkout_date: string | null
+          cleanliness_5: number | null
+          cleanliness_rating: number | null
+          content: string | null
+          guest_name: string | null
+          host_response_status: string | null
+          max_rating: number | null
+          normalized_rating: number | null
+          overall_rating: number | null
+          property_name: string | null
+          reservation_id: string | null
+          review_date: string | null
+          reviewer_name: string | null
+          source: string | null
+          synced_at: string
+          title: string | null
+          trellis_property_id: string | null
+          trellis_review_id: string
+          workspace: string
+        }
+        Insert: {
+          category_ratings?: Json | null
+          checkin_date?: string | null
+          checkout_date?: string | null
+          cleanliness_5?: number | null
+          cleanliness_rating?: number | null
+          content?: string | null
+          guest_name?: string | null
+          host_response_status?: string | null
+          max_rating?: number | null
+          normalized_rating?: number | null
+          overall_rating?: number | null
+          property_name?: string | null
+          reservation_id?: string | null
+          review_date?: string | null
+          reviewer_name?: string | null
+          source?: string | null
+          synced_at?: string
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_review_id: string
+          workspace: string
+        }
+        Update: {
+          category_ratings?: Json | null
+          checkin_date?: string | null
+          checkout_date?: string | null
+          cleanliness_5?: number | null
+          cleanliness_rating?: number | null
+          content?: string | null
+          guest_name?: string | null
+          host_response_status?: string | null
+          max_rating?: number | null
+          normalized_rating?: number | null
+          overall_rating?: number | null
+          property_name?: string | null
+          reservation_id?: string | null
+          review_date?: string | null
+          reviewer_name?: string | null
+          source?: string | null
+          synced_at?: string
+          title?: string | null
+          trellis_property_id?: string | null
+          trellis_review_id?: string
+          workspace?: string
+        }
+        Relationships: []
+      }
       trellis_roster: {
         Row: {
           departments: string[]
           email: string | null
           is_active: boolean
+          last_seen_at: string | null
           member_id: string | null
+          missed_runs: number
           name: string | null
+          removed_at: string | null
           role: string | null
           synced_at: string
           user_id: string
@@ -7967,8 +8263,11 @@ export type Database = {
           departments?: string[]
           email?: string | null
           is_active?: boolean
+          last_seen_at?: string | null
           member_id?: string | null
+          missed_runs?: number
           name?: string | null
+          removed_at?: string | null
           role?: string | null
           synced_at?: string
           user_id: string
@@ -7978,8 +8277,11 @@ export type Database = {
           departments?: string[]
           email?: string | null
           is_active?: boolean
+          last_seen_at?: string | null
           member_id?: string | null
+          missed_runs?: number
           name?: string | null
+          removed_at?: string | null
           role?: string | null
           synced_at?: string
           user_id?: string
@@ -8057,13 +8359,29 @@ export type Database = {
         Row: {
           assigned_to_id: string | null
           assigned_to_name: string | null
+          assignees: Json | null
+          checklist_completed: number | null
+          checklist_total: number | null
+          clean_kind: string | null
           completed_at: string | null
           department_name: string | null
+          description: string | null
+          external_id: string | null
+          external_provider: string | null
+          is_no_charge: boolean | null
+          is_tendwell: boolean | null
+          linked_issue_count: number | null
           priority: string | null
           property_name: string | null
+          reservation_id: string | null
           scheduled_date: string | null
+          scheduled_time: string | null
           status: string | null
+          summary: string | null
           synced_at: string
+          task_category: string | null
+          task_created_at: string | null
+          task_source: string | null
           title: string | null
           trellis_property_id: string | null
           trellis_task_id: string
@@ -8072,13 +8390,29 @@ export type Database = {
         Insert: {
           assigned_to_id?: string | null
           assigned_to_name?: string | null
+          assignees?: Json | null
+          checklist_completed?: number | null
+          checklist_total?: number | null
+          clean_kind?: string | null
           completed_at?: string | null
           department_name?: string | null
+          description?: string | null
+          external_id?: string | null
+          external_provider?: string | null
+          is_no_charge?: boolean | null
+          is_tendwell?: boolean | null
+          linked_issue_count?: number | null
           priority?: string | null
           property_name?: string | null
+          reservation_id?: string | null
           scheduled_date?: string | null
+          scheduled_time?: string | null
           status?: string | null
+          summary?: string | null
           synced_at?: string
+          task_category?: string | null
+          task_created_at?: string | null
+          task_source?: string | null
           title?: string | null
           trellis_property_id?: string | null
           trellis_task_id: string
@@ -8087,13 +8421,29 @@ export type Database = {
         Update: {
           assigned_to_id?: string | null
           assigned_to_name?: string | null
+          assignees?: Json | null
+          checklist_completed?: number | null
+          checklist_total?: number | null
+          clean_kind?: string | null
           completed_at?: string | null
           department_name?: string | null
+          description?: string | null
+          external_id?: string | null
+          external_provider?: string | null
+          is_no_charge?: boolean | null
+          is_tendwell?: boolean | null
+          linked_issue_count?: number | null
           priority?: string | null
           property_name?: string | null
+          reservation_id?: string | null
           scheduled_date?: string | null
+          scheduled_time?: string | null
           status?: string | null
+          summary?: string | null
           synced_at?: string
+          task_category?: string | null
+          task_created_at?: string | null
+          task_source?: string | null
           title?: string | null
           trellis_property_id?: string | null
           trellis_task_id?: string
@@ -9209,7 +9559,7 @@ export type Database = {
           breezeway_name?: string | null
           check_in_time?: string | null
           check_out_time?: string | null
-          cleaner_pay?: number | null
+          cleaner_pay?: never
           cleaning_frequency?: string | null
           created_at?: string | null
           deleted_at?: string | null
@@ -9269,7 +9619,7 @@ export type Database = {
           breezeway_name?: string | null
           check_in_time?: string | null
           check_out_time?: string | null
-          cleaner_pay?: number | null
+          cleaner_pay?: never
           cleaning_frequency?: string | null
           created_at?: string | null
           deleted_at?: string | null
@@ -9345,6 +9695,111 @@ export type Database = {
         }
         Relationships: []
       }
+      review_clean_attribution: {
+        Row: {
+          attribution: string | null
+          category_ratings: Json | null
+          checkin_date: string | null
+          checkout_date: string | null
+          clean_date: string | null
+          clean_is_tendwell: boolean | null
+          clean_kind: string | null
+          clean_title: string | null
+          cleaner_id: string | null
+          cleaner_ids: string[] | null
+          cleaner_name: string | null
+          cleanliness_5: number | null
+          cleanliness_rating: number | null
+          content: string | null
+          crew_label: string | null
+          guest_name: string | null
+          host_response_status: string | null
+          max_rating: number | null
+          normalized_rating: number | null
+          overall_rating: number | null
+          property_id: number | null
+          property_name: string | null
+          rated_clean_task_id: string | null
+          reservation_id: string | null
+          review_date: string | null
+          reviewer_name: string | null
+          source: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_property_name: string | null
+          trellis_review_id: string | null
+        }
+        Relationships: []
+      }
+      trellis_clean_task_base: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          clean_kind: string | null
+          cleaner_id: string | null
+          cleaner_ids: string[] | null
+          cleaner_name: string | null
+          completed_at: string | null
+          crew_label: string | null
+          is_tendwell: boolean | null
+          property_id: number | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_property_name: string | null
+          trellis_task_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_clean_tasks: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          clean_kind: string | null
+          cleaner_id: string | null
+          cleaner_ids: string[] | null
+          cleaner_name: string | null
+          completed_at: string | null
+          crew_label: string | null
+          is_tendwell: boolean | null
+          property_id: number | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_property_name: string | null
+          trellis_task_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_cleaner_tasks: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          clean_kind: string | null
+          cleaner_id: string | null
+          cleaner_ids: string[] | null
+          cleaner_name: string | null
+          completed_at: string | null
+          crew_label: string | null
+          is_tendwell: boolean | null
+          property_id: number | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_property_name: string | null
+          trellis_task_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
       trellis_exceptions: {
         Row: {
           name: string | null
@@ -9352,6 +9807,46 @@ export type Database = {
           tendwell_task_count: number | null
           trellis_id: string | null
           workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_inspection_tasks: {
+        Row: {
+          assigned_to_id: string | null
+          assigned_to_name: string | null
+          completed_at: string | null
+          inspector_cleaner_id: string | null
+          inspector_name: string | null
+          ops_cleanliness_score: number | null
+          ops_inspected_at: string | null
+          ops_inspection_id: string | null
+          ops_inspection_status: string | null
+          ops_overall_score: number | null
+          prev_clean_date: string | null
+          prev_clean_is_tendwell: boolean | null
+          prev_clean_kind: string | null
+          prev_clean_task_id: string | null
+          prev_clean_title: string | null
+          prev_cleaner_id: string | null
+          prev_cleaner_name: string | null
+          prev_crew_label: string | null
+          property_id: number | null
+          property_name: string | null
+          scheduled_date: string | null
+          status: string | null
+          title: string | null
+          trellis_property_id: string | null
+          trellis_property_name: string | null
+          trellis_task_id: string | null
+          workspace: string | null
+        }
+        Relationships: []
+      }
+      trellis_ops_property_map: {
+        Row: {
+          link_source: string | null
+          property_id: number | null
+          trellis_id: string | null
         }
         Relationships: []
       }
@@ -9580,6 +10075,10 @@ export type Database = {
       admin_property_delete_impact: { Args: { p_id: number }; Returns: Json }
       admin_restore_property: { Args: { p_id: number }; Returns: undefined }
       archive_stale_quotes: { Args: { max_age_days?: number }; Returns: number }
+      backfill_inspection_attribution: {
+        Args: { p_limit?: number; p_since?: string }
+        Returns: Json
+      }
       can_view_financials: { Args: never; Returns: boolean }
       canonical_trellis_property_id: { Args: { p: string }; Returns: string }
       client_invoice_mark_sent: {
@@ -9785,6 +10284,15 @@ export type Database = {
         Args: { p_organization_id: string; p_owner_id: string }
         Returns: number
       }
+      inspection_clean_match: {
+        Args: { p_anchor: string; p_property_id: number }
+        Returns: {
+          clean_date: string
+          cleaner_id: string
+          is_tendwell: boolean
+          trellis_task_id: string
+        }[]
+      }
       invoice_apply_open_credits: {
         Args: { p_actor?: string; p_run_id: string }
         Returns: Json
@@ -9802,6 +10310,10 @@ export type Database = {
       is_owner_emulating: { Args: never; Returns: boolean }
       is_staff: { Args: never; Returns: boolean }
       is_staff_or_server: { Args: never; Returns: boolean }
+      link_trellis_property: {
+        Args: { p_alias: string; p_property_id: number; p_trellis_id: string }
+        Returns: Json
+      }
       mcp_oauth_purge: {
         Args: never
         Returns: {
@@ -9857,6 +10369,7 @@ export type Database = {
           storage_path: string
         }[]
       }
+      raise_qbo_invoice_counter: { Args: { p_min: number }; Returns: number }
       reconcile_monthly_snapshot: {
         Args: { target_month: string }
         Returns: {
@@ -9915,6 +10428,7 @@ export type Database = {
       staff_has_financial_view: { Args: never; Returns: boolean }
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
       tendwell_normalize_street: { Args: { p: string }; Returns: string }
+      unlink_trellis_alias: { Args: { p_alias_id: string }; Returns: Json }
     }
     Enums: {
       portal_booking_calendar_kind: "ical" | "api" | "none"
