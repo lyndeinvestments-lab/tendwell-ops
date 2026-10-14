@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { runSync, makeServiceSupabase } from '../trellis/_sync-core.js'
+import { runSync, makeServiceSupabase, syncStatusFor } from '../trellis/_sync-core.js'
 
 // GET /api/cron/trellis-sync
 //
@@ -43,9 +43,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const counts = await runSync({ trigger: 'nightly' })
-    await sb.from('trellis_sync_log').update({ status: 'done', finished_at: now(), counts }).eq('id', logId)
-    return res.json({ ok: true, log_id: logId, elapsed_s: ((Date.now() - t0) / 1000).toFixed(1), counts })
+    // Deadline = 250 s after the function started (maxDuration 300): a run
+    // that cannot finish stops cleanly and is recorded as 'partial'.
+    const counts = await runSync({ trigger: 'nightly', deadlineMs: t0 + 250_000 })
+    const status = syncStatusFor(counts)
+    await sb.from('trellis_sync_log').update({
+      status, finished_at: now(), counts,
+      ...(status === 'partial' ? { error: `Stopped at the run deadline during ${counts.stopped_phase ?? 'sync'}; fetched data kept, prune skipped` } : {}),
+    }).eq('id', logId)
+    return res.json({ ok: true, status, log_id: logId, elapsed_s: ((Date.now() - t0) / 1000).toFixed(1), counts })
   } catch (err: any) {
     await sb.from('trellis_sync_log').update({ status: 'error', finished_at: now(), error: String(err?.message || err) }).eq('id', logId)
     console.error('TRELLIS SYNC CRON FAILED:', err?.message || err)

@@ -8,14 +8,19 @@
       "includeFiles": "api/notify/_lib.ts"
     },
     "api/trellis/*.ts": {
-      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts,api/notify/_lib.ts"
+      "includeFiles": "api/trellis/_lib.ts,api/trellis/_sync-core.ts,api/trellis/_aux-core.ts,api/tasks/_auto-stage.ts,api/notify/_lib.ts,shared/trellis-sync-rules.ts,shared/aux-tasks.ts",
+      "maxDuration": 300
     },
     "api/cron/trellis-sync.ts": {
-      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts",
+      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts,shared/trellis-sync-rules.ts,shared/aux-tasks.ts",
       "maxDuration": 300
     },
     "api/cron/trellis-tasks-refresh.ts": {
-      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts",
+      "includeFiles": "api/trellis/_sync-core.ts,api/tasks/_auto-stage.ts,shared/trellis-sync-rules.ts,shared/aux-tasks.ts",
+      "maxDuration": 300
+    },
+    "api/cron/trellis-aux-sync.ts": {
+      "includeFiles": "api/trellis/_sync-core.ts,api/trellis/_aux-core.ts,api/tasks/_auto-stage.ts,shared/trellis-sync-rules.ts,shared/aux-tasks.ts",
       "maxDuration": 300
     },
     "api/hostaway/*.ts": {
@@ -113,6 +118,10 @@
     {
       "path": "/api/cron/trellis-tasks-refresh",
       "schedule": "0 0-2,12-23 * * *"
+    },
+    {
+      "path": "/api/cron/trellis-aux-sync",
+      "schedule": "40 1,5,9,13,17,21 * * *"
     },
     {
       "path": "/api/cron/hostaway-sync",

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { verifyAuthHeader, getStaffRole, getSupabaseConfig } from '../notify/_lib.js'
-import { runSync, SyncCanceledError, type SyncProgress } from './_sync-core.js'
+import { runSync, SyncCanceledError, syncStatusFor, type SyncProgress } from './_sync-core.js'
 import { createClient } from '@supabase/supabase-js'
 
 // POST /api/trellis/sync-now
@@ -21,6 +21,7 @@ const CONCURRENCY_WINDOW_MS = 10 * 60 * 1000 // 10 minutes
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+  const t0 = Date.now()
 
   let sb
   try { sb = getSupabaseConfig() } catch (e: any) {
@@ -93,9 +94,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       onProgress,
       syncLogId: logId,
       cancelCheckClient: supabase,
+      deadlineMs: t0 + 250_000,
     })
-    await supabase.from('trellis_sync_log').update({ status: 'done', finished_at: now(), counts, progress: null }).eq('id', logId)
-    return res.status(200).json({ ok: true, log_id: logId, counts })
+    const status = syncStatusFor(counts)
+    await supabase.from('trellis_sync_log').update({
+      status, finished_at: now(), counts, progress: null,
+      ...(status === 'partial' ? { error: `Stopped at the run deadline during ${counts.stopped_phase ?? 'sync'}; fetched data kept, prune skipped` } : {}),
+    }).eq('id', logId)
+    return res.status(200).json({ ok: true, status, log_id: logId, counts })
   } catch (err: any) {
     if (err instanceof SyncCanceledError) {
       await supabase.from('trellis_sync_log').update({ status: 'canceled', finished_at: now(), progress: null }).eq('id', logId)
