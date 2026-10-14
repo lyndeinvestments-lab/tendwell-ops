@@ -19,7 +19,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const today = new Date().toISOString().slice(0, 10)
-    const sixMonthsAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
     // Fetch source data with service role
     const fetchTbl = async (path: string) => {
@@ -30,9 +29,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return r.json()
     }
 
-    const [tasks, properties, contacts, overdueIssuesRaw, unackedFeedback] = await Promise.all([
+    const [tasks, contacts, overdueIssuesRaw, unackedFeedback] = await Promise.all([
       fetchTbl(`tasks?select=id,title,due_date,status,priority,assignee_name&status=neq.Done&due_date=lte.${today}`),
-      fetchTbl(`operational_properties?select=id,name,stage_name`).catch(() => []),
       fetchTbl(`contacts?select=id,name,follow_up_date&follow_up_date=lte.${today}`).catch(() => []),
       fetchTbl(`cleaning_issues?select=id,property_name,category,priority,due_date&issue_type=eq.needs_attention&status=neq.Completed&due_date=lte.${today}&order=due_date.asc&limit=50`).catch(() => []),
       fetchTbl(`cleaning_issues?select=id,property_name,category,report_date&issue_type=eq.guest_feedback&acknowledged_at=is.null&order=report_date.asc&limit=50`).catch(() => []),
@@ -45,21 +43,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const overdueIssues = [...(overdueIssuesRaw as any[])].sort(
       (a, b) => (PRIORITY_RANK[a.priority] ?? 2) - (PRIORITY_RANK[b.priority] ?? 2),
     )
-
-    // Verifications due — properties not verified in 6 months (best-effort)
-    let verificationsDue: any[] = []
-    try {
-      const verifs = await fetchTbl(`property_verifications?select=property_id,verified_at&verified_at=not.is.null&order=verified_at.desc`)
-      const lastByProp = new Map<string, string>()
-      for (const v of verifs) if (!lastByProp.has(v.property_id)) lastByProp.set(v.property_id, v.verified_at)
-      verificationsDue = (properties as any[])
-        .filter((p: any) => p.stage_name === 'Active')
-        .filter((p: any) => {
-          const last = lastByProp.get(p.id)
-          return !last || last < sixMonthsAgo
-        })
-        .slice(0, 25)
-    } catch { /* table may not exist yet */ }
 
     const [users, prefs] = await Promise.all([
       getAllUsersWithViews(sb),
@@ -84,9 +67,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           sections.push(sectionHtml('Overdue / due today tasks', myTasks.slice(0, 15).map((t: any) =>
             `${escapeHtml(t.title)} <span style="color:#64748b;">— due ${t.due_date || '—'} (${escapeHtml(t.priority || '')})</span>`)))
         }
-      }
-      if (p.notify_verification_due && u.allowedViews.includes('property-verifications') && verificationsDue.length > 0) {
-        sections.push(sectionHtml('Verifications due (6+ months)', verificationsDue.map((p: any) => escapeHtml(p.name))))
       }
       if (p.notify_follow_up_due && u.allowedViews.includes('contacts') && contacts.length > 0) {
         sections.push(sectionHtml('Follow-ups due', contacts.slice(0, 15).map((c: any) =>

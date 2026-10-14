@@ -68,44 +68,6 @@ function RevealCell({ value }: { value: string | null; field: string; id: string
 }
 
 // ── Inspections Tab ──────────────────────────────────────────────────────────
-function VerificationHistory({ propertyId, enabled = true }: { propertyId: string; enabled?: boolean }) {
-  const { t } = useLocale('propertyModal')
-  const { format } = useDateFormat()
-  const { data: verifications, isLoading } = useQuery({
-    queryKey: ['/supabase/property-verifications-history', propertyId],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('property_verifications')
-        .select('*')
-        .eq('property_id', Number(propertyId))
-        .order('verified_at', { ascending: false })
-      if (error) throw error
-      return data || []
-    },
-    enabled,
-  })
-
-  if (isLoading) return <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>
-  if (!verifications?.length) return <p className="text-sm text-muted-foreground text-center py-6">{t('verification.noneYet')}</p>
-
-  return (
-    <div className="space-y-2">
-      {verifications.map((v: any) => (
-        <div key={v.id} className="rounded-md border border-border p-3 text-xs">
-          <div className="flex items-center justify-between">
-            <span className="font-medium">{format(new Date(v.verified_at), 'MMM d, yyyy')}</span>
-            <span className="text-muted-foreground">{v.verified_by || '—'}</span>
-          </div>
-          {v.fields_updated && Object.keys(v.fields_updated).length > 0 && (
-            <p className="text-muted-foreground mt-1">{t('verification.fieldsUpdated', { count: Object.keys(v.fields_updated).length })}</p>
-          )}
-          {v.notes && <p className="text-muted-foreground mt-1">{v.notes}</p>}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // Pure presentational helpers — defined at module scope so they are not
 // recreated on every InspectionsTab render. (When defined inline, React saw a
 // new component type each render and remounted the range input, dropping
@@ -930,7 +892,10 @@ export function PropertyDetailModal() {
   // Reset to Overview each time the modal opens (or switches property), so a
   // reopened modal doesn't resume on a stale tab.
   useEffect(() => {
-    setActiveTab(modalState?.initialTab ?? 'overview')
+    // 'inspections' was the retired Verification tab (callers such as the
+    // Inspections page still pass it); land on Overview instead of a blank tab.
+    const tab = modalState?.initialTab
+    setActiveTab(tab && tab !== 'inspections' ? tab : 'overview')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 
@@ -1175,7 +1140,6 @@ export function PropertyDetailModal() {
       )
       invalidateAllPropertyQueries(qc, { except: ['/supabase/property-detail'] })
       qc.invalidateQueries({ queryKey: ['/supabase/inspection-priority/properties'] })
-      qc.invalidateQueries({ queryKey: ['/supabase/property-verifications'] })
       toast({ title: next ? t('toasts.inspectionExemptEnabled') : t('toasts.inspectionExemptRemoved') })
     },
     onError: (error: any) => toast({ title: t('toasts.saveFailed'), description: error?.message, variant: 'destructive' }),
@@ -1277,7 +1241,6 @@ export function PropertyDetailModal() {
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
   const canViewAccess = canAccessView('access-codes', effectiveUser)
   const canViewAssignments = canAccessView('cleaners', effectiveUser)
-  const canViewVerification = canAccessView('property-verifications', effectiveUser)
   const canChangeStage = canEditView('property-list', effectiveUser)
   // Archive is a quote-stage action mirroring the quote sheet. Gate on the same
   // permission so the same users can archive from either entry point.
@@ -1782,7 +1745,6 @@ export function PropertyDetailModal() {
               <TabsTrigger value="operations" className="text-xs">{t('tabs.operations')}</TabsTrigger>
               {sourceContext !== 'property-list' && canViewAccess && <TabsTrigger value="setup" className="text-xs">{t('tabs.access')}</TabsTrigger>}
               <TabsTrigger value="notes" className="text-xs">{t('tabs.notes')}</TabsTrigger>
-              {canViewVerification && <TabsTrigger value="inspections" className="text-xs">{t('tabs.verification')}</TabsTrigger>}
               <TabsTrigger value="photos" className="text-xs">{t('tabs.photos')}</TabsTrigger>
             </TabsList>
 
@@ -2683,11 +2645,6 @@ export function PropertyDetailModal() {
             {/* ── Notes Tab ── */}
             <TabsContent value="notes" className="mt-3">
               <PropertyNotesFeed propertyId={property.id} />
-            </TabsContent>
-
-            {/* ── Verification Tab ── */}
-            <TabsContent value="inspections" className="mt-3">
-              <VerificationHistory propertyId={String(property.id)} enabled={activeTab === 'inspections'} />
             </TabsContent>
 
             {/* ── Assignments Tab ── */}

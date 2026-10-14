@@ -791,7 +791,7 @@ export default function DashboardPage() {
           }
           icon={ClipboardCheck}
           loading={trellisLoading}
-          onClick={() => navigate('/trellis-tasks')}
+          onClick={canAccessView('trellis-sync', effectiveUser) ? () => navigate('/api-sync') : undefined}
           hint={
             trellisError
               ? t('tiles.trellisErrorHint', { message: trellisError instanceof Error ? trellisError.message : String(trellisError) })

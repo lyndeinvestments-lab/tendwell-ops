@@ -61,18 +61,18 @@ const ROLE_VIEWS: Record<string, string[]> = {
     'dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking',
     'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
     'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report',
-    'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity',
+    'inspections', 'cleaners', 'issues', 'alerts', 'activity',
     'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'north-star',
   ],
   operations: [
     'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters',
-    'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics',
+    'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics',
   ],
   cleaning: ['linen-tracker', 'linen-inventory'],
   viewer: [
     'dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list',
     'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties',
-    'revenue-report', 'property-verifications', 'inspections', 'alerts', 'activity',
+    'revenue-report', 'inspections', 'alerts', 'activity',
     'financial-dashboard',
   ],
 };

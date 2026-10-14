@@ -45,10 +45,10 @@ const ALLOWED_FORBIDDEN_READ = (rel: string, url: string) => rel === 'property_o
 
 const PAGES: Record<string, string[]> = {
   cleaning: ['/linen-tracker', '/access-codes', '/ac-filters', '/account'],
-  inspector: ['/linen-tracker', '/linen-inventory', '/damaged-linens', '/access-codes', '/ac-filters', '/property-verifications',
+  inspector: ['/linen-tracker', '/linen-inventory', '/damaged-linens', '/access-codes', '/ac-filters',
     '/inspections', '/lost-items', '/incoming-shipments', '/laundry-weigh-ins', '/tasks', '/issues', '/cleaners', '/account'],
   supervisor: ['/property-list', '/linen-tracker', '/linen-inventory', '/damaged-linens', '/access-codes', '/ac-filters',
-    '/property-verifications', '/inspections', '/lost-items', '/incoming-shipments', '/laundry-weigh-ins', '/tasks',
+    '/inspections', '/lost-items', '/incoming-shipments', '/laundry-weigh-ins', '/tasks',
     '/issues', '/cleaners', '/cleaner-metrics', '/alerts', '/vendor-invoicing', '/account'],
   // Control group: finance staff must keep EVERYTHING (money pages load, the
   // modal shows money). Forbidden-read checks don't apply to this role.

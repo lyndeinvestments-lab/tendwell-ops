@@ -91,7 +91,7 @@ export const dashboardEn = {
     trellisDueToday: 'today',
     trellisDue: 'due {{date}}',
     trellisErrorHint: "Couldn't load Trellis snapshot: {{message}}",
-    trellisHint: 'Open Trellis tasks due today (America/Chicago), counted from the synced snapshot. Click for the full task tracker.',
+    trellisHint: 'Open Trellis tasks due today (America/Chicago), counted from the synced snapshot. Admins can click through to API Sync.',
   },
   activityMetrics: {
     newProperties: 'New Properties ({{period}})',

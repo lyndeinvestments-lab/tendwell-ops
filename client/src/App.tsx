@@ -66,7 +66,6 @@ const ContactsPage = lazyRetry(() => import("@/pages/contacts"))
 const SettingsPage = lazyRetry(() => import("@/pages/settings"));
 const AccountPage = lazyRetry(() => import("@/pages/account"));
 // RevenueReportPage retired — /revenue-report now redirects to /pro-forma (Pro Forma wrapper; By Client available as a tab)
-const PropertyVerificationsPage = lazyRetry(() => import("@/pages/property-verifications"));
 const InspectionsPage = lazyRetry(() => import("@/pages/inspections"));
 const ReviewsPage = lazyRetry(() => import("@/pages/reviews"));
 const CleanersPage = lazyRetry(() => import("@/pages/cleaners"));
@@ -87,7 +86,6 @@ const IssueSharePage = lazyRetry(() => import("@/pages/issue-share"));
 const InspectionSharePage = lazyRetry(() => import("@/pages/inspection-share"));
 const IncomingShipmentsPage = lazyRetry(() => import("@/pages/incoming-shipments"));
 const TrellisSyncPage = lazyRetry(() => import("@/pages/trellis-sync"));
-const TrellisTasksPage = lazyRetry(() => import("@/pages/trellis-tasks"));
 const InvoicingPage = lazyRetry(() => import("@/pages/invoicing"));
 const VendorInvoicingPage = lazyRetry(() => import("@/pages/vendor-invoicing"));
 const OwnerPortalPage = lazyRetry(() => import("@/pages/owner-portal"));
@@ -280,7 +278,7 @@ function AppRoutes() {
         <Route path="/account">{() => <AccountPage />}</Route>
         <Route path="/notifications">{() => <Redirect to="/account" />}</Route>
         <Route path="/revenue-report">{() => <Redirect to="/pro-forma" />}</Route>
-        <Route path="/property-verifications">{() => <GuardedRoute viewId="property-verifications" component={PropertyVerificationsPage} />}</Route>
+        <Route path="/property-verifications">{() => <Redirect to="/property-list" />}</Route>
         <Route path="/inspections">{() => <GuardedRoute viewId="inspections" component={InspectionsPage} />}</Route>
         <Route path="/reviews">{() => <GuardedRoute viewId="reviews" component={ReviewsPage} />}</Route>
         <Route path="/laundry-weigh-ins">{() => <GuardedRoute viewId="laundry-weigh-ins" component={LaundryWeighInsPage} />}</Route>
@@ -304,7 +302,7 @@ function AppRoutes() {
         {/* The cleaning company's own invoice (Operations → Invoicing). Data
             comes only from api/vendor-invoices/*, which allow-lists fields. */}
         <Route path="/vendor-invoicing">{() => <GuardedRoute viewId="vendor-invoicing" component={VendorInvoicingPage} />}</Route>
-        <Route path="/trellis-tasks">{() => <GuardedRoute viewId="trellis-tasks" component={TrellisTasksPage} />}</Route>
+        <Route path="/trellis-tasks">{() => <Redirect to="/api-sync" />}</Route>
         <Route path="/onboard" component={OnboardingFormPage} />
         <Route path="/onboarding" component={OnboardingIntakePage} />
         <Route path="/weigh-in" component={LaundryWeighInPage} />

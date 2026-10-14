@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
+export { stripTrellisRegionTag, trellisNameDiffers } from '@/lib/trellis-names'
 
 const KEY = ['/supabase/trellis-sync'] as const
 
@@ -100,6 +101,29 @@ export interface BreezewayExceptionRow {
 export interface OpsPropertyOption {
   id: number
   name: string
+  trellis_id: string | null
+}
+
+export interface PropertyAliasRow {
+  id: string
+  property_id: number
+  alias: string
+  trellis_id: string | null
+  note: string | null
+  created_by: string | null
+  created_at: string | null
+}
+
+/** Result of the link_trellis_property RPC (20261014b). */
+export interface LinkTrellisResult {
+  mode: 'primary' | 'alias' | 'noop'
+  property_id: number
+  property_name: string
+  alias_id?: string
+  alias?: string
+  tasks_repointed?: number
+  reservations_repointed?: number
+  reviews_repointed?: number
 }
 
 export function useTrellisSync() {
@@ -230,7 +254,7 @@ export function useTrellisSync() {
     queryFn: async (): Promise<OpsPropertyOption[]> => {
       const { data, error } = await supabase
         .from('properties')
-        .select('id, name')
+        .select('id, name, trellis_id')
         .is('deleted_at', null)
         .order('name')
       if (error) throw error
@@ -254,6 +278,68 @@ export function useTrellisSync() {
       return (data ?? []) as DismissalRow[]
     },
     refetchOnWindowFocus: false,
+  })
+
+  // Every property_aliases row (staff-readable; writes go through the RPCs).
+  const aliases = useQuery({
+    queryKey: [...KEY, 'aliases'],
+    queryFn: async (): Promise<PropertyAliasRow[]> => {
+      const { data, error } = await supabase
+        .from('property_aliases')
+        .select('id, property_id, alias, trellis_id, note, created_by, created_at')
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      return (data ?? []) as PropertyAliasRow[]
+    },
+    refetchOnWindowFocus: false,
+  })
+
+  const invalidateLinkViews = () => {
+    qc.invalidateQueries({ queryKey: [...KEY, 'recon'] })
+    qc.invalidateQueries({ queryKey: [...KEY, 'exceptions'] })
+    qc.invalidateQueries({ queryKey: [...KEY, 'aliases'] })
+    qc.invalidateQueries({ queryKey: [...KEY, 'dismissals'] })
+    invalidateAllPropertyQueries(qc)
+  }
+
+  // "In Trellis, not in Ops" → Link to Ops property. One atomic SECURITY
+  // DEFINER RPC (admin-only): sets properties.trellis_id when the property has
+  // none, otherwise adds a property_aliases row and re-points the existing
+  // task/reservation snapshot rows. Audit rows are written inside the RPC.
+  // Cast: the RPCs aren't in the generated DB types yet.
+  const linkTrellisProperty = useMutation({
+    mutationFn: async ({ trellisId, propertyId, alias }: { trellisId: string; propertyId: number; alias: string }): Promise<LinkTrellisResult> => {
+      const { data, error } = await (supabase as any).rpc('link_trellis_property', {
+        p_trellis_id: trellisId,
+        p_property_id: propertyId,
+        p_alias: alias,
+      })
+      if (error) throw error
+      return data as LinkTrellisResult
+    },
+    onSuccess: invalidateLinkViews,
+  })
+
+  const unlinkAlias = useMutation({
+    mutationFn: async (aliasId: string) => {
+      const { error } = await (supabase as any).rpc('unlink_trellis_alias', { p_alias_id: aliasId })
+      if (error) throw error
+    },
+    onSuccess: invalidateLinkViews,
+  })
+
+  // Mapping table → "Use Trellis name": rename the Ops property.
+  const renameProperty = useMutation({
+    mutationFn: async ({ opsId, oldName, newName }: { opsId: number; oldName: string; newName: string }) => {
+      const { error } = await supabase.from('properties').update({ name: newName }).eq('id', opsId)
+      if (error) throw error
+      await logPropertyEdit(opsId, 'name', oldName, newName, newName)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...KEY, 'recon'] })
+      qc.invalidateQueries({ queryKey: [...KEY, 'exceptions'] })
+      invalidateAllPropertyQueries(qc)
+    },
   })
 
   // Link an Ops property to a Trellis property (confirm a suggested/changed match).
@@ -394,7 +480,7 @@ export function useTrellisSync() {
     },
   })
 
-  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, matchBreezeway, dismissBreezeway, triggerSync, cancelSync }
+  return { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, aliases, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, linkTrellisProperty, unlinkAlias, renameProperty, matchBreezeway, dismissBreezeway, triggerSync, cancelSync }
 }
 
 // Workflows tab pulls task rows on demand (one query per workflow).

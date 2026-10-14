@@ -13,7 +13,6 @@ export const EVENT_VIEW_REQUIREMENT: Record<string, string> = {
   watcher_update: 'tasks',
   list_added: 'tasks',
   issue_logged: 'issues',
-  verification_due: 'property-verifications',
   onboarding_submitted: 'onboarding-queue',
   follow_up_due: 'contacts',
   property_note_mention: 'property-list',
@@ -53,7 +52,6 @@ export const EVENT_PREF_FIELD: Record<string, string> = {
   watcher_update: 'notify_watcher_update',
   list_added: 'notify_list_added',
   issue_logged: 'notify_issue_logged',
-  verification_due: 'notify_verification_due',
   onboarding_submitted: 'notify_onboarding_submitted',
   follow_up_due: 'notify_follow_up_due',
   property_note_mention: 'notify_property_note_mention',
@@ -128,10 +126,10 @@ export async function getStaffRole(sb: SupabaseClient, email: string): Promise<s
 
 // Resolve user's allowed views (matches auth.tsx logic)
 const ROLE_VIEWS_FALLBACK: Record<string, string[]> = {
-  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'onboarding-queue'],
-  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'property-verifications', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'onboarding-queue'],
+  admin: ['dashboard', 'pipeline', 'contacts', 'quote-sheet', 'cost-tracking', 'property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'settings', 'revenue-report', 'inspections', 'cleaners', 'issues', 'alerts', 'activity', 'financial-dashboard', 'tasks', 'report', 'cleaner-metrics', 'onboarding-queue'],
+  operations: ['property-list', 'linen-tracker', 'linen-inventory', 'access-codes', 'ac-filters', 'inspections', 'cleaners', 'issues', 'alerts', 'tasks', 'cleaner-metrics', 'onboarding-queue'],
   cleaning: ['linen-tracker', 'linen-inventory'],
-  viewer: ['dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list', 'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'revenue-report', 'property-verifications', 'inspections', 'alerts', 'activity', 'financial-dashboard'],
+  viewer: ['dashboard', 'pipeline', 'contacts', 'cost-tracking', 'property-list', 'linen-tracker', 'ac-filters', 'master-list', 'pro-forma', 'previous-properties', 'revenue-report', 'inspections', 'alerts', 'activity', 'financial-dashboard'],
 }
 
 export interface AppUserMin {
@@ -176,7 +174,6 @@ export interface NotifPrefs {
   notify_watcher_update: boolean
   notify_list_added: boolean
   notify_issue_logged: boolean
-  notify_verification_due: boolean
   notify_onboarding_submitted: boolean
   notify_follow_up_due: boolean
   notify_property_note_mention: boolean
@@ -193,7 +190,8 @@ export interface NotifPrefs {
 // Effective preferences for a user with no notification_preferences row.
 // MUST mirror the column defaults on the notification_preferences table so a
 // user is treated identically whether or not their row has been created yet.
-// verification_due / follow_up_due are opt-in events → default false.
+// follow_up_due is an opt-in event → default false. (notify_verification_due
+// is a leftover column, unused since Property Verifications was removed.)
 export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   email_enabled: true,
   notify_task_assigned: true,
@@ -202,7 +200,6 @@ export const DEFAULT_NOTIF_PREFS: Omit<NotifPrefs, 'user_id'> = {
   notify_watcher_update: true,
   notify_list_added: true,
   notify_issue_logged: true,
-  notify_verification_due: false,
   notify_onboarding_submitted: true,
   notify_follow_up_due: false,
   notify_property_note_mention: true,
@@ -299,7 +296,7 @@ export function filterRecipients(
     const explicit = prefsByUser.get(u.id)
     if (!explicit && (u.role === 'cleaning' || u.role === 'cleaner')) return false
     // Any other user with no row is treated as the table defaults (NOT a
-    // blanket "send all") so opt-in events like follow_up_due / verification_due
+    // blanket "send all") so opt-in events like follow_up_due
     // stay off until enabled. Matches the Settings UI's effective-defaults.
     const prefs = explicit ?? { user_id: u.id, ...DEFAULT_NOTIF_PREFS }
     if (!prefs.email_enabled) return false

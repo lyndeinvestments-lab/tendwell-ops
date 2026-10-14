@@ -9,7 +9,9 @@
 // Effective defaults for a user with no notification_preferences row. Mirrors
 // the notification_preferences column defaults (and DEFAULT_NOTIF_PREFS in
 // api/notify/_lib.ts) so the UI shows exactly the state the server will apply
-// when no explicit row exists. verification_due / follow_up_due are opt-in.
+// when no explicit row exists. follow_up_due is opt-in. (The
+// notify_verification_due column still exists but is unused since the
+// Property Verifications page was removed on 2026-10-14.)
 export const DEFAULT_NOTIF_PREFS = {
   email_enabled: true,
   digest_frequency: 'instant',
@@ -19,7 +21,6 @@ export const DEFAULT_NOTIF_PREFS = {
   notify_watcher_update: true,
   notify_list_added: true,
   notify_issue_logged: true,
-  notify_verification_due: false,
   notify_onboarding_submitted: true,
   notify_follow_up_due: false,
   notify_property_note_mention: true,
@@ -59,7 +60,6 @@ export const NOTIF_EVENT_DEFS: NotifEventDef[] = [
   { field: 'notify_watcher_update',        label: 'Watcher updates',              view: 'tasks' },
   { field: 'notify_list_added',            label: 'Added to a task list',         view: 'tasks' },
   { field: 'notify_issue_logged',          label: 'New issue logged',             view: 'issues' },
-  { field: 'notify_verification_due',      label: 'Verification due',             view: 'property-verifications' },
   { field: 'notify_onboarding_submitted',  label: 'Onboarding submitted',         view: 'onboarding-queue' },
   { field: 'notify_follow_up_due',         label: 'Follow-up due',                view: 'contacts' },
   { field: 'notify_property_note_mention', label: 'Mentioned in a property note', view: 'property-list' },
