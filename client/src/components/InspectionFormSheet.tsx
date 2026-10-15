@@ -9,13 +9,60 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin, Link2, Check } from 'lucide-react'
+import { Star, Camera, X, Calendar, ClipboardCheck, Building2, Search, Wifi, KeyRound, Wind, CheckCircle2, Trash2, MapPin, Link2, Check, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import type { TFunc } from '@/lib/i18n/t'
+import {
+  EMPTY_AUTO_FIELD,
+  applyHint,
+  autoField,
+  cleanLabel,
+  cleanerAutoFilled,
+  savedField,
+  userSetField,
+  type AutoField,
+  type InspectionPrefill,
+} from '@/lib/trellis-inspections'
+import { TRELLIS_INSPECTIONS_KEY } from '@/components/TrellisInspectionsPanel'
 
 type Mode = 'log' | 'schedule'
+
+/** The Trellis clean an inspection on (property, date) rates: same rule as the inspections_attribute_clean trigger. */
+type CleanHint = {
+  trellis_task_id: string
+  clean_date: string
+  clean_kind: string | null
+  clean_title: string | null
+  is_tendwell: boolean
+  cleaner_id: string | null
+  cleaner_name: string | null
+} | null
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/** "Oct 8" for a YYYY-MM-DD date (local, no UTC shift). */
+function shortDate(iso: string | null): string {
+  if (!iso || !ISO_DATE.test(iso)) return iso ?? ''
+  return format(new Date(`${iso}T00:00:00`), 'MMM d')
+}
+
+function hintQueryOptions(propertyId: number | null, date: string) {
+  return {
+    queryKey: ['/supabase/inspection-clean-hint', propertyId, date] as const,
+    queryFn: async (): Promise<CleanHint> => {
+      const { data, error } = await supabase.rpc('inspection_rated_clean_hint', {
+        p_property_id: propertyId as number,
+        p_anchor: date,
+      })
+      if (error) throw error
+      return (data?.[0] as CleanHint) ?? null
+    },
+    staleTime: 60_000,
+    retry: false,
+  }
+}
 type Status = 'scheduled' | 'completed' | 'skipped'
 type Urgency = 'none' | 'low' | 'medium' | 'high' | 'critical'
 
@@ -58,6 +105,9 @@ export interface ExistingInspection {
   supplies_score: number | null
   exterior_score: number | null
   share_token?: string | null
+  trellis_task_id?: string | null
+  rated_clean_task_id?: string | null
+  cleaner_auto_filled?: boolean | null
 }
 
 interface Props {
@@ -67,9 +117,11 @@ interface Props {
   onDelete?: (inspection: ExistingInspection) => void
   /** Pre-select this inspector on new inspections (e.g. the logged-in inspector). */
   defaultInspectorId?: string | null
+  /** New inspection rating a Trellis inspection task ("From Trellis" tab). Ignored when `existing` is set. */
+  prefill?: InspectionPrefill | null
 }
 
-export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, defaultInspectorId }: Props) {
+export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, defaultInspectorId, prefill }: Props) {
   const { t } = useLocale('inspections')
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -83,10 +135,24 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
   const [propertyId, setPropertyId] = useState<number | null>(null)
   const [propertySearch, setPropertySearch] = useState('')
   const [showPropertyList, setShowPropertyList] = useState(false)
-  const [cleanerId, setCleanerId] = useState<string | null>(null)
+  // Cleaner + last-cleaned track whether the app filled them (from Trellis)
+  // or a person did, so a cleaner the user clears is never filled back in.
+  const [cleaner, setCleaner] = useState<AutoField>(EMPTY_AUTO_FIELD)
   const [inspectorId, setInspectorId] = useState<string | null>(null)
   const [date, setDate] = useState(today)
-  const [lastCleanedOn, setLastCleanedOn] = useState('')
+  const [lastCleaned, setLastCleaned] = useState<AutoField>(EMPTY_AUTO_FIELD)
+  const cleanerId = cleaner.value
+  const lastCleanedOn = lastCleaned.value ?? ''
+  const [trellisTaskId, setTrellisTaskId] = useState<string | null>(null)
+  const [trellisTitle, setTrellisTitle] = useState<string | null>(null)
+  // property|date the form opened with: hints only apply to a saved row
+  // after its property or date changes (null = always apply).
+  const initialKeyRef = useRef<string | null>(null)
+  const appliedHintKeyRef = useRef<string | null>(null)
+  // Bumped by the (re)initialize effect; the hint effect waits for the render
+  // that carries the fresh state so it never applies a hint to stale fields.
+  const initVersionRef = useRef(0)
+  const [initVersion, setInitVersion] = useState(0)
   const [scores, setScores] = useState<Record<ScoreKey, number | null>>({
     overall_score: null,
     cleanliness_score: null,
@@ -117,15 +183,21 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
     // sheet is reused for another row without closing first.
     photos.forEach(p => URL.revokeObjectURL(p.preview))
     setPhotos([])
+    appliedHintKeyRef.current = null
+    setInitVersion(++initVersionRef.current)
     if (existing) {
+      const existingDate = existing.status === 'scheduled' && existing.scheduled_for
+        ? existing.scheduled_for
+        : (existing.inspected_at ?? today)
       setMode(existing.status === 'scheduled' ? 'schedule' : 'log')
       setPropertyId(existing.property_id)
-      setCleanerId(existing.cleaner_id)
+      setCleaner(savedField(existing.cleaner_id, !!existing.cleaner_auto_filled))
       setInspectorId(existing.inspector_id)
-      setDate(existing.status === 'scheduled' && existing.scheduled_for
-        ? existing.scheduled_for
-        : (existing.inspected_at ?? today))
-      setLastCleanedOn(existing.last_cleaned_on ?? '')
+      setDate(existingDate)
+      setLastCleaned(savedField(existing.last_cleaned_on ?? null))
+      setTrellisTaskId(existing.trellis_task_id ?? null)
+      setTrellisTitle(null)
+      initialKeyRef.current = `${existing.property_id}|${existingDate}`
       setScores({
         overall_score: existing.overall_score,
         cleanliness_score: existing.cleanliness_score,
@@ -138,14 +210,17 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
       setUrgency(existing.reinspect_urgency ?? 'none')
       setReinspectBy(existing.reinspect_by ?? '')
     } else {
+      initialKeyRef.current = null
       setMode('log')
-      setPropertyId(null)
+      setPropertyId(prefill?.propertyId ?? null)
       setPropertySearch('')
       setShowPropertyList(false)
-      setCleanerId(null)
-      setInspectorId(defaultInspectorId ?? null)
-      setDate(today)
-      setLastCleanedOn('')
+      setCleaner(prefill ? autoField(prefill.cleanerId) : EMPTY_AUTO_FIELD)
+      setInspectorId(prefill ? prefill.inspectorId : (defaultInspectorId ?? null))
+      setDate(prefill?.date ?? today)
+      setLastCleaned(prefill ? autoField(prefill.lastCleanedOn) : EMPTY_AUTO_FIELD)
+      setTrellisTaskId(prefill?.trellisTaskId ?? null)
+      setTrellisTitle(prefill?.trellisTitle ?? null)
       setScores({ overall_score: null, cleanliness_score: null, linens_score: null, supplies_score: null, exterior_score: null })
       setNotes('')
       setExistingPhotoUrls([])
@@ -153,7 +228,37 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
       setReinspectBy('')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, existing])
+  }, [open, existing, prefill])
+
+  // Which Trellis clean this inspection rates (property + date set).
+  const hintKey = propertyId != null && ISO_DATE.test(date) ? `${propertyId}|${date}` : null
+  const hintAllowed = hintKey != null && hintKey !== initialKeyRef.current
+  const hintQuery = useQuery({
+    ...hintQueryOptions(propertyId, date),
+    enabled: open && hintKey != null,
+  })
+  const hint = hintQuery.data
+  const hintLabel = hint === undefined
+    ? null
+    : cleanLabel({
+        taskId: hint?.trellis_task_id ?? null,
+        date: hint?.clean_date ?? null,
+        isTendwell: hint?.is_tendwell ?? null,
+        cleanerName: hint?.cleaner_name ?? null,
+      })
+
+  // Prefill cleaner / last-cleaned from the hint, once per property|date, and
+  // only where the app (not a person) owns the field. A saved row only picks
+  // up hints after its property or date changes.
+  useEffect(() => {
+    if (!open || initVersion !== initVersionRef.current) return
+    if (!hintAllowed || hintKey == null) return
+    if (hintQuery.isFetching || hintQuery.isError || hint === undefined) return
+    if (appliedHintKeyRef.current === hintKey) return
+    appliedHintKeyRef.current = hintKey
+    setCleaner(s => applyHint(s, hint?.is_tendwell ? hint.cleaner_id : null))
+    setLastCleaned(s => applyHint(s, hint?.clean_date ?? null))
+  }, [open, initVersion, hintAllowed, hintKey, hint, hintQuery.isFetching, hintQuery.isError])
 
   useEffect(() => {
     return () => photos.forEach(p => URL.revokeObjectURL(p.preview))
@@ -231,6 +336,29 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
         notes: notes.trim() || null,
       }
 
+      // Link the Trellis clean being rated ourselves (same rule as the
+      // inspections_attribute_clean trigger). Writing rated_clean_task_id
+      // stops the trigger from filling a cleaner the user cleared on purpose.
+      // A saved row keeps its link unless its property or date changed.
+      if (!isEditing || `${propertyId}|${date}` !== initialKeyRef.current) {
+        let ratedClean: string | null | undefined
+        try {
+          const h = await queryClient.fetchQuery(hintQueryOptions(propertyId, date))
+          ratedClean = h?.trellis_task_id ?? null
+        } catch {
+          // Hint unavailable: fall back to what the Trellis panel knew, or
+          // leave the column to the trigger.
+          ratedClean = prefill && !isEditing && prefill.propertyId === propertyId && prefill.date === date
+            ? prefill.ratedCleanTaskId
+            : undefined
+        }
+        if (ratedClean !== undefined) row.rated_clean_task_id = ratedClean
+      }
+      if (!isEditing || cleanerId !== (existing!.cleaner_id ?? null)) {
+        row.cleaner_auto_filled = cleanerAutoFilled(cleaner)
+      }
+      if (!isEditing && trellisTaskId) row.trellis_task_id = trellisTaskId
+
       if (targetStatus === 'scheduled') {
         row.scheduled_for = date
         row.inspected_at = date
@@ -262,7 +390,13 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
           .insert(row)
           .select('id')
           .single()
-        if (error) throw error
+        if (error) {
+          // inspections_trellis_task_id_key: someone already rated this Trellis task.
+          if (error.code === '23505' && /trellis_task_id/.test(error.message)) {
+            throw new Error(t('form.toastAlreadyRated'))
+          }
+          throw error
+        }
         inspectionId = inserted.id as string
       }
 
@@ -307,11 +441,16 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
       // bump it too so a fresh inspection log surfaces on /dashboard
       // immediately instead of waiting for the cache window to expire.
       queryClient.invalidateQueries({ queryKey: ['/supabase/dashboard-inspections'] })
+      // "From Trellis" tab: a rated task moves from To rate to Rated.
+      queryClient.invalidateQueries({ queryKey: TRELLIS_INSPECTIONS_KEY })
       onOpenChange(false)
     },
     onError: (e: Error) => {
       toast({ title: t('form.toastSaveFailed'), description: e.message, variant: 'destructive' })
       setSubmitting(false)
+      if (e.message === t('form.toastAlreadyRated')) {
+        queryClient.invalidateQueries({ queryKey: TRELLIS_INSPECTIONS_KEY })
+      }
     },
   })
 
@@ -375,6 +514,12 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
                 <><Link2 className="w-4 h-4" /> {existing.status === 'scheduled' ? t('shareLink.copyInspection') : t('shareLink.copyReport')}</>
               )}
             </button>
+          )}
+
+          {trellisTaskId && trellisTitle && (
+            <div className="rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-xs font-medium text-primary">
+              {t('form.fromTrellis', { title: trellisTitle })}
+            </div>
           )}
 
           {/* Mode toggle — only for fresh creates */}
@@ -465,7 +610,7 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
               <Input
                 type="date"
                 value={lastCleanedOn}
-                onChange={e => setLastCleanedOn(e.target.value)}
+                onChange={e => setLastCleaned(userSetField(e.target.value || null))}
                 className="h-11"
                 placeholder={t('form.lastCleanedPlaceholder')}
               />
@@ -475,20 +620,46 @@ export function InspectionFormSheet({ open, onOpenChange, existing, onDelete, de
             </div>
           </div>
 
+          {/* Which clean this inspection rates (from Trellis) */}
+          {hintKey != null && !hintQuery.isError && (
+            <div
+              className={cn(
+                'flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
+                hintLabel?.kind === 'cleaner' || hintLabel?.kind === 'crew'
+                  ? 'border-info/40 bg-info/10 text-foreground'
+                  : 'border-dashed text-muted-foreground',
+              )}
+              data-testid="inspection-clean-hint"
+            >
+              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {hintLabel == null ? t('form.hintLoading')
+                  : hintLabel.kind === 'cleaner' ? t('form.hintRating', { date: shortDate(hintLabel.date), name: hintLabel.cleanerName ?? '' })
+                  : hintLabel.kind === 'crew' ? t('form.hintCrew', { date: shortDate(hintLabel.date) })
+                  : hintLabel.kind === 'not_tendwell' ? t('form.hintNotTendwell', { date: shortDate(hintLabel.date) })
+                  : t('form.hintNone')}
+              </span>
+            </div>
+          )}
+
           {/* People */}
           <div className="grid grid-cols-1 gap-3">
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{t('form.cleanerFieldLabel')}</Label>
               <select
                 value={cleanerId ?? ''}
-                onChange={e => setCleanerId(e.target.value || null)}
+                onChange={e => setCleaner(userSetField(e.target.value || null))}
                 className="w-full h-11 rounded-md border border-input bg-background px-3 text-sm"
+                data-testid="select-inspection-cleaner"
               >
                 <option value="">{t('form.notSpecified')}</option>
                 {cleaners.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}
               </select>
+              {cleanerAutoFilled(cleaner) && (
+                <p className="text-xs text-muted-foreground">{t('form.cleanerAutoNote')}</p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-sm font-medium">{t('form.inspectorFieldLabel')}</Label>
