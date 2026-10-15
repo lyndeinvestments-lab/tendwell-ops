@@ -2,11 +2,18 @@ import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { supabase, logActivity } from '@/lib/supabase'
-import { useAuth } from '@/lib/auth'
+import { useAuth, canEditView } from '@/lib/auth'
+import { useCanViewFinancials } from '@/lib/financial-access'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
-import { useCleaners, CLEANERS_QUERY_KEY } from '@/hooks/use-cleaners'
+import { useCleaners, useCleanerPayRates, CLEANERS_QUERY_KEY, type Cleaner } from '@/hooks/use-cleaners'
+import { useTrellisRoster, useRosterDismissals, useCrewLogins, CREW_LOGINS_QUERY_KEY, type LoginRow } from '@/hooks/use-cleaner-trellis'
+import { cleanerStatus, countByStatus, crewLoginsFor, filterCleanersByStatus, type StatusFilter } from '@/lib/cleaner-metrics'
+import { OffboardDialog } from '@/components/cleaners/OffboardDialog'
+import { TrellisLinkDialog } from '@/components/cleaners/TrellisLinkDialog'
+import { UnlinkedRosterPanel } from '@/components/cleaners/UnlinkedRosterPanel'
+import { StatusBadge } from '@/components/StatusBadge'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -19,7 +26,7 @@ import {
   DndContext, DragEndEvent, PointerSensor, KeyboardSensor, useSensor, useSensors,
   useDroppable, useDraggable,
 } from '@dnd-kit/core'
-import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2, Pencil } from 'lucide-react'
+import { Users2, Plus, Search, X, ChevronLeft, ChevronRight, Download, Trash2, Mail, Loader2, Pencil, Link2, UserX, UserCheck, KeyRound } from 'lucide-react'
 import { sendInviteEmail } from '@/lib/notify'
 import { roleBadgeClasses } from '@/lib/role-colors'
 import { format as dfFormat, startOfWeek, addDays, isSameDay } from 'date-fns'
@@ -54,7 +61,7 @@ function assignmentStatusLabel(status: string, t: TFunc): string {
 }
 
 // ── Draggable assignment chip ──────────────────────────────────────────────
-function DraggableChip({ assignment, colorClass, fmt, t }: { assignment: any; colorClass: string; fmt: (n: number) => string; t: TFunc }) {
+function DraggableChip({ assignment, colorClass, fmt, t, showPay }: { assignment: any; colorClass: string; fmt: (n: number) => string; t: TFunc; showPay: boolean }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: assignment.id })
   return (
     <Popover>
@@ -68,7 +75,7 @@ function DraggableChip({ assignment, colorClass, fmt, t }: { assignment: any; co
       <PopoverContent className="w-48 p-2 text-xs space-y-1">
         <p className="font-medium">{(assignment.properties as any)?.name}</p>
         <p className="text-muted-foreground">{(assignment.properties as any)?.address || t('calendar.noAddress')}</p>
-        {assignment.pay_amount && <p>{t('calendar.payLine', { amount: fmt(Number(assignment.pay_amount)) })}</p>}
+        {showPay && assignment.pay_amount && <p>{t('calendar.payLine', { amount: fmt(Number(assignment.pay_amount)) })}</p>}
         <p>{t('calendar.statusLine', { status: assignmentStatusLabel(assignment.status, t) })}</p>
         {assignment.notes && <p className="text-muted-foreground">{assignment.notes}</p>}
       </PopoverContent>
@@ -103,8 +110,16 @@ export default function CleanersPage() {
   const { toast } = useToast()
   const qc = useQueryClient()
   const { openPropertyModal } = usePropertyModal()
-  const { user } = useAuth()
+  const { user, effectiveUser, isEmulating } = useAuth()
+  const canViewFinancials = useCanViewFinancials()
+  const canEdit = !isEmulating && canEditView('cleaners', effectiveUser)
+  // Roster-dependent panels are admin-only: trellis_roster is admin-read (RLS).
+  const isAdmin = effectiveUser?.role === 'admin'
   const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('active')
+  const [statusTarget, setStatusTarget] = useState<{ cleaner: Cleaner; mode: 'offboard' | 'reactivate' } | null>(null)
+  const [linkTarget, setLinkTarget] = useState<Cleaner | null>(null)
+  const [removeLoginTarget, setRemoveLoginTarget] = useState<{ cleaner: Cleaner; logins: LoginRow[] } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [detailCleaner, setDetailCleaner] = useState<any>(null)
@@ -140,6 +155,19 @@ export default function CleanersPage() {
   )
 
   const { data: cleaners, isLoading } = useCleaners()
+  const { data: payRates } = useCleanerPayRates()
+  const payOf = (id: string): number | null => (canViewFinancials ? payRates?.get(id) ?? null : null)
+  const rosterQ = useTrellisRoster(isAdmin)
+  const dismissalsQ = useRosterDismissals(isAdmin)
+  const { data: logins } = useCrewLogins(true)
+  const loginsFor = (c: Cleaner) => crewLoginsFor(c, logins ?? [])
+  const rosterById = useMemo(() => new Map((rosterQ.data ?? []).map(m => [m.user_id, m])), [rosterQ.data])
+  const rosterRemoved = (c: Cleaner | null | undefined) => {
+    if (!c?.trellis_user_id) return false
+    const m = rosterById.get(c.trellis_user_id)
+    return !!m && !m.is_active
+  }
+  const statusCounts = useMemo(() => countByStatus(cleaners ?? []), [cleaners])
 
   const { data: assignments } = useQuery({
     queryKey: ['/supabase/all-assignments'],
@@ -183,15 +211,23 @@ export default function CleanersPage() {
 
   const { mutate: addCleaner, isPending: adding } = useGuardedMutation('cleaners', {
     mutationFn: async () => {
-      const { error } = await supabase.from('cleaners').insert({
+      // pay_rate is not writable by the browser role (20261014e2): finance
+      // staff set it through cleaner_set_pay_rate after the insert.
+      const { data: inserted, error } = await supabase.from('cleaners').insert({
         full_name: newForm.full_name,
         phone: newForm.phone || null,
         email: newForm.email || null,
-        pay_rate: newForm.pay_rate ? parseFloat(newForm.pay_rate) : null,
         notes: newForm.notes || null,
         app_role: newForm.app_role,
-      })
+      }).select('id').single()
       if (error) throw error
+      if (canViewFinancials && newForm.pay_rate && inserted?.id) {
+        const { error: payError } = await supabase.rpc('cleaner_set_pay_rate', {
+          p_cleaner_id: inserted.id,
+          p_pay_rate: parseFloat(newForm.pay_rate),
+        })
+        if (payError) throw new Error(`Cleaner saved, but the pay rate could not be set: ${payError.message}`)
+      }
       // Create app_users entry so they can sign in immediately
       if (newForm.email.trim()) {
         const { error: loginError } = await supabase.rpc('add_cleaner_app_user', {
@@ -369,12 +405,43 @@ export default function CleanersPage() {
     onError: (error: any) => toast({ title: t('toasts.deleteCleanerFailed'), description: error?.message, variant: 'destructive' }),
   })
 
+  // Same path as Settings > Users "remove": delete the crew app_users row(s)
+  // (admin RLS) and write the user_removed audit row.
+  const { mutate: removeLogins, isPending: removingLogin } = useGuardedMutation('cleaners', {
+    mutationFn: async ({ cleaner, logins: rows }: { cleaner: Cleaner; logins: LoginRow[] }) => {
+      for (const l of rows) {
+        const { error } = await supabase.from('app_users').delete().eq('id', l.id)
+        if (error) throw error
+        logActivity({
+          entity_type: 'other',
+          action: 'delete',
+          entity_name: 'user_removed',
+          field_name: l.label || l.google_email || String(l.id),
+          old_value: `${l.role ?? 'unknown'} · ${l.google_email ?? ''}`.trim(),
+          changed_by: user?.label ?? null,
+          metadata: { email: l.google_email, label: l.label, role: l.role, reason: 'cleaner_offboarded', cleaner_id: cleaner.id },
+        })
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: CREW_LOGINS_QUERY_KEY })
+      qc.invalidateQueries({ queryKey: ['/supabase/settings-users'] })
+      toast({ title: t('toasts.loginRemoved') })
+      setRemoveLoginTarget(null)
+    },
+    onError: (error: any) => {
+      if (error?.message === 'edit_blocked') return
+      toast({ title: t('toasts.loginRemoveFailed'), description: error?.message, variant: 'destructive' })
+    },
+  })
+
   const filtered = useMemo(() => {
     if (!cleaners) return []
-    if (!search.trim()) return cleaners
+    const byStatus = filterCleanersByStatus(cleaners, statusFilter)
+    if (!search.trim()) return byStatus
     const q = search.toLowerCase()
-    return cleaners.filter((c: any) => c.full_name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.alt_email?.toLowerCase().includes(q))
-  }, [cleaners, search])
+    return byStatus.filter((c: any) => c.full_name?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q) || c.alt_email?.toLowerCase().includes(q))
+  }, [cleaners, search, statusFilter])
 
   // Color map: cleaner index → color
   const cleanerColorMap = useMemo(() => {
@@ -427,9 +494,16 @@ export default function CleanersPage() {
       )
       const totalPay = monthAssignments.reduce((s: number, a: any) => s + Number(a.pay_amount || 0), 0)
       const avgPay = monthAssignments.length > 0 ? totalPay / monthAssignments.length : 0
-      return { ...c, cleans: monthAssignments.length, totalPay, avgPay }
+      return { ...c, pay_rate: payOf(c.id), cleans: monthAssignments.length, totalPay, avgPay }
     }).sort((a: any, b: any) => b.cleans - a.cleans)
-  }, [cleaners, assignments, reconMonth])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleaners, assignments, reconMonth, payRates, canViewFinancials])
+
+  function offboardedLabel(c: Cleaner): string {
+    const date = c.offboarded_at ? new Date(c.offboarded_at).toLocaleDateString(locale === 'es' ? 'es' : 'en-US') : '?'
+    if (c.offboarded_by === 'trellis-sync') return t('offboard.offboardedBySync', { date })
+    return t('offboard.offboardedBy', { by: c.offboarded_by || '?', date })
+  }
 
   function fmt(n: number) { return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` }
 
@@ -444,7 +518,7 @@ export default function CleanersPage() {
       const expected = c.pay_rate && c.cleans > 0 ? c.pay_rate * c.cleans : null
       return [
         c.full_name || '',
-        c.is_active ? t('table.statusActive') : t('table.statusInactive'),
+        cleanerStatus(c) === 'active' ? t('statusFilter.active') : t('statusFilter.offboarded'),
         c.pay_rate ?? '',
         c.cleans,
         c.totalPay > 0 ? c.totalPay.toFixed(2) : '',
@@ -480,7 +554,10 @@ export default function CleanersPage() {
     moveAssignment({ id: String(active.id), newDate })
   }
 
-  const activeCleaners = (cleaners || []).filter((c: any) => c.is_active)
+  const activeCleaners = (cleaners || []).filter(c => cleanerStatus(c) === 'active')
+  // Pay reconciliation is all money: finance staff only.
+  const viewModes: ViewMode[] = canViewFinancials ? ['list', 'calendar', 'reconciliation'] : ['list', 'calendar']
+  const effectiveViewMode: ViewMode = viewModes.includes(viewMode) ? viewMode : 'list'
 
   return (
     <PageContainer width="full" className="md:h-full md:flex md:flex-col">
@@ -490,17 +567,32 @@ export default function CleanersPage() {
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex items-center border rounded-md overflow-hidden">
-              {(['list', 'calendar', 'reconciliation'] as ViewMode[]).map(v => (
+              {viewModes.map(v => (
                 <button
                   key={v}
                   onClick={() => setViewMode(v)}
-                  className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${viewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                  className={`px-3 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${effectiveViewMode === v ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
                 >
                   {v === 'list' ? t('page.tabRoster') : v === 'calendar' ? t('page.tabCalendar') : <><span className="sm:hidden">{t('page.tabReconciliationShort')}</span><span className="hidden sm:inline">{t('page.tabReconciliation')}</span></>}
                 </button>
               ))}
             </div>
-            {viewMode === 'list' && (
+            {effectiveViewMode === 'list' && (
+              <div className="flex items-center border rounded-md overflow-hidden" role="group" aria-label={t('statusFilter.ariaLabel')}>
+                {(['active', 'offboarded', 'all'] as StatusFilter[]).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setStatusFilter(f)}
+                    aria-pressed={statusFilter === f}
+                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap ${statusFilter === f ? 'bg-primary text-primary-foreground' : 'bg-background hover:bg-muted'}`}
+                    data-testid={`filter-status-${f}`}
+                  >
+                    {t(`statusFilter.${f}`)} <span className="opacity-70 tabular-nums">{statusCounts[f]}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {effectiveViewMode === 'list' && (
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                 <Input
@@ -519,7 +611,7 @@ export default function CleanersPage() {
       />
 
       {/* Roster View */}
-      {viewMode === 'list' && (
+      {effectiveViewMode === 'list' && (
         <div className="overflow-auto flex-1 rounded-2xl border border-border shadow-sm">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-muted/80 backdrop-blur border-b border-border z-20">
@@ -529,18 +621,19 @@ export default function CleanersPage() {
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.email')}</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.altEmail')}</th>
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.role')}</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.payRate')}</th>
+                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('trellis.column')}</th>
+                {canViewFinancials && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.payRate')}</th>}
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.assignments')}</th>
-                <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.avgPay')}</th>
+                {canViewFinancials && <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.avgPay')}</th>}
                 <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3">{t('table.status')}</th>
                 <th className="py-2 px-3 w-16" />
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
-                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(9)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
+                [...Array(5)].map((_, i) => <tr key={i} className="border-b border-border/50">{[...Array(canViewFinancials ? 10 : 8)].map((_, j) => <td key={j} className="py-2 px-3"><Skeleton className="h-4 w-full" /></td>)}</tr>)
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={10}>
+                <tr><td colSpan={canViewFinancials ? 11 : 9}>
                   <EmptyState
                     icon={Users2}
                     title={t('page.emptyTitle')}
@@ -551,6 +644,10 @@ export default function CleanersPage() {
                 filtered.map((c: any) => {
                   const stats = cleanerStats[c.id] || { total: 0, totalPay: 0 }
                   const avgPay = stats.total > 0 ? stats.totalPay / stats.total : 0
+                  const status = cleanerStatus(c)
+                  const crewLogins = loginsFor(c)
+                  const payRate = payOf(c.id)
+                  const rosterMember = c.trellis_user_id ? rosterById.get(c.trellis_user_id) : undefined
                   return (
                     <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer group" onClick={() => setDetailCleaner(c)}>
                       <td className="py-2 px-3 font-medium text-xs" onClick={e => e.stopPropagation()}>
@@ -617,21 +714,68 @@ export default function CleanersPage() {
                           </span>
                         ) : <span className="text-xs text-muted-foreground">-</span>}
                       </td>
-                      <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
-                      <td className="py-2 px-3 text-xs tabular-nums">{stats.total}</td>
-                      <td className="py-2 px-3 text-xs tabular-nums">{avgPay > 0 ? fmt(avgPay) : '—'}</td>
                       <td className="py-2 px-3">
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
-                          {c.is_active ? t('table.statusActive') : t('table.statusInactive')}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {c.trellis_user_id ? (
+                            <span title={rosterMember?.name ? t('trellis.linkedTooltip', { name: rosterMember.name }) : t('trellis.linkedTooltipNoName')}>
+                              <StatusBadge tone="success">{t('trellis.linked')}</StatusBadge>
+                            </span>
+                          ) : (
+                            <span title={t('trellis.notLinkedTooltip')}>
+                              <StatusBadge tone="neutral">{t('trellis.notLinked')}</StatusBadge>
+                            </span>
+                          )}
+                          {c.source === 'trellis' && (
+                            <span title={t('trellis.fromTrellisTooltip')}>
+                              <StatusBadge tone="info">{t('trellis.fromTrellis')}</StatusBadge>
+                            </span>
+                          )}
+                          {rosterMember && !rosterMember.is_active && (
+                            <StatusBadge tone="warning">{t('trellis.memberRemoved')}</StatusBadge>
+                          )}
+                        </div>
+                      </td>
+                      {canViewFinancials && <td className="py-2 px-3 text-xs tabular-nums">{payRate ? fmt(payRate) : '-'}</td>}
+                      <td className="py-2 px-3 text-xs tabular-nums">{stats.total}</td>
+                      {canViewFinancials && <td className="py-2 px-3 text-xs tabular-nums">{avgPay > 0 ? fmt(avgPay) : '-'}</td>}
+                      <td className="py-2 px-3">
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span title={status === 'offboarded' ? offboardedLabel(c) : undefined}>
+                            <StatusBadge tone={status === 'active' ? 'success' : 'neutral'}>
+                              {status === 'active' ? t('statusFilter.active') : t('statusFilter.offboarded')}
+                            </StatusBadge>
+                          </span>
+                          {status === 'offboarded' && crewLogins.length > 0 && (
+                            <span title={t('offboard.stillHasLoginTooltip')}>
+                              <StatusBadge tone="warning">{t('offboard.stillHasLogin')}</StatusBadge>
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 px-3 text-right" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1.5">
-                          {c.email && (
+                          {c.email && status === 'active' && (
                             <button
                               disabled={invitingSendingId === c.id}
                               onClick={async () => {
                                 setInvitingSendingId(c.id)
+                                // A cleaner created from Trellis has no login yet: inviting
+                                // is the deliberate grant. Never touch an existing account
+                                // (add_cleaner_app_user would change a staff member's role).
+                                const hasAnyLogin = (logins ?? []).some(l => (l.google_email ?? '').trim().toLowerCase() === c.email.trim().toLowerCase())
+                                if (!hasAnyLogin) {
+                                  const { error: grantError } = await supabase.rpc('add_cleaner_app_user', {
+                                    p_email: c.email.trim(),
+                                    p_name: c.full_name.trim(),
+                                    p_role: c.app_role === 'inspector' ? 'inspector' : 'cleaning',
+                                  })
+                                  if (grantError) {
+                                    setInvitingSendingId(null)
+                                    toast({ title: t('toasts.inviteFailed'), description: grantError.message, variant: 'destructive' })
+                                    return
+                                  }
+                                  qc.invalidateQueries({ queryKey: CREW_LOGINS_QUERY_KEY })
+                                }
                                 const result = await sendInviteEmail(c.email, c.full_name)
                                 setInvitingSendingId(null)
                                 if (result.ok) {
@@ -651,13 +795,36 @@ export default function CleanersPage() {
                               <span className="hidden sm:inline">{c.invite_sent_at ? t('table.resend') : t('table.invite')}</span>
                             </button>
                           )}
-                          <button
-                            onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
-                            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                            title={t('table.deleteTooltip')}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              onClick={() => setStatusTarget({ cleaner: c, mode: status === 'active' ? 'offboard' : 'reactivate' })}
+                              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors px-1.5 py-0.5 rounded border border-transparent hover:border-border"
+                              title={status === 'active' ? t('offboard.action') : t('offboard.reactivate')}
+                              data-testid={`button-${status === 'active' ? 'offboard' : 'reactivate'}-${c.id}`}
+                            >
+                              {status === 'active' ? <UserX className="w-3 h-3" /> : <UserCheck className="w-3 h-3" />}
+                              <span className="hidden lg:inline">{status === 'active' ? t('offboard.action') : t('offboard.reactivate')}</span>
+                            </button>
+                          )}
+                          {isAdmin && canEdit && (
+                            <button
+                              onClick={() => setLinkTarget(c)}
+                              className="text-muted-foreground hover:text-primary transition-colors px-1 py-0.5"
+                              title={c.trellis_user_id ? t('trellis.changeLink') : t('trellis.link')}
+                              data-testid={`button-link-trellis-${c.id}`}
+                            >
+                              <Link2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {isAdmin && canEdit && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setDeleteConfirmId(c.id) }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                              title={t('table.deleteTooltip')}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -669,8 +836,18 @@ export default function CleanersPage() {
         </div>
       )}
 
+      {effectiveViewMode === 'list' && isAdmin && (
+        <UnlinkedRosterPanel
+          cleaners={cleaners ?? []}
+          roster={rosterQ.data ?? []}
+          dismissed={dismissalsQ.data ?? new Set()}
+          isLoading={rosterQ.isLoading || dismissalsQ.isLoading}
+          isError={rosterQ.isError || dismissalsQ.isError}
+        />
+      )}
+
       {/* Calendar View */}
-      {viewMode === 'calendar' && (
+      {effectiveViewMode === 'calendar' && (
         <div className="overflow-auto flex-1">
           <div className="flex items-center justify-between mb-3">
             <Button variant="outline" size="sm" onClick={() => setWeekOffset(w => w - 1)}><ChevronLeft className="w-4 h-4" /></Button>
@@ -711,6 +888,7 @@ export default function CleanersPage() {
                               colorClass={CLEANER_COLORS[cleanerColorMap[c.id] ?? 0]}
                               fmt={fmt}
                               t={t}
+                              showPay={canViewFinancials}
                             />
                           ))}
                         </DroppableDayCell>
@@ -737,7 +915,7 @@ export default function CleanersPage() {
       )}
 
       {/* Reconciliation View — cleaner-based */}
-      {viewMode === 'reconciliation' && (
+      {effectiveViewMode === 'reconciliation' && canViewFinancials && (
         <div className="space-y-3 flex-1 flex flex-col">
           {/* Summary KPIs */}
           {reconciliationData.length > 0 && (
@@ -781,9 +959,9 @@ export default function CleanersPage() {
                       <tr key={c.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => setDetailCleaner(c)}>
                         <td className="py-2 px-3 font-medium text-xs">{c.full_name}</td>
                         <td className="py-2 px-3">
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${c.is_active ? 'text-success bg-success/10 border-success/25' : 'text-muted-foreground bg-muted border-border'}`}>
-                            {c.is_active ? t('table.statusActive') : t('table.statusInactive')}
-                          </span>
+                          <StatusBadge tone={cleanerStatus(c) === 'active' ? 'success' : 'neutral'}>
+                            {cleanerStatus(c) === 'active' ? t('statusFilter.active') : t('statusFilter.offboarded')}
+                          </StatusBadge>
                         </td>
                         <td className="py-2 px-3 text-xs tabular-nums">{c.pay_rate ? fmt(c.pay_rate) : '—'}</td>
                         <td className="py-2 px-3 text-xs tabular-nums font-medium">{c.cleans}</td>
@@ -852,10 +1030,12 @@ export default function CleanersPage() {
             <p className="text-2xs text-muted-foreground -mt-1">
               {t('invite.emailAccessHint')}
             </p>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground">{t('invite.payRate')}</label>
-              <Input type="number" step="0.01" value={newForm.pay_rate} onChange={e => setNewForm(f => ({ ...f, pay_rate: e.target.value }))} className="mt-1" />
-            </div>
+            {canViewFinancials && (
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">{t('invite.payRate')}</label>
+                <Input type="number" step="0.01" value={newForm.pay_rate} onChange={e => setNewForm(f => ({ ...f, pay_rate: e.target.value }))} className="mt-1" />
+              </div>
+            )}
             <div>
               <label className="text-xs font-medium text-muted-foreground">{t('invite.notes')}</label>
               <Input value={newForm.notes} onChange={e => setNewForm(f => ({ ...f, notes: e.target.value }))} className="mt-1" />
@@ -947,8 +1127,29 @@ export default function CleanersPage() {
                 <div><span className="text-muted-foreground block">{t('table.detailPhone')}</span>{detailCleaner.phone || '—'}</div>
                 <div><span className="text-muted-foreground block">{t('table.detailEmail')}</span>{detailCleaner.email || '—'}</div>
                 <div><span className="text-muted-foreground block">{t('table.detailAltEmail')}</span>{detailCleaner.alt_email || '—'}</div>
-                <div><span className="text-muted-foreground block">{t('table.detailPayRate')}</span>{detailCleaner.pay_rate ? fmt(detailCleaner.pay_rate) : '—'}</div>
-                <div><span className="text-muted-foreground block">{t('table.detailStatus')}</span>{detailCleaner.is_active ? t('table.statusActive') : t('table.statusInactive')}</div>
+                {canViewFinancials && (
+                  <div><span className="text-muted-foreground block">{t('table.detailPayRate')}</span>{payOf(detailCleaner.id) ? fmt(payOf(detailCleaner.id) as number) : '-'}</div>
+                )}
+                <div>
+                  <span className="text-muted-foreground block">{t('table.detailStatus')}</span>
+                  {cleanerStatus(detailCleaner) === 'active' ? t('statusFilter.active') : t('statusFilter.offboarded')}
+                  {cleanerStatus(detailCleaner) === 'offboarded' && (
+                    <span className="block text-2xs text-muted-foreground">{offboardedLabel(detailCleaner)}</span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">{t('trellis.detailLabel')}</span>
+                  {detailCleaner.trellis_user_id
+                    ? (rosterById.get(detailCleaner.trellis_user_id)?.name
+                      ? t('trellis.linkedTooltip', { name: rosterById.get(detailCleaner.trellis_user_id)?.name ?? '' })
+                      : t('trellis.linked'))
+                    : t('trellis.notLinked')}
+                  {rosterRemoved(detailCleaner) && <span className="block text-2xs text-warning">{t('trellis.memberRemoved')}</span>}
+                </div>
+                <div>
+                  <span className="text-muted-foreground block">{t('trellis.detailSource')}</span>
+                  {detailCleaner.source === 'trellis' ? t('trellis.sourceTrellis') : t('trellis.sourceManual')}
+                </div>
               </div>
               <div>
                 <span className="text-xs text-muted-foreground block mb-1">{t('table.assignmentHistory')}</span>
@@ -961,7 +1162,7 @@ export default function CleanersPage() {
                         </button>
                         <span className="text-muted-foreground ml-2">{a.scheduled_date}</span>
                       </div>
-                      <span className="tabular-nums">{a.pay_amount ? fmt(Number(a.pay_amount)) : '—'}</span>
+                      {canViewFinancials && <span className="tabular-nums">{a.pay_amount ? fmt(Number(a.pay_amount)) : '-'}</span>}
                     </div>
                   ))}
                   {(assignments || []).filter((a: any) => a.cleaner_id === detailCleaner.id).length === 0 && (
@@ -971,16 +1172,43 @@ export default function CleanersPage() {
               </div>
             </div>
           )}
-          <DialogFooter>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => { setDeleteConfirmId(detailCleaner?.id); setDetailCleaner(null) }}
-            >
-              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-              {t('table.deleteButton')}
-            </Button>
-          </DialogFooter>
+          {detailCleaner && (canEdit || isAdmin) && (
+            <DialogFooter className="flex-wrap gap-2 sm:gap-2">
+              {canEdit && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setStatusTarget({ cleaner: detailCleaner, mode: cleanerStatus(detailCleaner) === 'active' ? 'offboard' : 'reactivate' }); setDetailCleaner(null) }}
+                >
+                  {cleanerStatus(detailCleaner) === 'active'
+                    ? <><UserX className="w-3.5 h-3.5 mr-1.5" />{t('offboard.action')}</>
+                    : <><UserCheck className="w-3.5 h-3.5 mr-1.5" />{t('offboard.reactivate')}</>}
+                </Button>
+              )}
+              {isAdmin && canEdit && (
+                <Button variant="outline" size="sm" onClick={() => { setLinkTarget(detailCleaner); setDetailCleaner(null) }}>
+                  <Link2 className="w-3.5 h-3.5 mr-1.5" />
+                  {detailCleaner.trellis_user_id ? t('trellis.changeLink') : t('trellis.link')}
+                </Button>
+              )}
+              {isAdmin && canEdit && cleanerStatus(detailCleaner) === 'offboarded' && loginsFor(detailCleaner).length > 0 && (
+                <Button variant="outline" size="sm" onClick={() => { setRemoveLoginTarget({ cleaner: detailCleaner, logins: loginsFor(detailCleaner) }); setDetailCleaner(null) }}>
+                  <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+                  {t('offboard.removeLoginButton')}
+                </Button>
+              )}
+              {isAdmin && canEdit && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => { setDeleteConfirmId(detailCleaner.id); setDetailCleaner(null) }}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  {t('table.deleteButton')}
+                </Button>
+              )}
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1005,6 +1233,43 @@ export default function CleanersPage() {
               onClick={() => deleteConfirmId && deleteCleaner(deleteConfirmId)}
             >
               {deleting ? t('table.deleting') : t('table.deleteButton')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <OffboardDialog
+        cleaner={statusTarget?.cleaner ?? null}
+        mode={statusTarget?.mode ?? 'offboard'}
+        logins={statusTarget ? loginsFor(statusTarget.cleaner) : []}
+        isAdmin={isAdmin}
+        rosterRemoved={rosterRemoved(statusTarget?.cleaner)}
+        onClose={() => setStatusTarget(null)}
+      />
+
+      {isAdmin && (
+        <TrellisLinkDialog
+          cleaner={linkTarget}
+          cleaners={cleaners ?? []}
+          roster={rosterQ.data ?? []}
+          onClose={() => setLinkTarget(null)}
+        />
+      )}
+
+      <Dialog open={!!removeLoginTarget} onOpenChange={v => !v && setRemoveLoginTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>{t('offboard.removeLoginButton')}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t('offboard.removeLoginConfirm', { logins: (removeLoginTarget?.logins ?? []).map(l => `${l.google_email} (${l.role})`).join(', ') })}
+          </p>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRemoveLoginTarget(null)}>{t('common.actions.cancel')}</Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={removingLogin}
+              onClick={() => removeLoginTarget && removeLogins(removeLoginTarget)}
+            >
+              {t('offboard.removeLoginButton')}
             </Button>
           </DialogFooter>
         </DialogContent>

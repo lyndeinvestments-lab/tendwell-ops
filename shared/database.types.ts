@@ -10091,6 +10091,29 @@ export type Database = {
       can_view_financials: { Args: never; Returns: boolean }
       canonical_trellis_property_id: { Args: { p: string }; Returns: string }
       clean_source_cutover: { Args: never; Returns: string }
+      cleaner_create_from_roster: {
+        Args: { p_trellis_user_id: string }
+        Returns: string
+      }
+      cleaner_link_trellis: {
+        Args: { p_cleaner_id: string; p_trellis_user_id: string | null }
+        Returns: undefined
+      }
+      cleaner_pay_rates: {
+        Args: never
+        Returns: {
+          cleaner_id: string
+          pay_rate: number | null
+        }[]
+      }
+      cleaner_set_pay_rate: {
+        Args: { p_cleaner_id: string; p_pay_rate: number | null }
+        Returns: undefined
+      }
+      cleaner_set_status: {
+        Args: { p_cleaner_id: string; p_status: string }
+        Returns: undefined
+      }
       client_invoice_mark_sent: {
         Args: {
           p_actor?: string
