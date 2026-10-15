@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
-import { useToast } from '@/hooks/use-toast'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
 import { Card, CardContent } from '@/components/ui/card'
@@ -19,7 +17,7 @@ import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
 import {
-  TrendingUp, Upload, Calculator, BarChart3, AlertTriangle, ArrowDownToLine, Plus, Sparkles,
+  TrendingUp, Calculator, BarChart3, Sparkles,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import {
@@ -30,6 +28,10 @@ import {
   type ForecastSliders, type DerivedMonth,
 } from '@/lib/forecaster'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
+import {
+  qboRowToMonthRecord, propertiesPerMonth, cleansPerMonth, cleansByPropertyFromEstimate, cutoverMonth, monthKey,
+  type QboPlMonthRow, type EstimatePerProperty,
+} from '@/lib/financials/clean-sources'
 
 function fmt(n: number | null | undefined, prefix = '$') {
   if (n == null) return '—'
@@ -46,21 +48,10 @@ function todayMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
-const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
-
 function priorMonth(yyyymm: string, n = 1): string {
   const [y, m] = yyyymm.split('-').map(Number)
   const d = new Date(y, m - 1 - n, 1)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
-// Bound a date string to YYYY-MM-DD (Supabase timestamptz comparable).
-function monthBounds(yyyymm: string): { start: string; end: string } {
-  const [y, m] = yyyymm.split('-').map(Number)
-  const start = `${y}-${String(m).padStart(2, '0')}-01`
-  const next = new Date(y, m, 1)
-  const end = next.toISOString().slice(0, 10) // exclusive upper bound
-  return { start, end }
 }
 
 
@@ -68,35 +59,33 @@ export default function ForecasterPage() {
   const inWrapper = useInProFormaWrapper()
   const { t } = useLocale('financials')
   usePageTitle(inWrapper ? t('forecaster.page.titleWrapped') : t('forecaster.page.title', undefined, 'Forecaster'))
-  const { toast } = useToast()
-  const qc = useQueryClient()
 
-  // Default to the CURRENT calendar month. We used to default to last month
-  // (when QBO had necessarily landed) but now we synthesize a live estimate
-  // from breezeway_tasks when QBO is empty, so current-month is the correct
-  // default — operators want to see today's expected pro forma.
+  // Default to the CURRENT calendar month: when QuickBooks has not posted the
+  // month yet we show a live estimate from the month's cleans (Trellis,
+  // completed + scheduled) × per-property rates.
   const [selectedMonth, setSelectedMonth] = useState<string>(todayMonth())
   const [seasonal, setSeasonal] = useState(true)
   const [sliders, setSliders] = useState<ForecastSliders>(FORECAST_PRESETS.current)
 
-  // ── Historical proforma rows ─────────────────
-  const { data: rawMonths, isLoading: loadingMonths } = useQuery({
-    queryKey: ['/supabase/proforma_months'],
+  // ── Monthly P&L actuals: qbo_pl_months (nightly QBO sync) ───────────────
+  // Replaces the hand-seeded proforma_months table. Same source as the P&L tab.
+  const { data: qboMonths, isLoading: loadingMonths } = useQuery({
+    queryKey: ['/supabase/qbo-pl-months-forecaster'],
+    staleTime: 300_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('proforma_months')
-        .select('*')
+      const { data, error } = await (supabase as any)
+        .from('qbo_pl_months')
+        .select('month, total_income, total_cogs, total_expenses, income_breakdown, cogs_breakdown')
         .order('month', { ascending: true })
       if (error) throw error
-      return (data || []) as Array<Record<string, any>>
+      return (data || []) as QboPlMonthRow[]
     },
   })
 
   // ── Canonical monthly clean counts (deduped view) ───────────────────────
-  // financial_monthly_cleans is the same deduped view the Financial Overview
-  // uses (Breezeway is system-of-record; Trellis fills in properties absent
-  // from Breezeway). Using this as the authoritative task/clean count keeps
-  // the Forecaster consistent with the Overview for historical months.
+  // financial_monthly_cleans is the same view the Financial Overview uses:
+  // Trellis from the clean_source_cutover month on, the Breezeway archive
+  // before it.
   const { data: monthlyCleans } = useQuery({
     queryKey: ['/supabase/financial-monthly-cleans'],
     queryFn: async () => {
@@ -106,102 +95,69 @@ export default function ForecasterPage() {
     },
   })
 
-  // ── QBO P&L fallback ─────────────────────────
-  // Live Pro Forma actuals come from `proforma_months`. If a row is missing
-  // for the selected month (or its values are zero) we synthesize one from
-  // the same QBO P&L blob the Financial Dashboard reads, keyed under
-  // `app_settings.qbo_pl_data`. Same source label is shown so users know
-  // the variance row is comparing against QBO totals, not a manually-entered
-  // proforma row. Refreshes from the scheduled overnight QBO import.
-  // Latest Breezeway import — surfaced as a small status pill at the top
-  // of the page so operators can see at a glance whether last night's
-  // automated import landed.
-  const { data: lastBreezeway } = useQuery({
-    queryKey: ['/supabase/breezeway-last-import'],
+  // Properties with at least one clean per month (property_monthly_cleans,
+  // same cutover rule). Paged: the view has a few thousand rows.
+  const { data: pmcByMonth } = useQuery({
+    queryKey: ['/supabase/property-monthly-cleans-forecaster'],
     staleTime: 300_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('breezeway_import_log')
-        .select('imported_at, source_label, rows_inserted, cleans_in_batch, deep_cleans_in_batch, notes')
-        .order('imported_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (error) return null
-      return data
+      const rows: Array<{ property_id: number; month: string; cleans: number }> = []
+      const PAGE = 1000
+      for (let from = 0; from < 50_000; from += PAGE) {
+        const { data, error } = await (supabase as any)
+          .from('property_monthly_cleans')
+          .select('property_id, month, cleans')
+          .gt('cleans', 0)
+          .order('month')
+          .order('property_id')
+          .range(from, from + PAGE - 1)
+        if (error) throw error
+        rows.push(...((data || []) as typeof rows))
+        if (!data || data.length < PAGE) break
+      }
+      return { props: propertiesPerMonth(rows), cleans: cleansPerMonth(rows) }
     },
   })
 
-  const { data: qboPL } = useQuery({
-    queryKey: ['/supabase/qbo-pl-data-forecaster'],
+  // Trellis sync status pill + cutover month (both staff-only definer RPCs).
+  const { data: trellisSync } = useQuery({
+    queryKey: ['/supabase/forecaster-trellis-sync'],
     staleTime: 300_000,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'qbo_pl_data')
-        .single()
-      if (error || !data?.value) return null
-      const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value
-      // Monthly entries arrive from the nightly QBO import in either shape:
-      //   long form: { totalIncome, totalCOGS, totalExpenses, netIncome }
-      //   short form: { income, cogs, expenses, netIncome }
-      // The Financial Dashboard only reads netIncome from each entry, so the
-      // short form has been live in production. Forecaster needs the topline
-      // numbers — we accept both shapes and normalize at lookup time.
-      return parsed as {
-        company?: string
-        totalIncome?: number
-        totalCOGS?: number
-        totalExpenses?: number
-        netIncome?: number
-        period?: string
-        monthly?: Record<string, {
-          totalIncome?: number; income?: number
-          totalExpenses?: number; expenses?: number
-          totalCOGS?: number; cogs?: number
-          netIncome?: number
-        }>
-        cogsBreakdown?: Record<string, number>
-        incomeBreakdown?: Record<string, number>
-        expenseBreakdown?: Record<string, number>
-        updated_at?: string
+      const [fresh, cut] = await Promise.all([
+        (supabase as any).rpc('trellis_sync_freshness'),
+        (supabase as any).rpc('clean_source_cutover'),
+      ])
+      const row = !fresh.error && Array.isArray(fresh.data) ? fresh.data[0] : null
+      return {
+        lastSuccessAt: (row?.last_success_at as string | null | undefined) ?? null,
+        lastSuccessStatus: (row?.last_success_status as string | null | undefined) ?? null,
+        cutover: cut.error ? null : cutoverMonth(cut.data as string | null),
       }
     },
   })
 
   const histData: DerivedMonth[] = useMemo(() => {
-    if (!rawMonths) return []
-    // Build a fast lookup for canonical clean counts from the deduped view.
-    // Fall back to proforma_months.tasks only when the month is absent from
-    // the view (e.g. very old months before Breezeway/Trellis data existed).
+    if (!qboMonths) return []
     const cleanMap = new Map<string, number>()
     for (const c of monthlyCleans || []) cleanMap.set(c.month, Number(c.cleans))
-    return rawMonths.map(r => {
-      const canonicalTasks = cleanMap.has(r.month)
-        ? cleanMap.get(r.month)!
-        : Number(r.tasks) || 0
-      return computeDerived({
-        month: r.month,
-        cleaningFee: Number(r.cleaning_fee) || 0,
-        services: Number(r.services) || 0,
-        onboardingRevenue: Number(r.onboarding_revenue) || 0,
-        otherIncome: Number(r.other_income) || 0,
-        contractorPay: Number(r.contractor_pay) || 0,
-        laundry: Number(r.laundry) || 0,
-        leadership: Number(r.leadership) || 0,
-        supplies: Number(r.supplies) || 0,
-        inspections: Number(r.inspections) || 0,
-        trash: Number(r.trash) || 0,
-        otherCOGS: Number(r.other_cogs) || 0,
-        opex: Number(r.opex) || 0,
-        tasks: canonicalTasks,
-        properties: Number(r.properties) || 0,
-      })
+    return qboMonths.map(r => {
+      const key = monthKey(r.month)
+      // financial_monthly_cleans covers the trailing year; older months fall
+      // back to property_monthly_cleans (trailing 14 months).
+      const tasks = cleanMap.get(key) ?? pmcByMonth?.cleans.get(key)
+      return computeDerived(qboRowToMonthRecord(r, tasks, pmcByMonth?.props.get(key)))
     })
-  }, [rawMonths, monthlyCleans])
+  }, [qboMonths, monthlyCleans, pmcByMonth])
 
-  const latestMonth = histData[histData.length - 1]
-  const prevMonth = histData[histData.length - 2]
+  // The forecast starts from the latest COMPLETE month (the current month is
+  // partial in QBO).
+  const completeHist = useMemo(() => histData.filter(m => m.month < todayMonth()), [histData])
+  const latestMonth = completeHist[completeHist.length - 1]
+  const prevMonth = useMemo(() => {
+    const idx = histData.findIndex(m => m.month === selectedMonth)
+    return idx > 0 ? histData[idx - 1] : undefined
+  }, [histData, selectedMonth])
 
   // ── Operational properties for per-property estimate rollup ─────────────
   const { data: properties } = useQuery({
@@ -215,42 +171,30 @@ export default function ForecasterPage() {
     },
   })
 
-  // ── Breezeway-derived cleans for the selected month ─────────────────────
-  // Used to build the LIVE ESTIMATE when QBO has no actuals for the period.
-  // Filters to is_clean / is_deep_clean rows scheduled within the month,
-  // grouped by property so we can multiply by per-property rates.
-  const { data: breezewayMonthRows } = useQuery({
-    queryKey: ['/supabase/breezeway_for_month', selectedMonth],
+  // ── Cleans per property for the selected month ──────────────────────────
+  // compute_monthly_estimate(): from the cutover month on, Tendwell's Trellis
+  // cleans (completed, plus scheduled from today on); before it, the
+  // Breezeway archive. Drives the estimate column and the live estimate.
+  const { data: monthEstimate } = useQuery({
+    queryKey: ['/supabase/compute-monthly-estimate', selectedMonth],
     queryFn: async () => {
-      const { start, end } = monthBounds(selectedMonth)
-      const { data, error } = await supabase
-        .from('breezeway_tasks')
-        .select('property_id, is_clean, is_deep_clean')
-        .gte('due_date', start)
-        .lt('due_date', end)
+      const { data, error } = await (supabase as any).rpc('compute_monthly_estimate', { target_month: `${selectedMonth}-01` })
       if (error) throw error
-      return data || []
+      const row = Array.isArray(data) ? data[0] : data
+      return {
+        perProperty: (row?.per_property ?? []) as EstimatePerProperty[],
+        cleans: Number(row?.cleans_count ?? 0) + Number(row?.deep_cleans_count ?? 0),
+        activeProperties: Number(row?.active_properties ?? 0),
+      }
     },
   })
 
-  // Tasks per property for the period.
-  // Sourced from breezeway_tasks (the real cleaning feed). The legacy
-  // `tasks` table is a separate manual todo tracker and is not the right
-  // source for cleaning volume. We count any breezeway row flagged as a
-  // clean or deep clean for the selected month.
-  const tasksByProperty = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const t of breezewayMonthRows || []) {
-      if (!t.is_clean && !t.is_deep_clean) continue
-      const id = String((t as any).property_id ?? '')
-      if (!id) continue
-      m[id] = (m[id] || 0) + 1
-    }
-    return m
-  }, [breezewayMonthRows])
-
-  const totalPeriodTasks = Object.values(tasksByProperty).reduce((s, n) => s + n, 0)
-  const activePropsInPeriod = Object.keys(tasksByProperty).length
+  const tasksByProperty = useMemo(
+    () => cleansByPropertyFromEstimate(monthEstimate?.perProperty),
+    [monthEstimate],
+  )
+  const totalPeriodTasks = monthEstimate?.cleans ?? 0
+  const activePropsInPeriod = monthEstimate?.activeProperties ?? 0
 
   // Estimated costs (rolled up from per-property cost-tracking estimates)
   const estimates = useMemo(() => {
@@ -258,208 +202,50 @@ export default function ForecasterPage() {
     return rollupEstimates(properties as any[], tasksByProperty)
   }, [properties, tasksByProperty])
 
-  // Pulls the QBO monthly entry that matches a YYYY-MM key. The QBO blob
-  // can key months by either "YYYY-MM" or by a label like "Jan 2026" / "January 2026"
-  // depending on how the import normalizes them — try both.
-  function lookupQboMonth(yyyymm: string): {
-    totalIncome?: number; income?: number
-    totalExpenses?: number; expenses?: number
-    totalCOGS?: number; cogs?: number
-    netIncome?: number
-  } | null {
-    const monthly = qboPL?.monthly
-    if (!monthly) return null
-    if (monthly[yyyymm]) return monthly[yyyymm]
-    const [y, m] = yyyymm.split('-').map(Number)
-    if (!y || !m) return null
-    const shortLabel = `${MONTH_NAMES[m - 1].slice(0, 3)} ${y}` // e.g. "Mar 2026"
-    const longLabel = `${MONTH_NAMES[m - 1]} ${y}`             // e.g. "March 2026"
-    return monthly[shortLabel] || monthly[longLabel] || null
-  }
-
-  // Synthesizes a DerivedMonth from the QBO P&L blob for a single month so
-  // Live Pro Forma can show actuals when proforma_months has no row yet.
-  // Mirrors the parsing the Financial Dashboard uses: total cost is
-  // totalCOGS + totalExpenses, with a netIncome fallback of revenue − cost
-  // when QBO didn't supply it. Per-category splits (laundry vs supplies vs
-  // trash) are not in the QBO summary, so those variance rows fall back to
-  // proforma rows when present and show 0 otherwise.
-  const qboFallbackRow = useMemo<DerivedMonth | null>(() => {
-    const q = lookupQboMonth(selectedMonth)
-    if (!q) return null
-    // Accept either field-name shape — the nightly import currently writes
-    // the short form (income/cogs/expenses) which the Financial Dashboard
-    // tolerates because it only reads netIncome. ?? prefers the long form
-    // when both are present so manual edits keep working.
-    const revenue = Number(q.totalIncome ?? q.income) || 0
-    // Financial Dashboard treats totalCost as COGS + OpEx; match that so the
-    // two pages agree on monthly totals when both render the same QBO blob.
-    const cogs = Number(q.totalCOGS ?? q.cogs) || 0
-    const opex = Number(q.totalExpenses ?? q.expenses) || 0
-    const totalCost = cogs + opex
-    // Treat an all-zero (or sub-dollar) QBO entry as "no data" — the import
-    // wrote a stub, QuickBooks hasn't booked the period yet, or only a stray
-    // residual landed in the period. Showing $0 actuals from such a stub
-    // misleads the user into thinking the business ran zero, so we collapse
-    // the UI back to the "no QBO data" path. We require non-trivial *topline*
-    // signal (revenue + cogs + opex); netIncome alone does not qualify, since
-    // a leftover adjusting entry can leave a small netIncome on a period that
-    // otherwise has no real activity.
-    const EPSILON = 1 // dollars
-    const toplineMagnitude = Math.abs(revenue) + Math.abs(cogs) + Math.abs(opex)
-    if (toplineMagnitude < EPSILON) return null
-    const netIncome = q.netIncome != null ? Number(q.netIncome) : revenue - totalCost
-    const grossProfit = revenue - cogs
-    return {
+  // ── LIVE ESTIMATE (cleans × per-property rates) ─────────────────────────
+  // When QuickBooks has no posted actuals for the month (current/future
+  // months), show the estimate as the month's numbers instead of $0 KPIs.
+  const estimateRow = useMemo<DerivedMonth | null>(() => {
+    if (!estimates) return null
+    const cogs = estimates.contractorPay + estimates.laundry + estimates.supplies + estimates.inspections + estimates.trash
+    if (estimates.revenue === 0 && cogs === 0) return null
+    const d = computeDerived({
       month: selectedMonth,
-      label: `${MONTH_NAMES[Number(selectedMonth.split('-')[1]) - 1].slice(0, 3)} ${selectedMonth.split('-')[0].slice(2)}`,
-      cleaningFee: 0, services: 0, onboardingRevenue: 0, otherIncome: 0,
-      contractorPay: 0, laundry: 0, leadership: 0, supplies: 0,
-      inspections: 0, trash: 0,
-      // Bucket the unallocated COGS into otherCOGS so grand totals are right
-      // even though we can't split it into laundry/supplies/etc.
-      otherCOGS: cogs,
-      opex,
-      tasks: undefined, properties: undefined,
-      revenue,
-      cogs,
-      totalCOGS: cogs,
-      grossProfit,
-      grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
-      netIncome,
-      netMargin: revenue > 0 ? (netIncome / revenue) * 100 : 0,
-    }
-  }, [qboPL, selectedMonth])
+      cleaningFee: estimates.revenue,
+      contractorPay: estimates.contractorPay,
+      laundry: estimates.laundry,
+      supplies: estimates.supplies,
+      inspections: estimates.inspections,
+      trash: estimates.trash,
+      tasks: totalPeriodTasks,
+      properties: activePropsInPeriod,
+    })
+    return d
+  }, [estimates, selectedMonth, totalPeriodTasks, activePropsInPeriod])
 
-  // Did the QBO blob even mention this month, regardless of whether it had
-  // values? Used by the banner to distinguish "QBO doesn't track this period"
-  // from "QBO has the period but all values are zero".
-  const qboMonthExists = useMemo(() => lookupQboMonth(selectedMonth) != null, [qboPL, selectedMonth])
-
-  // ── LIVE ESTIMATE from breezeway_tasks × per-property rates ─────────────
-  // When QBO has no posted actuals for the selected month (current/future
-  // months, typically), synthesize a DerivedMonth from scheduled cleans
-  // multiplied by per-property revenue and cost rates pulled from
-  // operational_properties. This is the "estimated pro forma that's live
-  // at all times" path the operator asked for — no longer shows $0 KPIs
-  // when QBO is empty.
-  const breezewayEstimateRow = useMemo<DerivedMonth | null>(() => {
-    if (!breezewayMonthRows || !properties || breezewayMonthRows.length === 0) return null
-    // Index per-property rates by property_id.
-    const rates = new Map<number, any>()
-    for (const p of properties as any[]) rates.set(Number(p.id), p)
-    let revenue = 0
-    let cleanerPay = 0
-    let laundry = 0
-    let supplies = 0
-    let inspections = 0
-    let trash = 0
-    let cleansCount = 0
-    let deepCleansCount = 0
-    for (const r of breezewayMonthRows as any[]) {
-      const rate = r.property_id != null ? rates.get(Number(r.property_id)) : null
-      if (!rate) continue
-      if (r.is_clean) {
-        cleansCount += 1
-        revenue       += Number(rate.ce_charged)        || 0
-        cleanerPay    += Number(rate.cleaner_pay)       || 0
-        laundry       += Number(rate.est_laundry)       || 0
-        supplies      += Number(rate.est_consumables)   || 0
-        inspections   += Number(rate.inspection_cost)   || 0
-        trash         += Number(rate.trash_cost)        || 0
-      } else if (r.is_deep_clean) {
-        // Deep cleans currently use the same per-clean cost model as a
-        // baseline; the operator can layer a deep-clean premium on top
-        // once we have a configured rate. Keeping the structure here so
-        // the variance ledger can be updated cleanly later.
-        deepCleansCount += 1
-        revenue       += Number(rate.ce_charged)        || 0
-        cleanerPay    += Number(rate.cleaner_pay)       || 0
-        laundry       += Number(rate.est_laundry)       || 0
-        supplies      += Number(rate.est_consumables)   || 0
-        inspections   += Number(rate.inspection_cost)   || 0
-        trash         += Number(rate.trash_cost)        || 0
-      }
-    }
-    const cogs = cleanerPay + laundry + supplies + inspections + trash
-    if (revenue === 0 && cogs === 0) return null
-    const grossProfit = revenue - cogs
-    const yyyy = selectedMonth.split('-')[0]
-    const mm = Number(selectedMonth.split('-')[1]) - 1
-    return {
-      month: selectedMonth,
-      label: `${MONTH_NAMES[mm].slice(0, 3)} ${yyyy.slice(2)}`,
-      cleaningFee: revenue, services: 0, onboardingRevenue: 0, otherIncome: 0,
-      contractorPay: cleanerPay, laundry, leadership: 0, supplies, inspections, trash,
-      otherCOGS: 0, opex: 0,
-      tasks: cleansCount + deepCleansCount, properties: undefined,
-      revenue,
-      cogs,
-      totalCOGS: cogs,
-      grossProfit,
-      grossMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
-      netIncome: grossProfit,
-      netMargin: revenue > 0 ? (grossProfit / revenue) * 100 : 0,
-    }
-  }, [breezewayMonthRows, properties, selectedMonth])
-
-  // Actuals for the selected month: prefer a real proforma_months row when
-  // it exists AND has any non-zero financial signal. Otherwise fall back to
-  // the QBO P&L blob. We treat an all-zeros proforma row as "no data" so a
-  // placeholder upsert (e.g. tasks-only count) doesn't suppress the QBO
-  // fallback the user actually wants to see.
-  const proformaRow = useMemo<DerivedMonth | null>(
+  // Actuals for the selected month: the QBO month when it has real signal,
+  // otherwise the live estimate.
+  const qboRow = useMemo<DerivedMonth | null>(
     () => histData.find(m => m.month === selectedMonth) || null,
     [histData, selectedMonth],
   )
-  const proformaHasSignal = useMemo(() => !!proformaRow && (
-    (proformaRow.revenue ?? 0) > 0 ||
-    (proformaRow.cogs ?? 0) > 0 ||
-    (proformaRow.netIncome ?? 0) !== 0
-  ), [proformaRow])
+  const qboHasSignal = !!qboRow && (Math.abs(qboRow.revenue) + Math.abs(qboRow.cogs) + Math.abs(qboRow.opex || 0)) >= 1
 
-  // Source decision is independent of the rendered row. Priority:
-  //   proforma (manually-curated truth) > qbo (posted actuals) > estimate
-  //   (live from breezeway × rates). 'null' fires the empty-state banner.
-  const actualsSource: 'proforma' | 'qbo' | 'estimate' | null = useMemo(() => {
-    if (proformaHasSignal) return 'proforma'
-    if (qboFallbackRow) return 'qbo'
-    if (breezewayEstimateRow) return 'estimate'
+  const actualsSource: 'qbo' | 'estimate' | null = useMemo(() => {
+    if (qboHasSignal) return 'qbo'
+    if (estimateRow) return 'estimate'
     return null
-  }, [proformaHasSignal, qboFallbackRow, breezewayEstimateRow])
+  }, [qboHasSignal, estimateRow])
 
   const actualsRow = useMemo<DerivedMonth | null>(() => {
-    if (actualsSource === 'proforma') return proformaRow
-    if (actualsSource === 'qbo') return qboFallbackRow
-    if (actualsSource === 'estimate') return breezewayEstimateRow
-    // Keep the proforma row visible (so tasks/properties counts still render)
-    // when it exists but lacks financial signal — the banner explains the $0.
-    return proformaRow
-  }, [actualsSource, proformaRow, qboFallbackRow, breezewayEstimateRow])
+    if (actualsSource === 'qbo') return qboRow
+    if (actualsSource === 'estimate') return estimateRow
+    return null
+  }, [actualsSource, qboRow, estimateRow])
 
-  // Variance per category — uses estimates × actuals.
-  //
-  // QBO fallback caveat: when actualsSource === 'qbo' the source blob only
-  // gives us topline numbers (revenue, total cost, net income) — laundry vs
-  // supplies vs trash vs contractor pay aren't broken out. Rather than
-  // showing all zeros (misleading: "we spent $0 on laundry" is false), we
-  // collapse the per-category rows into a single "Total Costs" row backed
-  // by the QBO total cost (COGS + OpEx) and keep the Revenue row, so the
-  // user sees real numbers and a clear topline variance. The banner above
-  // the variance table tells them per-category breakdowns will fill in
-  // after the next nightly proforma import.
+  // Variance per category: per-property estimates × cleans vs actuals.
   const variance = useMemo(() => {
     if (!estimates || !actualsRow) return null
-    if (actualsSource === 'qbo') {
-      const totalEstimated =
-        estimates.laundry + estimates.supplies + estimates.inspections +
-        estimates.trash + estimates.contractorPay
-      const totalActual = (actualsRow.cogs || 0) + (actualsRow.opex || 0)
-      return computeVariance([
-        { category: 'Total Costs (QBO topline)', estimated: totalEstimated, actual: totalActual },
-        { category: 'Revenue', estimated: estimates.revenue, actual: actualsRow.revenue || 0 },
-      ])
-    }
     return computeVariance([
       { category: 'Laundry', estimated: estimates.laundry, actual: actualsRow.laundry || 0 },
       { category: 'Supplies', estimated: estimates.supplies, actual: actualsRow.supplies || 0 },
@@ -468,7 +254,7 @@ export default function ForecasterPage() {
       { category: 'Contractor Pay', estimated: estimates.contractorPay, actual: actualsRow.contractorPay || 0 },
       { category: 'Revenue', estimated: estimates.revenue, actual: actualsRow.revenue || 0 },
     ])
-  }, [estimates, actualsRow, actualsSource])
+  }, [estimates, actualsRow])
 
   // ── Forecast horizon ────────────────────────
   const forecast = useMemo(() => {
@@ -477,45 +263,11 @@ export default function ForecasterPage() {
     return generateForecast(sliders, { startProperties, startMonth, horizon: 12, seasonal })
   }, [sliders, seasonal, latestMonth])
 
-  // ── Upload tasks CSV → bumps tasks count + creates entries via Pivot table ──
-  // (The user said "upload tasks completed within a time period" — we accept a
-  // simple CSV and count rows by completed_at date, then the existing tasks
-  // query will pick them up. For now this just sums and writes the count to
-  // proforma_months for the period.)
-  const [uploadOpen, setUploadOpen] = useState(false)
-  const [uploadCount, setUploadCount] = useState('')
-
-  const { mutate: applyTaskCount, isPending: applying } = useGuardedMutation('forecaster', {
-    mutationFn: async () => {
-      const n = parseInt(uploadCount, 10)
-      if (!Number.isFinite(n) || n < 0) throw new Error('Enter a non-negative integer')
-      const { error } = await supabase.from('proforma_months').upsert({
-        month: selectedMonth,
-        tasks: n,
-        source: 'upload',
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'month' })
-      if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['/supabase/proforma_months'] })
-      toast({ title: t('forecaster.toasts.taskCountSaved') })
-      setUploadOpen(false)
-      setUploadCount('')
-    },
-    onError: (err: any) => toast({ title: t('forecaster.toasts.uploadFailed'), description: err?.message, variant: 'destructive' }),
-  })
-
   // ── Render ──────────────────────────────
-  // QBO actuals refresh nightly via a scheduled import on the backend; no user-facing pull button.
+  // QBO actuals refresh nightly; clean counts refresh with the Trellis sync.
   const monthOptions = useMemo(() => {
     const seen = new Set(histData.map(m => m.month))
-    // proforma_months is sparse (only seeded months). Also offer every month
-    // that has clean-volume data (financial_monthly_cleans, trailing 12 mo) so
-    // the picker isn't missing months like Feb–May 2026 — selecting one shows
-    // QBO actuals via the qbo fallback.
     for (const c of monthlyCleans || []) seen.add(c.month)
-    // Always include the current and selected months even if not in any source.
     seen.add(todayMonth())
     seen.add(selectedMonth)
     return Array.from(seen).sort().reverse()
@@ -535,9 +287,6 @@ export default function ForecasterPage() {
           ))}
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={() => setUploadOpen(o => !o)} data-testid="button-upload-tasks">
-        <Upload className="w-3.5 h-3.5" /> {t('forecaster.page.uploadTasks')}
-      </Button>
       <span className="text-2xs text-muted-foreground" data-testid="text-qbo-refresh-note">
         {t('forecaster.page.qboRefreshNote')}
       </span>
@@ -559,66 +308,28 @@ export default function ForecasterPage() {
         </div>
       )}
 
-      {lastBreezeway ? (
+      {trellisSync ? (
         <div
           className="rounded-md border border-border bg-muted/30 px-3 py-1.5 text-xs flex flex-wrap items-center gap-x-3 gap-y-1"
-          data-testid="status-breezeway-last-import"
+          data-testid="status-trellis-sync"
         >
           <span className="inline-flex items-center gap-1.5 font-medium">
-            <Sparkles className="w-3 h-3 text-primary" /> {t('forecaster.breezewayStatus.label')}
+            <Sparkles className="w-3 h-3 text-primary" /> {t('forecaster.syncStatus.label')}
           </span>
           <span className="text-muted-foreground">
-            {t('forecaster.breezewayStatus.lastImport', { time: formatDistanceToNow(new Date(lastBreezeway.imported_at), { addSuffix: true }) })}
+            {trellisSync.lastSuccessAt
+              ? t('forecaster.syncStatus.lastSync', { time: formatDistanceToNow(new Date(trellisSync.lastSuccessAt), { addSuffix: true }) })
+              : t('forecaster.syncStatus.never')}
+            {trellisSync.lastSuccessStatus === 'partial' ? ` ${t('forecaster.syncStatus.partial')}` : ''}
           </span>
-          <span className="text-foreground">
-            {t('forecaster.breezewayStatus.importSummary', { label: lastBreezeway.source_label ?? '—', count: lastBreezeway.rows_inserted })}
-            <span className="text-muted-foreground">
-              {' '}{t('forecaster.breezewayStatus.cleansCount', { count: lastBreezeway.cleans_in_batch })}
-              {lastBreezeway.deep_cleans_in_batch ? t('forecaster.breezewayStatus.deepCleansCount', { count: lastBreezeway.deep_cleans_in_batch }) : null}
-              {t('forecaster.breezewayStatus.closeParen')}
-            </span>
+          <span className="text-muted-foreground">
+            {trellisSync.cutover
+              ? t('forecaster.syncStatus.cutover', { month: trellisSync.cutover })
+              : t('forecaster.syncStatus.noCutover')}
           </span>
-          {lastBreezeway.notes ? (
-            <span className="text-warning truncate max-w-[40ch]" title={lastBreezeway.notes}>
-              · {lastBreezeway.notes}
-            </span>
-          ) : null}
         </div>
       ) : null}
 
-      {uploadOpen && (
-        <Card className="border-card-border">
-          <CardContent className="p-4 space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <Upload className="w-4 h-4 text-muted-foreground" /> {t('forecaster.upload.heading', { month: selectedMonth })}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {t('forecaster.upload.description')}
-            </p>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                placeholder={t('forecaster.upload.placeholder')}
-                value={uploadCount}
-                onChange={e => setUploadCount(e.target.value)}
-                className="h-8 w-44 text-sm"
-                data-testid="input-task-count"
-              />
-              <Button size="sm" className="h-8 text-xs" disabled={applying || !uploadCount} onClick={() => applyTaskCount()}>
-                {applying ? t('common.actions.saving') : t('common.actions.save')}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {actualsSource === 'qbo' && (
-        <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground" data-testid="actuals-source-banner">
-          {t('forecaster.banners.qboPrefix', { month: selectedMonth })} <code className="font-mono">proforma_months</code> {t('forecaster.banners.qboSuffix')}
-        </div>
-      )}
       {actualsSource === 'estimate' && (
         <div
           className="rounded-md border border-info/25 bg-info/10 px-3 py-2 text-xs text-info"
@@ -633,11 +344,6 @@ export default function ForecasterPage() {
           data-testid="actuals-source-banner-empty"
         >
           {t('forecaster.banners.emptyNoData', { month: selectedMonth })}
-          {qboMonthExists ? t('forecaster.banners.emptyQboZero') : ''}.
-          {proformaRow
-            ? <> {t('forecaster.banners.emptyProformaExistsPrefix')} <code className="font-mono mx-1">proforma_months</code> {t('forecaster.banners.emptyProformaExistsSuffix')}</>
-            : <> {t('forecaster.banners.emptyProformaMissingPrefix')} <code className="font-mono mx-1">proforma_months</code> {t('forecaster.banners.emptyProformaMissingSuffix')}</>}
-          {' '}{t('forecaster.banners.emptyNoBreezeway')}
         </div>
       )}
 
@@ -661,15 +367,14 @@ export default function ForecasterPage() {
             <StatCard
               title={t('forecaster.kpis.tasks')}
               value={String(
-                // For historical months prefer the canonical deduped count from
-                // financial_monthly_cleans (same source as Financial Overview).
-                // Fall back to actualsRow.tasks or the live breezeway count for
-                // months not yet in the view (current/future months).
+                // Completed cleans so far from financial_monthly_cleans (same
+                // source as Financial Overview); for months it does not cover
+                // yet, the month's completed + scheduled cleans.
                 (() => {
                   const canonMap = new Map((monthlyCleans || []).map(c => [c.month, Number(c.cleans)]))
                   return canonMap.has(selectedMonth)
                     ? canonMap.get(selectedMonth)!
-                    : (actualsRow.tasks ?? totalPeriodTasks ?? 0)
+                    : (totalPeriodTasks || actualsRow.tasks || 0)
                 })()
               )}
               subtitle={t('forecaster.kpis.tasksSubtitle', { count: actualsRow.properties ?? activePropsInPeriod ?? 0 })}

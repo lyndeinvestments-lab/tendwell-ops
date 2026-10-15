@@ -15,6 +15,8 @@ import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { Search, AlertTriangle, Upload, Download, X, ArrowUpDown, ArrowUp, ArrowDown, Clock, History, Building2, TrendingUp, Zap } from 'lucide-react'
 import { PageContainer } from '@/components/PageContainer'
+import { usePropertyCleanStats } from '@/hooks/use-property-clean-stats'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { PageHeader } from '@/components/PageHeader'
 import Papa from 'papaparse'
 import { CsvImportModal } from '@/components/CsvImportModal'
@@ -301,16 +303,21 @@ export default function ProFormaPage() {
   })
 
   const { data: propertyCleanHistory, isLoading: cleanHistoryLoading } = useQuery({
-    queryKey: ['/supabase/cleaning-history', historyProperty?.id],
+    queryKey: ['/supabase/trellis-clean-history', historyProperty?.id],
     enabled: !!historyProperty,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cleaning_history')
-        .select('id, clean_date, cleaner_name, created_at')
+      // Trellis is the clean source of record (WS5): Tendwell's completed
+      // cleans for the property, not the legacy CSV cleaning_history table.
+      const { data, error } = await (supabase as any)
+        .from('trellis_clean_tasks')
+        .select('trellis_task_id, scheduled_date, crew_label, clean_kind')
         .eq('property_id', Number(historyProperty!.id))
-        .order('clean_date', { ascending: false })
+        .eq('is_tendwell', true)
+        .order('scheduled_date', { ascending: false })
+        .limit(500)
       if (error) throw error
-      return data || []
+      return ((data || []) as Array<{ trellis_task_id: string; scheduled_date: string | null; crew_label: string | null; clean_kind: string | null }>)
+        .map(r => ({ id: r.trellis_task_id, clean_date: r.scheduled_date, cleaner_name: r.crew_label, kind: r.clean_kind }))
     },
   })
 
@@ -328,20 +335,12 @@ export default function ProFormaPage() {
     },
   })
 
-  // Live cleans-per-month from the breezeway daily import. When a property
-  // has any breezeway data, we override the manually-imported
-  // avg_cleans_per_month so the Per-Property sheet auto-updates as cleans
-  // happen — operator no longer needs to re-import a CSV to refresh.
-  const { data: breezewayStats } = useQuery({
-    queryKey: ['/supabase/property-clean-stats'],
-    queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from('property_clean_stats')
-        .select('property_id, total_cleans, months_with_data, avg_cleans_per_month, avg_deep_cleans_per_month, latest_task, first_clean_date, cleans_90d')
-      if (error) throw error
-      return data || []
-    },
-  })
+  // Live cleans-per-month from property_clean_stats: Trellis from the
+  // app_settings.clean_source_cutover month on, the Breezeway archive before
+  // it. When a property has clean history we override the manual
+  // avg_cleans_per_month so the sheet auto-updates as cleans happen; no CSV
+  // import needed.
+  const { data: breezewayStats } = usePropertyCleanStats()
 
   // Merge: when breezeway has tasks for a property, recompute Cleans/Mo
   // and per-property monthly revenue / cost / profit from the live signal.
@@ -379,7 +378,7 @@ export default function ProFormaPage() {
         monthly_cost_estimate: cost,
         monthly_profit_estimate: revenue - cost,
         // Future Phase-3 variance work will read these.
-        _cleans_source: 'breezeway',
+        _cleans_source: 'auto',
         _months_with_data: Number(s.months_with_data) || 0,
         _latest_breezeway_task: s.latest_task,
       }
@@ -608,26 +607,32 @@ export default function ProFormaPage() {
               <span>{t('proForma.asNeededWarning', { count: asNeededCount })}</span>
             </div>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowHistory(true)}
-            className="h-8 text-xs gap-1.5"
-            data-testid="button-import-history"
-          >
-            <History className="w-3.5 h-3.5" />
-            {t('proForma.actions.history')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowImport(true)}
-            className="h-8 text-xs gap-1.5"
-            data-testid="button-import-csv"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            {t('proForma.actions.importCsv')}
-          </Button>
+          {/* Cleans/month now come from Trellis (property_clean_stats). The
+              old CSV import (cleaning_history / csv_import_log) is kept only
+              behind this menu; its tables stay, nothing reads them for counts. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs gap-1.5 text-muted-foreground"
+                data-testid="button-legacy-import"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {t('proForma.actions.legacyImport')}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setShowImport(true)} data-testid="button-import-csv">
+                <Upload className="w-3.5 h-3.5 mr-2" />
+                {t('proForma.actions.importCsv')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowHistory(true)} data-testid="button-import-history">
+                <History className="w-3.5 h-3.5 mr-2" />
+                {t('proForma.actions.history')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             variant="outline"
             size="sm"
@@ -1202,8 +1207,8 @@ export default function ProFormaPage() {
                       <tr key={row.id} className="border-t border-border/50 hover:bg-muted/20">
                         <td className="px-3 py-2 tabular-nums font-medium">{row.clean_date}</td>
                         <td className="px-3 py-2 text-muted-foreground">{row.cleaner_name || '—'}</td>
-                        <td className="px-3 py-2 text-muted-foreground">
-                          {row.created_at ? format(new Date(row.created_at), 'MMM d, yyyy') : '—'}
+                        <td className="px-3 py-2 text-muted-foreground capitalize">
+                          {row.kind ? String(row.kind).replace(/_/g, ' ') : '-'}
                         </td>
                       </tr>
                     ))}

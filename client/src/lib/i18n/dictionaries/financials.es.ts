@@ -54,7 +54,7 @@ export const financialsEs: typeof financialsEn = {
       noCategoryBreakdown: 'No hay desglose por categoría disponible',
       window: 'Ventana: últimos {{count}} mes(es)',
     },
-    footnote: 'Los conteos de limpiezas y tareas están deduplicados entre Breezeway y Trellis (una fuente por propiedad).',
+    footnote: 'Los conteos de limpiezas y tareas vienen de Trellis (limpiezas completadas de Tendwell); los meses anteriores al cambio a Trellis usan el archivo de Breezeway.',
   },
 
   // ─── owned by: pro-forma-wrapper.tsx ────────────────────────────────────
@@ -168,7 +168,7 @@ export const financialsEs: typeof financialsEn = {
   proForma: {
     auto: {
       freqTooltip: 'Calculado automáticamente con las limpiezas reales de los últimos 90 días (valor manual guardado: {{manual}})',
-      firstCleanTooltip: 'Primera tarea de limpieza real registrada (Breezeway/Trellis) - calculado automáticamente',
+      firstCleanTooltip: 'Primera limpieza real registrada (Trellis, o el archivo de Breezeway) - calculado automáticamente',
     },
     freq: {
       weekly: 'Semanal',
@@ -207,8 +207,9 @@ export const financialsEs: typeof financialsEn = {
     },
     asNeededWarning: '{{count}} usando frecuencia predeterminada (2/mes)',
     actions: {
-      history: 'Historial',
+      history: 'Historial de importaciones',
       importCsv: 'Importar CSV',
+      legacyImport: 'Importación antigua',
       exportCsv: 'Exportar CSV',
       searchPlaceholder: 'Buscar…',
     },
@@ -251,7 +252,7 @@ export const financialsEs: typeof financialsEn = {
       empty: 'No se encontraron propiedades activas',
       historyTitle: '{{name}} - haz clic para ver el historial de limpiezas',
       highCleansTooltip: 'Inusualmente alto - verifica el historial de limpiezas',
-      manualVsAutoTooltip: 'Manual: {{manual}} · Breezeway: {{auto}}',
+      manualVsAutoTooltip: 'Manual: {{manual}} · Auto: {{auto}}',
       totalsLabel: 'Totales Mensuales ({{count}})',
       excludedDupes: '(excl. {{count}} posibles duplicados)',
     },
@@ -286,11 +287,11 @@ export const financialsEs: typeof financialsEn = {
     },
     cleaningHistory: {
       sheetTitle: '{{name}} - Historial de Limpiezas',
-      description: 'Registros individuales de limpieza importados desde CSV. Los duplicados se bloquean a nivel de base de datos.',
-      empty: 'No se encontraron registros de limpieza. Importa un CSV para completar el historial.',
+      description: 'Limpiezas completadas de Tendwell desde Trellis, de la más reciente a la más antigua (últimas 500).',
+      empty: 'Todavía no hay limpiezas completadas de Tendwell en Trellis para esta propiedad.',
       cleanDate: 'Fecha de Limpieza',
       cleaner: 'Limpiador', // REVIEW: table-column short form; common.es.ts uses "Personal de Limpieza" for the nav item — confirm preferred consistency
-      imported: 'Importado',
+      imported: 'Tipo',
       recordCount: '{{count}} registro(s)',
     },
   },
@@ -330,37 +331,23 @@ export const financialsEs: typeof financialsEn = {
     page: {
       title: 'Pronóstico', // REVIEW: "Forecaster" has no sidebar nav entry (reached via the Pro Forma wrapper or direct route) — confirm preferred page-title branding
       titleWrapped: 'Pro Forma en Vivo',
-      subtitle: 'Pro forma en vivo - datos reales de tareas completadas y QBO comparados con fórmulas de costo estimado.',
+      subtitle: 'Pro forma en vivo - datos reales de QuickBooks y conteos de limpiezas de Trellis comparados con fórmulas de costo estimado.',
       periodSources: 'Periodo y fuentes',
-      uploadTasks: 'Subir Tareas',
       qboRefreshNote: 'Los datos reales se actualizan cada noche mediante la importación programada de QBO.',
     },
-    breezewayStatus: {
-      label: 'Breezeway',
-      lastImport: 'última importación {{time}}',
-      importSummary: '{{label}} · {{count}} tareas',
-      cleansCount: '({{count}} limpiezas',
-      deepCleansCount: ' · {{count}} profundas',
-      closeParen: ')',
-    },
-    upload: {
-      heading: 'Subir tareas completadas para {{month}}',
-      description: 'Entrada rápida - escribe el número total de tareas completadas en el periodo. Tendwell Ops multiplica automáticamente los estimados por propiedad × tareas completadas → costo esperado; el P&L de QBO da el costo real; la variación abajo muestra la diferencia. Los conteos de tareas de Trellis se sincronizan cada hora en las tablas de snapshot (ver la página de Tareas Trellis).',
-      placeholder: '# de tareas completadas',
+    syncStatus: {
+      label: 'Trellis',
+      lastSync: 'última sincronización {{time}}',
+      never: 'aún no hay una sincronización exitosa',
+      partial: '(ejecución parcial)',
+      cutover: 'Conteos de limpiezas desde Trellis a partir de {{month}}; los meses anteriores usan el archivo de Breezeway.',
+      noCutover: 'Los conteos de limpiezas aún vienen del archivo de Breezeway (sin fecha de cambio a Trellis).',
     },
     banners: {
-      qboPrefix: 'Mostrando datos reales de QuickBooks para {{month}} - la fila de',
-      qboSuffix: 'aún no ha sido escrita por la importación nocturna. Los desgloses por categoría (lavandería vs. consumibles vs. basura) se completan después de la próxima sincronización nocturna.',
       estimatePrefix: 'Mostrando',
       estimateBold: 'estimación en vivo',
-      estimateSuffix: 'para {{month}} - derivada de las tareas programadas de Breezeway × tarifas por propiedad. Los datos reales de QuickBooks aún no se han registrado; los KPI de abajo cambiarán a QBO automáticamente en cuanto llegue la próxima importación nocturna.',
-      emptyNoData: 'No hay datos disponibles para {{month}}',
-      emptyQboZero: ' (QBO devolvió totales en cero para este periodo)',
-      emptyProformaExistsPrefix: 'La fila de',
-      emptyProformaExistsSuffix: 'que existe para el periodo no tiene señal financiera, y',
-      emptyProformaMissingPrefix: 'Aún no se ha creado la fila de',
-      emptyProformaMissingSuffix: 'y',
-      emptyNoBreezeway: 'no hay tareas de Breezeway programadas para este periodo.',
+      estimateSuffix: 'para {{month}} - las limpiezas del mes (completadas más programadas) × tarifas por propiedad. QuickBooks aún no ha registrado este mes; los KPI cambian a QuickBooks automáticamente después de la sincronización nocturna.',
+      emptyNoData: 'No hay datos para {{month}}: QuickBooks no tiene P&L para este mes y no hay limpiezas registradas ni programadas.',
     },
     kpis: {
       revenue: 'Ingresos',
@@ -373,7 +360,7 @@ export const financialsEs: typeof financialsEn = {
       grossMargin: 'Margen Bruto',
       grossMarginSubtitle: 'COGS {{amount}}', // REVIEW: "COGS" acronym kept as-is
       emptyTitle: 'Aún no hay datos reales para este mes',
-      emptyDescription: 'Los datos reales se actualizan cada noche desde la importación programada de QuickBooks. También puedes ingresar arriba el conteo de tareas completadas de este periodo para completar los estimados de tareas.',
+      emptyDescription: 'Los datos reales se actualizan cada noche desde QuickBooks; los conteos de limpiezas se actualizan con la sincronización de Trellis.',
     },
     tabs: {
       variance: 'Variación',
@@ -382,9 +369,9 @@ export const financialsEs: typeof financialsEn = {
     },
     variance: {
       heading: 'Estimado vs. Real - {{month}}',
-      taskSummary: '{{tasks}} tarea(s) completada(s) · {{properties}} propiedades activas',
+      taskSummary: '{{tasks}} limpieza(s) · {{properties}} propiedades',
       emptyTitle: 'Se necesitan tanto estimados como datos reales',
-      emptyDescription: 'Los estimados se calculan por propiedad desde Seguimiento de Costos. Los datos reales vienen de la fila proforma de este mes. Verifica que las tareas estén marcadas como Completadas en el periodo.',
+      emptyDescription: 'Los estimados se calculan por propiedad desde Seguimiento de Costos × las limpiezas del mes. Los datos reales vienen de QuickBooks (o de la estimación en vivo antes de que se registre el mes).',
       headers: {
         category: 'Categoría',
         estimated: 'Estimado',

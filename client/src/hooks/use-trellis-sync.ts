@@ -57,7 +57,7 @@ export interface TaskRow {
 }
 export interface SyncLogRow {
   id: string
-  status: 'requested' | 'running' | 'done' | 'error' | 'canceled'
+  status: 'requested' | 'running' | 'done' | 'partial' | 'error' | 'canceled'
   trigger: string
   requested_by: string | null
   started_at: string | null
@@ -67,6 +67,13 @@ export interface SyncLogRow {
   progress: SyncProgress | null
   cancel_requested: boolean
   created_at: string
+}
+
+/** Sync-log statuses that mean the run finished and refreshed data. */
+export const SUCCESSFUL_SYNC_STATUSES = ['done', 'partial'] as const
+
+export function isSuccessfulSyncStatus(status: string | null | undefined): boolean {
+  return status != null && (SUCCESSFUL_SYNC_STATUSES as readonly string[]).includes(status)
 }
 
 export interface TrellisPropOption {
@@ -159,14 +166,15 @@ export function useTrellisSync() {
     refetchOnWindowFocus: false,
   })
 
-  // Most recent DONE row — shown as "Last synced X ago". Never let
-  // in-progress rows corrupt this display.
+  // Most recent successful row — shown as "Last synced X ago". A 'partial'
+  // run (hit its time budget and stopped cleanly) still refreshed data, so it
+  // counts. Never let in-progress rows corrupt this display.
   const lastDoneSync = useQuery({
     queryKey: [...KEY, 'lastDoneSync'],
     queryFn: async (): Promise<SyncLogRow | null> => {
       const { data, error } = await supabase
         .from('trellis_sync_log').select('*')
-        .eq('status', 'done')
+        .in('status', SUCCESSFUL_SYNC_STATUSES as unknown as string[])
         .order('finished_at', { ascending: false }).limit(1)
       if (error) throw error
       return (data?.[0] ?? null) as unknown as SyncLogRow | null

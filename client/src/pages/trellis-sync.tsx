@@ -15,7 +15,7 @@ import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbo
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useTrellisSync, fetchTasks, stripTrellisRegionTag, trellisNameDiffers, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow, type ExceptionRow, type ReconRow, type PropertyAliasRow } from '@/hooks/use-trellis-sync'
+import { useTrellisSync, isSuccessfulSyncStatus, fetchTasks, stripTrellisRegionTag, trellisNameDiffers, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow, type ExceptionRow, type ReconRow, type PropertyAliasRow } from '@/hooks/use-trellis-sync'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Label } from '@/components/ui/label'
@@ -1044,6 +1044,7 @@ type SyncStatusTone = 'success' | 'destructive' | 'warning' | 'info'
 
 function syncStatusTone(status: SyncLogRow['status']): SyncStatusTone {
   if (status === 'done') return 'success'
+  if (status === 'partial') return 'warning'
   if (status === 'error') return 'destructive'
   if (status === 'canceled') return 'warning'
   return 'info'
@@ -1118,11 +1119,11 @@ export default function TrellisSyncPage() {
   const qc = useQueryClient()
   const { recon, exceptions, roster, lastSync, lastDoneSync, syncHistory, trellisProps, opsProperties, dismissals, aliases, breezewayCoverage, breezewayExceptions, dismissRow, restoreRow, linkMatch, linkTrellisProperty, unlinkAlias, renameProperty, matchBreezeway, dismissBreezeway, triggerSync, cancelSync } = useTrellisSync()
 
-  // When a sync finishes (done or canceled), refresh snapshot-dependent queries.
+  // When a sync finishes (done, partial or canceled), refresh snapshot-dependent queries.
   const syncStatus = lastSync.data?.status
   const prevSyncStatus = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (syncStatus === 'done') {
+    if (isSuccessfulSyncStatus(syncStatus)) {
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'recon'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'exceptions'] })
       qc.invalidateQueries({ queryKey: ['/supabase/trellis-sync', 'roster'] })
