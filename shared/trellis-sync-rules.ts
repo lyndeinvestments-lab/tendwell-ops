@@ -240,6 +240,11 @@ export function likelySamePerson(a: string | null | undefined, b: string | null 
   return Math.min(x.length, y.length) >= 8 && editDistance(x, y) <= 2
 }
 
+function isRecentlySeen(m: { last_seen_at?: string | null }, cutoffMs: number): boolean {
+  const seen = m.last_seen_at ? Date.parse(m.last_seen_at) : NaN
+  return seen >= cutoffMs
+}
+
 export interface CleanerSyncPlan {
   links: Array<{ cleaner_id: string; user_id: string; via: 'email' | 'name' }>
   creates: Array<{ user_id: string; full_name: string; email: string | null }>
@@ -315,10 +320,12 @@ export function planCleanerSync(
     const seenCutoff = (opts.now ?? new Date()).getTime() - CREATE_SEEN_WITHIN_DAYS * 86_400_000
     const unlinked = eligible.filter(m => m.is_active && !taken.has(m.user_id))
     for (const m of unlinked) {
-      const seen = m.last_seen_at ? Date.parse(m.last_seen_at) : NaN
-      if (!(seen >= seenCutoff)) { plan.skipped.push({ user_id: m.user_id, name: m.name, reason: 'not_seen_recently' }); continue }
+      if (!isRecentlySeen(m, seenCutoff)) { plan.skipped.push({ user_id: m.user_id, name: m.name, reason: 'not_seen_recently' }); continue }
       if (opts.dismissedUserIds?.has(m.user_id)) { plan.skipped.push({ user_id: m.user_id, name: m.name, reason: 'dismissed' }); continue }
-      const dupMember = eligible.some(o => o.user_id !== m.user_id && likelySamePerson(o.name, m.name))
+      // A look-alike account only blocks creation while it is also live in
+      // Trellis. When the other one has stopped appearing it is an old account
+      // the person replaced (Yeymi munguia -> Yeimi Munguia), so create this one.
+      const dupMember = eligible.some(o => o.user_id !== m.user_id && o.is_active && isRecentlySeen(o, seenCutoff) && likelySamePerson(o.name, m.name))
       if (dupMember) { plan.skipped.push({ user_id: m.user_id, name: m.name, reason: 'possible_duplicate_member' }); continue }
       const dupCleaner = cleaners.some(c => likelySamePerson(c.full_name, m.name))
       if (dupCleaner) { plan.skipped.push({ user_id: m.user_id, name: m.name, reason: 'similar_cleaner_exists' }); continue }
