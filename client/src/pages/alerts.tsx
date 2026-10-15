@@ -18,7 +18,10 @@ import { StatusTone, TONE_TEXT } from '@/lib/status-colors'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
-import { breezewayFreshness, breezewayFreshnessDescription } from '@/lib/data-freshness'
+import {
+  breezewayFreshness, breezewayFreshnessDescription, breezewayAlertSeverity,
+  trellisFreshness, trellisFreshnessDescription, isTrellisPrimary,
+} from '@/lib/data-freshness'
 import { localISODate } from '@/lib/local-date'
 import { invoicesApi } from '@/lib/invoices'
 import { billingAlerts, type BillingAlertsResponse } from '@/lib/billing-alerts'
@@ -169,6 +172,29 @@ export function useAlerts() {
     },
     // Alert is admin-gated below; skip the round-trip for everyone else.
     enabled: canAccessView('trellis-sync', effectiveUser),
+    staleTime: 300_000,
+  })
+
+  // Freshness of the Trellis sync: the primary source of clean counts from
+  // the clean_source_cutover month on. trellis_sync_log is admin-read, so
+  // this goes through the staff-only definer function (timestamps + statuses
+  // only). Shown to finance staff and API Sync admins; crews never see it.
+  const canSeeTrellisFreshness = canViewFinancials || canAccessView('trellis-sync', effectiveUser)
+  const { data: trellisSync } = useQuery({
+    queryKey: ['/supabase/alerts-trellis-freshness'],
+    queryFn: async () => {
+      const [fresh, cut] = await Promise.all([
+        (supabase as any).rpc('trellis_sync_freshness'),
+        (supabase as any).rpc('clean_source_cutover'),
+      ])
+      if (fresh.error) throw fresh.error
+      const row = Array.isArray(fresh.data) ? fresh.data[0] : fresh.data
+      return {
+        lastSuccessAt: (row?.last_success_at as string | null | undefined) ?? null,
+        cutover: cut.error ? null : ((cut.data as string | null) ?? null),
+      }
+    },
+    enabled: canSeeTrellisFreshness,
     staleTime: 300_000,
   })
 
@@ -334,6 +360,26 @@ export function useAlerts() {
     // Only evaluated once the query has resolved — the wrapper object means
     // `undefined` (still loading) is distinguishable from `null` (loaded, log
     // empty), so a slow load can't flash a bogus "never imported" critical.
+    // Primary freshness alert: the Trellis sync (last done or partial run).
+    const trellisPrimary = isTrellisPrimary(trellisSync?.cutover, today)
+    if (trellisSync) {
+      const staleTrellis = trellisFreshness(trellisSync.lastSuccessAt)
+      if (staleTrellis) {
+        result.push({
+          id: `trellis_sync_stale_${staleTrellis.lastSyncKey}`,
+          severity: staleTrellis.severity,
+          category: 'Data Sync',
+          title: staleTrellis.hoursStale == null
+            ? 'Trellis sync has never finished'
+            : `Trellis sync stale: ${staleTrellis.hoursStale >= 48 ? `${Math.floor(staleTrellis.hoursStale / 24)} days` : `${staleTrellis.hoursStale} hours`}`,
+          description: trellisFreshnessDescription(staleTrellis),
+          ...(canAccessView('trellis-sync', effectiveUser) ? { actionRoute: '/api-sync' } : {}),
+        })
+      }
+    }
+
+    // Breezeway is the legacy archive + invoicing feed: once Trellis is the
+    // primary clean source its staleness alert is info only.
     if (lastBreezewayImport) {
       const stale = breezewayFreshness(lastBreezewayImport.lastImportedAt)
       if (stale) {
@@ -341,12 +387,14 @@ export function useAlerts() {
           // Dated key: dismissing one stall must not mute the next one once a
           // fresh import has landed in between.
           id: `breezeway_import_stale_${stale.lastImportKey}`,
-          severity: stale.severity,
+          severity: breezewayAlertSeverity(stale, trellisPrimary),
           category: 'Data Sync',
           title: stale.daysStale == null
             ? 'Breezeway import has never run'
             : `Breezeway import stale: ${stale.daysStale} days`,
-          description: breezewayFreshnessDescription(stale),
+          description: trellisPrimary
+            ? `${breezewayFreshnessDescription(stale)} Financial clean counts now come from Trellis; Breezeway still feeds invoicing and the pre-cutover archive.`
+            : breezewayFreshnessDescription(stale),
           actionRoute: '/api-sync',
           // Admin-only: the remedy (GitHub Actions secrets / re-run) and the
           // Breezeway tab both are. `trellis-sync` is the API Sync view id.
@@ -379,7 +427,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, canViewFinancials, canSeeBilling, billing])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, trellisSync, effectiveUser, canViewFinancials, canSeeBilling, billing])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()

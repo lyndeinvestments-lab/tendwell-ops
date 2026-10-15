@@ -9800,6 +9800,15 @@ export type Database = {
         }
         Relationships: []
       }
+      trellis_era_clean_days: {
+        Row: {
+          d: string | null
+          deep: boolean | null
+          property_id: number | null
+          source: string | null
+        }
+        Relationships: []
+      }
       trellis_exceptions: {
         Row: {
           name: string | null
@@ -10081,6 +10090,7 @@ export type Database = {
       }
       can_view_financials: { Args: never; Returns: boolean }
       canonical_trellis_property_id: { Args: { p: string }; Returns: string }
+      clean_source_cutover: { Args: never; Returns: string }
       client_invoice_mark_sent: {
         Args: {
           p_actor?: string
@@ -10439,6 +10449,17 @@ export type Database = {
       }
       staff_has_financial_view: { Args: never; Returns: boolean }
       tendwell_normalize_name: { Args: { p: string }; Returns: string }
+      trellis_sync_freshness: {
+        Args: never
+        Returns: {
+          last_full_success_at: string
+          last_run_at: string
+          last_run_status: string
+          last_success_at: string
+          last_success_status: string
+          last_success_trigger: string
+        }[]
+      }
       tendwell_normalize_street: { Args: { p: string }; Returns: string }
       unlink_trellis_alias: { Args: { p_alias_id: string }; Returns: Json }
     }

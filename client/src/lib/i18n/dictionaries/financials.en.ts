@@ -58,7 +58,7 @@ export const financialsEn = {
       noCategoryBreakdown: 'No category breakdown available',
       window: 'Window: last {{count}} month(s)',
     },
-    footnote: 'Clean & task counts are de-duplicated across Breezeway and Trellis (one source per property).',
+    footnote: 'Clean and task counts come from Trellis (Tendwell completed cleans); months before the Trellis cutover use the Breezeway archive.',
   },
 
   // ─── owned by: pro-forma-wrapper.tsx ────────────────────────────────────
@@ -172,7 +172,7 @@ export const financialsEn = {
   proForma: {
     auto: {
       freqTooltip: 'Calculated automatically from the last 90 days of real cleans (stored manual value: {{manual}})',
-      firstCleanTooltip: 'Earliest real clean task on record (Breezeway/Trellis) - calculated automatically',
+      firstCleanTooltip: 'Earliest real clean on record (Trellis, or the Breezeway archive) - calculated automatically',
     },
     freq: {
       weekly: 'Weekly',
@@ -211,8 +211,9 @@ export const financialsEn = {
     },
     asNeededWarning: '{{count}} using default frequency (2/mo)',
     actions: {
-      history: 'History',
+      history: 'Import history',
       importCsv: 'Import CSV',
+      legacyImport: 'Legacy import',
       exportCsv: 'Export CSV',
       searchPlaceholder: 'Search…',
     },
@@ -255,7 +256,7 @@ export const financialsEn = {
       empty: 'No active properties found',
       historyTitle: '{{name}} - click to view cleaning history',
       highCleansTooltip: 'Unusually high - verify cleaning history',
-      manualVsAutoTooltip: 'Manual: {{manual}} · Breezeway: {{auto}}',
+      manualVsAutoTooltip: 'Manual: {{manual}} · Auto: {{auto}}',
       totalsLabel: 'Monthly Totals ({{count}})',
       excludedDupes: '(excl. {{count}} suspected dupes)',
     },
@@ -290,11 +291,11 @@ export const financialsEn = {
     },
     cleaningHistory: {
       sheetTitle: '{{name}} - Cleaning History',
-      description: 'Individual clean records imported from CSV. Duplicates are blocked at the database level.',
-      empty: 'No cleaning records found. Import a CSV to populate history.',
+      description: 'Completed Tendwell cleans from Trellis, newest first (latest 500).',
+      empty: 'No completed Tendwell cleans in Trellis for this property yet.',
       cleanDate: 'Clean Date',
       cleaner: 'Cleaner',
-      imported: 'Imported',
+      imported: 'Type',
       recordCount: '{{count}} record(s)',
     },
   },
@@ -338,37 +339,23 @@ export const financialsEn = {
     page: {
       title: 'Forecaster',
       titleWrapped: 'Pro Forma - Live',
-      subtitle: 'Live proforma - actuals from completed tasks & QBO compared to estimated cost formulas.',
+      subtitle: 'Live pro forma - QuickBooks actuals and Trellis clean counts compared to estimated cost formulas.',
       periodSources: 'Period & sources',
-      uploadTasks: 'Upload Tasks',
       qboRefreshNote: 'Actuals refresh nightly from the scheduled QBO import.',
     },
-    breezewayStatus: {
-      label: 'Breezeway',
-      lastImport: 'last import {{time}}',
-      importSummary: '{{label}} · {{count}} tasks',
-      cleansCount: '({{count}} cleans',
-      deepCleansCount: ' · {{count}} deep',
-      closeParen: ')',
-    },
-    upload: {
-      heading: 'Upload completed tasks for {{month}}',
-      description: 'Quick entry - type the total number of completed tasks for the period. Tendwell Ops automatically rolls per-property estimates × tasks completed → expected cost; QBO P&L gives the actual cost; the variance below shows the gap. Trellis task counts sync hourly into the snapshot tables (see the Trellis Tasks page).',
-      placeholder: '# tasks completed',
+    syncStatus: {
+      label: 'Trellis',
+      lastSync: 'last sync {{time}}',
+      never: 'no successful sync yet',
+      partial: '(partial run)',
+      cutover: 'Clean counts from Trellis since {{month}}; earlier months use the Breezeway archive.',
+      noCutover: 'Clean counts still come from the Breezeway archive (no Trellis cutover set).',
     },
     banners: {
-      qboPrefix: 'Showing QuickBooks actuals for {{month}} - the',
-      qboSuffix: "row hasn't been written yet by the nightly import. Per-category breakdowns (laundry vs supplies vs trash) populate after the next overnight sync.",
       estimatePrefix: 'Showing',
       estimateBold: 'live estimate',
-      estimateSuffix: "for {{month}} - derived from scheduled Breezeway tasks × per-property rates. QuickBooks actuals haven't posted yet; KPIs below will switch to QBO automatically once the next nightly import lands.",
-      emptyNoData: 'No data available for {{month}}',
-      emptyQboZero: ' (QBO returned zero totals for this period)',
-      emptyProformaExistsPrefix: 'The',
-      emptyProformaExistsSuffix: 'row that exists for the period has no financial signal, and',
-      emptyProformaMissingPrefix: 'No',
-      emptyProformaMissingSuffix: 'row has been written, and',
-      emptyNoBreezeway: 'no Breezeway tasks are scheduled for this period.',
+      estimateSuffix: "for {{month}} - the month's cleans (completed plus scheduled) × per-property rates. QuickBooks has not posted this month yet; the KPIs switch to QuickBooks automatically after the nightly sync.",
+      emptyNoData: 'No data for {{month}}: QuickBooks has no P&L for this month and no cleans are recorded or scheduled.',
     },
     kpis: {
       revenue: 'Revenue',
@@ -381,7 +368,7 @@ export const financialsEn = {
       grossMargin: 'Gross Margin',
       grossMarginSubtitle: 'COGS {{amount}}',
       emptyTitle: 'No actuals yet for this month',
-      emptyDescription: 'Actuals refresh nightly from the scheduled QuickBooks import. You can also enter the completed-task count for this period above to populate task estimates.',
+      emptyDescription: 'Actuals refresh nightly from QuickBooks; clean counts refresh with the Trellis sync.',
     },
     tabs: {
       variance: 'Variance',
@@ -390,9 +377,9 @@ export const financialsEn = {
     },
     variance: {
       heading: 'Estimated vs Actual - {{month}}',
-      taskSummary: '{{tasks}} completed task(s) · {{properties}} active properties',
+      taskSummary: '{{tasks}} clean(s) · {{properties}} properties',
       emptyTitle: 'Need both estimates and actuals',
-      emptyDescription: "Estimates roll up from per-property Cost Tracking. Actuals come from this month's proforma row. Make sure tasks are marked Done for the period.",
+      emptyDescription: "Estimates roll up from per-property Cost Tracking × the month's cleans. Actuals come from QuickBooks (or the live estimate before the month posts).",
       headers: {
         category: 'Category',
         estimated: 'Estimated',

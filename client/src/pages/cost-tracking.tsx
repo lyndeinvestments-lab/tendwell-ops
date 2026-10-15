@@ -2,6 +2,7 @@ import React, { useState, useMemo, Fragment, useCallback, useEffect } from 'reac
 import { useAlerts } from '@/pages/alerts'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
+import { usePropertyCleanStats } from '@/hooks/use-property-clean-stats'
 import { supabase, logPropertyEdit } from '@/lib/supabase'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
 import { usePropertyModal } from '@/hooks/use-property-modal'
@@ -741,6 +742,11 @@ export default function CostTrackingPage() {
   // PropertyDetailModal. The operational_properties view does not expose
   // contact_id, so we pull contact_id from the underlying `properties`
   // table joined to `contacts` in one round-trip.
+  // Cleans/Mo + first clean auto-derived from property_clean_stats (Trellis
+  // from the clean_source_cutover month on, Breezeway archive before), the
+  // same source as Pro Forma > Pricing, so both pages agree.
+  const { byId: cleanStatsById } = usePropertyCleanStats()
+
   const { data: propertyContacts } = useQuery({
     queryKey: ['/supabase/properties_contact_join_cost_tracking'],
     staleTime: 60_000,
@@ -1730,6 +1736,11 @@ export default function CostTrackingPage() {
                         const frequencyLabelKey: Record<string, string> = {
                           Weekly: 'weekly', 'Bi-weekly': 'biWeekly', Monthly: 'monthly', Turnover: 'turnover', 'On-demand': 'onDemand',
                         }
+                        // Auto clean cadence (property_clean_stats). Manual values
+                        // only show for properties with no clean history yet.
+                        const cs = cleanStatsById.get(String(p.id))
+                        const autoCleansPerMo = cs && Number(cs.months_with_data) > 0 ? Number(cs.avg_cleans_per_month) : null
+                        const autoFirstClean = cs?.first_clean_date ? String(cs.first_clean_date).slice(0, 10) : null
                         const frequencyOptions = FREQUENCY_OPTIONS.map(o => ({ value: o.value, label: t(`detail.frequency.${frequencyLabelKey[o.value]}`, undefined, o.label) }))
 
                         return (
@@ -1763,14 +1774,17 @@ export default function CostTrackingPage() {
                             <AutoField  label={t('detail.fields.cePerSqFt')}    value={p.ce_per_sq != null ? `$${Number(p.ce_per_sq).toFixed(2)}` : '—'} />
                             <AutoField  label={t('detail.fields.suggestedPay')} value={fmt(p.suggested_pay)} />
                             <EditSelect label={t('detail.fields.frequency')}   value={p.cleaning_frequency} options={frequencyOptions} canEdit={canEditSetup} onSave={v => updateProperty({ id: p.id, field: 'cleaning_frequency', value: v })} testId={`row-detail-cleaning_frequency-${p.id}`} />
-                            <AutoField  label={t('detail.fields.cleansPerMo')} value={p.avg_cleans_per_month ?? '—'} />
-                            <EditDate   label={t('detail.fields.firstClean')} value={p.first_clean_date}    canEdit={canEditSetup} onSave={saveDate('first_clean_date')} testId={`row-detail-first_clean_date-${p.id}`} />
+                            <AutoField  label={t('detail.fields.cleansPerMo')} value={autoCleansPerMo ?? p.avg_cleans_per_month ?? '—'} />
+                            {autoFirstClean ? (
+                              <AutoField label={t('detail.fields.firstClean')} value={autoFirstClean} />
+                            ) : (
+                              <EditDate   label={t('detail.fields.firstClean')} value={p.first_clean_date}    canEdit={canEditSetup} onSave={saveDate('first_clean_date')} testId={`row-detail-first_clean_date-${p.id}`} />
+                            )}
                             <EditDate   label={t('detail.fields.onboarding')}  value={p.onboarding_date}     canEdit={canEditSetup} onSave={saveDate('onboarding_date')}  testId={`row-detail-onboarding_date-${p.id}`} />
                             <EditDate   label={t('detail.fields.offboarding')} value={p.offboarding_date}    canEdit={canEditSetup} onSave={saveDate('offboarding_date')} testId={`row-detail-offboarding_date-${p.id}`} />
                             <EditText   label={t('detail.fields.filterSize')} value={p.filter_size}         canEdit={canEditSetup} onSave={saveText('filter_size')}      testId={`row-detail-filter_size-${p.id}`} placeholder={t('detail.fields.filterSizePlaceholder')} />
                             <EditDate   label={t('detail.fields.lastFilter')} value={p.last_filter_changed} canEdit={canEditSetup} onSave={saveDate('last_filter_changed')} testId={`row-detail-last_filter_changed-${p.id}`} />
                             <AutoField  label={t('detail.fields.nextFilterDue')} value={p.next_filter_due ? String(p.next_filter_due).slice(0, 10) : '—'} />
-                            <EditText   label={t('detail.fields.breezeway')}   value={p.breezeway_name || p.breezeway_id} canEdit={canEditSetup} onSave={saveText('breezeway_id')} testId={`row-detail-breezeway_id-${p.id}`} />
                           </div>
                         </div>
 

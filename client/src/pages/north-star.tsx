@@ -18,6 +18,7 @@ import { useDateFormat } from '@/lib/i18n/date'
 import { slugify } from '@/lib/issues'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { QuarterlyGoals } from '@/components/QuarterlyGoals'
+import { inspectionRatePct } from '@/lib/financials/clean-sources'
 
 const STATUS_COLORS: Record<string, string> = {
   'Green': 'bg-green-500',
@@ -137,19 +138,35 @@ export default function NorthStarPage() {
     },
   })
 
-  const { data: autoCleans } = useQuery({
-    queryKey: ['/supabase/ns-cleans', month],
+  // "% Cleans Inspected" = completed Ops inspections ÷ Tendwell's completed
+  // Trellis cleans in the month. Trellis is the clean source of record (WS5);
+  // property verifications were removed in WS2 and cleaning_history was a
+  // manual CSV table.
+  const { data: autoCleanCount } = useQuery({
+    queryKey: ['/supabase/ns-trellis-cleans', month],
     queryFn: async () => {
-      const { data } = await supabase.from('cleaning_history').select('id').gte('clean_date', monthStart).lte('clean_date', monthEnd)
-      return data || []
+      const { count, error } = await (supabase as any)
+        .from('trellis_clean_tasks')
+        .select('trellis_task_id', { count: 'exact', head: true })
+        .eq('is_tendwell', true)
+        .gte('scheduled_date', monthStart)
+        .lte('scheduled_date', monthEnd)
+      if (error) throw error
+      return (count as number | null) ?? 0
     },
   })
 
-  const { data: autoVerifications } = useQuery({
-    queryKey: ['/supabase/ns-verifications', month],
+  const { data: autoInspectionCount } = useQuery({
+    queryKey: ['/supabase/ns-inspections', month],
     queryFn: async () => {
-      const { data } = await supabase.from('property_verifications').select('id, verified_at').not('verified_at', 'is', null).gte('verified_at', monthStart).lte('verified_at', monthEnd + 'T23:59:59')
-      return data || []
+      const { count, error } = await supabase
+        .from('inspections')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'completed')
+        .gte('inspected_at', monthStart)
+        .lte('inspected_at', monthEnd)
+      if (error) throw error
+      return count ?? 0
     },
   })
 
@@ -171,9 +188,8 @@ export default function NorthStarPage() {
       return autoTransitions?.filter((t: any) => (t.pipeline_stages as any)?.name === 'Offboarded').length ?? null
     }
     if (source === 'inspections') {
-      const cleans = autoCleans?.length || 0
-      const inspections = autoVerifications?.length || 0
-      return cleans > 0 ? Math.round((inspections / cleans) * 10000) / 100 : 0
+      if (autoCleanCount == null || autoInspectionCount == null) return null
+      return inspectionRatePct(autoInspectionCount, autoCleanCount)
     }
     return null
   }

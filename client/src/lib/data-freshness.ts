@@ -1,4 +1,12 @@
-// Staleness checks for externally-pushed data feeds.
+// Staleness checks for the data feeds behind clean counts.
+//
+// Trellis (WS5, 2026-10-14) is the primary source: from the
+// app_settings.clean_source_cutover month on, every financial clean count
+// (financial_monthly_cleans, property_monthly_cleans, property_clean_stats,
+// Pro Forma, Forecaster, Master List, North Star) comes from the Trellis
+// snapshot, refreshed by the nightly + hourly sync in trellis_sync_log.
+// `trellisFreshness` grades that sync; the Breezeway check below stays for the
+// pre-cutover archive and invoicing, which still reads breezeway_tasks.
 //
 // Breezeway is the only feed with no in-app refresh path: there is no
 // Breezeway API client and no Vercel cron. Task data arrives as a CSV POSTed
@@ -78,4 +86,80 @@ export function breezewayFreshnessDescription(v: FreshnessVerdict): string {
     'Forecaster and Pro Forma are stale, and invoicing may under-count cleans. ' +
     'Check the Breezeway Daily Import workflow in GitHub Actions.'
   )
+}
+
+// ── Trellis sync ─────────────────────────────────────────────────────────────
+
+/** The hourly task refresh + nightly full sync should never leave a day gap. */
+export const TRELLIS_STALE_WARNING_HOURS = 26
+/** Three days without a successful sync: clean counts are meaningfully wrong. */
+export const TRELLIS_STALE_CRITICAL_HOURS = 72
+
+export interface TrellisFreshnessVerdict {
+  severity: FreshnessSeverity
+  /** Whole hours since the last successful sync; null when there is none. */
+  hoursStale: number | null
+  /** ISO date of the last successful sync, or 'never' (used in the alert id). */
+  lastSyncKey: string
+}
+
+/**
+ * Grade how stale the Trellis sync is. `lastSuccessAt` is the newest
+ * `trellis_sync_log.finished_at` whose status is 'done' or 'partial' (a partial
+ * run stopped cleanly at its time budget and still refreshed data), read
+ * through the staff-only `trellis_sync_freshness()` function.
+ *
+ * Returns null while fresh. Missing or unparseable timestamps grade critical:
+ * we cannot prove freshness, and silence is the failure this module prevents.
+ */
+export function trellisFreshness(
+  lastSuccessAt: string | null | undefined,
+  now: Date = new Date(),
+): TrellisFreshnessVerdict | null {
+  if (!lastSuccessAt) return { severity: 'critical', hoursStale: null, lastSyncKey: 'never' }
+  const last = new Date(lastSuccessAt)
+  if (Number.isNaN(last.getTime())) return { severity: 'critical', hoursStale: null, lastSyncKey: 'never' }
+
+  const hoursStale = Math.floor((now.getTime() - last.getTime()) / 3_600_000)
+  if (hoursStale < TRELLIS_STALE_WARNING_HOURS) return null
+
+  return {
+    severity: hoursStale >= TRELLIS_STALE_CRITICAL_HOURS ? 'critical' : 'warning',
+    hoursStale,
+    lastSyncKey: last.toISOString().split('T')[0],
+  }
+}
+
+/** Alert body for a stale Trellis sync (English, like the other alert copy). */
+export function trellisFreshnessDescription(v: TrellisFreshnessVerdict): string {
+  if (v.hoursStale == null) {
+    return 'No Trellis sync has ever finished. Clean counts in Pro Forma, Forecaster, Master List and North Star have no Trellis data.'
+  }
+  const age = v.hoursStale >= 48 ? `${Math.floor(v.hoursStale / 24)} days` : `${v.hoursStale} hours`
+  return (
+    `Last successful Trellis sync was ${age} ago. Clean counts in Pro Forma, Forecaster, ` +
+    'Master List, North Star and the cleaner pages are stale. Check API Sync > History for the failing runs.'
+  )
+}
+
+/**
+ * Once financial clean counts come from Trellis (on/after the cutover), a
+ * stale Breezeway feed only affects the pre-cutover archive and invoicing, so
+ * its alert drops to info. Before the cutover it keeps its graded severity.
+ */
+export function breezewayAlertSeverity(
+  v: FreshnessVerdict,
+  trellisIsPrimary: boolean,
+): FreshnessSeverity | 'info' {
+  return trellisIsPrimary ? 'info' : v.severity
+}
+
+/**
+ * True when `today` (YYYY-MM-DD) is on/after the cutover month start
+ * (YYYY-MM-DD, as returned by clean_source_cutover()). Malformed or missing
+ * cutover means Breezeway is still primary.
+ */
+export function isTrellisPrimary(cutover: string | null | undefined, today: string): boolean {
+  if (!cutover || !/^\d{4}-\d{2}-\d{2}$/.test(cutover)) return false
+  return today >= cutover
 }
