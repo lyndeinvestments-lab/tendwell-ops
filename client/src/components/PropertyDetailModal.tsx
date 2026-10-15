@@ -892,10 +892,9 @@ export function PropertyDetailModal() {
   // Reset to Overview each time the modal opens (or switches property), so a
   // reopened modal doesn't resume on a stale tab.
   useEffect(() => {
-    // 'inspections' was the retired Verification tab (callers such as the
-    // Inspections page still pass it); land on Overview instead of a blank tab.
-    const tab = modalState?.initialTab
-    setActiveTab(tab && tab !== 'inspections' ? tab : 'overview')
+    // openPropertyModal's optional 4th argument picks the starting tab (no
+    // caller passes one today); otherwise land on Overview.
+    setActiveTab(modalState?.initialTab || 'overview')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [propertyId])
 

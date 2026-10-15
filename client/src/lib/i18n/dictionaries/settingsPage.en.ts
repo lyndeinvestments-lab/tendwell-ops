@@ -454,6 +454,17 @@ export const settingsPageEn = {
       gm_authFailure: "Google rejected the key at runtime for {{origin}} - add {{origin}}/* to the key's HTTP referrer allowlist (then check billing / Maps JS API enablement)",
     },
   },
+  // Settings → Integrations → "How the integrations work" guide chrome
+  // (components/settings/IntegrationsGuide.tsx). The guide's content lives in
+  // lib/integrations-docs.ts and is English only (it names tables/endpoints).
+  integrationsGuide: {
+    heading: 'How the integrations work',
+    description: 'Where each external system\'s data comes from, when it syncs, where it is stored, which pages use it, and what to do when something looks wrong.',
+    reviewed: 'Checked against the code and live database on {{date}}.',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all',
+    openPage: 'Open:',
+  },
   // Referrals tab (owner-submitted referrals).
   referrals: {
     heading: 'Referrals',
