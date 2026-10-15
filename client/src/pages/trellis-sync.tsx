@@ -11,10 +11,11 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useAuth } from '@/lib/auth'
-import { RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X, Square, History, Clock, Tags, Trash2, ArrowRight, Type } from 'lucide-react'
+import { BookOpen, RefreshCw, Link2, CheckCircle2, AlertTriangle, HelpCircle, Unlink, Inbox, PackageSearch, Users2, Pencil, Check, Eye, EyeOff, X, Square, History, Clock, Tags, Trash2, ArrowRight, Type } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from '@/components/ui/command'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'wouter'
 import { useTrellisSync, isSuccessfulSyncStatus, fetchTasks, stripTrellisRegionTag, trellisNameDiffers, type TaskRow, type TrellisPropOption, type OpsPropertyOption, type DismissalRow, type SyncProgress, type SyncLogRow, type BreezewayCoverageRow, type BreezewayExceptionRow, type ExceptionRow, type ReconRow, type PropertyAliasRow } from '@/hooks/use-trellis-sync'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
@@ -1193,6 +1194,14 @@ export default function TrellisSyncPage() {
       <PageHeader
         title="API Sync"
         subtitle="Sync and reconcile external systems - Trellis, Breezeway, and Hostaway - against Ops property records."
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/settings?tab=integrations&doc=trellis-overview" data-testid="link-integrations-guide">
+              <BookOpen className="w-3.5 h-3.5 mr-1.5" />
+              How integrations work
+            </Link>
+          </Button>
+        }
       />
 
       <Tabs defaultValue="trellis" className="w-full">

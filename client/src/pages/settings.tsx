@@ -49,6 +49,7 @@ import { downloadAgreementPdf } from '@/lib/agreements'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { slugify } from '@/lib/issues'
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection'
+import { IntegrationsGuide } from '@/components/settings/IntegrationsGuide'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -4252,8 +4253,9 @@ export default function SettingsPage() {
             <WorkflowTemplatesSection />
             <OnboardingTemplateSection />
           </TabsContent>
-          <TabsContent value="integrations" className="mt-0">
+          <TabsContent value="integrations" className="mt-0 space-y-8">
             <IntegrationsSection />
+            <IntegrationsGuide />
           </TabsContent>
           <TabsContent value="api-keys" className="mt-0">
             <ApiKeysSection />

@@ -416,6 +416,14 @@ export const settingsPageEs: typeof settingsPageEn = {
       gm_authFailure: "Google rechazó la clave en tiempo real para {{origin}} - agrega {{origin}}/* a la lista de referencias HTTP permitidas de la clave (luego revisa la facturación / habilitación de la API de Maps JS)",
     },
   },
+  integrationsGuide: {
+    heading: 'Cómo funcionan las integraciones',
+    description: 'De dónde vienen los datos de cada sistema externo, cuándo se sincronizan, dónde se guardan, qué páginas los usan y qué hacer cuando algo no se ve bien. El contenido de la guía está en inglés.',
+    reviewed: 'Verificado contra el código y la base de datos en vivo el {{date}}.',
+    expandAll: 'Expandir todo',
+    collapseAll: 'Contraer todo',
+    openPage: 'Abrir:',
+  },
   referrals: {
     heading: 'Referidos',
     description: 'Referidos enviados por propietarios. Actualiza el estado y la recompensa a medida que los trabajas.',
