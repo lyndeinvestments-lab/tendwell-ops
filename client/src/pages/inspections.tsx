@@ -24,6 +24,8 @@ import { InspectionFormSheet, type ExistingInspection } from '@/components/Inspe
 import { InspectionPriorityDashboard } from '@/components/InspectionPriorityDashboard'
 import { MapPickerDialog } from '@/components/MapPickerDialog'
 import { MyInspectionsTab } from '@/components/MyInspectionsTab'
+import { TrellisInspectionsPanel, useTrellisInspectionQueue } from '@/components/TrellisInspectionsPanel'
+import { prefillFromTrellisTask, type InspectionPrefill, type TrellisInspectionTask } from '@/lib/trellis-inspections'
 import { useMyInspector } from '@/hooks/use-my-inspector'
 import { useUiPrefs } from '@/hooks/use-ui-prefs'
 import { MY_VIEW_PREF_KEY, defaultMyView, sanitizeMyView, sameMyView, effectiveMyViewDates, type MyViewFilters } from '@/lib/inspection-my-view'
@@ -177,7 +179,17 @@ export default function InspectionsPage() {
   const [copiedShare, setCopiedShare] = useState(false)
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<ExistingInspection | null>(null)
+  const [prefill, setPrefill] = useState<InspectionPrefill | null>(null)
+  const { queue: trellisQueue } = useTrellisInspectionQueue()
   const queryClient = useQueryClient()
+
+  function rateTrellisTask(task: TrellisInspectionTask) {
+    const p = prefillFromTrellisTask(task, myInspector?.id ?? null)
+    if (!p) return
+    setEditing(null)
+    setPrefill(p)
+    setFormOpen(true)
+  }
 
   const deleteMut = useMutation({
     mutationFn: async (inspectionId: string) => {
@@ -236,7 +248,11 @@ export default function InspectionsPage() {
         supplies_score: i.supplies_score,
         exterior_score: i.exterior_score,
         share_token: i.share_token,
+        trellis_task_id: i.trellis_task_id ?? null,
+        rated_clean_task_id: i.rated_clean_task_id ?? null,
+        cleaner_auto_filled: i.cleaner_auto_filled ?? null,
       })
+      setPrefill(null)
       setFormOpen(true)
     } else {
       setActiveDetail(i)
@@ -637,7 +653,7 @@ export default function InspectionsPage() {
         actions={
           <>
             {canEdit && (
-              <Button size="sm" onClick={() => { setEditing(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
+              <Button size="sm" onClick={() => { setEditing(null); setPrefill(null); setFormOpen(true) }} className="h-8 text-xs gap-1.5">
                 <Plus className="w-3.5 h-3.5" />
                 {t('page.newInspection')}
               </Button>
@@ -673,6 +689,14 @@ export default function InspectionsPage() {
           <TabsTrigger value="priority" data-testid="tab-priority">{t('tabs.priority')}</TabsTrigger>
           <TabsTrigger value="history" data-testid="tab-history">{t('tabs.history')}</TabsTrigger>
           <TabsTrigger value="myview" data-testid="tab-myview">{t('tabs.myView')}</TabsTrigger>
+          <TabsTrigger value="trellis" data-testid="tab-trellis" className="gap-1.5">
+            {t('tabs.trellis')}
+            {trellisQueue.toRate.length > 0 && (
+              <span className="rounded-full bg-primary px-1.5 text-2xs font-semibold text-primary-foreground tabular-nums">
+                {trellisQueue.toRate.length}
+              </span>
+            )}
+          </TabsTrigger>
         </TabsList>
         {myInspector && (
           <TabsContent value="mine" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
@@ -684,6 +708,9 @@ export default function InspectionsPage() {
         </TabsContent>
         <TabsContent value="history" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
           {historyBody}
+        </TabsContent>
+        <TabsContent value="trellis" className="flex-1 min-h-0 mt-3 data-[state=active]:flex data-[state=active]:flex-col">
+          <TrellisInspectionsPanel canEdit={canEdit} onRate={rateTrellisTask} />
         </TabsContent>
         <TabsContent value="myview" className="flex-1 min-h-0 mt-3 space-y-4 data-[state=active]:flex data-[state=active]:flex-col">
           <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-card-border bg-card shadow-sm px-3 py-2 text-xs">
@@ -842,7 +869,7 @@ export default function InspectionsPage() {
                   size="sm"
                   className="gap-1.5"
                   onClick={() => {
-                    if (activeDetail.property_id) openPropertyModal(String(activeDetail.property_id), 'inspections')
+                    if (activeDetail.property_id) openPropertyModal(String(activeDetail.property_id))
                     setActiveDetail(null)
                   }}
                 >
@@ -871,9 +898,10 @@ export default function InspectionsPage() {
         open={formOpen}
         onOpenChange={(v) => {
           setFormOpen(v)
-          if (!v) setEditing(null)
+          if (!v) { setEditing(null); setPrefill(null) }
         }}
         existing={editing}
+        prefill={prefill}
         defaultInspectorId={myInspector?.id ?? null}
         onDelete={canEdit ? (insp) => {
           const label = (inspections ?? []).find(i => i.id === insp.id)?.properties?.name ?? t('page.thisInspection')

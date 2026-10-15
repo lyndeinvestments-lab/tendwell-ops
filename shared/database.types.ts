@@ -10293,6 +10293,18 @@ export type Database = {
           trellis_task_id: string
         }[]
       }
+      inspection_rated_clean_hint: {
+        Args: { p_anchor: string; p_property_id: number }
+        Returns: {
+          clean_date: string
+          clean_kind: string | null
+          clean_title: string | null
+          cleaner_id: string | null
+          cleaner_name: string | null
+          is_tendwell: boolean
+          trellis_task_id: string
+        }[]
+      }
       invoice_apply_open_credits: {
         Args: { p_actor?: string; p_run_id: string }
         Returns: Json

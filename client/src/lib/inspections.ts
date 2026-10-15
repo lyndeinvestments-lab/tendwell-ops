@@ -25,12 +25,18 @@ export type Inspection = {
   notes: string | null
   photos_url: string[] | null
   share_token: string | null
+  /** Trellis inspection task this row rates (set from the "From Trellis" panel). */
+  trellis_task_id?: string | null
+  /** Trellis clean this inspection rates (trigger or form fills it). */
+  rated_clean_task_id?: string | null
+  /** True when cleaner_id came from Trellis attribution, not a person's pick. */
+  cleaner_auto_filled?: boolean | null
   properties?: { name: string; address: string | null } | null
   cleaners?: { full_name: string } | null
   inspectors?: { full_name: string } | null
 }
 
-export const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, share_token, properties:property_ops(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
+export const INSPECTION_SELECT = 'id, property_id, cleaner_id, cleaner_name, inspector_id, inspected_by, inspected_at, scheduled_for, last_cleaned_on, status, reinspect_urgency, reinspect_by, overall_score, cleanliness_score, linens_score, supplies_score, exterior_score, notes, photos_url, share_token, trellis_task_id, rated_clean_task_id, cleaner_auto_filled, properties:property_ops(name, address), cleaners!inspections_cleaner_id_fkey(full_name), inspectors:cleaners!inspections_inspector_id_fkey(full_name)'
 
 export function scoreColorClass(score: number | null): string {
   if (score == null) return 'bg-muted text-muted-foreground'
