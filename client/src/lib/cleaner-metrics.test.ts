@@ -194,8 +194,11 @@ describe('unlinked roster members', () => {
     const by = (id: string) => list.find(u => u.member.user_id === id)!
     expect(by('u3').stale).toBe(true)
     expect(by('u2').stale).toBe(false)
-    expect(by('u2').possibleDuplicateOf).toBe('Yeymi munguia')
-    expect(by('u10').similarCleaner).toBe('Claudia Pavon')
+    // The look-alike account stopped appearing in Trellis: it was replaced, not a duplicate.
+    expect(by('u2').possibleDuplicateOf).toBeNull()
+    expect(by('u3').possibleDuplicateOf).toBe('Yeimi Munguia')
+    // An email match settles identity, so no name hint is shown.
+    expect(by('u10').similarCleaner).toBeNull()
     expect(by('u10').emailUsedBy).toBe('Roxana Pavon')
     expect(by('u1').dismissed).toBe(true)
   })

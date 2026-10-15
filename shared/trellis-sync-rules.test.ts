@@ -220,6 +220,16 @@ describe('planCleanerSync', () => {
       ['dismissed', 'not_seen_recently', 'possible_duplicate_member', 'possible_duplicate_member', 'similar_cleaner_exists'].sort())
   })
 
+  it('creates the live account when its look-alike stopped appearing in Trellis', () => {
+    const roster = [
+      member({ user_id: 'new', name: 'Yeimi Munguia', email: 'new@x.com' }),
+      member({ user_id: 'old', name: 'Yeymi munguia', email: 'old@x.com', last_seen_at: '2026-10-02T03:00:00Z' }),
+    ]
+    const p = planCleanerSync(roster, [], { autoCreate: true, now: NOW })
+    expect(p.creates).toEqual([{ user_id: 'new', full_name: 'Yeimi Munguia', email: 'new@x.com' }])
+    expect(p.skipped).toEqual([{ user_id: 'old', name: 'Yeymi munguia', reason: 'not_seen_recently' }])
+  })
+
   it('offboards linked cleaners whose roster row went inactive and only reactivates sync offboards', () => {
     const roster = [member({ user_id: 'gone', is_active: false }), member({ user_id: 'back' }), member({ user_id: 'manual' })]
     const p = planCleanerSync(roster, [

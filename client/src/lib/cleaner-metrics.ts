@@ -437,10 +437,12 @@ export function unlinkedRosterMembers(
   const cutoff = now.getTime() - CREATE_SEEN_WITHIN_DAYS * 86_400_000
   return unlinked.map(m => {
     const seen = m.last_seen_at ? Date.parse(m.last_seen_at) : NaN
-    const dup = eligible.find(o => o.user_id !== m.user_id && likelySamePerson(o.name, m.name))
-    const similar = cleaners.find(c => likelySamePerson(c.full_name, m.name))
+    // Same rule as the sync: a look-alike account only matters while it is
+    // also live; an email match settles identity, so it hides the name hint.
+    const dup = eligible.find(o => o.user_id !== m.user_id && o.last_seen_at != null && Date.parse(o.last_seen_at) >= cutoff && likelySamePerson(o.name, m.name))
     const email = normalizeEmail(m.email)
     const emailUser = email ? cleaners.find(c => normalizeEmail(c.email) === email || normalizeEmail(c.alt_email) === email) : undefined
+    const similar = emailUser ? undefined : cleaners.find(c => likelySamePerson(c.full_name, m.name))
     return {
       member: m,
       dismissed: dismissedUserIds.has(m.user_id),
