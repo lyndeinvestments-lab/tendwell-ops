@@ -21,10 +21,10 @@ import { getServiceClient, readRawBody, reconcileRun, requireInvoicingBearer } f
 // Nina's date-header-block convention is honored: a $0.00 row whose text is
 // just a date (e.g. "7/13/26") sets the service date for the rows after it.
 //
-// Subtotal hard gate: if a stated subtotal is known (param or a "Subtotal"
-// row/line in the file), the line sum must match to the penny or the run is
-// stored as review_needed (subtotal_mismatch) and can never be approved until
-// re-uploaded or manually resolved.
+// Stated subtotal: if one is known (param or a "Subtotal" row/line in the
+// file), it is stored and compared with the line sum. A mismatch is reported
+// (subtotal_gate 'FAILED') and shown on the run, but never blocks approval:
+// vendors often total their own invoices wrong.
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 

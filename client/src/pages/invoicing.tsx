@@ -280,14 +280,13 @@ export default function InvoicingPage() {
         const n = Number(vars.statedSubtotal)
         if (Number.isFinite(n)) body.stated_subtotal = n
       }
-      return invoicesApi<{ ok: boolean; run_id: string; status: string; subtotal_gate?: boolean; stated_subtotal?: number | null; computed_subtotal?: number | null }>('upload', { method: 'POST', body })
+      return invoicesApi<{ ok: boolean; run_id: string; status: string; subtotal_gate?: 'passed' | 'FAILED' | 'no_stated_subtotal'; stated_subtotal?: number | null; computed_subtotal?: number | null }>('upload', { method: 'POST', body })
     },
     onSuccess: (result) => {
-      if (result.subtotal_gate === false) {
+      if (result.subtotal_gate === 'FAILED') {
         toast({
-          title: 'Invoice ingested — subtotal mismatch',
-          description: `Stated ${fmtMoney(result.stated_subtotal)} vs computed ${fmtMoney(result.computed_subtotal)}. Flagged for review.`,
-          variant: 'destructive',
+          title: "Invoice uploaded: vendor total doesn't match",
+          description: `Vendor's total ${fmtMoney(result.stated_subtotal)} vs lines ${fmtMoney(result.computed_subtotal)}. This won't block approval.`,
         })
       } else {
         toast({ title: 'Invoice uploaded', description: `Status: ${result.status}` })
@@ -807,13 +806,14 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   const [approveBlockers, setApproveBlockers] = useState<BlockingLine[] | null>(null)
   const [approveError, setApproveError] = useState<string | null>(null)
 
-  // A vendor CSV can't be approved without the total printed on the vendor's
-  // invoice (the penny gate in api/invoices/approve.ts).
+  // The total printed on the vendor's invoice is optional: it is recorded and
+  // compared with the lines, but a mismatch never blocks approval (vendors
+  // often total their own invoices wrong).
   const [vendorTotal, setVendorTotal] = useState('')
   const approveMutation = useMutation({
-    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string }>('approve', {
+    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string; vendor_total?: { stated: number; lines: number; difference: number } | null }>('approve', {
       method: 'POST',
-      body: vendorTotal.trim() ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
+      body: vendorTotal.trim() && Number.isFinite(Number(vendorTotal)) ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
     }),
     onSuccess: (r) => {
       setApproveBlockers(null)
@@ -821,7 +821,11 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
       const credits = r.credits_applied
         ? ` ${r.credits_applied} open client credit(s) added (${fmtMoney(r.credit_total ?? 0)}).`
         : ''
-      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${credits}` })
+      const vt = r.vendor_total
+      const variance = vt && Math.abs(vt.difference) > 0.005
+        ? ` Lines total ${fmtMoney(vt.lines)}; vendor's invoice said ${fmtMoney(vt.stated)} (${vt.difference > 0 ? '+' : ''}${fmtMoney(vt.difference)}).`
+        : ''
+      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${variance}${credits}` })
       if (r.credits_warning) toast({ title: 'Client credits not applied', description: r.credits_warning, variant: 'destructive' })
       qc.invalidateQueries({ queryKey: ['invoicing', 'credits'] })
       invalidate()
@@ -1053,7 +1057,6 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // A vendor's draft is still being written (or was returned to them).
   const canApprove = !!run && !['approved', 'exported', 'void', 'draft'].includes(run.status)
   const needsVendorTotal = run?.source === 'vendor_csv' && run.stated_subtotal == null
-  const vendorTotalValid = vendorTotal.trim() !== '' && Number.isFinite(Number(vendorTotal))
   const showDownloads = !!run && (run.status === 'approved' || run.status === 'exported')
   const subtotalMismatch = run?.stated_subtotal != null && run?.computed_subtotal != null
     && Math.abs(run.stated_subtotal - run.computed_subtotal) > 0.005
@@ -1143,8 +1146,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                 type="number"
                 step="0.01"
                 className="h-9 w-40"
-                placeholder="Vendor invoice total"
-                title="The total printed on the vendor's invoice — the lines must add up to it to the penny"
+                placeholder="Vendor total (optional)"
+                title="The total printed on the vendor's invoice. Recorded and compared with the lines; a mismatch does not block approval."
                 value={vendorTotal}
                 onChange={e => setVendorTotal(e.target.value)}
                 data-testid="input-approve-vendor-total"
@@ -1154,10 +1157,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
               <Button
                 size="sm"
                 onClick={() => approveMutation.mutate()}
-                disabled={approveMutation.isPending || hasNeedsReview || (needsVendorTotal && !vendorTotalValid)}
-                title={hasNeedsReview
-                  ? 'Resolve all needs-review lines before approving'
-                  : needsVendorTotal && !vendorTotalValid ? "Enter the total from the vendor's invoice first" : undefined}
+                disabled={approveMutation.isPending || hasNeedsReview}
+                title={hasNeedsReview ? 'Resolve all needs-review lines before approving' : undefined}
                 data-testid="button-approve"
               >
                 {approveMutation.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
@@ -1237,7 +1238,10 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
             </div>
             <div>
               <p className="text-2xs uppercase tracking-wide text-muted-foreground">Stated vs. computed</p>
-              <p className={cn('font-medium tabular-nums', subtotalMismatch && 'text-destructive')}>
+              <p
+                className={cn('font-medium tabular-nums', subtotalMismatch && 'text-warning')}
+                title={subtotalMismatch ? "The vendor's total differs from the lines. Approval is not blocked; the lines are what gets paid and billed." : undefined}
+              >
                 {fmtMoney(run.stated_subtotal)} / {fmtMoney(run.computed_subtotal)}
                 {subtotalMismatch && <AlertTriangle className="inline w-3.5 h-3.5 ml-1.5" />}
               </p>
