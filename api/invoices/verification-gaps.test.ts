@@ -35,6 +35,27 @@ describe('penny gate — vendor line total', () => {
     ])).toBe(335.1)
   })
 
+  it('an excluded split row never replaces the base amount, in any row order (I261012825 L445)', () => {
+    const base = { line_no: 445, raw_amount: '210.84', split_group: 5, line_kind: 'excluded', source: 'vendor' }
+    const surcharge = { line_no: 445, raw_amount: '0.00', split_group: 5, line_kind: 'excluded', source: 'vendor' }
+    const other = { line_no: 446, raw_amount: 100, split_group: null, line_kind: 'clean', source: 'vendor' }
+    expect(vendorInvoicedSum([base, surcharge, other])).toBe(310.84)
+    expect(vendorInvoicedSum([surcharge, base, other])).toBe(310.84)
+    // An excluded slice of a combined line (the vendor's onboarding add-on)
+    // still counts once, at the base row's full amount.
+    expect(vendorInvoicedSum([
+      { line_no: 294, raw_amount: '49.85', split_group: 9, line_kind: 'excluded', source: 'vendor' },
+      { line_no: 294, raw_amount: '221.00', split_group: 9, line_kind: 'combined_split', source: 'vendor' },
+    ])).toBe(221)
+  })
+
+  it('a credit line keeps its negative amount', () => {
+    expect(vendorInvoicedSum([
+      { line_no: 7, raw_amount: '-35.00', split_group: null, line_kind: 'credit', source: 'vendor' },
+      { line_no: 8, raw_amount: '135.00', split_group: null, line_kind: 'clean', source: 'vendor' },
+    ])).toBe(100)
+  })
+
   it('Trip Fee and mailed left items need the same detail as a reimbursement', () => {
     expect(DETAIL_REQUIRED_SERVICES).toEqual(expect.arrayContaining(['Reimbursement', 'Trip Fee', 'Mailed Left Items by the Guest']))
   })
