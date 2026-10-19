@@ -25,6 +25,7 @@ import {
 import { localISODate } from '@/lib/local-date'
 import { invoicesApi } from '@/lib/invoices'
 import { billingAlerts, type BillingAlertsResponse } from '@/lib/billing-alerts'
+import { linenPropertiesMissingDecision } from '@shared/linen-charges'
 import {
   AlertTriangle, AlertCircle, Info, Building2, Wind, BedDouble, ClipboardCheck, Users,
   X, Clock, ExternalLink, CheckCircle2, ShieldAlert, Filter,
@@ -211,6 +212,36 @@ export function useAlerts() {
         // A failed feed must not take the rest of the alerts down with it.
         return null
       }
+    },
+    enabled: canSeeBilling,
+    staleTime: 300_000,
+  })
+
+  // Linen properties cleaned since linen charges went live with no linen fee
+  // decision: the fee would never be billed. Same audience as billing alerts.
+  const { data: linenMissing } = useQuery({
+    queryKey: ['/supabase/linen-fee-missing'],
+    queryFn: async () => {
+      const { data: props, error } = await supabase
+        .from('properties')
+        .select('id, name')
+        .eq('linen_program', true)
+        .is('archived_at', null)
+      if (error || !props?.length) return []
+      const ids = props.map(p => p.id)
+      const [fc, dec] = await Promise.all([
+        supabase.from('property_first_tendwell_clean').select('property_id, first_clean_date').in('property_id', ids),
+        (supabase as any).rpc('linen_charge_decisions', { p_property_ids: ids }),
+      ])
+      // Missing migration or view: no alert rather than a false one.
+      if (fc.error || dec.error) return []
+      const firstClean = new Map<number, string>(
+        ((fc.data ?? []) as Array<{ property_id: number; first_clean_date: string | null }>)
+          .filter(r => r.first_clean_date)
+          .map(r => [Number(r.property_id), r.first_clean_date as string]),
+      )
+      const decided = new Set<number>(((dec.data ?? []) as Array<{ property_id: number }>).map(r => Number(r.property_id)))
+      return linenPropertiesMissingDecision(props, decided, firstClean)
     },
     enabled: canSeeBilling,
     staleTime: 300_000,
@@ -405,6 +436,20 @@ export function useAlerts() {
 
     if (canSeeBilling && billing) result.push(...billingAlerts(billing))
 
+    for (const { property, firstClean } of canSeeBilling ? linenMissing ?? [] : []) {
+      result.push({
+        id: `linen_fee_missing_${property.id}`,
+        severity: 'warning',
+        category: 'Billing',
+        title: 'Linen fee not set',
+        description: `${property.name} is on the linen program and was first cleaned ${firstClean}, but no linen fee is set or waived, so it will never be billed.`,
+        actionLabel: 'Set linen fee',
+        actionRoute: `/invoicing?linen=${property.id}`,
+        propertyId: String(property.id),
+        requiredView: 'invoicing',
+      })
+    }
+
     // Info: New Contact Unlinked
     if (contacts) {
       for (const c of contacts) {
@@ -427,7 +472,7 @@ export function useAlerts() {
     const order = { critical: 0, warning: 1, info: 2 }
     result.sort((a, b) => order[a.severity] - order[b.severity])
     return result
-  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, trellisSync, effectiveUser, canViewFinancials, canSeeBilling, billing])
+  }, [properties, onboardingTasks, contacts, overdueIssues, unackedFeedback, lastBreezewayImport, trellisSync, effectiveUser, canViewFinancials, canSeeBilling, billing, linenMissing])
 
   const dismissedSet = useMemo(() => {
     const set = new Set<string>()

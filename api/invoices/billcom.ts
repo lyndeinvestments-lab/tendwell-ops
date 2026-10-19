@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 import { isCreditLine } from './_credits.js'
+import { isLinenChargeLine } from '../../shared/linen-charges.js'
 import {
+  linenClientsByLine,
   canTransition,
   channelLabel,
   CLIENT_INVOICE_CHANNELS,
@@ -155,6 +157,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     creditClients = creditClientsByLine(adjRows)
   }
+  // A client-wide linen charge (no property) names its client on the charge.
+  const linenLineIds = rows.filter(r => isLinenChargeLine(r)).map(r => String(r.id))
+  if (linenLineIds.length > 0) {
+    const { data: instRows, error: instErr } = await supabase
+      .from('linen_charge_installments')
+      .select('line_id, linen_charges:charge_id(contact_id, contacts:contact_id(full_name, company))')
+      .in('line_id', linenLineIds)
+    if (instErr && !isMissingSchemaError(instErr)) {
+      res.status(500).json({ error: 'Failed to load linen charges', detail: instErr.message })
+      return
+    }
+    creditClients = new Map([...Array.from(creditClients), ...Array.from(linenClientsByLine(instRows))])
+  }
 
   const toInput = (r: Record<string, any>): BillComLineInput => {
     const prop = Array.isArray(r.properties) ? r.properties[0] : r.properties
@@ -238,6 +253,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const l = inputs[idx]
     if (isCreditLine(r)) {
       res.status(409).json({ error: 'Credits are changed under Open credits owed, not here' })
+      return
+    }
+    if (isLinenChargeLine(r)) {
+      res.status(409).json({ error: 'Linen charges are changed under Linen charges, not here' })
       return
     }
     if (!isClientInvoiceArLine(l)) {

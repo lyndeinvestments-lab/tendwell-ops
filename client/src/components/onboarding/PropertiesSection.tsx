@@ -7,6 +7,7 @@ import { usePropertyModal } from '@/hooks/use-property-modal'
 import { useToast } from '@/hooks/use-toast'
 import { useOnboardingProperties, type OnboardingPropertyRow } from '@/hooks/use-onboarding'
 import { invalidateAllPropertyQueries } from '@/lib/query-invalidations'
+import { useCanViewFinancials } from '@/lib/financial-access'
 import { ACTIVE_STAGE_ID, ONBOARDING_STAGE_ID, type ReadinessItem } from '@/lib/onboarding'
 import { StatCard } from '@/components/StatCard'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -52,6 +53,8 @@ export function PropertiesSection({ onReviewSubmissions }: { onReviewSubmissions
   const canSync = canAccessView('trellis-sync', effectiveUser)
   const canAccessTab = canAccessView('access-codes', effectiveUser)
   const canMove = canEditView('property-list', effectiveUser)
+  const canInvoicing = canEditView('invoicing', effectiveUser)
+  const canFinancials = useCanViewFinancials()
 
   const { mutate: moveToActive, isPending: moving } = useGuardedMutation('property-list', {
     mutationFn: async (row: OnboardingPropertyRow) => {
@@ -126,6 +129,11 @@ export function PropertiesSection({ onReviewSubmissions }: { onReviewSubmissions
         }
         return out
       }
+      case 'linen':
+        if (item.state !== 'todo') return []
+        // Linen charges live in Invoice Reconciliation (finance-only).
+        if (!canInvoicing || !canFinancials) return adminOnly
+        return [{ label: t('actions.setLinenFee'), onClick: () => navigate(`/invoicing?linen=${p.id}`) }]
     }
   }
 

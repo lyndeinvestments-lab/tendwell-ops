@@ -101,6 +101,7 @@ export const FLAG_LABELS: Record<string, string> = {
   deep_mismatch: 'Deep-clean note/task mismatch',
   credit_line: 'Credit line',
   credit: 'Client credit applied',
+  linen_charge: 'Linen onboarding charge',
   reason_required: 'Reason required',
   paid_at_rate: 'Paid at Ops rate (vendor under-billed)',
   standard_priced: 'Standard price applied',
@@ -260,7 +261,8 @@ export function lineIssues(l: InvoiceLine): string[] {
   const isReimb = l.service_type === 'Reimbursement'
   // A client credit (invoice_adjustments) names its client on the adjustment,
   // so it needs no property; it is added after every approve gate has passed.
-  const isClientCredit = (l.flags ?? []).includes('credit')
+  // So does a client-wide linen charge (linen_charges, flag 'linen_charge').
+  const isClientCredit = (l.flags ?? []).includes('credit') || (l.flags ?? []).includes('linen_charge')
   if (billable && !isClientCredit && l.property_id == null && (l.billing_channel !== 'qbo_haven' || isReimb)) {
     out.push(isReimb
       ? 'Reimbursement needs the property it was for (Haven bills it back to that guest/owner)'

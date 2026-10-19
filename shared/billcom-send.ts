@@ -241,6 +241,26 @@ export function creditClientsByLine(
   return m
 }
 
+/** linen_charge_installments rows (line_id, linen_charges embed with its
+ *  contact) → the client of each linen charge line. A client-wide linen charge
+ *  (Hostimo's portfolio deal) has no property, so like a credit it names its
+ *  client on the charge. Same map shape as creditClientsByLine so the two can
+ *  be merged; empty when the table is missing (20261019a pending). */
+export function linenClientsByLine(
+  rows: ReadonlyArray<{ line_id?: unknown; linen_charges?: unknown }> | null | undefined,
+): Map<string, CreditClient> {
+  const m = new Map<string, CreditClient>()
+  for (const r of rows ?? []) {
+    const ch = (Array.isArray(r.linen_charges) ? r.linen_charges[0] : r.linen_charges) as
+      { contact_id?: unknown; contacts?: unknown } | null | undefined
+    if (!r.line_id || !ch?.contact_id) continue
+    const rel = ch.contacts as { full_name?: string | null; company?: string | null } | Array<{ full_name?: string | null; company?: string | null }> | null | undefined
+    const c = Array.isArray(rel) ? rel[0] : rel
+    m.set(String(r.line_id), { contactId: String(ch.contact_id), clientName: c?.full_name ?? c?.company ?? null })
+  }
+  return m
+}
+
 /** Who a line bills. A client credit (flag 'credit', service 'Credit') usually
  *  has no property: its client is on the adjustment it was applied from. Every
  *  other line bills its property's client. One rule for the worksheet, the

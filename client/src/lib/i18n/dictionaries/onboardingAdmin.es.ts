@@ -160,7 +160,7 @@ export const onboardingAdminEs: typeof onboardingAdminEn = {
       longest: 'Mayor espera (días)',
     },
     empty: 'Ahora mismo no hay propiedades en la etapa de incorporación.',
-    legend: 'Cada propiedad necesita estas seis cosas antes de operar. Los elementos opcionales en gris nunca bloquean la activación.',
+    legend: 'Cada propiedad necesita estas cosas antes de operar. Los elementos opcionales en gris nunca bloquean la activación.',
     daysIn: 'Días en incorporación: {{count}}',
     ready: 'Lista para activar',
     toDo: '{{count}} por hacer',
@@ -186,6 +186,7 @@ export const onboardingAdminEs: typeof onboardingAdminEn = {
       access: 'Código de acceso',
       calendar: 'Calendario',
       trellis: 'Trellis',
+      linen: 'Cargo de ropa de cama',
     },
     detail: {
       portal: {
@@ -220,6 +221,14 @@ export const onboardingAdminEs: typeof onboardingAdminEn = {
         missing_owner: 'Falta el enlace del portal de Trellis del propietario.',
         missing_both: 'La propiedad no está vinculada en Trellis y el propietario no tiene enlace del portal de Trellis.',
       },
+      linen: {
+        scheduled: 'El cargo de ropa de cama está fijado y se factura en la primera factura.',
+        billed: 'El cargo de ropa de cama ya se facturó.',
+        waived: 'El cargo de ropa de cama no se cobra.',
+        portfolio: 'Cubierto por el acuerdo de ropa de cama del cliente.',
+        missing: 'Está en el programa de ropa de cama, pero aún no se fijó ni se eximió el cargo.',
+        unavailable: 'Los cargos de ropa de cama aún no están configurados.',
+      },
     },
   },
   actions: {
@@ -232,6 +241,7 @@ export const onboardingAdminEs: typeof onboardingAdminEn = {
     addIcal: 'Agregar enlace de iCal',
     linkTrellis: 'Vincular en API Sync',
     addTrellisLink: 'Agregar enlace de Trellis',
+    setLinenFee: 'Fijar cargo de ropa de cama',
     adminOnly: 'Pide a un admin',
   },
 }

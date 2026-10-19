@@ -9,6 +9,7 @@ import {
   sortReadiness,
   type OnboardingSubmission,
   type ReadinessAgreement,
+  type ReadinessLinen,
   type ReadinessOwner,
   type ReadinessProperty,
   type ReadinessResult,
@@ -187,16 +188,16 @@ export function useOnboardingProperties() {
     queryFn: async () => {
       const { data: props, error } = await supabase
         .from('properties')
-        .select('id,name,address,door_code,has_auto_code,ical_url,trellis_id,contact_id,created_at')
+        .select('id,name,address,door_code,has_auto_code,ical_url,trellis_id,contact_id,created_at,linen_program')
         .eq('stage_id', ONBOARDING_STAGE_ID)
         .is('archived_at', null)
         .order('name')
       if (error) throw error
-      const properties = (props ?? []) as unknown as (ReadinessProperty & { created_at: string | null })[]
+      const properties = (props ?? []) as unknown as (ReadinessProperty & { created_at: string | null; linen_program: boolean | null })[]
       if (properties.length === 0) return []
       const ids = properties.map(p => p.id)
 
-      const [ownerLinks, subs, apiSubs, transitions] = await Promise.all([
+      const [ownerLinks, subs, apiSubs, transitions, linenDecisions] = await Promise.all([
         supabase.from('owner_properties').select('owner_id,property_id').in('property_id', ids),
         supabase.from('onboarding_submissions').select('id,property_id,status,source,submitted_at').in('property_id', ids),
         // Only an APPLIED submission's API key counts toward "calendar": a pending or
@@ -208,6 +209,8 @@ export function useOnboardingProperties() {
           .eq('to_stage_id', ONBOARDING_STAGE_ID)
           .in('property_id', ids)
           .order('created_at', { ascending: false }),
+        // Yes/no per property, no amounts: staff without financial access see it too.
+        (supabase as any).rpc('linen_charge_decisions', { p_property_ids: ids }),
       ])
       if (ownerLinks.error) throw ownerLinks.error
       if (subs.error) throw subs.error
@@ -237,6 +240,14 @@ export function useOnboardingProperties() {
         if (t.created_at && !since.has(Number(t.property_id))) since.set(Number(t.property_id), t.created_at)
       }
 
+      // Before migration 20261019a the function is missing: the linen item
+      // shows as optional instead of blocking every linen property.
+      const linenUnavailable = !!linenDecisions.error
+      const linenByProperty = new Map<number, ReadinessLinen['decision']>(
+        ((linenDecisions.data ?? []) as Array<{ property_id: number; decision: ReadinessLinen['decision'] }>)
+          .map(r => [Number(r.property_id), r.decision]),
+      )
+
       const now = new Date()
       const rows: OnboardingPropertyRow[] = properties.map(property => {
         const linked = (ownerLinks.data ?? [])
@@ -250,6 +261,11 @@ export function useOnboardingProperties() {
           agreements: agreements.filter(a => linked.some(o => o.id === a.owner_id)),
           submissions,
           hasApiKey: apiProps.has(Number(property.id)),
+          linen: {
+            program: !!property.linen_program,
+            decision: linenByProperty.get(Number(property.id)) ?? null,
+            unavailable: linenUnavailable,
+          },
         })
         return {
           property,
