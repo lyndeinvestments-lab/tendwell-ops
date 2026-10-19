@@ -2070,6 +2070,52 @@ export function havenListingIdsFromRows(
   return ids.size > 0 ? ids : null
 }
 
+/** Matching key for a Hostaway internal listing name or an Ops property name:
+ *  lower case, a trailing area tag such as "(SCounty)" dropped, dash variants
+ *  unified and whitespace collapsed. "Greg Drury 1619-14 (SCounty)" and
+ *  "Greg Drury 1619-14" give the same key. */
+export function listingNameKey(name: string | null | undefined): string {
+  return String(name ?? '')
+    .toLowerCase()
+    .replace(/[‐-―]/g, '-')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Property ids whose name (or a property alias) matches a Hostaway listing's
+ *  internal name. Haven names every listing "<owner> <house number>", the same
+ *  convention Ops uses, so this catches the listings the address match misses:
+ *  condo units that share a street address (only one property can win an
+ *  address), and addresses written differently on each side ("East Pkwy" vs
+ *  "E Pkwy", "Rdg" vs "Ridge"). When the exact name has no listing, a trailing
+ *  unit ("191-32" -> "191") is tried, but only if exactly one listing has that
+ *  name. */
+export function havenListingIdsByName(
+  listings: ReadonlyArray<{ internal_name: string | null }>,
+  properties: ReadonlyArray<{ id: number; name: string | null }>,
+  aliases: ReadonlyArray<{ property_id: number | string; alias: string | null }> = [],
+): Set<number> {
+  const count = new Map<string, number>()
+  for (const l of listings) {
+    const k = listingNameKey(l.internal_name)
+    if (k) count.set(k, (count.get(k) ?? 0) + 1)
+  }
+  const ids = new Set<number>()
+  for (const p of properties) {
+    const k = listingNameKey(p.name)
+    if (!k) continue
+    if (count.has(k)) { ids.add(p.id); continue }
+    const base = k.replace(/(\d)-\d+$/, '$1')
+    if (base !== k && count.get(base) === 1) ids.add(p.id)
+  }
+  for (const a of aliases) {
+    const k = listingNameKey(a.alias)
+    if (k && count.has(k)) ids.add(Number(a.property_id))
+  }
+  return ids
+}
+
 /** Flag a Haven-billed line whose property has no matched Hostaway listing.
  *  `listingPropertyIds` null/empty means the snapshot is unavailable, so
  *  nothing is flagged (a failed sync must not block every Haven line). Lines
