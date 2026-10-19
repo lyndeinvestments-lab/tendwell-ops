@@ -206,6 +206,36 @@ describe('buildTaskLines — what is skipped', () => {
     expect(r.skipped[0].reason).toBe('already_on_run')
   })
 
+  it("a reviewed Breezeway task line blocks its Trellis twin, whether it was approved or dismissed (I261012825 L538-542)", () => {
+    const existing: ExistingLineRef[] = [
+      // Karen Wanamarta 3736 touch-up, resolved by Jordan
+      { source: 'task', propertyId: 1, serviceType: 'Vacancy Clean / Touch Up Clean', date: '2026-09-10', matchedTaskId: 'bw-touch', lineKind: 'extra', reviewStatus: 'resolved' },
+      // Doug Poll 740 delivery, excluded by Jordan
+      { source: 'task', propertyId: 2, serviceType: 'Trip Fee', date: '2026-09-11', matchedTaskId: 'bw-trip', lineKind: 'excluded', reviewStatus: 'excluded' },
+    ]
+    const r = buildTaskLines({ ...base, existing, tasks: [
+      task({ externalId: 'bw-touch', title: 'Touch-Up Clean' }),
+      task({ externalId: 'trellis:touch', source: 'trellis', title: 'Touch-Up Clean' }),
+      task({ externalId: 'bw-trip', propertyId: 2, date: '2026-09-11', title: 'Urgent delivery: sheets, towels & toiletries' }),
+      task({ externalId: 'trellis:trip', source: 'trellis', propertyId: 2, date: '2026-09-11', title: 'Urgent delivery: sheets, towels & toiletries' }),
+    ] })
+    expect(r.inserts).toHaveLength(0)
+    expect(Object.fromEntries(r.skipped.map(s => [s.externalId, s.reason]))).toEqual({
+      'bw-touch': 'already_on_run',
+      'trellis:touch': 'duplicate_source',
+      'bw-trip': 'already_on_run',
+      'trellis:trip': 'duplicate_source',
+    })
+  })
+
+  it('a kept task line does not block a different service on the same property-day', () => {
+    const existing: ExistingLineRef[] = [
+      { source: 'task', propertyId: 1, serviceType: 'Trip Fee', date: '2026-09-10', matchedTaskId: 'bw-trip', lineKind: 'extra', reviewStatus: 'resolved' },
+    ]
+    const r = buildTaskLines({ ...base, existing, tasks: [task({ externalId: 'trellis:ht', source: 'trellis', title: 'Hot Tub Refresh' })] })
+    expect(r.inserts.map(l => l.matched_task_id)).toEqual(['trellis:ht'])
+  })
+
   it('a vendor line for the same property + service within a day means the vendor billed it — no double charge', () => {
     const existing: ExistingLineRef[] = [
       { source: 'vendor', propertyId: 1, serviceType: 'Hot Tub Refresh Requested by Guest', date: '2026-09-11', matchedTaskId: null, lineKind: 'extra', reviewStatus: 'ok' },
