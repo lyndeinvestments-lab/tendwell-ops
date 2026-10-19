@@ -4,6 +4,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
+  havenListingIdsByName,
   havenListingIdsFromRows,
   isExcludedTitle,
   reconcile,
@@ -500,7 +501,7 @@ export async function loadEngineContext(
   const [stays, previousCharges, havenListingPropertyIds, reservationRates] = await Promise.all([
     loadStays(supabase, taskWindowStart, taskWindowEnd, propertyByTrellisId),
     loadPreviousCharges(supabase, excludeRunId),
-    loadHavenListingPropertyIds(supabase),
+    loadHavenListingPropertyIds(supabase, properties),
     loadReservationRates(supabase, taskWindowStart, taskWindowEnd),
   ])
 
@@ -604,20 +605,45 @@ export async function loadPreviousCharges(supabase: SupabaseClient, excludeRunId
   return out
 }
 
-/** Ops properties that have a Hostaway listing (Haven's listings). Reads the
- *  hostaway_reconciliation view, whose property_id is the manual match when
- *  there is one and the normalized-address match otherwise, so it covers every
- *  matched listing, not just the hand-linked ones. Returns null when the
- *  snapshot is empty or unreadable, which makes the engine skip the check. */
-export async function loadHavenListingPropertyIds(supabase: SupabaseClient): Promise<Set<number> | null> {
+/** Ops properties that have a Hostaway listing (Haven's listings). Two sources,
+ *  unioned: the hostaway_reconciliation view (manual match, else the
+ *  normalized-address match) and a name match of each listing's internal name
+ *  against Ops property names and property_aliases (havenListingIdsByName).
+ *  The address match alone missed every condo unit that shares a street
+ *  address and every address spelled differently in Hostaway, which flagged 67
+ *  Haven lines on I261012825. Returns null when nothing matches (empty or
+ *  unreadable snapshot), which makes the engine skip the check. */
+export async function loadHavenListingPropertyIds(
+  supabase: SupabaseClient,
+  properties: ReadonlyArray<{ id: number; name: string | null }> = [],
+): Promise<Set<number> | null> {
   try {
-    const rows = await fetchAllRows<{ hostaway_id: number; property_id: number | null }>(
-      'hostaway_reconciliation',
-      () => supabase.from('hostaway_reconciliation').select('hostaway_id, property_id').order('hostaway_id'),
-      'hostaway_id',
-    )
-    const ids = havenListingIdsFromRows(rows)
-    if (!ids) console.warn('Hostaway snapshot has no matched listings; not_haven_listing check skipped')
+    const [rows, listings, aliasRows] = await Promise.all([
+      fetchAllRows<{ hostaway_id: number; property_id: number | null }>(
+        'hostaway_reconciliation',
+        () => supabase.from('hostaway_reconciliation').select('hostaway_id, property_id').order('hostaway_id'),
+        'hostaway_id',
+      ),
+      fetchAllRows<{ hostaway_id: number; internal_name: string | null }>(
+        'hostaway_listing_snapshot',
+        () => supabase.from('hostaway_listing_snapshot').select('hostaway_id, internal_name').order('hostaway_id'),
+        'hostaway_id',
+      ),
+      fetchAllRows<{ id: string; property_id: number; alias: string | null }>(
+        'property_aliases',
+        () => supabase.from('property_aliases').select('id, property_id, alias').order('id'),
+        'id',
+      ).catch((e) => {
+        console.warn('property_aliases unreadable; Haven listing name match skips aliases:', e)
+        return []
+      }),
+    ])
+    const ids = new Set<number>(havenListingIdsFromRows(rows) ?? [])
+    for (const id of havenListingIdsByName(listings, properties, aliasRows)) ids.add(id)
+    if (ids.size === 0) {
+      console.warn('Hostaway snapshot has no matched listings; not_haven_listing check skipped')
+      return null
+    }
     return ids
   } catch (e) {
     console.error(

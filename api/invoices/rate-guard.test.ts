@@ -3,8 +3,10 @@ import {
   FLAGS,
   checkChargeChanged,
   checkHavenListing,
+  havenListingIdsByName,
   havenListingIdsFromRows,
   lastChargeIndex,
+  listingNameKey,
   reconcile,
   type EngineInput,
   type EngineLine,
@@ -141,6 +143,57 @@ describe('havenListingIdsFromRows', () => {
     expect(havenListingIdsFromRows([{ property_id: null }])).toBeNull()
     expect(havenListingIdsFromRows([])).toBeNull()
     expect(havenListingIdsFromRows(undefined)).toBeNull()
+  })
+})
+
+describe('havenListingIdsByName', () => {
+  // Real names from I261012825: every one was flagged not_haven_listing
+  // because the address match only lets one property win a shared street
+  // address, or Hostaway spells the address differently.
+  const listings = [
+    { internal_name: 'Greg Drury 1619-14 (SCounty)' },
+    { internal_name: 'Julie Michala 338-101 (BC)' },
+    { internal_name: 'Brett Dickinson 338-203 (BC)' },
+    { internal_name: 'David Kiger 338-105 (BC)' },
+    { internal_name: 'Amanda Dolce-McCormack 191' },
+    { internal_name: 'Karin Calimano 3815-18 (GAT)' },
+    { internal_name: 'The Stillwood House' },
+    { internal_name: null },
+  ]
+  const props = [
+    { id: 519, name: 'Greg Drury 1619-14' },
+    { id: 449, name: 'Julie Michala 338-101' },
+    { id: 450, name: 'David Kiger 338-105' },
+    { id: 719, name: 'Amanda Dolce-McCormack 191-32' },
+    { id: 495, name: 'karin calimano 3815-18' },
+    { id: 540, name: 'Farrah Dalal 1559' },
+    { id: 1, name: 'Some Hostimo Cabin' },
+  ]
+
+  it('matches internal names to Ops names, ignoring the area tag and case', () => {
+    const ids = havenListingIdsByName(listings, props)
+    expect([...ids].sort((a, b) => a - b)).toEqual([449, 450, 495, 519, 719])
+  })
+
+  it('matches property aliases', () => {
+    expect(havenListingIdsByName(listings, props, [{ property_id: 540, alias: 'The Stillwood House' }]).has(540)).toBe(true)
+  })
+
+  it('only drops a unit when exactly one listing has the shorter name', () => {
+    const two = [{ internal_name: 'Amanda Dolce-McCormack 191' }, { internal_name: 'Amanda Dolce-McCormack 191 (BC)' }]
+    expect(havenListingIdsByName(two, [{ id: 719, name: 'Amanda Dolce-McCormack 191-32' }]).size).toBe(0)
+    // With a single shorter listing (the building), the unit falls back to it.
+    expect(havenListingIdsByName([{ internal_name: 'Julie Michala 338' }], [{ id: 449, name: 'Julie Michala 338-101' }]).has(449)).toBe(true)
+  })
+
+  it('never matches a property with no listing', () => {
+    expect(havenListingIdsByName(listings, props).has(1)).toBe(false)
+    expect(havenListingIdsByName([], props).size).toBe(0)
+  })
+
+  it('builds the key from the internal name', () => {
+    expect(listingNameKey('  Greg   Drury 1619\u201314 (SCounty) ')).toBe('greg drury 1619-14')
+    expect(listingNameKey(null)).toBe('')
   })
 })
 
