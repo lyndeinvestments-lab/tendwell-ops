@@ -74,12 +74,22 @@ export function linesMissingEvidence(rows: ReadonlyArray<EvidenceCandidate>): Bl
 /** What the vendor invoiced, from the lines as they stand now (a reviewer
  *  may have edited an amount since the last reconcile). Split rows share a
  *  line_no and only the base row carries the vendor's amount; task-derived
- *  rows were never on the vendor's invoice. */
+ *  rows were never on the vendor's invoice.
+ *
+ *  Excluding a split row turns its line_kind from 'extra' into 'excluded', so
+ *  one line_no can hold two non-extra rows: the base (the vendor's full
+ *  amount) and the excluded part ($0 for a client-only surcharge, or a slice
+ *  of the base). The base is the one with the largest amount, whatever order
+ *  the rows come back in. Taking the last row instead dropped Yury Lyalko's
+ *  $210.84 from I261012825 and failed the gate. */
 export function vendorInvoicedSum(rows: ReadonlyArray<{ line_no: number; raw_amount: number | string | null; split_group: number | null; line_kind: string; source: string | null }>): number {
   const base = new Map<number, number>()
   for (const r of rows) {
     if (r.source === 'task') continue
-    if (r.split_group == null || r.line_kind !== 'extra') base.set(r.line_no, Number(r.raw_amount ?? 0))
+    if (r.split_group != null && r.line_kind === 'extra') continue
+    const amount = Number(r.raw_amount ?? 0)
+    const prev = base.get(r.line_no)
+    if (prev == null || Math.abs(amount) > Math.abs(prev)) base.set(r.line_no, amount)
   }
   return Math.round([...base.values()].reduce((a, n) => a + n, 0) * 100) / 100
 }
