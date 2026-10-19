@@ -2,8 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
-import { creditClientsByLine, isMissingSchemaError, lineClient, type ClientInvoiceState, type ClientInvoiceStatus, type CreditClient } from '../../shared/billcom-send.js'
+import { creditClientsByLine, isMissingSchemaError, lineClient, linenClientsByLine, type ClientInvoiceState, type ClientInvoiceStatus, type CreditClient } from '../../shared/billcom-send.js'
 import { isCreditLine } from './_credits.js'
+import { isLinenChargeLine } from '../../shared/linen-charges.js'
 import { allocateClearNumber, docNumberTaken, qboConnection, raiseCounterToQbo } from './_qbo-numbers.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
@@ -139,6 +140,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
     creditClients = creditClientsByLine(adjRows)
+  }
+  // A client-wide linen charge (no property) names its client on the charge.
+  const linenLineIds = lineRows.filter(r => isLinenChargeLine(r)).map(r => String(r.id))
+  if (linenLineIds.length > 0) {
+    const { data: instRows, error: instErr } = await supabase
+      .from('linen_charge_installments')
+      .select('line_id, linen_charges:charge_id(contact_id, contacts:contact_id(full_name, company))')
+      .in('line_id', linenLineIds)
+    if (instErr && !isMissingSchemaError(instErr)) {
+      res.status(500).json({ error: 'Failed to load linen charges', detail: instErr.message })
+      return
+    }
+    creditClients = new Map([...Array.from(creditClients), ...Array.from(linenClientsByLine(instRows))])
   }
 
   const vendorRel = (run as unknown as { vendors: { name: string } | Array<{ name: string }> | null }).vendors

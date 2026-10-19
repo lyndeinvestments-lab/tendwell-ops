@@ -345,6 +345,26 @@ describe('onboardingReadiness', () => {
     expect(state(r, 'intake')).toMatchObject({ state: 'done', code: 'applied' })
   })
 
+  it('a linen-program property is not ready until its linen fee is set or waived', () => {
+    const base = { property, owners: [owner], agreements: [signed], submissions: [applied], hasApiKey: false }
+    const missing = onboardingReadiness({ ...base, linen: { program: true, decision: null } })
+    expect(missing.ready).toBe(false)
+    expect(state(missing, 'linen')).toMatchObject({ state: 'todo', code: 'missing' })
+    for (const decision of ['scheduled', 'billed', 'waived', 'portfolio'] as const) {
+      const r = onboardingReadiness({ ...base, linen: { program: true, decision } })
+      expect(r.ready).toBe(true)
+      expect(state(r, 'linen')).toMatchObject({ state: 'done', code: decision })
+    }
+  })
+
+  it('no linen item off the program, and never a block when decisions cannot be read', () => {
+    const base = { property, owners: [owner], agreements: [signed], submissions: [applied], hasApiKey: false }
+    expect(onboardingReadiness({ ...base, linen: { program: false, decision: null } }).items.some(i => i.id === 'linen')).toBe(false)
+    const r = onboardingReadiness({ ...base, linen: { program: true, decision: null, unavailable: true } })
+    expect(r.ready).toBe(true)
+    expect(state(r, 'linen')).toMatchObject({ state: 'optional', code: 'unavailable' })
+  })
+
   it('flags a bare property: no portal, agreement, access, calendar or Trellis', () => {
     const r = onboardingReadiness({
       property: { ...property, door_code: null, ical_url: null, trellis_id: null },

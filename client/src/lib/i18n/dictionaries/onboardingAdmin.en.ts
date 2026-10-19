@@ -167,7 +167,7 @@ export const onboardingAdminEn = {
       longest: 'Longest wait (days)',
     },
     empty: 'No properties are in the Onboarding stage right now.',
-    legend: 'Each property needs these six things before it goes live. Grey optional items never block activation.',
+    legend: 'Each property needs these things before it goes live. Grey optional items never block activation.',
     daysIn: 'Days in onboarding: {{count}}',
     ready: 'Ready to activate',
     toDo: '{{count}} to do',
@@ -193,6 +193,7 @@ export const onboardingAdminEn = {
       access: 'Access code',
       calendar: 'Calendar',
       trellis: 'Trellis',
+      linen: 'Linen fee',
     },
     detail: {
       portal: {
@@ -227,6 +228,14 @@ export const onboardingAdminEn = {
         missing_owner: "The owner's Trellis portal link is not set.",
         missing_both: 'The property is not linked in Trellis, and the owner has no Trellis portal link.',
       },
+      linen: {
+        scheduled: 'Linen fee is locked in and bills on the first invoice.',
+        billed: 'Linen fee is billed.',
+        waived: 'Linen fee is waived.',
+        portfolio: "Covered by the client's linen program deal.",
+        missing: 'On the linen program, but no linen fee is set or waived yet.',
+        unavailable: 'Linen charges are not set up yet.',
+      },
     },
   },
   actions: {
@@ -239,6 +248,7 @@ export const onboardingAdminEn = {
     addIcal: 'Add iCal link',
     linkTrellis: 'Link in API Sync',
     addTrellisLink: 'Add Trellis link',
+    setLinenFee: 'Set linen fee',
     adminOnly: 'Ask an admin',
   },
 }

@@ -545,8 +545,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // invoice goes below zero (the rest stays open for their next run). A
   // failure here never un-approves the run: the credits simply stay open and
   // go on the client's next approved run.
+  // Linen onboarding charges go on first (so a credit can net against them):
+  // the next scheduled payment of each charge whose property (or client) this
+  // run bills. Same failure rule as credits: never un-approves the run.
+  const linen = await applyLinenCharges(supabase, runId, actor.email)
   const credits = await applyOpenCredits(supabase, runId, actor.email)
-  res.status(200).json({ ok: true, run_id: runId, status: 'approved', vendor_total: vendorTotal, ...credits })
+  res.status(200).json({ ok: true, run_id: runId, status: 'approved', vendor_total: vendorTotal, ...linen, ...credits })
+}
+
+/** Runs invoice_apply_linen_charges. Before migration 20261019a is applied the
+ *  function does not exist: that is "no linen charges", not an error. */
+export async function applyLinenCharges(
+  supabase: NonNullable<ReturnType<typeof getServiceClient>>,
+  runId: string,
+  actorEmail: string | null,
+): Promise<{ linen_billed: number; linen_total: number; linen_warning?: string }> {
+  const { data, error } = await supabase.rpc('invoice_apply_linen_charges', { p_run_id: runId, p_actor: actorEmail })
+  if (error) {
+    if (isMissingSchemaError(error)) return { linen_billed: 0, linen_total: 0 }
+    console.error('[invoices/approve] billing linen charges failed', runId, error.message)
+    return {
+      linen_billed: 0,
+      linen_total: 0,
+      linen_warning: 'Approved, but scheduled linen charges could not be added to this run. They stay scheduled and will go on the next approved run.',
+    }
+  }
+  const billed: Array<{ amount: number | string }> = Array.isArray(data?.billed) ? data.billed : []
+  const total = Math.round(billed.reduce((a, x) => a + Number(x.amount ?? 0), 0) * 100) / 100
+  return { linen_billed: billed.length, linen_total: total }
 }
 
 /** Runs invoice_apply_open_credits. Before migration 20261009a is applied the

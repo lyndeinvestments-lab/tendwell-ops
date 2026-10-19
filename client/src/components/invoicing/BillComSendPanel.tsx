@@ -15,6 +15,7 @@ import {
   channelLabel,
   CLIENT_INVOICE_CHANNELS,
   creditClientsByLine,
+  linenClientsByLine,
   groupBillComInvoices,
   isClientInvoiceArLine,
   isMissingSchemaError,
@@ -201,23 +202,33 @@ export function BillComSendPanel({ run, lines, onChanged }: {
 
   // Client credits bill the client on their adjustment (usually no property),
   // so they join and net that client's invoice, same as the worksheet.
+  // A client-wide linen charge (Hostimo's portfolio deal) has no property
+  // either: its client is on the linen charge.
   const creditLineIds = useMemo(
-    () => billComLines.filter(l => (l.flags ?? []).includes('credit')).map(l => l.id).sort(),
+    () => billComLines.filter(l => (l.flags ?? []).includes('credit') || (l.flags ?? []).includes('linen_charge')).map(l => l.id).sort(),
     [billComLines],
   )
   const creditsQuery = useQuery<Map<string, CreditClient>>({
     queryKey: ['invoicing-credit-clients', creditLineIds],
     enabled: enabled && creditLineIds.length > 0 && invoicesQuery.data != null,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('invoice_adjustments')
-        .select('applied_line_id, contact_id, contacts:contact_id(full_name, company)')
-        .in('applied_line_id', creditLineIds)
-      if (error) {
-        if (isMissingSchemaError(error)) return new Map()
-        throw error
+      const [adj, linen] = await Promise.all([
+        supabase
+          .from('invoice_adjustments')
+          .select('applied_line_id, contact_id, contacts:contact_id(full_name, company)')
+          .in('applied_line_id', creditLineIds),
+        (supabase as any)
+          .from('linen_charge_installments')
+          .select('line_id, linen_charges:charge_id(contact_id, contacts:contact_id(full_name, company))')
+          .in('line_id', creditLineIds),
+      ])
+      for (const r of [adj, linen]) {
+        if (r.error && !isMissingSchemaError(r.error)) throw r.error
       }
-      return creditClientsByLine(data)
+      return new Map([
+        ...Array.from(creditClientsByLine(adj.error ? null : adj.data)),
+        ...Array.from(linenClientsByLine(linen.error ? null : linen.data)),
+      ])
     },
   })
 

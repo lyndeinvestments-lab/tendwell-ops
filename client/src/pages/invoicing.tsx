@@ -14,6 +14,7 @@ import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
+import { LinenChargesPanel } from '@/components/invoicing/LinenChargesPanel'
 import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { ServiceDetailPanel, ServiceDetailSummary } from '@/components/invoicing/ServiceDetail'
@@ -359,6 +360,7 @@ export default function InvoicingPage() {
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
           <OpenCreditsPanel userLabel={userLabel} />
+          <LinenChargesPanel userLabel={userLabel} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -811,7 +813,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // often total their own invoices wrong).
   const [vendorTotal, setVendorTotal] = useState('')
   const approveMutation = useMutation({
-    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string; vendor_total?: { stated: number; lines: number; difference: number } | null }>('approve', {
+    mutationFn: async () => invoicesApi<{ ok: boolean; status: string; credits_applied?: number; credit_total?: number; credits_warning?: string; linen_billed?: number; linen_total?: number; linen_warning?: string; vendor_total?: { stated: number; lines: number; difference: number } | null }>('approve', {
       method: 'POST',
       body: vendorTotal.trim() && Number.isFinite(Number(vendorTotal)) ? { run_id: runId, stated_subtotal: Number(vendorTotal) } : { run_id: runId },
     }),
@@ -825,9 +827,14 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
       const variance = vt && Math.abs(vt.difference) > 0.005
         ? ` Lines total ${fmtMoney(vt.lines)}; vendor's invoice said ${fmtMoney(vt.stated)} (${vt.difference > 0 ? '+' : ''}${fmtMoney(vt.difference)}).`
         : ''
-      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${variance}${credits}` })
+      const linen = r.linen_billed
+        ? ` ${r.linen_billed} linen charge payment(s) added (${fmtMoney(r.linen_total ?? 0)}).`
+        : ''
+      toast({ title: 'Invoice approved', description: `Status: ${r.status}.${variance}${linen}${credits}` })
+      if (r.linen_warning) toast({ title: 'Linen charges not added', description: r.linen_warning, variant: 'destructive' })
       if (r.credits_warning) toast({ title: 'Client credits not applied', description: r.credits_warning, variant: 'destructive' })
       qc.invalidateQueries({ queryKey: ['invoicing', 'credits'] })
+      qc.invalidateQueries({ queryKey: ['invoicing', 'linen-charges'] })
       invalidate()
     },
     onError: (e: unknown) => {

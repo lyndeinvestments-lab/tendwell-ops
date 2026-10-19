@@ -522,7 +522,17 @@ export interface ReadinessSubmission {
   submitted_at: string | null
 }
 
-export type ReadinessItemId = 'portal' | 'agreement' | 'intake' | 'access' | 'calendar' | 'trellis'
+export type ReadinessItemId = 'portal' | 'agreement' | 'intake' | 'access' | 'calendar' | 'trellis' | 'linen'
+
+/** The linen fee decision for a property (linen_charge_decisions). */
+export interface ReadinessLinen {
+  /** On the linen program; off-program properties get no linen item. */
+  program: boolean
+  /** null = no decision yet; 'portfolio' = covered by a client-wide charge. */
+  decision: 'scheduled' | 'billed' | 'waived' | 'portfolio' | null
+  /** The decisions could not be read (migration not applied): never block on it. */
+  unavailable?: boolean
+}
 /** `optional` items are shown but never block "Ready to activate". */
 export type ReadinessState = 'done' | 'todo' | 'optional'
 export interface ReadinessItem {
@@ -551,8 +561,10 @@ export function onboardingReadiness(input: {
   submissions: ReadinessSubmission[]
   /** Some submission for this property carries an API key (booking calendar via API). */
   hasApiKey: boolean
+  /** Linen fee decision; omitted = no linen item. */
+  linen?: ReadinessLinen
 }): ReadinessResult {
-  const { property, owners, agreements, submissions, hasApiKey } = input
+  const { property, owners, agreements, submissions, hasApiKey, linen } = input
   const items: ReadinessItem[] = []
   const activeOwners = owners.filter(o => o.active !== false)
   const ownerNames = (rows: ReadinessOwner[]) => rows.map(o => o.name || o.email || '').filter(Boolean).join(', ')
@@ -612,6 +624,14 @@ export function onboardingReadiness(input: {
     state: propertyLinked && ownerLinked ? 'done' : 'todo',
     code: propertyLinked && ownerLinked ? 'ok' : propertyLinked ? 'missing_owner' : ownerLinked ? 'missing_property' : 'missing_both',
   })
+
+  // Linen fee: a linen-program property cannot go live until its one-time
+  // fee is locked in (it then bills on its first invoice) or waived.
+  if (linen?.program) {
+    if (linen.unavailable) items.push({ id: 'linen', state: 'optional', code: 'unavailable' })
+    else if (linen.decision) items.push({ id: 'linen', state: 'done', code: linen.decision })
+    else items.push({ id: 'linen', state: 'todo', code: 'missing' })
+  }
 
   const remaining = items.filter(i => i.state === 'todo').length
   return { items, ready: remaining === 0, remaining }

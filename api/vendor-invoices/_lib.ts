@@ -14,6 +14,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchAllRows, getServiceClient, RunBusyError } from '../invoices/_lib.js'
 import { isCreditLine } from '../invoices/_credits.js'
+import { isLinenChargeLine } from '../../shared/linen-charges.js'
 import { requirePermissionBearer } from '../qbo/_lib.js'
 import { round2, vendorNotices, vendorRunStatus, type VendorRunStatus } from '../../shared/vendor-invoice.js'
 
@@ -225,6 +226,8 @@ export function isVendorVisible(r: LineRow): boolean {
   if (r.source === 'task') return false
   // A client credit (invoice_adjustments) is between Tendwell and its client.
   if (isCreditLine(r)) return false
+  // So is a linen onboarding charge (linen_charges): client-only, never paid.
+  if (isLinenChargeLine(r)) return false
   const pay = Number(r.cleaner_pay_amount ?? 0)
   if (r.split_group != null && r.line_kind === 'extra' && Number(r.raw_amount) === 0 && pay === 0) return false
   return true

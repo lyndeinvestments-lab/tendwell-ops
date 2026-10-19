@@ -13,6 +13,7 @@ import { extraReasonFromNote, REASON_REQUIRED_EXTRAS } from './_engine.js'
 import type { BillingChannel, LineKind } from './_engine.js'
 import { billComLineSendable, heldLineNumbers, stateMap, type ClientInvoiceState } from '../../shared/billcom-send.js'
 import { CREDIT_SERVICE_TYPE, isCreditLine } from './_credits.js'
+import { isLinenChargeLine, LINEN_SERVICE_TYPE } from '../../shared/linen-charges.js'
 
 export interface ExportRun {
   vendorName: string
@@ -152,6 +153,11 @@ export function clientDescription(l: ExportLine): string {
   if (isCreditLine(l)) {
     return ['Credit', l.propertyName ?? '', creditReason(l) ?? '', ...linksIn(l.reviewNote)].filter(Boolean).join(' – ')
   }
+  // A linen onboarding charge (linen_charges): what was stocked and, on a
+  // payment plan, which payment. A client-wide charge has no property.
+  if (isLinenChargeLine(l)) {
+    return [LINEN_SERVICE_TYPE, l.propertyName ?? `${l.clientName ?? 'Client'} linen program`, l.note?.trim() ?? ''].filter(Boolean).join(' – ')
+  }
   const parts: string[] = []
   if (isOwnerStay(l)) parts.push(`Owner Stay - ${l.serviceType ?? 'Clean'}`)
   parts.push(l.propertyName ?? '')
@@ -202,6 +208,11 @@ export function serviceTitle(l: ExportLine): string {
   if (isCreditLine(l)) {
     const reason = creditReason(l)
     return reason ? `${CREDIT_SERVICE_TYPE} (${reason})` : CREDIT_SERVICE_TYPE
+  }
+  // "Linen Onboarding (3 sets, payment 2 of 3)"
+  if (isLinenChargeLine(l)) {
+    const detail = l.note?.trim()
+    return detail ? `${LINEN_SERVICE_TYPE} (${detail})` : LINEN_SERVICE_TYPE
   }
   const title = l.serviceType ?? ''
   if (!title) return title
