@@ -136,7 +136,9 @@ export function categoryFor(task: Pick<AuxTaskRow, 'title'>): AuxCategory {
  *     this task, including a dismissed one) is skipped — a dismissal sticks.
  *  2. Breezeway and Trellis usually both carry the same task. Same
  *     (property, day, service) collapses to ONE line; Breezeway wins, matching
- *     the clean path in loadEngineContext.
+ *     the clean path in loadEngineContext. A task line already kept on the run
+ *     (resolved or dismissed, from either source) holds its key, so the other
+ *     source's copy is never added beside it.
  *  3. If the vendor DID bill it (a non-task line on the run with the same
  *     property + service within ±1 day — Busy Bee occasionally still lists a
  *     hot tub refresh), the task is not billed twice.
@@ -155,7 +157,17 @@ export function buildTaskLines(input: BuildTaskLinesInput): BuildTaskLinesResult
     (a.date ?? '').localeCompare(b.date ?? '') ||
     (a.propertyId ?? 0) - (b.propertyId ?? 0),
   )
-  const seenKeys = new Set<string>()
+  // A task line already on the run (kept because a human resolved or excluded
+  // it) holds its (property, day, service) too. Without this, the Breezeway
+  // copy is skipped as already_on_run before it claims the key, and its
+  // Trellis twin bills the same job again: I261012825 got five such twins
+  // ($265, two of them deliveries Jordan had excluded) on the reconcile after
+  // he reviewed the Breezeway lines.
+  const seenKeys = new Set<string>(
+    existing
+      .filter(e => e.source === 'task' && e.propertyId != null && e.serviceType != null && e.date != null)
+      .map(e => `${e.propertyId}|${e.date}|${e.serviceType}`),
+  )
   let lineNo = input.nextLineNo
 
   for (const t of ordered) {
