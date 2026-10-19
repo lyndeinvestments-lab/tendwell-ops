@@ -1332,10 +1332,9 @@ export async function reconcileRun(
       .filter(r => (r as Record<string, unknown>).review_status === 'needs_review').length
   }
 
-  const stated = run.stated_subtotal != null ? Number(run.stated_subtotal) : null
-  const subtotalOk = stated == null || Math.abs(summary.totalInvoiced - stated) <= 0.005
-  const needsReview = summary.needsReviewCount > 0 || !subtotalOk
-  const status: ReconcileResult['status'] = needsReview ? 'review_needed' : 'reconciled'
+  // A vendor total that disagrees with the lines is shown on the run, not
+  // queued for review: vendors often total their own invoices wrong.
+  const status: ReconcileResult['status'] = summary.needsReviewCount > 0 ? 'review_needed' : 'reconciled'
 
   // Apply everything at once. A vendor's draft stays a draft: only submitting
   // it moves it into the admin review queue (api/vendor-invoices/runs.ts).

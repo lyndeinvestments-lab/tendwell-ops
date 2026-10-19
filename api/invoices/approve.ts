@@ -32,9 +32,9 @@ function describeLines(rows: BlockingLine[], max = 5): string {
 
 // POST /api/invoices/approve  Body: { run_id }
 //
-// The gate before any export: refuses while (a) any line still needs review,
-// or (b) the line sum doesn't match the stated subtotal to the penny (a
-// vendor CSV must have one: body.stated_subtotal sets it).
+// The gate before any export: refuses while any line still needs review.
+// The vendor's stated total (body.stated_subtotal, optional) is recorded and
+// its difference from the line sum reported, but never blocks approval.
 // Nothing ships with unresolved flags — that's the review queue's contract.
 // Later guards: billing channel, property, reimbursement detail, evidence on
 // disputed charges (EVIDENCE_REQUIRED_SERVICES) and cleaner pay coverage.
@@ -211,39 +211,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // Penny gate. A vendor CSV IS the vendor's invoice, so its lines must add
-  // up to the total printed on that invoice before anything is paid or billed.
-  // Every run since August had no stated total, so the gate never ran and
-  // $347.15 of in-Ops amount edits on 1096 went through unexplained. The total
-  // is required here (entered at upload, or with this approve).
-  if (run.source === 'vendor_csv') {
-    const givenRaw = (req.body as any)?.stated_subtotal
-    const given = givenRaw == null || givenRaw === '' ? null : Number(givenRaw)
-    if (given != null && !Number.isFinite(given)) {
-      res.status(400).json({ error: 'stated_subtotal must be a number' })
+  // Vendor total: recorded, never a gate. Vendors often total their own
+  // invoices wrong (Jordan, 2026-10-19), so the lines as reviewed are what
+  // gets paid and billed. The total printed on the vendor's invoice is
+  // optional; when given it is saved and the difference from the line sum is
+  // returned so the approver sees it, but a mismatch never blocks approval.
+  const givenRaw = (req.body as any)?.stated_subtotal
+  const given = givenRaw == null || givenRaw === '' ? null : Number(givenRaw)
+  if (given != null && !Number.isFinite(given)) {
+    res.status(400).json({ error: 'stated_subtotal must be a number' })
+    return
+  }
+  // A total typed at approve time replaces the stored one (it corrects a
+  // typo at upload).
+  if (given != null && given !== (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)) {
+    const { error: setErr } = await supabase.from('invoice_runs').update({ stated_subtotal: given }).eq('id', runId)
+    if (setErr) {
+      res.status(500).json({ error: 'Failed to save the vendor invoice total', detail: setErr.message })
       return
     }
-    // A total typed at approve time replaces the stored one (it corrects a
-    // typo at upload); it is saved even when the gate then fails.
-    if (given != null && given !== (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)) {
-      const { error: setErr } = await supabase.from('invoice_runs').update({ stated_subtotal: given }).eq('id', runId)
-      if (setErr) {
-        res.status(500).json({ error: 'Failed to save the vendor invoice total', detail: setErr.message })
-        return
-      }
-    }
-    const stated = given ?? (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)
-    if (stated == null) {
-      res.status(400).json({
-        error: "Cannot approve: enter the total printed on the vendor's invoice — the lines must add up to it to the penny.",
-        code: 'stated_subtotal_required',
-      })
-      return
-    }
+  }
+  const stated = given ?? (run.stated_subtotal != null ? Number(run.stated_subtotal) : null)
+  let vendorTotal: { stated: number; lines: number; difference: number } | null = null
+  if (stated != null) {
     let lineSum: number
     try {
       const rows = await fetchAllRows<{ id: string; line_no: number; raw_amount: number | null; split_group: number | null; line_kind: string; source: string | null }>(
-        'invoice_lines (penny gate)',
+        'invoice_lines (vendor total)',
         () => supabase
           .from('invoice_lines')
           .select('id, line_no, raw_amount, split_group, line_kind, source')
@@ -256,24 +250,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(500).json({ error: 'Failed to total the invoice lines', detail: e instanceof Error ? e.message : String(e) })
       return
     }
-    if (Math.abs(stated - lineSum) > 0.005) {
-      res.status(400).json({
-        error: `Subtotal gate failed — the lines add up to $${lineSum.toFixed(2)} but the vendor's invoice says $${stated.toFixed(2)}. Find the edited or missing amount (or get a corrected invoice from the vendor) before approving.`,
-        stated_subtotal: stated,
-        computed_subtotal: lineSum,
-      })
-      return
-    }
-  } else if (run.stated_subtotal != null && run.computed_subtotal != null) {
-    const diff = Math.abs(Number(run.stated_subtotal) - Number(run.computed_subtotal))
-    if (diff > 0.005) {
-      res.status(400).json({
-        error: 'Subtotal gate failed — line sum must equal the stated subtotal to the penny',
-        stated_subtotal: run.stated_subtotal,
-        computed_subtotal: run.computed_subtotal,
-      })
-      return
-    }
+    vendorTotal = { stated, lines: lineSum, difference: Math.round((lineSum - stated) * 100) / 100 }
   }
 
   // Redos: a clean followed by a callback / reclean within a week needs an
@@ -569,7 +546,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // failure here never un-approves the run: the credits simply stay open and
   // go on the client's next approved run.
   const credits = await applyOpenCredits(supabase, runId, actor.email)
-  res.status(200).json({ ok: true, run_id: runId, status: 'approved', ...credits })
+  res.status(200).json({ ok: true, run_id: runId, status: 'approved', vendor_total: vendorTotal, ...credits })
 }
 
 /** Runs invoice_apply_open_credits. Before migration 20261009a is applied the
