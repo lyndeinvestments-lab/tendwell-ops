@@ -17,7 +17,10 @@ import { RunOutputsCard, RunStepper, type ClientInvoiceCounts } from '@/componen
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { LinenChargesPanel } from '@/components/invoicing/LinenChargesPanel'
 import { ChargesSummaryLine } from '@/components/invoicing/ChargesSummaryLine'
-import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
+import { VendorRunsList } from '@/components/invoicing/VendorRunsList'
+import { ClientInvoicesTab } from '@/components/invoicing/ClientInvoicesTab'
+import { PricesTab } from '@/components/invoicing/PricesTab'
+import { useInvoicingOverview } from '@/components/invoicing/useInvoicingOverview'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { ServiceDetailPanel, ServiceDetailSummary } from '@/components/invoicing/ServiceDetail'
 import { EmptyState } from '@/components/EmptyState'
@@ -51,6 +54,7 @@ import {
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
 import { isMissingColumnError } from '@/lib/billing-alerts'
+import { INVOICING_SUBTITLES, INVOICING_VIEWS, groupRuns, invoicingViewFromSearch, type InvoicingView } from '@/lib/invoicing-overview'
 import {
   REDO_DECISION_LABELS, REDO_PENDING_FLAG, redoDecisionFromNote, withRedoDecision, type RedoDecision,
 } from '@shared/invoice-redo'
@@ -154,15 +158,9 @@ const SPLIT_ACCENTS = ['border-l-primary/50', 'border-l-info/50', 'border-l-warn
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-type InvoicingView = 'runs' | 'charges' | 'audit' | 'sent'
-
 function initialViewFromUrl(): InvoicingView {
   try {
-    const params = new URLSearchParams(window.location.search)
-    const linen = Number(params.get('linen'))
-    if (Number.isInteger(linen) && linen > 0) return 'charges'
-    const v = params.get('view')
-    if (v === 'runs' || v === 'charges' || v === 'audit' || v === 'sent') return v
+    return invoicingViewFromSearch(window.location.search)
   } catch { /* no URL params */ }
   return 'runs'
 }
@@ -178,20 +176,19 @@ export default function InvoicingPage() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [vendorAccessOpen, setVendorAccessOpen] = useState(false)
   const [reviewLine, setReviewLine] = useState<InvoiceLine | null>(null)
-  // Runs = the vendor-invoice workflow. Task audit = billable work that is
-  // NOT on the vendor invoice (completed Breezeway/Trellis tasks, Slack/Quo
-  // observations logged by Cowork) and what still needs billing.
-  // Sent invoices = the append-only register of client invoices marked sent;
-  // hidden until migration 20261009h is applied (the query returns null).
-  // Credits & linen = the open client credits and linen onboarding fee panels
-  // (both ride the client's next approved invoice automatically). The runs
-  // view only shows a one-line summary of them.
-  // Deep links: /invoicing?view=charges|audit|sent|runs, and the legacy
-  // /invoicing?linen=<property id> (onboarding checklist, alerts) which opens
-  // the linen fee editor on the Credits & linen view.
+  // One job per tab:
+  //   runs    = Vendor invoices: review, approve and export each vendor invoice.
+  //   client  = Client invoices: what still needs sending, plus the sent register.
+  //   audit   = Unbilled work: billable work that is NOT on a vendor invoice
+  //             (completed Breezeway/Trellis tasks, Slack/Quo observations).
+  //   charges = Credits & linen: open client credits and linen onboarding fees
+  //             (both ride the client's next approved invoice automatically).
+  //   prices  = Prices: standard fees, client prices, special reservation rates.
+  // Deep links: /invoicing?view=runs|client|audit|charges|prices. The old ids
+  // keep working (`sent` opens Client invoices) and so does the legacy
+  // /invoicing?linen=<property id> (onboarding checklist, alerts), which opens
+  // the linen fee editor on Credits & linen. See invoicingViewFromSearch().
   const [view, setView] = useState<InvoicingView>(initialViewFromUrl)
-  const registerQuery = useSentInvoicesRegister()
-  const registerAvailable = registerQuery.data != null
 
   const userLabel = effectiveUser?.label || 'Unknown'
   const isAdmin = effectiveUser?.role === 'admin'
@@ -211,13 +208,17 @@ export default function InvoicingPage() {
   const runsQuery = useQuery<InvoiceRun[]>({
     queryKey: ['invoicing-runs'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const baseCols = 'id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, vendor_reference, vendor_total, vendors(name)'
+      const load = (cols: string) => supabase
         .from('invoice_runs')
-        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, vendor_reference, vendor_total, vendors(name)')
+        .select(cols)
         .order('created_at', { ascending: false })
         .limit(200)
-      if (error) throw error
-      return (data ?? []) as unknown as InvoiceRun[]
+      // QuickBooks numbers ride along; a database without those columns still lists the runs.
+      let res = await load(`${baseCols}, qbo_invoice_no, qbo_invoice_nos`)
+      if (res.error && isMissingColumnError(res.error)) res = await load(baseCols)
+      if (res.error) throw res.error
+      return (res.data ?? []) as unknown as InvoiceRun[]
     },
     staleTime: 15_000,
   })
@@ -229,7 +230,13 @@ export default function InvoicingPage() {
   }
 
   const openRun = (runId: string) => setSelectedRunId(runId)
-  const backToList = () => setSelectedRunId(null)
+  // Coming back from a run: whatever was approved, held or sent there changes
+  // the list numbers and the Client invoices tab, so reload both.
+  const backToList = () => {
+    setSelectedRunId(null)
+    qc.invalidateQueries({ queryKey: ['invoicing-runs'] })
+    qc.invalidateQueries({ queryKey: ['invoicing-sent-invoices'] })
+  }
 
   // ── Archive (soft-hide finished runs from the default list) ────────────────
   const [showArchived, setShowArchived] = useState(false)
@@ -252,26 +259,14 @@ export default function InvoicingPage() {
     onError: (e: unknown) => toast({ title: 'Archive failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
-  // ── List KPIs ────────────────────────────────────────────────────────────────
+  // ── Visible runs + the aggregate numbers behind the list and Client invoices tab ──
   const runs = useMemo(
     () => (showArchived ? allRuns : allRuns.filter(r => !r.archived_at)),
     [allRuns, showArchived],
   )
-  const listStats = useMemo(() => {
-    const needsReview = runs.filter(r => r.status === 'review_needed').length
-    const now = new Date()
-    const approvedThisMonth = runs.filter(r => {
-      if (r.status !== 'approved' && r.status !== 'exported') return false
-      if (!r.approved_at) return false
-      const d = new Date(r.approved_at)
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
-    }).length
-    const lastRun = runs[0] ?? null
-    const lastDiscrepancy = lastRun && lastRun.stated_subtotal != null && lastRun.computed_subtotal != null
-      ? lastRun.computed_subtotal - lastRun.stated_subtotal
-      : null
-    return { needsReview, approvedThisMonth, lastRun, lastDiscrepancy }
-  }, [runs])
+  const overview = useInvoicingOverview(allRuns)
+  const toSendCount = overview.data?.sendAvailable ? overview.data.toSend.length : 0
+  const needsYouCount = useMemo(() => groupRuns(runs, overview.unsentByRun).needsYou.length, [runs, overview.unsentByRun])
 
   // ── Generate draft mutation ──────────────────────────────────────────────────
   const generateMutation = useMutation({
@@ -336,32 +331,28 @@ export default function InvoicingPage() {
         <>
           <PageHeader
             title="Invoice Reconciliation"
-            subtitle={view === 'audit'
-              ? 'Billable work that is not on the vendor invoice: completed tasks, what was seen in Slack / Quo, and what still needs billing.'
-              : view === 'sent'
-                ? 'The register of client invoices sent: number, client, period, total, recipient and when.'
-                : view === 'charges'
-                  ? "Credits owed back to clients and linen onboarding fees. Both are added to the client's next approved invoice automatically."
-                  : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
+            subtitle={INVOICING_SUBTITLES[view]}
             beneath={
-              <div className="flex items-center gap-1" data-testid="invoicing-view-toggle">
-                {([['runs', 'Invoice runs'], ['charges', 'Credits & linen'], ['audit', 'Task audit'], ['sent', 'Sent invoices']] as const)
-                  .filter(([id]) => id !== 'sent' || registerAvailable)
-                  .map(([id, label]) => (
-                  <Button
-                    key={id}
-                    size="sm"
-                    variant={view === id ? 'secondary' : 'ghost'}
-                    className="h-7 px-2.5"
-                    onClick={() => setView(id)}
-                    data-testid={`invoicing-view-${id}`}
-                  >
-                    {label}
-                  </Button>
-                ))}
+              <div className="flex items-center gap-1 flex-wrap" data-testid="invoicing-view-toggle">
+                {INVOICING_VIEWS.map(({ id, label }) => {
+                  const count = id === 'runs' ? needsYouCount : id === 'client' ? toSendCount : 0
+                  return (
+                    <Button
+                      key={id}
+                      size="sm"
+                      variant={view === id ? 'secondary' : 'ghost'}
+                      className="h-7 px-2.5"
+                      onClick={() => setView(id)}
+                      data-testid={`invoicing-view-${id}`}
+                    >
+                      {label}
+                      {count > 0 && <span className="ml-1.5 text-2xs tabular-nums font-semibold text-warning">{count}</span>}
+                    </Button>
+                  )
+                })}
               </div>
             }
-            actions={
+            actions={view === 'runs' ? (
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setVendorAccessOpen(true)} data-testid="button-vendor-access">
                   <Users className="w-4 h-4 mr-1.5" /> Vendor access
@@ -373,169 +364,37 @@ export default function InvoicingPage() {
                   <Plus className="w-4 h-4 mr-1.5" /> Generate draft
                 </Button>
               </div>
-            }
+            ) : undefined}
           />
 
           {view === 'audit' ? (
-            <TaskAudit userLabel={userLabel} isAdmin={isAdmin} />
+            <TaskAudit userLabel={userLabel} />
           ) : view === 'charges' ? (
             <>
               <OpenCreditsPanel userLabel={userLabel} />
               <LinenChargesPanel userLabel={userLabel} />
             </>
-          ) : view === 'sent' && registerAvailable ? (
-            <SentInvoicesRegister />
+          ) : view === 'prices' ? (
+            <PricesTab userLabel={userLabel} isAdmin={isAdmin} />
+          ) : view === 'client' ? (
+            <ClientInvoicesTab runs={allRuns} overview={overview} onOpenRun={openRun} />
           ) : (
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
           <ChargesSummaryLine onOpen={() => setView('charges')} />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <StatCard
-              title="Runs needing review"
-              value={listStats.needsReview}
-              icon={AlertTriangle}
-              tone={listStats.needsReview > 0 ? 'warning' : 'success'}
-              loading={runsQuery.isLoading}
-              testId="stat-needs-review"
-            />
-            <StatCard
-              title="Approved this month"
-              value={listStats.approvedThisMonth}
-              icon={CheckCircle2}
-              tone="success"
-              loading={runsQuery.isLoading}
-              testId="stat-approved-month"
-            />
-            <StatCard
-              title="Last run net discrepancy"
-              value={listStats.lastDiscrepancy != null ? fmtMoney(listStats.lastDiscrepancy) : '—'}
-              subtitle={listStats.lastRun ? `${vendorNameOf(listStats.lastRun)} · stated vs. computed` : 'No runs yet'}
-              icon={Receipt}
-              tone={listStats.lastDiscrepancy != null && Math.abs(listStats.lastDiscrepancy) > 0.005 ? 'destructive' : 'neutral'}
-              loading={runsQuery.isLoading}
-              testId="stat-last-discrepancy"
-            />
-          </div>
-
-          {(archivedCount > 0 || showArchived) && (
-            <div className="flex justify-end">
-              <Button size="sm" variant="ghost" className="h-7 px-2.5 text-muted-foreground" onClick={() => setShowArchived(v => !v)} data-testid="button-toggle-archived">
-                <Archive className="w-3.5 h-3.5 mr-1.5" />
-                {showArchived ? 'Hide archived' : `Show archived (${archivedCount})`}
-              </Button>
-            </div>
-          )}
-
-          {runsQuery.error ? (
-            <ErrorState title="Couldn't load invoice runs" onRetry={() => runsQuery.refetch()} />
-          ) : runsQuery.isLoading ? (
-            <div className="space-y-2">{[...Array(5)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
-          ) : runs.length === 0 ? (
-            <EmptyState
-              icon={Receipt}
-              title="No invoice runs yet"
-              description="Generate a draft from Trellis/Breezeway tasks or upload a vendor CSV to get started."
-              action={{ label: 'Generate draft', onClick: () => setGenerateOpen(true) }}
-            />
-          ) : (
-            <>
-              {/* Desktop table */}
-              <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden">
-                <div className="overflow-auto md:max-h-[calc(100vh-10rem)]">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-muted/60 backdrop-blur">
-                      <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                        <th className="px-3 py-2 font-medium">Vendor</th>
-                        <th className="px-3 py-2 font-medium">Source</th>
-                        <th className="px-3 py-2 font-medium">Period</th>
-                        <th className="px-3 py-2 font-medium">Invoice #</th>
-                        <th className="px-3 py-2 font-medium text-right">Stated</th>
-                        <th className="px-3 py-2 font-medium text-right">Computed</th>
-                        <th className="px-3 py-2 font-medium">Status</th>
-                        <th className="px-3 py-2 font-medium w-12" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {runs.map(run => (
-                        <tr
-                          key={run.id}
-                          className={cn('border-t border-border/60 hover:bg-muted/30 cursor-pointer', run.archived_at && 'opacity-50')}
-                          onClick={() => openRun(run.id)}
-                          data-testid={`row-run-${run.id}`}
-                        >
-                          <td className="px-3 py-2 font-medium max-w-56 truncate">{vendorNameOf(run)}</td>
-                          <td className="px-3 py-2">
-                            <StatusBadge tone={run.source === 'generated' ? 'primary' : run.source === 'vendor_portal' ? 'info' : 'neutral'}>
-                              {run.source === 'generated' ? 'Generated' : run.source === 'vendor_portal' ? 'Vendor portal' : 'Vendor CSV'}
-                            </StatusBadge>
-                          </td>
-                          <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                            {fmtDate(run.period_start)} – {fmtDate(run.period_end)}
-                          </td>
-                          <td className="px-3 py-2 text-muted-foreground">{run.invoice_number ?? '—'}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(run.stated_subtotal)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtMoney(run.computed_subtotal)}</td>
-                          <td className="px-3 py-2">
-                            <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-muted-foreground"
-                              onClick={(e) => { e.stopPropagation(); archiveMutation.mutate({ id: run.id, archive: !run.archived_at }) }}
-                              title={run.archived_at ? 'Restore run' : 'Archive run (hides from this list)'}
-                              data-testid={`button-archive-${run.id}`}
-                            >
-                              {run.archived_at ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="md:hidden space-y-2">
-                {runs.map(run => (
-                  <Card
-                    key={run.id}
-                    className="border-card-border active:bg-muted/40 transition-colors cursor-pointer"
-                    onClick={() => openRun(run.id)}
-                    data-testid={`card-run-${run.id}`}
-                  >
-                    <CardContent className="p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">{vendorNameOf(run)}</p>
-                          <p className="text-xs text-muted-foreground truncate">
-                            {fmtDate(run.period_start)} – {fmtDate(run.period_end)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-1.5 text-muted-foreground"
-                            onClick={(e) => { e.stopPropagation(); archiveMutation.mutate({ id: run.id, archive: !run.archived_at }) }}
-                          >
-                            {run.archived_at ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground tabular-nums">
-                        <span>Stated {fmtMoney(run.stated_subtotal)}</span>
-                        <span>Computed {fmtMoney(run.computed_subtotal)}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </>
-          )}
+          <VendorRunsList
+            runs={runs}
+            loading={runsQuery.isLoading}
+            error={!!runsQuery.error}
+            onRetry={() => runsQuery.refetch()}
+            overview={overview}
+            archivedCount={archivedCount}
+            showArchived={showArchived}
+            onToggleArchived={() => setShowArchived(v => !v)}
+            onArchive={(id, archive) => archiveMutation.mutate({ id, archive })}
+            onOpen={openRun}
+            onGenerate={() => setGenerateOpen(true)}
+          />
           </>
           )}
         </>

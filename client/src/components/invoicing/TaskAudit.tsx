@@ -1,4 +1,5 @@
-// Task audit: billable work that is NOT on the vendor invoice.
+// Unbilled work (formerly "Task audit"): billable work that is NOT on the
+// vendor invoice.
 //
 // Busy Bee stopped billing auxiliary work (hot tub refreshes, trash pickups,
 // deliveries, lockbox checks…) in September 2026, so it only reaches a client
@@ -15,13 +16,12 @@
 //   3. UNCLASSIFIED completed tasks the classifier does not recognise, so a
 //      human can bill real work in one click without it ever auto-billing.
 //
-// Plus the pricing / billability settings that drive the automatic lines
-// (app_settings, admin-editable — a price change never needs a deploy), and
-// per-client fee overrides (client_fee_overrides) that beat the standard list.
+// The price configuration (standard prices, client prices, special reservation
+// rates) lives on the Prices tab (PricesTab.tsx); this view only reads those
+// settings to show what each task will bill at.
 
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { useGuardedMutation } from '@/hooks/use-guarded-mutation'
 import { StatCard } from '@/components/StatCard'
@@ -33,7 +33,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -46,10 +45,8 @@ import { cn } from '@/lib/utils'
 import { localISODate } from '@/lib/local-date'
 import type { StatusTone } from '@/lib/status-colors'
 import { invoicesApi, type BillingChannel } from '@/lib/invoices'
-import { ReservationRatesCard } from './ReservationRatesCard'
+import { db, fetchAll, one, useAuxSettings, useFeeOverrides } from './pricing-data'
 import {
-  APP_SETTING_AUX_BILLABLE,
-  APP_SETTING_EXTRA_PRICING,
   AUX_CATEGORIES,
   BILLABLE_AUX_CATEGORIES,
   auxCharge,
@@ -61,73 +58,17 @@ import {
   isTaskCompleted,
   matchObservationToTask,
   resolveAuxSettings,
-  type AuxBillingSettings,
   type AuxCategory,
   type AuxTaskSource,
   type FeeOverride,
 } from '@shared/aux-tasks'
-import { isMissingSchemaError } from '@shared/db-errors'
-import { parseSourceLink, isHttpsLink } from '@shared/price-agreements'
 import {
-  AlertTriangle, Ban, CheckCircle2, ClipboardList, DollarSign, ExternalLink, Loader2, Pencil, Plus, Receipt, Trash2, Users,
+  AlertTriangle, Ban, CheckCircle2, ClipboardList, ExternalLink, Loader2, Pencil, Plus, Receipt,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface PropertyLite { id: number; name: string | null; trellis_id: string | null; hot_tub: boolean | null; contact_id: string | null }
-
-interface ClientFeeOverride {
-  id: string
-  contact_id: string
-  service_type: string
-  charge: number
-  hot_tub_charge: number | null
-  note: string | null
-  // Evidence (migration 20261009f). Absent until that migration is applied.
-  accepted_date?: string | null
-  source_link?: string | null
-  updated_by: string | null
-  updated_at: string | null
-  contacts?: { full_name: string | null; company: string | null } | { full_name: string | null; company: string | null }[] | null
-}
-
-interface OverridesData {
-  rows: ClientFeeOverride[]
-  // False until migration 20261009f adds accepted_date / source_link: the
-  // dialog then hides those fields instead of failing every save.
-  hasEvidence: boolean
-}
-
-interface ClientPriceAgreement {
-  id: string
-  contact_id: string
-  accepted_clean_price: number | null
-  linen_fee: number | null
-  onboarding_fee: number | null
-  accepted_date: string | null
-  source_link: string | null
-  note: string | null
-  updated_by: string | null
-  updated_at: string | null
-  contacts?: { full_name: string | null; company: string | null } | { full_name: string | null; company: string | null }[] | null
-}
-
-interface AgreementsData {
-  rows: ClientPriceAgreement[]
-  // False until migration 20261009f creates client_price_agreements.
-  available: boolean
-}
-
-interface ContactLite { id: string; full_name: string | null; company: string | null }
-
-/** Fee types an override can target: the ones with a standard price. */
-function pricedServiceTypes(settings: AuxBillingSettings): string[] {
-  return Object.keys(settings.pricing).sort()
-}
-
-function clientName(c: { full_name: string | null; company: string | null } | null | undefined): string {
-  return c?.company?.trim() || c?.full_name?.trim() || 'Unnamed client'
-}
 
 interface TaskLineRow {
   id: string
@@ -197,19 +138,14 @@ interface AuditTask {
 
 type Tab = 'untracked' | 'to_bill' | 'unclassified' | 'billed' | 'observations'
 
-// The generated Database types (shared/database.types.ts) predate the
-// task_audit_observations table; the audit queries go through this untyped
-// handle so the feature does not have to wait on a types regeneration.
-const db = supabase as any
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtMoney(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return '—'
+  if (n == null || !Number.isFinite(n)) return '-'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n)
 }
 function fmtDate(d: string | null | undefined): string {
-  if (!d) return '—'
+  if (!d) return '-'
   const [y, m, day] = d.slice(0, 10).split('-').map(Number)
   if (!y || !m || !day) return d
   return new Date(y, m - 1, day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -219,29 +155,8 @@ function shiftDate(iso: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
-function one<T>(v: T | T[] | null | undefined): T | null {
-  if (v == null) return null
-  return Array.isArray(v) ? v[0] ?? null : v
-}
 function categoryOf(c: string): AuxCategory {
   return (c in AUX_CATEGORIES ? c : 'unclassified') as AuxCategory
-}
-
-// PostgREST caps a response at 1000 rows and reports it only in a header —
-// same trap as api/invoices/_lib.ts fetchAllRows. Page until a short page.
-async function fetchAll<T>(
-  build: () => { range: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string; code?: string } | null }> },
-): Promise<T[]> {
-  const PAGE = 1000
-  const out: T[] = []
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await build().range(from, from + PAGE - 1)
-    // Keep the code so isMissingSchemaError can spot a not-yet-applied migration.
-    if (error) throw Object.assign(new Error(error.message), { code: error.code })
-    const page = data ?? []
-    out.push(...page)
-    if (page.length < PAGE || out.length > 50_000) return out
-  }
 }
 
 async function billingChannelFor(propertyId: number): Promise<BillingChannel> {
@@ -260,7 +175,7 @@ const obsTone: Record<Observation['status'], StatusTone> = {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: boolean }) {
+export function TaskAudit({ userLabel }: { userLabel: string }) {
   const { toast } = useToast()
   const qc = useQueryClient()
   const today = localISODate()
@@ -269,8 +184,6 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
   const [tab, setTab] = useState<Tab>('untracked')
   const [billTarget, setBillTarget] = useState<BillPrefill | null>(null)
   const [obsDialog, setObsDialog] = useState<{ mode: 'create' } | { mode: 'edit'; obs: Observation } | null>(null)
-  const [showPricing, setShowPricing] = useState(false)
-  const [showOverrides, setShowOverrides] = useState(false)
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['task-audit'] })
@@ -283,50 +196,8 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
     queryFn: () => fetchAll<PropertyLite>(() => db.from('properties').select('id, name, trellis_id, hot_tub, contact_id').is('deleted_at', null).order('id')),
     staleTime: 300_000,
   })
-  const settingsQuery = useQuery<AuxBillingSettings>({
-    queryKey: ['task-audit', 'settings'],
-    queryFn: async () => {
-      const { data, error } = await db.from('app_settings').select('key, value').in('key', [APP_SETTING_EXTRA_PRICING, APP_SETTING_AUX_BILLABLE])
-      if (error) throw error
-      const by = new Map<string, unknown>(((data ?? []) as Array<{ key: string; value: unknown }>).map(r => [r.key, r.value]))
-      return resolveAuxSettings({ pricing: by.get(APP_SETTING_EXTRA_PRICING), billable: by.get(APP_SETTING_AUX_BILLABLE) })
-    },
-  })
-  const overridesQuery = useQuery<OverridesData>({
-    queryKey: ['task-audit', 'fee-overrides'],
-    queryFn: async () => {
-      const base = 'id, contact_id, service_type, charge, hot_tub_charge, note, updated_by, updated_at, contacts(full_name, company)'
-      try {
-        const rows = await fetchAll<ClientFeeOverride>(() => db
-          .from('client_fee_overrides')
-          .select(`${base}, accepted_date, source_link`)
-          .order('id'))
-        return { rows, hasEvidence: true }
-      } catch (e) {
-        if (!isMissingSchemaError(e)) throw e
-        const rows = await fetchAll<ClientFeeOverride>(() => db.from('client_fee_overrides').select(base).order('id'))
-        return { rows, hasEvidence: false }
-      }
-    },
-    staleTime: 300_000,
-  })
-  const agreementsQuery = useQuery<AgreementsData>({
-    queryKey: ['task-audit', 'price-agreements'],
-    queryFn: async () => {
-      try {
-        const rows = await fetchAll<ClientPriceAgreement>(() => db
-          .from('client_price_agreements')
-          .select('id, contact_id, accepted_clean_price, linen_fee, onboarding_fee, accepted_date, source_link, note, updated_by, updated_at, contacts(full_name, company)')
-          .order('id'))
-        return { rows, available: true }
-      } catch (e) {
-        if (isMissingSchemaError(e)) return { rows: [], available: false }
-        throw e
-      }
-    },
-    staleTime: 300_000,
-    enabled: showOverrides,
-  })
+  const settingsQuery = useAuxSettings()
+  const overridesQuery = useFeeOverrides()
   const bwQuery = useQuery({
     queryKey: ['task-audit', 'breezeway', from, to],
     queryFn: () => fetchAll<{ external_id: string; property_id: number | null; due_date: string | null; task_title: string; department: string | null; status: string | null; completed_date: string | null }>(
@@ -575,12 +446,6 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" onClick={() => setShowPricing(v => !v)} data-testid="button-audit-pricing">
-            <DollarSign className="w-4 h-4 mr-1.5" /> Pricing
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => setShowOverrides(v => !v)} data-testid="button-audit-overrides">
-            <Users className="w-4 h-4 mr-1.5" /> Client prices
-          </Button>
           <Button size="sm" onClick={() => setObsDialog({ mode: 'create' })} data-testid="button-log-observation">
             <Plus className="w-4 h-4 mr-1.5" /> Log observation
           </Button>
@@ -591,37 +456,8 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
         <StatCard title="Untracked work" value={lists.untracked.length} subtitle="Seen in Slack / Quo, no task record" icon={AlertTriangle} tone={lists.untracked.length > 0 ? 'destructive' : 'success'} loading={loading} testId="stat-untracked" />
         <StatCard title="Tasks to bill" value={lists.toBill.length} subtitle={lists.toBill.length > 0 ? `≈ ${fmtMoney(lists.toBillTotal)} · bills on the next run` : 'Everything completed is on a run'} icon={ClipboardList} tone={lists.toBill.length > 0 ? 'warning' : 'success'} loading={loading} testId="stat-to-bill" />
         <StatCard title="Billed from tasks" value={fmtMoney(lists.billedTotal)} subtitle={`${lists.billed.length} task line${lists.billed.length === 1 ? '' : 's'} in the period`} icon={Receipt} tone="primary" loading={loading} testId="stat-billed" />
-        <StatCard title="Unclassified" value={lists.unclassified.length} subtitle="Completed, not recognised — bill by hand if real" icon={Pencil} tone="neutral" loading={loading} testId="stat-unclassified" />
+        <StatCard title="Unclassified" value={lists.unclassified.length} subtitle="Completed but not recognised: bill by hand if real" icon={Pencil} tone="neutral" loading={loading} testId="stat-unclassified" />
       </div>
-
-      {showPricing && (
-        <PricingCard settings={settings} isAdmin={isAdmin} onSaved={() => { invalidate(); setShowPricing(false) }} />
-      )}
-
-      {showOverrides && (
-        <>
-          <ClientOverridesCard
-            overrides={overridesQuery.data?.rows ?? []}
-            hasEvidence={overridesQuery.data?.hasEvidence ?? false}
-            loading={overridesQuery.isLoading}
-            error={overridesQuery.error as Error | null}
-            onRetry={() => overridesQuery.refetch()}
-            settings={settings}
-            isAdmin={isAdmin}
-            userLabel={userLabel}
-            onSaved={invalidate}
-          />
-          <ClientAgreementsCard
-            data={agreementsQuery.data ?? null}
-            loading={agreementsQuery.isLoading}
-            error={agreementsQuery.error as Error | null}
-            onRetry={() => agreementsQuery.refetch()}
-            isAdmin={isAdmin}
-            userLabel={userLabel}
-          />
-          <ReservationRatesCard isAdmin={isAdmin} userLabel={userLabel} />
-        </>
-      )}
 
       <div className="flex items-center gap-1 flex-wrap">
         {tabs.map(([id, label, n, tone]) => (
@@ -633,7 +469,7 @@ export function TaskAudit({ userLabel, isAdmin }: { userLabel: string; isAdmin: 
       </div>
 
       {error ? (
-        <ErrorState title="Couldn't load the task audit" onRetry={() => invalidate()} />
+        <ErrorState title="Couldn't load unbilled work" onRetry={() => invalidate()} />
       ) : loading ? (
         <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}</div>
       ) : tab === 'untracked' || tab === 'observations' ? (
@@ -717,7 +553,7 @@ function billingLabel(t: AuditTask): { text: string; tone: StatusTone } {
   switch (b.state) {
     case 'billed': return { text: `Billed ${fmtMoney(b.charge)} · ${b.runStatus}`, tone: 'success' }
     case 'on_run': return { text: `On run (${b.runStatus?.replace(/_/g, ' ')}) · ${fmtMoney(b.charge)}`, tone: 'info' }
-    case 'needs_price': return { text: 'On run — needs a price', tone: 'warning' }
+    case 'needs_price': return { text: 'On run, needs a price', tone: 'warning' }
     case 'dismissed': return { text: 'Dismissed', tone: 'neutral' }
   }
 }
@@ -775,7 +611,7 @@ function TaskList({ rows, mode, chargeFor, openRuns, onBill, onDismiss, pending 
                     <p className="truncate" title={t.title}>{t.title}</p>
                     <p className="text-2xs text-muted-foreground">{t.source === 'breezeway' ? 'Breezeway' : 'Trellis'}{t.department ? ` · ${t.department}` : ''} · {AUX_CATEGORIES[t.category].label}</p>
                   </td>
-                  <td className="px-3 py-2 max-w-40 truncate">{t.serviceType ?? <span className="text-muted-foreground">—</span>}</td>
+                  <td className="px-3 py-2 max-w-40 truncate">{t.serviceType ?? <span className="text-muted-foreground">-</span>}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{t.billing?.charge != null ? fmtMoney(t.billing.charge) : charge != null ? fmtMoney(charge) : <span className="text-warning">no price</span>}</td>
                   <td className="px-3 py-2">
                     <StatusBadge tone={status.tone}>{status.text}</StatusBadge>
@@ -793,7 +629,7 @@ function TaskList({ rows, mode, chargeFor, openRuns, onBill, onDismiss, pending 
                         </Button>
                       )}
                       {mode !== 'billed' && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-muted-foreground hover:text-destructive" onClick={() => onDismiss(t)} disabled={pending} title="Dismiss — never bill this task" data-testid={`audit-dismiss-${t.externalId}`}>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-muted-foreground hover:text-destructive" onClick={() => onDismiss(t)} disabled={pending} title="Dismiss: never bill this task" data-testid={`audit-dismiss-${t.externalId}`}>
                           <Ban className="w-3.5 h-3.5" />
                         </Button>
                       )}
@@ -837,7 +673,7 @@ function ObservationList({ rows, emptyTitle, emptyDescription, candidateFor, onB
                 <div className="flex items-center gap-2 flex-wrap">
                   <StatusBadge tone={obsTone[o.status]}>{o.status === 'open' ? 'untracked' : o.status}</StatusBadge>
                   <span className="text-sm font-medium">{fmtDate(o.occurred_on)}</span>
-                  <span className={cn('text-sm', propName == null && 'italic text-destructive')}>{propName ?? `"${o.property_text ?? '?'}" — no Ops property`}</span>
+                  <span className={cn('text-sm', propName == null && 'italic text-destructive')}>{propName ?? `"${o.property_text ?? '?'}": no Ops property`}</span>
                   <span className="text-xs text-muted-foreground">· {AUX_CATEGORIES[cat].label}{o.service_type ? ` → ${o.service_type}` : ''}</span>
                 </div>
                 <p className="text-sm">{o.summary}</p>
@@ -921,7 +757,7 @@ function BillDialog({ prefill, runs, properties, userLabel, onClose, onSaved }: 
 
   const save = useGuardedMutation<void, Error, void>('invoicing', {
     mutationFn: async () => {
-      if (!runId) throw new Error('Pick an invoice run — generate a draft for that week first if none is open')
+      if (!runId) throw new Error('Pick an invoice run (generate a draft for that week first if none is open)')
       if (propertyId == null) throw new Error('Pick a property')
       if (!serviceType) throw new Error('Pick a service')
       const chargeNum = Number(charge)
@@ -951,7 +787,7 @@ function BillDialog({ prefill, runs, properties, userLabel, onClose, onSaved }: 
         review_status: 'resolved',
         resolved_by: userLabel,
         resolved_at: new Date().toISOString(),
-        engine_note: `Billed by ${userLabel} from Task audit${prefill.observationId ? ' (untracked work — no task record)' : ''}.`,
+        engine_note: `Billed by ${userLabel} from Unbilled work${prefill.observationId ? ' (untracked work, no task record)' : ''}.`,
       }).select('id').single()
       if (error) throw error
       if (prefill.observationId) {
@@ -1114,7 +950,7 @@ function ObservationDialog({ mode, obs, properties, matchable, userLabel, onClos
               value={propertyId != null ? String(propertyId) : ''}
               onSelect={(v) => setPropertyId(v ? Number(v) : null)}
               options={properties.map(p => ({ value: String(p.id), label: p.name ?? `Property #${p.id}` }))}
-              placeholder={obs?.property_text ? `Unresolved: "${obs.property_text}" — pick the Ops property` : 'Select property'}
+              placeholder={obs?.property_text ? `Unresolved: "${obs.property_text}", pick the Ops property` : 'Select property'}
               searchPlaceholder="Search properties…"
               emptyText="No matching properties"
             />
@@ -1164,635 +1000,6 @@ function ObservationDialog({ mode, obs, properties, matchable, userLabel, onClos
             {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
             {mode === 'create' ? 'Log it' : 'Save'}
           </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-// ── Pricing / billability settings ────────────────────────────────────────────
-
-function PricingCard({ settings, isAdmin, onSaved }: { settings: AuxBillingSettings; isAdmin: boolean; onSaved: () => void }) {
-  const { toast } = useToast()
-  const [prices, setPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(BILLABLE_AUX_CATEGORIES.map(c => {
-      const st = AUX_CATEGORIES[c].serviceType!
-      const v = settings.pricing[st]
-      return [st, v == null ? '' : String(v)]
-    })),
-  )
-  // Hot-tub price per type; blank = same price with or without a tub.
-  const [hotPrices, setHotPrices] = useState<Record<string, string>>(() =>
-    Object.fromEntries(BILLABLE_AUX_CATEGORIES.map(c => {
-      const st = AUX_CATEGORIES[c].serviceType!
-      const v = settings.hotTubPricing[st]
-      return [st, v == null ? '' : String(v)]
-    })),
-  )
-  const [billable, setBillable] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(BILLABLE_AUX_CATEGORIES.map(c => [c, isBillableCategory(c, settings)])),
-  )
-
-  const save = useGuardedMutation<void, Error, void>('invoicing', {
-    mutationFn: async () => {
-      // Stored as { charge, hot_tub_charge } so the hot-tub price survives a
-      // save; a bare number would mean "one price either way".
-      const pricing: Record<string, { charge: number; hot_tub_charge: number | null } | null> = {}
-      for (const [st, v] of Object.entries(prices)) {
-        if (v.trim() === '') { pricing[st] = null; continue }
-        const n = Number(v)
-        if (!Number.isFinite(n) || n < 0) throw new Error(`"${v}" is not a valid price for ${st}`)
-        const hv = (hotPrices[st] ?? '').trim()
-        const h = hv === '' ? null : Number(hv)
-        if (h != null && (!Number.isFinite(h) || h < 0)) throw new Error(`"${hv}" is not a valid hot tub price for ${st}`)
-        pricing[st] = { charge: n, hot_tub_charge: h }
-      }
-      const { error } = await db.from('app_settings').upsert([
-        { key: APP_SETTING_EXTRA_PRICING, value: JSON.stringify(pricing) },
-        { key: APP_SETTING_AUX_BILLABLE, value: JSON.stringify(billable) },
-      ], { onConflict: 'key' })
-      if (error) throw error
-    },
-    onSuccess: () => { toast({ title: 'Pricing saved', description: 'Applies the next time a run is generated or reconciled.' }); onSaved() },
-    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Save failed', description: e.message, variant: 'destructive' }) },
-  })
-
-  return (
-    <Card className="border-card-border shadow-sm" data-testid="audit-pricing-card">
-      <CardContent className="p-4 space-y-3">
-        <div>
-          <p className="text-sm font-medium">Billable task pricing</p>
-          <p className="text-xs text-muted-foreground">
-            What each kind of completed task bills the client. A blank price still adds the line but queues it for a price. The second box is the price on a hot tub property (blank = same price). Untick a kind to stop billing it automatically. Vendor-invoice extras use the built-in list, which matches these defaults.
-            {!isAdmin && <span className="text-warning"> Only admins can change these.</span>}
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-          {BILLABLE_AUX_CATEGORIES.map(c => {
-            const def = AUX_CATEGORIES[c]
-            const st = def.serviceType!
-            return (
-              <div key={c} className="flex items-center gap-3 py-1 border-b border-border/40">
-                <Checkbox checked={billable[c] ?? true} onCheckedChange={v => setBillable(b => ({ ...b, [c]: v === true }))} disabled={!isAdmin} data-testid={`pricing-billable-${c}`} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm truncate">{def.label} <span className="text-muted-foreground">→ {st}</span></p>
-                  <p className="text-2xs text-muted-foreground truncate" title={def.blurb}>{def.blurb}</p>
-                </div>
-                <div className="relative w-24">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                  <Input type="number" step="1" min="0" className="h-8 pl-5" value={prices[st] ?? ''} onChange={e => setPrices(p => ({ ...p, [st]: e.target.value }))} disabled={!isAdmin} placeholder="none" aria-label={`${st} price`} data-testid={`pricing-${c}`} />
-                </div>
-                <div className="relative w-24" title="Price on a property with a hot tub (blank = same price)">
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-2xs text-muted-foreground">HT $</span>
-                  <Input type="number" step="1" min="0" className="h-8 pl-9" value={hotPrices[st] ?? ''} onChange={e => setHotPrices(p => ({ ...p, [st]: e.target.value }))} disabled={!isAdmin} placeholder="same" aria-label={`${st} hot tub price`} data-testid={`pricing-hottub-${c}`} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        <p className="text-2xs text-muted-foreground">
-          Never billed: {(Object.keys(AUX_CATEGORIES) as AuxCategory[]).filter(c => !AUX_CATEGORIES[c].serviceType && c !== 'clean' && c !== 'no_clean' && c !== 'unclassified').map(c => AUX_CATEGORIES[c].label).join(', ')}. Cleans bill through the vendor invoice.
-        </p>
-        {isAdmin && (
-          <div className="flex justify-end">
-            <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} data-testid="pricing-save">
-              {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              Save pricing
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-// ── Client fee overrides ──────────────────────────────────────────────────────
-//
-// A client's negotiated price for a fee beats the standard list on every one
-// of their properties — on vendor-invoice extras and on billable task lines
-// alike. Changes are audit-logged by a DB trigger into activity_log.
-
-/** Accepted date + source link, compact. The link renders only when it passes
- *  the same https rule the DB enforces. */
-function EvidenceCell({ date, link }: { date: string | null | undefined; link: string | null | undefined }) {
-  if (!date && !link) return <span className="text-muted-foreground">not recorded</span>
-  return (
-    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-      {date ? fmtDate(date) : <span className="text-muted-foreground">no date</span>}
-      {link && isHttpsLink(link) && (
-        <a href={link} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5" title={link}>
-          source <ExternalLink className="w-3 h-3" />
-        </a>
-      )}
-    </span>
-  )
-}
-
-function ClientOverridesCard({ overrides, hasEvidence, loading, error, onRetry, settings, isAdmin, userLabel, onSaved }: {
-  overrides: ClientFeeOverride[]
-  hasEvidence: boolean
-  loading: boolean
-  error: Error | null
-  onRetry: () => void
-  settings: AuxBillingSettings
-  isAdmin: boolean
-  userLabel: string
-  onSaved: () => void
-}) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const [editing, setEditing] = useState<ClientFeeOverride | 'new' | null>(null)
-
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['task-audit', 'fee-overrides'] })
-    onSaved()
-  }
-
-  const remove = useGuardedMutation<void, Error, ClientFeeOverride>('invoicing', {
-    mutationFn: async (o) => {
-      const { error: e } = await db.from('client_fee_overrides').delete().eq('id', o.id)
-      if (e) throw e
-    },
-    onSuccess: () => { toast({ title: 'Client price removed', description: 'Their properties go back to the standard price on the next reconcile.' }); refresh() },
-    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Remove failed', description: e.message, variant: 'destructive' }) },
-  })
-
-  const sorted = [...overrides].sort((a, b) =>
-    clientName(one(a.contacts)).localeCompare(clientName(one(b.contacts))) || a.service_type.localeCompare(b.service_type))
-
-  return (
-    <Card className="border-card-border shadow-sm" data-testid="audit-overrides-card">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Client fee overrides</p>
-            <p className="text-xs text-muted-foreground">
-              A client's agreed price for a fee, used instead of the standard price on all of their properties (vendor-invoice extras and billed tasks). Applies the next time a run is generated or reconciled; approved and exported runs are not changed.
-              {!isAdmin && <span className="text-warning"> Only admins can change these.</span>}
-            </p>
-          </div>
-          {isAdmin && (
-            <Button size="sm" onClick={() => setEditing('new')} data-testid="button-add-override">
-              <Plus className="w-4 h-4 mr-1.5" /> Add client price
-            </Button>
-          )}
-        </div>
-        {error ? (
-          <ErrorState title="Couldn't load client prices" description={error.message} onRetry={onRetry} />
-        ) : loading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : sorted.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No client-specific prices. Every client pays the standard price.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2 py-1.5 font-medium">Client</th>
-                  <th className="px-2 py-1.5 font-medium">Fee</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Price</th>
-                  <th className="px-2 py-1.5 font-medium text-right">With hot tub</th>
-                  <th className="px-2 py-1.5 font-medium">Standard</th>
-                  {hasEvidence && <th className="px-2 py-1.5 font-medium">Accepted</th>}
-                  <th className="px-2 py-1.5 font-medium">Note</th>
-                  <th className="px-2 py-1.5 w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(o => {
-                  const std = settings.pricing[o.service_type]
-                  const stdHot = settings.hotTubPricing[o.service_type]
-                  return (
-                    <tr key={o.id} className="border-t border-border/60" data-testid={`override-${o.id}`}>
-                      <td className="px-2 py-1.5">{clientName(one(o.contacts))}</td>
-                      <td className="px-2 py-1.5">{o.service_type}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtMoney(Number(o.charge))}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums">{o.hot_tub_charge == null ? <span className="text-muted-foreground">same</span> : fmtMoney(Number(o.hot_tub_charge))}</td>
-                      <td className="px-2 py-1.5 text-2xs text-muted-foreground whitespace-nowrap">
-                        {std == null ? 'not on the list — override ignored' : `${fmtMoney(std)}${stdHot != null ? ` / ${fmtMoney(stdHot)} HT` : ''}`}
-                      </td>
-                      {hasEvidence && <td className="px-2 py-1.5 text-2xs"><EvidenceCell date={o.accepted_date} link={o.source_link} /></td>}
-                      <td className="px-2 py-1.5 max-w-48 truncate text-muted-foreground" title={o.note ?? ''}>{o.note ?? ''}</td>
-                      <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                        {isAdmin && (
-                          <>
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(o)} aria-label="Edit client price" data-testid={`override-edit-${o.id}`}>
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={remove.isPending} onClick={() => remove.mutate(o)} aria-label="Remove client price" data-testid={`override-delete-${o.id}`}>
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-      {editing && (
-        <OverrideDialog
-          existing={editing === 'new' ? null : editing}
-          taken={overrides}
-          hasEvidence={hasEvidence}
-          settings={settings}
-          userLabel={userLabel}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); refresh() }}
-        />
-      )}
-    </Card>
-  )
-}
-
-// ── Agreed client prices ──────────────────────────────────────────────────────
-//
-// What a client accepted (clean price, linen fee, onboarding fee), with when
-// and where. These never change a price: reconcile compares each billed line
-// against them and sends a difference over $0.01 to review
-// (price_mismatch_agreement). Audit-logged by a DB trigger.
-
-function ClientAgreementsCard({ data, loading, error, onRetry, isAdmin, userLabel }: {
-  data: AgreementsData | null
-  loading: boolean
-  error: Error | null
-  onRetry: () => void
-  isAdmin: boolean
-  userLabel: string
-}) {
-  const { toast } = useToast()
-  const qc = useQueryClient()
-  const [editing, setEditing] = useState<ClientPriceAgreement | 'new' | null>(null)
-  const rows = data?.rows ?? []
-
-  const refresh = () => qc.invalidateQueries({ queryKey: ['task-audit', 'price-agreements'] })
-
-  const remove = useGuardedMutation<void, Error, ClientPriceAgreement>('invoicing', {
-    mutationFn: async (a) => {
-      const { error: e } = await db.from('client_price_agreements').delete().eq('id', a.id)
-      if (e) throw e
-    },
-    onSuccess: () => { toast({ title: 'Agreement removed', description: 'Their lines are no longer checked against it.' }); refresh() },
-    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Remove failed', description: e.message, variant: 'destructive' }) },
-  })
-
-  const sorted = [...rows].sort((a, b) => clientName(one(a.contacts)).localeCompare(clientName(one(b.contacts))))
-  const money = (v: number | null) => v == null ? <span className="text-muted-foreground">not agreed</span> : fmtMoney(Number(v))
-
-  return (
-    <Card className="border-card-border shadow-sm" data-testid="audit-agreements-card">
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-sm font-medium">Agreed client prices</p>
-            <p className="text-xs text-muted-foreground">
-              The clean price, linen fee and onboarding fee a client accepted. These don't change any price: on the next generate or reconcile, a line that bills that client something different (by more than a cent) is held for review.
-              {!isAdmin && <span className="text-warning"> Only admins can change these.</span>}
-            </p>
-          </div>
-          {isAdmin && data?.available && (
-            <Button size="sm" onClick={() => setEditing('new')} data-testid="button-add-agreement">
-              <Plus className="w-4 h-4 mr-1.5" /> Add agreement
-            </Button>
-          )}
-        </div>
-        {error ? (
-          <ErrorState title="Couldn't load agreed prices" description={error.message} onRetry={onRetry} />
-        ) : loading ? (
-          <Skeleton className="h-16 w-full" />
-        ) : !data?.available ? (
-          <p className="text-sm text-muted-foreground py-2">Not set up yet: agreed prices need migration 20261009f_client_agreed_prices.sql to be applied.</p>
-        ) : sorted.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-2">No agreed prices recorded. Nothing is checked.</p>
-        ) : (
-          <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-2 py-1.5 font-medium">Client</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Clean</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Linen fee</th>
-                  <th className="px-2 py-1.5 font-medium text-right">Onboarding fee</th>
-                  <th className="px-2 py-1.5 font-medium">Accepted</th>
-                  <th className="px-2 py-1.5 font-medium">Note</th>
-                  <th className="px-2 py-1.5 w-20" />
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(a => (
-                  <tr key={a.id} className="border-t border-border/60" data-testid={`agreement-${a.id}`}>
-                    <td className="px-2 py-1.5">{clientName(one(a.contacts))}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.accepted_clean_price)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.linen_fee)}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{money(a.onboarding_fee)}</td>
-                    <td className="px-2 py-1.5 text-2xs"><EvidenceCell date={a.accepted_date} link={a.source_link} /></td>
-                    <td className="px-2 py-1.5 max-w-48 truncate text-muted-foreground" title={a.note ?? ''}>{a.note ?? ''}</td>
-                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                      {isAdmin && (
-                        <>
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(a)} aria-label="Edit agreement" data-testid={`agreement-edit-${a.id}`}>
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" disabled={remove.isPending} onClick={() => remove.mutate(a)} aria-label="Remove agreement" data-testid={`agreement-delete-${a.id}`}>
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </CardContent>
-      {editing && (
-        <AgreementDialog
-          existing={editing === 'new' ? null : editing}
-          taken={rows}
-          userLabel={userLabel}
-          onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); refresh() }}
-        />
-      )}
-    </Card>
-  )
-}
-
-function AgreementDialog({ existing, taken, userLabel, onClose, onSaved }: {
-  existing: ClientPriceAgreement | null
-  taken: ClientPriceAgreement[]
-  userLabel: string
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const { toast } = useToast()
-  const [contactId, setContactId] = useState<string | null>(existing?.contact_id ?? null)
-  const asText = (v: number | null | undefined) => v == null ? '' : String(v)
-  const [cleanPrice, setCleanPrice] = useState(asText(existing?.accepted_clean_price))
-  const [linenFee, setLinenFee] = useState(asText(existing?.linen_fee))
-  const [onboardingFee, setOnboardingFee] = useState(asText(existing?.onboarding_fee))
-  const [acceptedDate, setAcceptedDate] = useState(existing?.accepted_date ?? '')
-  const [sourceLink, setSourceLink] = useState(existing?.source_link ?? '')
-  const [note, setNote] = useState(existing?.note ?? '')
-  const linkInvalid = !parseSourceLink(sourceLink).ok
-
-  const contactsQuery = useQuery<ContactLite[]>({
-    queryKey: ['task-audit', 'contacts'],
-    queryFn: () => fetchAll<ContactLite>(() => db.from('contacts').select('id, full_name, company').order('id')),
-    staleTime: 300_000,
-  })
-  const contactOptions = useMemo(
-    () => (contactsQuery.data ?? [])
-      .map(c => ({ value: c.id, label: clientName(c) }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-    [contactsQuery.data],
-  )
-  const duplicate = !existing && contactId != null && taken.some(t => t.contact_id === contactId)
-
-  const save = useGuardedMutation<void, Error, void>('invoicing', {
-    mutationFn: async () => {
-      if (!contactId) throw new Error('Pick a client')
-      const price = (s: string, what: string): number | null => {
-        if (s.trim() === '') return null
-        const n = Number(s)
-        if (!Number.isFinite(n) || n < 0) throw new Error(`Enter a valid ${what}, or leave it blank`)
-        return Math.round(n * 100) / 100
-      }
-      const clean = price(cleanPrice, 'clean price')
-      const linen = price(linenFee, 'linen fee')
-      const onboarding = price(onboardingFee, 'onboarding fee')
-      if (clean == null && linen == null && onboarding == null) throw new Error('Enter at least one agreed price')
-      const link = parseSourceLink(sourceLink)
-      if (!link.ok) throw new Error('The source link must be a full https:// link')
-      const row = {
-        contact_id: contactId,
-        accepted_clean_price: clean,
-        linen_fee: linen,
-        onboarding_fee: onboarding,
-        accepted_date: acceptedDate || null,
-        source_link: link.value,
-        note: note.trim() || null,
-        updated_by: userLabel,
-      }
-      const { error } = existing
-        ? await db.from('client_price_agreements').update(row).eq('id', existing.id)
-        : await db.from('client_price_agreements').insert({ ...row, created_by: userLabel })
-      if (error) {
-        if (/duplicate key|unique/i.test(error.message)) throw new Error('This client already has an agreement. Edit that one instead.')
-        throw error
-      }
-    },
-    onSuccess: () => { toast({ title: existing ? 'Agreement updated' : 'Agreement added', description: 'Checked the next time a run is generated or reconciled.' }); onSaved() },
-    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Save failed', description: e.message, variant: 'destructive' }) },
-  })
-
-  return (
-    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{existing ? 'Edit agreed prices' : 'Add agreed prices'}</DialogTitle>
-          <DialogDescription>What this client accepted. Leave a price blank if it wasn't part of the agreement; blank prices are never checked.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Client</Label>
-            {existing ? (
-              <p className="text-sm py-1.5">{clientName(one(existing.contacts))}</p>
-            ) : (
-              <SearchSelect
-                value={contactId ?? ''}
-                onSelect={v => setContactId(v || null)}
-                options={contactOptions}
-                placeholder={contactsQuery.isLoading ? 'Loading clients…' : 'Pick a client'}
-                searchPlaceholder="Search clients…"
-                emptyText="No matching clients"
-              />
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label>Clean price</Label>
-              <Input type="number" step="0.01" min="0" value={cleanPrice} onChange={e => setCleanPrice(e.target.value)} data-testid="agreement-clean" />
-            </div>
-            <div className="space-y-1">
-              <Label>Linen fee</Label>
-              <Input type="number" step="0.01" min="0" value={linenFee} onChange={e => setLinenFee(e.target.value)} data-testid="agreement-linen" />
-            </div>
-            <div className="space-y-1">
-              <Label>Onboarding fee</Label>
-              <Input type="number" step="0.01" min="0" value={onboardingFee} onChange={e => setOnboardingFee(e.target.value)} data-testid="agreement-onboarding" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Accepted on</Label>
-              <Input type="date" value={acceptedDate} onChange={e => setAcceptedDate(e.target.value)} data-testid="agreement-accepted-date" />
-            </div>
-            <div className="space-y-1">
-              <Label>Source link</Label>
-              <Input type="url" value={sourceLink} onChange={e => setSourceLink(e.target.value)} placeholder="https://" data-testid="agreement-source-link" />
-            </div>
-          </div>
-          {linkInvalid && <p className="text-xs text-destructive">The source link must be a full https:// link (quote, email or Slack thread).</p>}
-          <div className="space-y-1">
-            <Label>Note <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. accepted the October quote" data-testid="agreement-note" />
-          </div>
-          {duplicate && <p className="text-xs text-warning">This client already has an agreement. Edit that one instead.</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || duplicate || linkInvalid} data-testid="agreement-save">
-              {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              Save
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function OverrideDialog({ existing, taken, hasEvidence, settings, userLabel, onClose, onSaved }: {
-  existing: ClientFeeOverride | null
-  taken: ClientFeeOverride[]
-  hasEvidence: boolean
-  settings: AuxBillingSettings
-  userLabel: string
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const { toast } = useToast()
-  const [contactId, setContactId] = useState<string | null>(existing?.contact_id ?? null)
-  const [serviceType, setServiceType] = useState<string>(existing?.service_type ?? pricedServiceTypes(settings)[0] ?? '')
-  const [charge, setCharge] = useState(existing ? String(existing.charge) : '')
-  const [hotCharge, setHotCharge] = useState(existing?.hot_tub_charge != null ? String(existing.hot_tub_charge) : '')
-  const [note, setNote] = useState(existing?.note ?? '')
-  const [acceptedDate, setAcceptedDate] = useState(existing?.accepted_date ?? '')
-  const [sourceLink, setSourceLink] = useState(existing?.source_link ?? '')
-  const linkInvalid = !parseSourceLink(sourceLink).ok
-
-  const contactsQuery = useQuery<ContactLite[]>({
-    queryKey: ['task-audit', 'contacts'],
-    queryFn: () => fetchAll<ContactLite>(() => db.from('contacts').select('id, full_name, company').order('id')),
-    staleTime: 300_000,
-  })
-  const contactOptions = useMemo(
-    () => (contactsQuery.data ?? [])
-      .map(c => ({ value: c.id, label: clientName(c) }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-    [contactsQuery.data],
-  )
-  const types = pricedServiceTypes(settings)
-  const std = settings.pricing[serviceType]
-  const stdHot = settings.hotTubPricing[serviceType]
-  const duplicate = !existing && contactId != null && taken.some(t => t.contact_id === contactId && t.service_type === serviceType)
-
-  const save = useGuardedMutation<void, Error, void>('invoicing', {
-    mutationFn: async () => {
-      if (!contactId) throw new Error('Pick a client')
-      if (!serviceType) throw new Error('Pick a fee')
-      const n = Number(charge)
-      if (charge.trim() === '' || !Number.isFinite(n) || n < 0) throw new Error('Enter a valid price')
-      const h = hotCharge.trim() === '' ? null : Number(hotCharge)
-      if (h != null && (!Number.isFinite(h) || h < 0)) throw new Error('Enter a valid hot tub price, or leave it blank')
-      const link = parseSourceLink(sourceLink)
-      if (!link.ok) throw new Error('The source link must be a full https:// link')
-      const row = {
-        contact_id: contactId,
-        service_type: serviceType,
-        charge: n,
-        hot_tub_charge: h,
-        note: note.trim() || null,
-        // Only sent once migration 20261009f has added the columns.
-        ...(hasEvidence ? { accepted_date: acceptedDate || null, source_link: link.value } : {}),
-        updated_by: userLabel,
-      }
-      const { error } = existing
-        ? await db.from('client_fee_overrides').update(row).eq('id', existing.id)
-        : await db.from('client_fee_overrides').insert({ ...row, created_by: userLabel })
-      if (error) {
-        if (/duplicate key|unique/i.test(error.message)) throw new Error('This client already has a price for that fee — edit that one instead.')
-        throw error
-      }
-    },
-    onSuccess: () => { toast({ title: existing ? 'Client price updated' : 'Client price added', description: 'Applies the next time a run is generated or reconciled.' }); onSaved() },
-    onError: (e) => { if (e.message !== 'edit_blocked') toast({ title: 'Save failed', description: e.message, variant: 'destructive' }) },
-  })
-
-  return (
-    <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{existing ? 'Edit client price' : 'Add client price'}</DialogTitle>
-          <DialogDescription>Used instead of the standard price on every property this client has.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Client</Label>
-            {existing ? (
-              <p className="text-sm py-1.5">{clientName(one(existing.contacts))}</p>
-            ) : (
-              <SearchSelect
-                value={contactId ?? ''}
-                onSelect={v => setContactId(v || null)}
-                options={contactOptions}
-                placeholder={contactsQuery.isLoading ? 'Loading clients…' : 'Pick a client'}
-                searchPlaceholder="Search clients…"
-                emptyText="No matching clients"
-              />
-            )}
-          </div>
-          <div className="space-y-1">
-            <Label>Fee</Label>
-            <Select value={serviceType} onValueChange={setServiceType} disabled={!!existing}>
-              <SelectTrigger data-testid="override-fee"><SelectValue placeholder="Pick a fee" /></SelectTrigger>
-              <SelectContent>
-                {types.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            {std != null && (
-              <p className="text-2xs text-muted-foreground">Standard: {fmtMoney(std)}{stdHot != null ? `, ${fmtMoney(stdHot)} with a hot tub` : ''}</p>
-            )}
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Price</Label>
-              <Input type="number" step="1" min="0" value={charge} onChange={e => setCharge(e.target.value)} placeholder={std != null ? String(std) : ''} data-testid="override-charge" />
-            </div>
-            <div className="space-y-1">
-              <Label>With a hot tub</Label>
-              <Input type="number" step="1" min="0" value={hotCharge} onChange={e => setHotCharge(e.target.value)} placeholder="same" data-testid="override-hot-charge" />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label>Note <span className="text-muted-foreground font-normal">(optional)</span></Label>
-            <Textarea rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. agreed on the 2026 contract" data-testid="override-note" />
-          </div>
-          {hasEvidence && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Accepted on <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input type="date" value={acceptedDate} onChange={e => setAcceptedDate(e.target.value)} data-testid="override-accepted-date" />
-              </div>
-              <div className="space-y-1">
-                <Label>Source link <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input type="url" value={sourceLink} onChange={e => setSourceLink(e.target.value)} placeholder="https://" data-testid="override-source-link" />
-              </div>
-            </div>
-          )}
-          {hasEvidence && linkInvalid && <p className="text-xs text-destructive">The source link must be a full https:// link (quote, email or Slack thread).</p>}
-          {duplicate && <p className="text-xs text-warning">This client already has a price for that fee — edit that one instead.</p>}
-          <div className="flex justify-end gap-2 pt-1">
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || duplicate || (hasEvidence && linkInvalid)} data-testid="override-save">
-              {save.isPending && <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />}
-              Save
-            </Button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

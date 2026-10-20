@@ -981,7 +981,7 @@ const logTaskObservation: Tool = {
     } else if (!def.serviceType) {
       verdict = `UNTRACKED, but ${def.label} is not billable — logged for the record only.`
     } else {
-      verdict = `UNTRACKED: no ${def.label} task exists on ${where} within a day of ${occurredOn}. Logged as untracked work — it appears in Invoicing → Task audit for staff to bill as ${def.serviceType}.`
+      verdict = `UNTRACKED: no ${def.label} task exists on ${where} within a day of ${occurredOn}. Logged as untracked work: it appears in Invoice Reconciliation → Unbilled work for staff to bill as ${def.serviceType}.`
     }
     return {
       text: `${def.label} at ${where} on ${occurredOn} — ${verdict}`,
