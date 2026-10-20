@@ -99,11 +99,9 @@ function isMissingTable(e: { code?: string; message?: string } | null | undefine
 
 class MissingTableError extends Error {}
 
-export function OpenCreditsPanel({ userLabel }: { userLabel: string }) {
-  const [adding, setAdding] = useState(false)
-  const [voiding, setVoiding] = useState<OpenCredit | null>(null)
-
-  const creditsQuery = useQuery<OpenCredit[]>({
+/** Open credits, shared by the panel and the compact summary on the runs view (same query key, one fetch). */
+export function useOpenCreditsQuery() {
+  return useQuery<OpenCredit[]>({
     queryKey: CREDITS_KEY,
     queryFn: async () => {
       const { data, error } = await db
@@ -120,6 +118,23 @@ export function OpenCreditsPanel({ userLabel }: { userLabel: string }) {
     },
     retry: (count, err) => !(err instanceof MissingTableError) && count < 2,
   })
+}
+
+/** Count and total of open credits for the runs-view summary line. Zero while loading, failing, or not set up. */
+export function useOpenCreditsSummary(): { count: number; total: number } {
+  const q = useOpenCreditsQuery()
+  return useMemo(() => {
+    const rows = q.data ?? []
+    const total = rows.reduce((a, c) => Math.round((a + Number(c.amount)) * 100) / 100, 0)
+    return { count: rows.length, total }
+  }, [q.data])
+}
+
+export function OpenCreditsPanel({ userLabel }: { userLabel: string }) {
+  const [adding, setAdding] = useState(false)
+  const [voiding, setVoiding] = useState<OpenCredit | null>(null)
+
+  const creditsQuery = useOpenCreditsQuery()
 
   const groups = useMemo(() => {
     const byClient = new Map<string, { name: string; credits: OpenCredit[]; total: number }>()

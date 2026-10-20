@@ -151,20 +151,9 @@ function billedRefs(c: LinenCharge): string[] {
     })
 }
 
-export function LinenChargesPanel({ userLabel }: { userLabel: string }) {
-  const [editing, setEditing] = useState<{ charge?: LinenCharge; propertyId?: number } | null>(null)
-  const [voiding, setVoiding] = useState<LinenCharge | null>(null)
-  const [showUndecided, setShowUndecided] = useState(false)
-
-  // Deep link from the onboarding checklist: /invoicing?linen=<property id>.
-  useEffect(() => {
-    try {
-      const id = Number(new URLSearchParams(window.location.search).get('linen'))
-      if (Number.isInteger(id) && id > 0) setEditing({ propertyId: id })
-    } catch { /* no URL params */ }
-  }, [])
-
-  const chargesQuery = useQuery<LinenCharge[]>({
+/** Linen charges, shared by the panel and the compact summary on the runs view (same query key, one fetch). */
+export function useLinenChargesQuery() {
+  return useQuery<LinenCharge[]>({
     queryKey: [...LINEN_CHARGES_KEY, 'list'],
     queryFn: async () => {
       const { data, error } = await db
@@ -181,8 +170,10 @@ export function LinenChargesPanel({ userLabel }: { userLabel: string }) {
     },
     retry: (count, err) => !(err instanceof MissingTableError) && count < 2,
   })
+}
 
-  const propertiesQuery = useQuery<LinenProperty[]>({
+export function useLinenPropertiesQuery() {
+  return useQuery<LinenProperty[]>({
     queryKey: [...LINEN_CHARGES_KEY, 'properties'],
     queryFn: async () => {
       const { data, error } = await db
@@ -197,6 +188,60 @@ export function LinenChargesPanel({ userLabel }: { userLabel: string }) {
     },
     staleTime: 60_000,
   })
+}
+
+/** Linen properties in onboarding/live stages with no decision: no charge of their own and no client-wide charge from their client. */
+function findUndecided(charges: LinenCharge[], properties: LinenProperty[]): LinenProperty[] {
+  const own = new Set(charges.filter(c => c.property_id != null).map(c => c.property_id as number))
+  const clientWide = new Set(charges.filter(c => c.property_id == null && c.contact_id).map(c => c.contact_id as string))
+  return properties
+    .filter(p => DECISION_STAGES.has(one(p.pipeline_stages)?.name ?? ''))
+    .filter(p => !own.has(p.id) && !(p.contact_id && clientWide.has(p.contact_id)))
+}
+
+/**
+ * Compact numbers for the runs-view summary line: fees still waiting to bill
+ * (count and amount still owed), and linen properties with no fee decision.
+ * All zero when the tables are not set up or still loading.
+ */
+export function useLinenChargesSummary(): { waitingCount: number; waitingTotal: number; undecidedCount: number } {
+  const chargesQuery = useLinenChargesQuery()
+  const propertiesQuery = useLinenPropertiesQuery()
+  return useMemo(() => {
+    const charges = chargesQuery.data ?? []
+    let waitingCount = 0
+    let waitingTotal = 0
+    for (const c of charges) {
+      if (c.status === 'waived') continue
+      const t = chargeTotals(c.linen_charge_installments ?? [])
+      if (t.next) {
+        waitingCount += 1
+        waitingTotal += t.owed
+      }
+    }
+    return {
+      waitingCount,
+      waitingTotal: Math.round(waitingTotal * 100) / 100,
+      undecidedCount: chargesQuery.data ? findUndecided(charges, propertiesQuery.data ?? []).length : 0,
+    }
+  }, [chargesQuery.data, propertiesQuery.data])
+}
+
+export function LinenChargesPanel({ userLabel }: { userLabel: string }) {
+  const [editing, setEditing] = useState<{ charge?: LinenCharge; propertyId?: number } | null>(null)
+  const [voiding, setVoiding] = useState<LinenCharge | null>(null)
+  const [showUndecided, setShowUndecided] = useState(false)
+
+  // Deep link from the onboarding checklist: /invoicing?linen=<property id>.
+  useEffect(() => {
+    try {
+      const id = Number(new URLSearchParams(window.location.search).get('linen'))
+      if (Number.isInteger(id) && id > 0) setEditing({ propertyId: id })
+    } catch { /* no URL params */ }
+  }, [])
+
+  const chargesQuery = useLinenChargesQuery()
+  const propertiesQuery = useLinenPropertiesQuery()
 
   const firstCleanQuery = useQuery<Map<number, string>>({
     queryKey: [...LINEN_CHARGES_KEY, 'first-clean'],
@@ -221,14 +266,8 @@ export function LinenChargesPanel({ userLabel }: { userLabel: string }) {
     return { owed: Math.round(owed * 100) / 100, billed: Math.round(billed * 100) / 100 }
   }, [charges])
 
-  // Linen properties in onboarding/live stages with no decision: no charge of
-  // their own and no client-wide charge from their client.
   const undecided = useMemo(() => {
-    const own = new Set(charges.filter(c => c.property_id != null).map(c => c.property_id as number))
-    const clientWide = new Set(charges.filter(c => c.property_id == null && c.contact_id).map(c => c.contact_id as string))
-    return (propertiesQuery.data ?? [])
-      .filter(p => DECISION_STAGES.has(one(p.pipeline_stages)?.name ?? ''))
-      .filter(p => !own.has(p.id) && !(p.contact_id && clientWide.has(p.contact_id)))
+    return findUndecided(charges, propertiesQuery.data ?? [])
       .map(p => ({ p, firstClean: firstCleanQuery.data?.get(p.id) ?? null }))
       // Not cleaned yet first: those are the ones that will bill on a first invoice.
       .sort((a, b) => (a.firstClean ? 1 : 0) - (b.firstClean ? 1 : 0) || (a.p.name ?? '').localeCompare(b.p.name ?? ''))
