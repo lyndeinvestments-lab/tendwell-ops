@@ -505,6 +505,7 @@ export const INTEGRATIONS_DOCS: IntegrationDocSection[] = [
         items: [
           'API Sync → Trellis: look for it under "In Trellis, not in Ops" and use "Link to Ops property". If the Ops property already has a link, this saves an alias and moves the stored tasks over.',
           'If the property is linked to the wrong Trellis record, use "Change" on its mapping row.',
+          'A property was sold and Trellis made a new record for the new owner (e.g. "Glen Demeraski 3742 (PF)" replacing "Dylan Robinson 3742 (PF)"): link the new record with "Link to Ops property" and Save alias, then rename the Ops property and keep the old name as an alias. A renamed property no longer hides a same-named Trellis record that is linked elsewhere.',
           'Until a property is mapped, its cleans do not count in financials (apart from the Breezeway fallback), and its reviews show as `no_ops_property`.',
         ],
       },

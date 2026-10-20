@@ -191,9 +191,11 @@ function LinkTrellisDialog({ target, pending, onCancel, onConfirm }: {
               </p>
               {isAlias ? (
                 <p>
-                  {target?.property.name} is already linked to another Trellis record, so "{target?.exception.name}" is
-                  saved as an alias. Its {target?.exception.tendwell_task_count ?? 0} Tendwell task(s) and any synced
-                  reservations move onto {target?.property.name} now, and future syncs follow automatically.
+                  This is expected when a property is sold or Trellis has a duplicate record. {target?.property.name} keeps
+                  its current Trellis link and "{target?.exception.name}" is added as a second record (an alias). Its{' '}
+                  {target?.exception.tendwell_task_count ?? 0} Tendwell task(s) and any synced reservations move onto{' '}
+                  {target?.property.name} now, and future ones follow automatically. Click Save alias to continue. If the
+                  owner changed, rename the property afterwards.
                 </p>
               ) : (
                 <p>
