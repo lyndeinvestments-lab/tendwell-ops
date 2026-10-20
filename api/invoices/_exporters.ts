@@ -14,6 +14,7 @@ import type { BillingChannel, LineKind } from './_engine.js'
 import { billComLineSendable, heldLineNumbers, stateMap, type ClientInvoiceState } from '../../shared/billcom-send.js'
 import { CREDIT_SERVICE_TYPE, isCreditLine } from './_credits.js'
 import { isLinenChargeLine, LINEN_SERVICE_TYPE } from '../../shared/linen-charges.js'
+import { invoiceDateForMonth, isApLine as isApOutput, isArLine as isArOutput, monthEnd, monthsOf, serviceMonth } from '../../shared/invoice-outputs.js'
 
 export interface ExportRun {
   vendorName: string
@@ -58,33 +59,8 @@ export interface ExportLine {
 }
 
 // ─── Month split ──────────────────────────────────────────────────────────────
-
-export function serviceMonth(l: Pick<ExportLine, 'serviceDate'>, fallback: string | null): string {
-  return (l.serviceDate ?? fallback ?? '').slice(0, 7)
-}
-
-/** Last calendar day of a yyyy-mm month. */
-export function monthEnd(month: string): string {
-  const [y, m] = month.split('-').map(Number)
-  const d = new Date(Date.UTC(y, m, 0))
-  return d.toISOString().slice(0, 10)
-}
-
-/** Invoice date for one month's slice of a run: the run's invoice date, but
- *  never later than the end of the service month — September's cleans are
- *  dated in September so they land in September's books (cf. Inv 1090, which
- *  Haven had to move into August by hand). */
-export function invoiceDateForMonth(runInvoiceDate: string | null, month: string): string | null {
-  if (!month) return runInvoiceDate
-  const end = monthEnd(month)
-  if (!runInvoiceDate) return end
-  return runInvoiceDate < end ? runInvoiceDate : end
-}
-
-/** The distinct service months among a set of lines, ascending. */
-export function monthsOf(lines: ExportLine[], fallback: string | null): string[] {
-  return [...new Set(lines.map(l => serviceMonth(l, fallback)).filter(Boolean))].sort()
-}
+// One definition shared with the run page (shared/invoice-outputs.ts).
+export { serviceMonth, monthEnd, invoiceDateForMonth, monthsOf }
 
 function invoiceNoFor(run: ExportRun, month: string): string {
   const n = run.qboInvoiceNos?.[month] ?? run.qboInvoiceNo
@@ -262,31 +238,13 @@ export function fmtUsDate(iso: string | null): string {
 }
 
 function isApLine(l: ExportLine): boolean {
-  // Everything we actually owe the vendor: cleans, extras, operating expenses.
-  // Checks BOTH exclusion signals — line_kind='excluded' is the engine's own
-  // (self-inspection/air-filter) exclusion, review_status='excluded' is a
-  // human excluding a line (e.g. a caught duplicate) in review without the
-  // engine ever reclassifying line_kind. A line excluded only the second way
-  // used to still export at full amount (real case, 2026-09: four Aug 18
-  // duplicate lines Nina marked excluded in review still went out on Ramp/QBO
-  // because this check only ever looked at line_kind) — keep both checks.
-  return (
-    l.lineKind !== 'excluded' &&
-    l.reviewStatus !== 'excluded' &&
-    l.cleanerPayAmount != null &&
-    l.cleanerPayAmount !== 0
-  )
+  // Rules (and why both exclusion signals are checked) live in
+  // shared/invoice-outputs.ts so the run page shows the same split.
+  return isApOutput(l)
 }
 
 function isArLine(l: ExportLine, channel: BillingChannel): boolean {
-  return (
-    l.billingChannel === channel &&
-    l.lineKind !== 'excluded' &&
-    l.reviewStatus !== 'excluded' &&
-    l.lineKind !== 'operating_expense' &&
-    l.clientChargeAmount != null &&
-    l.clientChargeAmount !== 0
-  )
+  return isArOutput(l, channel)
 }
 
 // Description cells never repeat what another column already carries
