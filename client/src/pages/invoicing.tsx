@@ -15,6 +15,7 @@ import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { LinenChargesPanel } from '@/components/invoicing/LinenChargesPanel'
+import { ChargesSummaryLine } from '@/components/invoicing/ChargesSummaryLine'
 import { SentInvoicesRegister, useSentInvoicesRegister } from '@/components/invoicing/SentInvoicesRegister'
 import { SubmittedVendorInvoicesBanner, VendorAccessDialog, VendorLineDetail, VendorRunBanner } from '@/components/invoicing/VendorPortalPanels'
 import { ServiceDetailPanel, ServiceDetailSummary } from '@/components/invoicing/ServiceDetail'
@@ -151,6 +152,19 @@ const SPLIT_ACCENTS = ['border-l-primary/50', 'border-l-info/50', 'border-l-warn
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
+type InvoicingView = 'runs' | 'charges' | 'audit' | 'sent'
+
+function initialViewFromUrl(): InvoicingView {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const linen = Number(params.get('linen'))
+    if (Number.isInteger(linen) && linen > 0) return 'charges'
+    const v = params.get('view')
+    if (v === 'runs' || v === 'charges' || v === 'audit' || v === 'sent') return v
+  } catch { /* no URL params */ }
+  return 'runs'
+}
+
 export default function InvoicingPage() {
   usePageTitle('Invoice Reconciliation')
   const { effectiveUser } = useAuth()
@@ -167,7 +181,13 @@ export default function InvoicingPage() {
   // observations logged by Cowork) and what still needs billing.
   // Sent invoices = the append-only register of client invoices marked sent;
   // hidden until migration 20261009h is applied (the query returns null).
-  const [view, setView] = useState<'runs' | 'audit' | 'sent'>('runs')
+  // Credits & linen = the open client credits and linen onboarding fee panels
+  // (both ride the client's next approved invoice automatically). The runs
+  // view only shows a one-line summary of them.
+  // Deep links: /invoicing?view=charges|audit|sent|runs, and the legacy
+  // /invoicing?linen=<property id> (onboarding checklist, alerts) which opens
+  // the linen fee editor on the Credits & linen view.
+  const [view, setView] = useState<InvoicingView>(initialViewFromUrl)
   const registerQuery = useSentInvoicesRegister()
   const registerAvailable = registerQuery.data != null
 
@@ -300,7 +320,7 @@ export default function InvoicingPage() {
   })
 
   return (
-    <PageContainer className="md:h-full md:flex md:flex-col">
+    <PageContainer>
       {selectedRunId ? (
         <RunDetail
           runId={selectedRunId}
@@ -318,10 +338,12 @@ export default function InvoicingPage() {
               ? 'Billable work that is not on the vendor invoice: completed tasks, what was seen in Slack / Quo, and what still needs billing.'
               : view === 'sent'
                 ? 'The register of client invoices sent: number, client, period, total, recipient and when.'
-                : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
+                : view === 'charges'
+                  ? "Credits owed back to clients and linen onboarding fees. Both are added to the client's next approved invoice automatically."
+                  : 'Review and approve vendor invoices (submitted from Operations → Invoicing or uploaded as CSV), then export to Ramp / QBO / bill.com.'}
             beneath={
               <div className="flex items-center gap-1" data-testid="invoicing-view-toggle">
-                {([['runs', 'Invoice runs'], ['audit', 'Task audit'], ['sent', 'Sent invoices']] as const)
+                {([['runs', 'Invoice runs'], ['charges', 'Credits & linen'], ['audit', 'Task audit'], ['sent', 'Sent invoices']] as const)
                   .filter(([id]) => id !== 'sent' || registerAvailable)
                   .map(([id, label]) => (
                   <Button
@@ -354,13 +376,17 @@ export default function InvoicingPage() {
 
           {view === 'audit' ? (
             <TaskAudit userLabel={userLabel} isAdmin={isAdmin} />
+          ) : view === 'charges' ? (
+            <>
+              <OpenCreditsPanel userLabel={userLabel} />
+              <LinenChargesPanel userLabel={userLabel} />
+            </>
           ) : view === 'sent' && registerAvailable ? (
             <SentInvoicesRegister />
           ) : (
           <>
           <SubmittedVendorInvoicesBanner runs={allRuns} onOpen={openRun} />
-          <OpenCreditsPanel userLabel={userLabel} />
-          <LinenChargesPanel userLabel={userLabel} />
+          <ChargesSummaryLine onOpen={() => setView('charges')} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <StatCard
               title="Runs needing review"
@@ -412,8 +438,8 @@ export default function InvoicingPage() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden md:flex-1 md:min-h-0">
-                <div className="overflow-auto md:h-full">
+              <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden">
+                <div className="overflow-auto md:max-h-[calc(100vh-10rem)]">
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                       <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
@@ -1415,11 +1441,11 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
             )}
           </div>
 
-          {/* Desktop table. The floor keeps it from being squeezed to zero
-              height when the client invoice panel above is long (approved
-              runs with many clients); the page scrolls instead. */}
-          <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden md:flex-1 md:min-h-[32rem]">
-            <div className="overflow-auto md:h-full">
+          {/* Desktop table. Natural height up to the viewport (the page scrolls
+              first, then the table scrolls under its sticky header), so a long
+              client invoice panel above never squeezes it. */}
+          <div className="hidden md:block rounded-2xl border border-card-border shadow-sm overflow-hidden">
+            <div className="overflow-auto md:max-h-[calc(100vh-8rem)] md:min-h-[24rem]">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 bg-muted/60 backdrop-blur">
                   <tr className="text-left text-2xs uppercase tracking-wide text-muted-foreground">
