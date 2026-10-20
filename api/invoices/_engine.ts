@@ -10,6 +10,7 @@ import type { FeeOverride } from '../../shared/aux-tasks.js'
 import type { PriceAgreement } from '../../shared/price-agreements.js'
 import { REDO_PENDING_FLAG, REDO_WINDOW_DAYS } from '../../shared/invoice-redo.js'
 import { CHARGE_CHANGED_FLAG, NOT_HAVEN_LISTING_FLAG } from '../../shared/invoice-review.js'
+import { hostawayNameKey } from '../../shared/hostaway-match.js'
 import {
   SPECIAL_RATE_FLAG,
   isRateEligibleService,
@@ -2074,14 +2075,7 @@ export function havenListingIdsFromRows(
  *  lower case, a trailing area tag such as "(SCounty)" dropped, dash variants
  *  unified and whitespace collapsed. "Greg Drury 1619-14 (SCounty)" and
  *  "Greg Drury 1619-14" give the same key. */
-export function listingNameKey(name: string | null | undefined): string {
-  return String(name ?? '')
-    .toLowerCase()
-    .replace(/[‐-―]/g, '-')
-    .replace(/\s*\([^)]*\)\s*$/, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+export const listingNameKey = hostawayNameKey
 
 /** Property ids whose name (or a property alias) matches a Hostaway listing's
  *  internal name. Haven names every listing "<owner> <house number>", the same
