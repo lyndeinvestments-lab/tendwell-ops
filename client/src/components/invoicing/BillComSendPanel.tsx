@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { CheckCircle2, ChevronDown, ChevronRight, Loader2, PauseCircle, Pencil, PlayCircle, Send, Tag } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -137,10 +137,14 @@ function ChargeEditor({ line, editable, pending, onSave }: {
   )
 }
 
-export function BillComSendPanel({ run, lines, onChanged }: {
+export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
   run: InvoiceRun
   lines: InvoiceLine[]
   onChanged: () => void
+  /** Held / approved / sent client invoices on this run, for the run's
+   *  progress steps. null while hidden (not approved, no client invoices,
+   *  or the send control isn't set up). */
+  onCounts?: (counts: { held: number; approved: number; sent: number } | null) => void
 }) {
   const { toast } = useToast()
   const enabled = runAllowsSendControl(run.status)
@@ -284,12 +288,20 @@ export function BillComSendPanel({ run, lines, onChanged }: {
     onError: (e: unknown) => toast({ title: 'Client invoice update failed', description: e instanceof Error ? e.message : String(e), variant: 'destructive' }),
   })
 
-  if (!enabled || billComLines.length === 0 || invoicesQuery.isLoading || invoicesQuery.data == null) return null
+  const hidden = !enabled || billComLines.length === 0 || invoicesQuery.isLoading || invoicesQuery.data == null
+  const counts = useMemo(() => {
+    const c = { held: 0, approved: 0, sent: 0 }
+    for (const g of groups) c[statusFor(states, g.contactId, g.serviceMonth, g.channel)] += 1
+    return c
+  }, [groups, states])
+  useEffect(() => {
+    onCounts?.(hidden ? null : counts)
+  }, [hidden, counts, onCounts])
+
+  if (hidden) return null
 
   const linesByNo = new Map<number, InvoiceLine[]>()
   for (const l of billComLines) linesByNo.set(l.line_no, [...(linesByNo.get(l.line_no) ?? []), l])
-  const counts = { held: 0, approved: 0, sent: 0 }
-  for (const g of groups) counts[statusFor(states, g.contactId, g.serviceMonth, g.channel)] += 1
   const hasQbo = groups.some(g => g.channel === 'qbo_client')
   const hasBillCom = groups.some(g => g.channel === 'bill_com')
 

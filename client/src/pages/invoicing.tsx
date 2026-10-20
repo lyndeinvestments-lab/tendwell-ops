@@ -13,6 +13,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { ExportPreviewDialog } from '@/components/ExportPreviewDialog'
 import { TaskAudit } from '@/components/invoicing/TaskAudit'
 import { BillComSendPanel } from '@/components/invoicing/BillComSendPanel'
+import { RunOutputsCard, RunStepper, type ClientInvoiceCounts } from '@/components/invoicing/RunOverview'
 import { OpenCreditsPanel } from '@/components/invoicing/OpenCreditsPanel'
 import { LinenChargesPanel } from '@/components/invoicing/LinenChargesPanel'
 import { ChargesSummaryLine } from '@/components/invoicing/ChargesSummaryLine'
@@ -43,8 +44,9 @@ import {
 import {
   BILLING_CHANNELS, EXPORT_FORMATS, LINE_KINDS, SERVICE_TYPES,
   InvoiceApiError,
-  downloadExport, fetchLineDetails, flagLabel, hasIssues, invoicesApi, lineDetailsKey, lineIssues, propertyOf, serviceNeedsEvidence,
-  serviceTypeFromTaskTitle, vendorNameOf,
+  addedByHandLabel, downloadExport, fetchLineDetails, flagLabel, hasIssues, invoicesApi, isAddedByHand, isChangedByHand,
+  isExcludedLine, isHeldLine, lineDetailsKey, lineEdits, lineIssues, propertyOf, serviceNeedsEvidence,
+  serviceTypeFromTaskTitle, vendorNameOf, type LineEdit,
   type BillingChannel, type BlockingLine, type ExportFormat, type InvoiceLine, type InvoiceRun,
   type LineKind, type ReviewStatus, type Vendor,
 } from '@/lib/invoices'
@@ -733,6 +735,31 @@ function UploadDialog({ open, onOpenChange, vendors, pending, onSubmit }: {
 
 // ── Run detail ────────────────────────────────────────────────────────────────
 
+type LineFilter = 'all' | 'issues' | 'needs_review' | 'resolved' | 'ok' | 'tasks' | 'changed' | 'added' | 'excluded' | 'held'
+
+// Review chips work the queue; "after approval" chips answer what people did
+// to the run (Jordan, 2026-10-20). The second group only shows non-empty chips.
+const REVIEW_FILTERS: ReadonlyArray<readonly [LineFilter, string]> = [
+  ['all', 'All'], ['issues', 'Issues'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK'], ['tasks', 'Billable tasks'],
+]
+const AFTER_FILTERS: ReadonlyArray<readonly [LineFilter, string, string]> = [
+  ['changed', 'Changed by hand', 'Lines where someone changed what Ops calculated (tracked from Oct 20, 2026)'],
+  ['added', 'Added by hand', 'Lines added manually, plus credits and linen fees added on approve'],
+  ['excluded', 'Excluded', 'Lines excluded or dismissed: never paid or billed'],
+  ['held', 'Held', 'Lines held back from a client invoice'],
+]
+
+const EDIT_LABEL: Record<LineEdit['field'], string> = {
+  property: 'property', service: 'service', kind: 'kind', pay: 'pay', charge: 'charge', channel: 'channel',
+}
+
+/** "was $275.00" under a value a person changed. */
+function WasValue({ edit }: { edit: LineEdit | undefined }) {
+  if (!edit) return null
+  const v = edit.field === 'pay' || edit.field === 'charge' ? fmtMoney(edit.from as number | null) : edit.from ?? 'none'
+  return <p className="text-2xs text-muted-foreground line-through decoration-muted-foreground/50" title={`Ops calculated ${v}`}>{v}</p>
+}
+
 function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetailChanged }: {
   runId: string
   userLabel: string
@@ -749,7 +776,7 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     queryFn: async () => {
       const { data, error } = await supabase
         .from('invoice_runs')
-        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, returned_at, returned_by, returned_note, vendor_reference, vendor_total, vendors(name)')
+        .select('id, vendor_id, source, invoice_number, invoice_date, period_start, period_end, stated_subtotal, computed_subtotal, status, qbo_invoice_no, qbo_invoice_nos, approved_by, approved_at, created_by, created_at, archived_at, submitted_at, submitted_by, returned_at, returned_by, returned_note, vendor_reference, vendor_total, vendors(name)')
         .eq('id', runId)
         .single()
       if (error) throw error
@@ -941,7 +968,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
   // The dialog is for lines that need CHANGES. A line whose engine result is
   // already right (or that a human has eyeballed) just needs "yes, reviewed" —
   // one click per row, or one confirmed click for everything left.
-  const [lineFilter, setLineFilter] = useState<'all' | 'issues' | 'needs_review' | 'resolved' | 'ok' | 'tasks'>('all')
+  const [lineFilter, setLineFilter] = useState<LineFilter>('all')
+  const [clientInvoiceCounts, setClientInvoiceCounts] = useState<ClientInvoiceCounts | null>(null)
   const [confirmAcceptAll, setConfirmAcceptAll] = useState(false)
   // Anything actually wrong with a line, independent of its review_status —
   // see lineIssues(). This is what makes a blocker findable after someone has
@@ -961,7 +989,20 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     resolved: lines.filter(l => l.review_status === 'resolved').length,
     ok: lines.filter(l => l.review_status === 'ok').length,
     tasks: taskLines.length,
+    changed: lines.filter(isChangedByHand).length,
+    added: lines.filter(isAddedByHand).length,
+    excluded: lines.filter(isExcludedLine).length,
+    held: lines.filter(isHeldLine).length,
   }), [lines, issueLines, taskLines])
+  // Property names for "was <property>" on a line whose property was changed.
+  const propertyNames = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const l of lines) {
+      const p = propertyOf(l)
+      if (p) m.set(p.id, p.name)
+    }
+    return m
+  }, [lines])
   // Needs-review lines that carry a flag requiring a written note: they are
   // skipped by "Accept remaining" and have to be saved through the dialog.
   const noteLineCount = useMemo(
@@ -975,7 +1016,15 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         ? issueLines
         : lineFilter === 'tasks'
           ? taskLines
-          : lines.filter(l => l.review_status === lineFilter)),
+          : lineFilter === 'changed'
+            ? lines.filter(isChangedByHand)
+            : lineFilter === 'added'
+              ? lines.filter(isAddedByHand)
+              : lineFilter === 'excluded'
+                ? lines.filter(isExcludedLine)
+                : lineFilter === 'held'
+                  ? lines.filter(isHeldLine)
+                  : lines.filter(l => l.review_status === lineFilter)),
     [lines, lineFilter, issueLines, taskLines],
   )
 
@@ -1120,7 +1169,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
     <>
       <PageHeader
         title={run ? vendorNameOf(run) : 'Loading…'}
-        subtitle={run ? `${run.source === 'generated' ? 'Generated draft' : run.source === 'vendor_portal' ? 'Built by the vendor in Ops' : 'Vendor CSV'} · ${fmtDate(run.period_start)} – ${fmtDate(run.period_end)}` : undefined}
+        subtitle={run ? [
+          `${fmtDate(run.period_start)} – ${fmtDate(run.period_end)}`,
+          run.invoice_number ? `Invoice ${run.invoice_number}${run.invoice_date ? `, dated ${fmtDate(run.invoice_date)}` : ''}` : null,
+          run.source === 'generated' ? 'Generated draft' : run.source === 'vendor_portal' ? 'Built by the vendor in Ops' : 'Vendor CSV',
+          run.status.replace(/_/g, ' '),
+        ].filter(Boolean).join(' · ') : undefined}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" variant="outline" onClick={onBack} data-testid="button-back-to-runs">
@@ -1254,38 +1308,22 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         />
       )}
 
-      {run && (
-        <Card className="border-card-border shadow-sm">
-          <CardContent className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div>
-              <p className="text-2xs uppercase tracking-wide text-muted-foreground">Invoice #</p>
-              <p className="font-medium">{run.invoice_number ?? '—'}</p>
-            </div>
-            <div>
-              <p className="text-2xs uppercase tracking-wide text-muted-foreground">Invoice date</p>
-              <p className="font-medium">{fmtDate(run.invoice_date)}</p>
-            </div>
-            <div>
-              <p className="text-2xs uppercase tracking-wide text-muted-foreground">Status</p>
-              <StatusBadge tone={runStatusTone(run.status)}>{run.status.replace(/_/g, ' ')}</StatusBadge>
-            </div>
-            <div>
-              <p className="text-2xs uppercase tracking-wide text-muted-foreground">Stated vs. computed</p>
-              <p
-                className={cn('font-medium tabular-nums', subtotalMismatch && 'text-warning')}
-                title={subtotalMismatch ? "The vendor's total differs from the lines. Approval is not blocked; the lines are what gets paid and billed." : undefined}
-              >
-                {fmtMoney(run.stated_subtotal)} / {fmtMoney(run.computed_subtotal)}
-                {subtotalMismatch && <AlertTriangle className="inline w-3.5 h-3.5 ml-1.5" />}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+      {run && !linesQuery.isLoading && (
+        <RunStepper run={run} needsReview={counts.needs_review} issues={counts.issues} clientInvoices={clientInvoiceCounts} />
       )}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatCard title="Total invoiced" value={fmtMoney(totals.invoiced)} icon={Receipt} loading={linesQuery.isLoading} />
-        <StatCard title="Cleaner pay (Ramp)" value={fmtMoney(totals.cleanerPay)} icon={Receipt} tone="info" loading={linesQuery.isLoading} />
+        <StatCard
+          title="Vendor invoiced"
+          value={fmtMoney(totals.invoiced)}
+          subtitle={run?.stated_subtotal != null
+            ? `Their invoice total: ${fmtMoney(run.stated_subtotal)}${subtotalMismatch ? " (doesn't match the lines; not blocking)" : ''}`
+            : undefined}
+          icon={Receipt}
+          tone={subtotalMismatch ? 'warning' : 'neutral'}
+          loading={linesQuery.isLoading}
+        />
+        <StatCard title="Vendor pay (Ramp)" value={fmtMoney(totals.cleanerPay)} icon={Receipt} tone="info" loading={linesQuery.isLoading} />
         <StatCard
           title="Client charge"
           value={fmtMoney(totals.clientCharge)}
@@ -1315,32 +1353,21 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
         />
       )}
 
-      {showDownloads && (
-        <Card className="border-card-border shadow-sm">
-          <CardContent className="p-4">
-            <p className="text-xs font-medium text-muted-foreground mb-2">Export</p>
-            <div className="flex flex-wrap gap-2">
-              {EXPORT_FORMATS.map(f => (
-                <Button
-                  key={f.id}
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleDownload(f.id)}
-                  disabled={downloadingFormat === f.id}
-                  data-testid={`button-export-${f.id}`}
-                >
-                  {downloadingFormat === f.id ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <Download className="w-4 h-4 mr-1.5" />}
-                  {f.label}
-                </Button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      {/* Month by month: Haven's QuickBooks invoice(s), client invoices and
+          the vendor's Ramp bill(s), with the downloads once approved. */}
+      {run && !linesQuery.isLoading && (
+        <RunOutputsCard
+          run={run}
+          lines={lines}
+          showDownloads={showDownloads}
+          downloadingFormat={downloadingFormat}
+          onDownload={handleDownload}
+        />
       )}
 
       {/* bill.com send control: hides itself until migration 20261009c is
           applied and on runs that are not approved. */}
-      {run && <BillComSendPanel run={run} lines={lines} onChanged={invalidate} />}
+      {run && <BillComSendPanel run={run} lines={lines} onChanged={invalidate} onCounts={setClientInvoiceCounts} />}
 
       {linesQuery.error ? (
         <ErrorState title="Couldn't load invoice lines" onRetry={() => linesQuery.refetch()} />
@@ -1393,8 +1420,8 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
 
           {/* Review fast path: filter to the queue, accept per-row or all at once */}
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="flex items-center gap-1">
-              {([['all', 'All'], ['issues', 'Issues'], ['needs_review', 'Needs review'], ['resolved', 'Resolved'], ['ok', 'OK'], ['tasks', 'Billable tasks']] as const).map(([id, label]) => (
+            <div className="flex items-center gap-1 flex-wrap">
+              {REVIEW_FILTERS.map(([id, label]) => (
                 <Button
                   key={id}
                   size="sm"
@@ -1411,8 +1438,25 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                       : id === 'tasks' && counts.tasks > 0 ? 'text-info font-semibold'
                       : 'text-muted-foreground',
                   )}>
-                    {counts[id]}
+                    {counts[id as keyof typeof counts]}
                   </span>
+                </Button>
+              ))}
+              {AFTER_FILTERS.some(([id]) => counts[id as keyof typeof counts] > 0) && (
+                <span className="mx-1.5 h-4 w-px bg-border" aria-hidden />
+              )}
+              {AFTER_FILTERS.filter(([id]) => counts[id as keyof typeof counts] > 0 || lineFilter === id).map(([id, label, hint]) => (
+                <Button
+                  key={id}
+                  size="sm"
+                  variant={lineFilter === id ? 'secondary' : 'ghost'}
+                  className="h-7 px-2.5"
+                  onClick={() => setLineFilter(id)}
+                  title={hint}
+                  data-testid={`filter-lines-${id}`}
+                >
+                  {label}
+                  <span className="ml-1.5 text-2xs tabular-nums text-muted-foreground">{counts[id as keyof typeof counts]}</span>
                 </Button>
               ))}
             </div>
@@ -1487,6 +1531,10 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                         ? Number(line.raw_amount) - Number(opsRate)
                         : null
                     const rateMismatch = rateGap != null && Math.abs(rateGap) > 0.005
+                    // What a person changed off Ops's own result (engine_snapshot).
+                    const edits = isAddedByHand(line) ? [] : lineEdits(line)
+                    const editOf = (f: LineEdit['field']) => edits.find(e => e.field === f)
+                    const propertyEdit = editOf('property')
                     return (
                       <tr
                         key={line.id}
@@ -1512,10 +1560,18 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                           {prop && line.raw_property_text && line.raw_property_text !== prop.name && (
                             <p className="text-2xs text-muted-foreground truncate">raw: {line.raw_property_text}</p>
                           )}
+                          {propertyEdit && (
+                            <p className="text-2xs text-muted-foreground truncate">
+                              was {propertyEdit.from == null ? 'no property' : propertyNames.get(Number(propertyEdit.from)) ?? `property #${propertyEdit.from}`}
+                            </p>
+                          )}
                           <VendorLineDetail line={line} />
                           <ServiceDetailSummary detail={detailsQuery.data?.[line.id]} isExtra={line.line_kind === 'extra'} serviceType={line.service_type} lineId={line.id} />
                         </td>
-                        <td className="px-2 py-2 max-w-36 truncate">{line.service_type ?? '—'}</td>
+                        <td className="px-2 py-2 max-w-36">
+                          <p className="truncate">{line.service_type ?? '—'}</p>
+                          <WasValue edit={editOf('service')} />
+                        </td>
                         <td className="px-2 py-2 whitespace-nowrap text-muted-foreground" title={fmtDate(line.raw_date_mentioned)}>{fmtDateShort(line.raw_date_mentioned)}</td>
                         {/* Invoiced flags the vendor-vs-contract gap; Approved pay flags
                             what we changed off the billed amount. Two distinct signals in
@@ -1545,8 +1601,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                           }
                         >
                           {fmtMoney(line.cleaner_pay_amount)}
+                          <WasValue edit={editOf('pay')} />
                         </td>
-                        <td className="px-2 py-2 text-right tabular-nums">{fmtMoney(line.client_charge_amount)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">
+                          {fmtMoney(line.client_charge_amount)}
+                          <WasValue edit={editOf('charge')} />
+                        </td>
                         <td className="px-2 py-2">
                           <LineChannelSelect
                             line={line}
@@ -1575,6 +1635,19 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                             )}
                             {line.bill_hold_reason && (
                               <p className="w-full text-2xs text-warning">Held from bill.com: {line.bill_hold_reason}</p>
+                            )}
+                            {edits.length > 0 && (
+                              <span title={`Changed ${edits.map(e => EDIT_LABEL[e.field]).join(', ')}${line.resolved_by ? ` by ${line.resolved_by}` : ''}`}>
+                                <StatusBadge tone="info" className="text-2xs">
+                                  Changed: {edits.map(e => EDIT_LABEL[e.field]).join(', ')}
+                                </StatusBadge>
+                              </span>
+                            )}
+                            {isAddedByHand(line) && (
+                              <p className="w-full text-2xs text-muted-foreground">{addedByHandLabel(line)}</p>
+                            )}
+                            {isExcludedLine(line) && line.resolved_by && (
+                              <p className="w-full text-2xs text-muted-foreground">Excluded by {line.resolved_by}</p>
                             )}
                             {lineIssues(line)
                               .filter(msg => msg !== 'Needs review')
@@ -1664,6 +1737,12 @@ function RunDetail({ runId, userLabel, onBack, onReview, onRunsChanged, onDetail
                     {line.bill_hold_reason && (
                       <p className="text-2xs text-warning">Held from bill.com: {line.bill_hold_reason}</p>
                     )}
+                    {!isAddedByHand(line) && lineEdits(line).length > 0 && (
+                      <p className="text-2xs text-info">
+                        Changed by hand: {lineEdits(line).map(e => `${EDIT_LABEL[e.field]} was ${e.field === 'pay' || e.field === 'charge' ? fmtMoney(e.from as number | null) : e.field === 'property' ? (e.from == null ? 'none' : propertyNames.get(Number(e.from)) ?? `#${e.from}`) : e.from ?? 'none'}`).join(', ')}
+                      </p>
+                    )}
+                    {isAddedByHand(line) && <p className="text-2xs text-muted-foreground">{addedByHandLabel(line)}</p>}
                     <VendorLineDetail line={line} />
                     <ServiceDetailSummary detail={detailsQuery.data?.[line.id]} isExtra={line.line_kind === 'extra'} serviceType={line.service_type} lineId={line.id} />
                     {lineIssues(line)

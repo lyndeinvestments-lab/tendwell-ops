@@ -163,6 +163,8 @@ export interface InvoiceRun {
   computed_subtotal: number | null
   status: InvoiceRunStatus
   qbo_invoice_no: number | null
+  /** One Haven QuickBooks invoice number per service month ({"2026-09": 1096}). */
+  qbo_invoice_nos?: Record<string, number> | null
   approved_by: string | null
   approved_at: string | null
   created_by: string | null
@@ -220,6 +222,18 @@ export interface InvoiceLine {
   /** Non-blank → held back from the bill.com worksheet (bill.com send
    *  control, shared/billcom-send.ts). Absent until migration 20261009c. */
   bill_hold_reason?: string | null
+  /** What Ops calculated when the line was created, before any human edit
+   *  (trigger, migration 20261020f). Null on lines created before 2026-10-20. */
+  engine_snapshot?: EngineSnapshot | null
+}
+
+export interface EngineSnapshot {
+  property_id: number | null
+  service_type: string | null
+  line_kind: LineKind | null
+  cleaner_pay_amount: number | null
+  client_charge_amount: number | null
+  billing_channel: BillingChannel | null
 }
 
 /**
@@ -301,6 +315,65 @@ export function lineIssues(l: InvoiceLine): string[] {
 
 export function hasIssues(l: InvoiceLine): boolean {
   return lineIssues(l).length > 0
+}
+
+// ─── After approval: what people did to the run ─────────────────────────────
+
+export type LineEditField = 'property' | 'service' | 'kind' | 'pay' | 'charge' | 'channel'
+
+export interface LineEdit {
+  field: LineEditField
+  from: string | number | null
+  to: string | number | null
+}
+
+const moneyDiffers = (a: unknown, b: unknown) => {
+  if (a == null || b == null) return (a == null) !== (b == null)
+  return Math.abs(Number(a) - Number(b)) > 0.005
+}
+
+/** Each value a person changed off what Ops calculated (engine_snapshot).
+ *  Empty when nothing changed or the line predates the snapshot. Lines added
+ *  by hand are not "changed": their snapshot is what the person entered. */
+export function lineEdits(l: Pick<InvoiceLine, 'engine_snapshot' | 'property_id' | 'service_type' | 'line_kind' | 'cleaner_pay_amount' | 'client_charge_amount' | 'billing_channel' | 'review_status'>): LineEdit[] {
+  const s = l.engine_snapshot
+  if (!s) return []
+  const out: LineEdit[] = []
+  if ((s.property_id ?? null) !== (l.property_id ?? null)) out.push({ field: 'property', from: s.property_id ?? null, to: l.property_id ?? null })
+  if ((s.service_type ?? null) !== (l.service_type ?? null)) out.push({ field: 'service', from: s.service_type ?? null, to: l.service_type ?? null })
+  // Excluding a line flips line_kind to 'excluded'; that is reported as
+  // excluded, not as a kind change.
+  if ((s.line_kind ?? null) !== (l.line_kind ?? null) && l.line_kind !== 'excluded' && l.review_status !== 'excluded') {
+    out.push({ field: 'kind', from: s.line_kind ?? null, to: l.line_kind ?? null })
+  }
+  if (moneyDiffers(s.cleaner_pay_amount, l.cleaner_pay_amount)) out.push({ field: 'pay', from: s.cleaner_pay_amount ?? null, to: l.cleaner_pay_amount ?? null })
+  if (moneyDiffers(s.client_charge_amount, l.client_charge_amount)) out.push({ field: 'charge', from: s.client_charge_amount ?? null, to: l.client_charge_amount ?? null })
+  if ((s.billing_channel ?? null) !== (l.billing_channel ?? null)) out.push({ field: 'channel', from: s.billing_channel ?? null, to: l.billing_channel ?? null })
+  return out
+}
+
+export function isAddedByHand(l: Pick<InvoiceLine, 'source'>): boolean {
+  return l.source === 'manual'
+}
+
+export function isChangedByHand(l: InvoiceLine): boolean {
+  return !isAddedByHand(l) && lineEdits(l).length > 0
+}
+
+export function isExcludedLine(l: Pick<InvoiceLine, 'review_status' | 'line_kind'>): boolean {
+  return l.review_status === 'excluded' || l.line_kind === 'excluded'
+}
+
+export function isHeldLine(l: Pick<InvoiceLine, 'bill_hold_reason'>): boolean {
+  return !!l.bill_hold_reason?.trim()
+}
+
+/** Who/what put a manual line on the run, in a few words. */
+export function addedByHandLabel(l: Pick<InvoiceLine, 'flags' | 'resolved_by'>): string {
+  const flags = l.flags ?? []
+  if (flags.includes('credit')) return 'Client credit, added on approve'
+  if (flags.includes('linen_charge')) return 'Linen fee, added on approve'
+  return l.resolved_by ? `Added by ${l.resolved_by}` : 'Added by hand'
 }
 
 export function vendorNameOf(run: Pick<InvoiceRun, 'vendors'>): string {
