@@ -452,6 +452,8 @@ export const INTEGRATIONS_DOCS: IntegrationDocSection[] = [
         heading: 'Hostaway',
         items: [
           'Nightly at 03:30 UTC (`api/cron/hostaway-sync.ts`) listings are copied into `hostaway_listing_snapshot`. The `hostaway_reconciliation` view compares them with Ops properties. Shown on API Sync → Hostaway.',
+          'A listing is matched to an Ops property in this order: a manual link you set, then the listing name (the "<owner> <house number>" internal name, ignoring the "(SCounty)" tag) against the property name or a property alias, then the street address, only when exactly one live property has that address. Name comes before address because condo units share a building address and Hostaway and Ops often spell a street differently. A listing that matches nothing is listed under "Hostaway listings with no Ops property"; link it by hand and the link survives every sync.',
+          'Haven Vacation Rentals properties are expected to have a listing; properties of other clients are shown as "Not expected".',
         ],
       },
       {

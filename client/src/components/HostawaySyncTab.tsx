@@ -38,7 +38,7 @@ interface ReconRow {
   ops_beds: number | null
   ha_guests: number | null
   ops_guests: number | null
-  match_method: 'manual' | 'address' | null
+  match_method: 'manual' | 'name' | 'address' | null
   synced_at: string
   bedrooms_mismatch: boolean
   bathrooms_mismatch: boolean
