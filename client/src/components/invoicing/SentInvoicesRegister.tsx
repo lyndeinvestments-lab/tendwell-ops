@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/StatusBadge'
 import { EmptyState } from '@/components/EmptyState'
 import { ErrorState } from '@/components/ErrorState'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { filterSentInvoices, monthLong, sentInvoiceMonths } from '@/lib/invoicing-overview'
 import { isMissingSchemaError } from '@shared/billcom-send'
 import { shortHash } from '@shared/sent-invoice-register'
 
@@ -71,17 +73,13 @@ const SOURCE_LABEL: Record<string, string> = { vendor_portal: 'Vendor portal', v
 export function SentInvoicesRegister() {
   const query = useSentInvoicesRegister()
   const [search, setSearch] = useState('')
+  // Service month filter ('' = all months): the month the invoice covers.
+  const [month, setMonth] = useState('')
 
   const rows = query.data ?? []
   const voided = useMemo(() => new Set(rows.filter(r => r.voids_id).map(r => r.voids_id as string)), [rows])
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(r =>
-      r.invoice_number.toLowerCase().includes(q) ||
-      r.client_name.toLowerCase().includes(q) ||
-      (r.recipient ?? '').toLowerCase().includes(q))
-  }, [rows, search])
+  const months = useMemo(() => sentInvoiceMonths(rows), [rows])
+  const filtered = useMemo(() => filterSentInvoices(rows, { search, month }), [rows, search, month])
 
   if (query.isLoading) {
     return <div className="flex items-center gap-2 text-sm text-muted-foreground p-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading the register…</div>
@@ -96,15 +94,26 @@ export function SentInvoicesRegister() {
         <p className="text-xs text-muted-foreground">
           Every client invoice marked sent, from vendor CSV, generated and vendor-portal runs alike. Entries can't be edited or deleted.
         </p>
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Number, client or recipient"
-            className="h-8 pl-8 text-sm"
-            data-testid="input-sent-invoices-search"
-          />
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Select value={month || 'all'} onValueChange={v => setMonth(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-8 w-44 text-sm" aria-label="Service month" data-testid="select-sent-invoices-month">
+              <SelectValue placeholder="All months" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All months</SelectItem>
+              {months.map(m => <SelectItem key={m} value={m}>{monthLong(m)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="relative flex-1 sm:w-64">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Client or invoice number"
+              className="h-8 pl-8 text-sm"
+              data-testid="input-sent-invoices-search"
+            />
+          </div>
         </div>
       </div>
 
@@ -112,7 +121,7 @@ export function SentInvoicesRegister() {
         <EmptyState
           icon={Send}
           title={rows.length === 0 ? 'No invoices recorded yet' : 'No matches'}
-          description={rows.length === 0 ? 'Client invoices appear here once they are marked sent on an approved run.' : 'Try a different number, client or recipient.'}
+          description={rows.length === 0 ? 'Client invoices appear here once they are marked sent on an approved run.' : 'Try a different client, invoice number or month.'}
         />
       ) : (
         <div className="rounded-2xl border border-card-border shadow-sm overflow-hidden">

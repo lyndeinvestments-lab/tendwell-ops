@@ -213,7 +213,7 @@ export function buildTaskLines(input: BuildTaskLinesInput): BuildTaskLinesResult
     } else {
       flags.push(FLAGS.MISSING_RATE)
       reviewStatus = 'needs_review'
-      notes.push(`No standard price on file for ${serviceType} — set one (Invoicing → Task audit → Pricing) or edit the charge on this line.`)
+      notes.push(`No standard price on file for ${serviceType}: set one (Invoice Reconciliation → Prices) or edit the charge on this line.`)
     }
 
     // Finance requires a reason in the exported title for these; the task
