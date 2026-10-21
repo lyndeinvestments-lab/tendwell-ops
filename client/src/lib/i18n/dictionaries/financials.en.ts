@@ -241,13 +241,13 @@ export const financialsEn = {
     summary: {
       totalProperties: 'Total Properties',
       avgMargin: 'Avg Est. Margin',
-      belowBreakEven: 'Below Break-Even',
+      belowBreakEven: 'Below {{pct}}% Target Margin',
       negativeProfit: 'Negative Mo Profit',
     },
     duplicates: {
       detected: '{{count}} potential duplicate(s) detected',
-      ceLabel: 'CE',
-      costLabel: 'Cost',
+      sameName: 'same name',
+      sameAddress: 'same address',
       dismiss: 'Intentionally separate',
       dismissTooltip: 'These are distinct units - suppress this alert for everyone on the team',
     },
@@ -269,7 +269,7 @@ export const financialsEn = {
       highCleansTooltip: 'Unusually high - verify cleaning history',
       manualVsAutoTooltip: 'Manual: {{manual}} · Auto: {{auto}}',
       totalsLabel: 'Monthly Totals ({{count}})',
-      excludedDupes: '(excl. {{count}} suspected dupes)',
+      excludedDupes: '(excl. {{count}} duplicate record(s))',
     },
     bulkBar: {
       selected: '{{count}} propert(y/ies) selected',
