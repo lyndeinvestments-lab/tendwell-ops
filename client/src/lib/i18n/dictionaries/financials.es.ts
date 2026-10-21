@@ -237,13 +237,13 @@ export const financialsEs: typeof financialsEn = {
     summary: {
       totalProperties: 'Total de Propiedades',
       avgMargin: 'Margen Estimado Promedio',
-      belowBreakEven: 'Bajo el Punto de Equilibrio',
+      belowBreakEven: 'Bajo el Margen Objetivo de {{pct}}%',
       negativeProfit: 'Ganancia Mensual Negativa',
     },
     duplicates: {
       detected: '{{count}} posible(s) duplicado(s) detectado(s)',
-      ceLabel: 'CE',
-      costLabel: 'Costo',
+      sameName: 'mismo nombre',
+      sameAddress: 'misma dirección',
       dismiss: 'Intencionalmente separado',
       dismissTooltip: 'Estas son unidades distintas - suprime esta alerta para todo el equipo',
     },
@@ -265,7 +265,7 @@ export const financialsEs: typeof financialsEn = {
       highCleansTooltip: 'Inusualmente alto - verifica el historial de limpiezas',
       manualVsAutoTooltip: 'Manual: {{manual}} · Auto: {{auto}}',
       totalsLabel: 'Totales Mensuales ({{count}})',
-      excludedDupes: '(excl. {{count}} posibles duplicados)',
+      excludedDupes: '(excl. {{count}} registro(s) duplicado(s))',
     },
     bulkBar: {
       selected: '{{count}} propiedad(es) seleccionada(s)',

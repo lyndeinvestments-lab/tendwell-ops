@@ -26,6 +26,7 @@ import { ErrorState } from '@/components/ErrorState'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
+import { findDuplicatePairs } from '@/lib/property-duplicates'
 
 // Frequency values stay canonical English (DB enum on properties.cleaning_frequency);
 // labels are resolved through t('proForma.freq.<value-camelCase>') at each call site.
@@ -326,7 +327,7 @@ export default function ProFormaPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, ce_charged, total_estimated_cost, estimated_profit, profit_percentage, cleaning_frequency, first_clean_date, avg_cleans_per_month, monthly_revenue_estimate, monthly_cost_estimate, monthly_profit_estimate, stage_name')
+        .select('id, name, address, ce_charged, total_estimated_cost, estimated_profit, profit_percentage, cleaning_frequency, first_clean_date, avg_cleans_per_month, monthly_revenue_estimate, monthly_cost_estimate, monthly_profit_estimate, stage_name')
         .eq('stage_name', 'Active')
         .order('name')
         .limit(5000)
@@ -468,43 +469,21 @@ export default function ProFormaPage() {
     })
   }, [properties, search, freqFilter, profitFilter, missingDataFilter, sortKey, sortDir])
 
-  // Feature 5: Duplicate detection
-  const duplicatePairs = useMemo(() => {
-    if (!filtered.length) return []
-    const pairs: Array<{ a: any; b: any; key: string }> = []
-    const seen = new Set<string>()
-    for (let i = 0; i < filtered.length; i++) {
-      for (let j = i + 1; j < filtered.length; j++) {
-        const a = filtered[i] as any
-        const b = filtered[j] as any
-        const aPrefix = (a.name || '').slice(0, 3).toLowerCase()
-        const bPrefix = (b.name || '').slice(0, 3).toLowerCase()
-        if (aPrefix !== bPrefix || aPrefix === '') continue
-        const aAddr = (a.address || '').toLowerCase().trim()
-        const bAddr = (b.address || '').toLowerCase().trim()
-        if (aAddr && bAddr && aAddr !== bAddr) continue
-        const ceSimilar = a.ce_charged != null && b.ce_charged != null && Math.abs(a.ce_charged - b.ce_charged) <= 1
-        const costSimilar = a.total_estimated_cost != null && b.total_estimated_cost != null && Math.abs(a.total_estimated_cost - b.total_estimated_cost) <= 1
-        if (ceSimilar && costSimilar) {
-          const key = [a.id, b.id].sort().join('::')
-          if (!seen.has(key)) {
-            seen.add(key)
-            pairs.push({ a, b, key })
-          }
-        }
-      }
-    }
-    return pairs
-  }, [filtered])
+  // Feature 5: Duplicate detection (same house entered twice: same name or
+  // same address; see lib/property-duplicates.ts)
+  const duplicatePairs = useMemo(
+    () => (filtered.length ? findDuplicatePairs(filtered as any[]) : []),
+    [filtered],
+  )
 
   const visibleDuplicatePairs = duplicatePairs.filter(p => !dismissedDuplicates.has(p.key))
 
-  // IDs of properties in undismissed duplicate pairs — excluded from totals
+  // One record of each undismissed duplicate pair is left out of the totals
+  // so the house is counted once, not zero times.
   const duplicateExcludedIds = useMemo(() => {
     const ids = new Set<string>()
     visibleDuplicatePairs.forEach(pair => {
-      ids.add(pair.a.id)
-      ids.add(pair.b.id)
+      if (!ids.has(pair.a.id)) ids.add(pair.b.id)
     })
     return ids
   }, [visibleDuplicatePairs])
@@ -735,7 +714,7 @@ export default function ProFormaPage() {
           <div className={`rounded-xl border shadow-sm p-4 ${summary.belowBreakEven > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
               <AlertTriangle className="w-3.5 h-3.5" />
-              {t('proForma.summary.belowBreakEven')}
+              {t('proForma.summary.belowBreakEven', { pct: (breakEvenMargin * 100).toFixed(0) })}
             </div>
             <div className={`mt-1 text-3xl font-bold tabular-nums leading-none ${summary.belowBreakEven > 0 ? 'text-warning' : ''}`}>
               {summary.belowBreakEven}
@@ -769,7 +748,8 @@ export default function ProFormaPage() {
                   <span className="font-medium">{pair.a.name}</span>
                   {' '}&amp;{' '}
                   <span className="font-medium">{pair.b.name}</span>
-                  {' — '}{t('proForma.duplicates.ceLabel')}: {fmt(pair.a.ce_charged)} / {fmt(pair.b.ce_charged)}, {t('proForma.duplicates.costLabel')}: {fmt(pair.a.total_estimated_cost)} / {fmt(pair.b.total_estimated_cost)}
+                  {' — '}{pair.reason === 'name' ? t('proForma.duplicates.sameName') : t('proForma.duplicates.sameAddress')}
+                  {pair.a.address && <span className="text-warning/80">{': '}{pair.a.address}</span>}
                 </span>
                 <button
                   className="shrink-0 text-2xs px-2 py-0.5 rounded border border-warning/50 text-warning hover:bg-warning/20"
