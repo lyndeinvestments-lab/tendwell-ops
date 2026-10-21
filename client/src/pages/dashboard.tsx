@@ -543,7 +543,7 @@ export default function DashboardPage() {
                 <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('hero.monthlyRevenue')}</p>
                 <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
                   <button
-                    onClick={() => navigate('/revenue-report')}
+                    onClick={() => navigate('/pro-forma?tab=by-client')}
                     className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent hover:opacity-80 transition-opacity"
                   >
                     ${totalRevenue.toLocaleString('en-US', { maximumFractionDigits: 0 })}

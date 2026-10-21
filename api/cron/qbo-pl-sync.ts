@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { getFreshQboTokens, getSupabaseConfig, qboApiBase, requireAdminBearer } from '../qbo/_lib.js'
-import { moneyColumns, sectionTotals, accountRows, columnMonth, type QboReport } from '../qbo/_pl-parse.js'
+import { moneyColumns, sectionTotals, accountRows, columnMonth, vendorExpenseRows, type QboReport } from '../qbo/_pl-parse.js'
 
 // GET /api/cron/qbo-pl-sync
 //
@@ -9,7 +9,7 @@ import { moneyColumns, sectionTotals, accountRows, columnMonth, type QboReport }
 // sync so class names are current), also runnable on demand with an admin
 // bearer (the Pro Forma page's Refresh button).
 //
-// Writes two tables:
+// Writes three tables:
 //  - qbo_pl_months:       company P&L per month, trailing 15 months — ONE
 //    ProfitAndLoss report call summarized by Month, including per-month
 //    account breakdowns for income/COGS/expenses.
@@ -17,6 +17,9 @@ import { moneyColumns, sectionTotals, accountRows, columnMonth, type QboReport }
 //    month summarized by Classes. Classes ≈ properties (invoices imported
 //    from Tendwell carry a per-property Class), so this is the per-property
 //    revenue actual straight from QuickBooks.
+//  - qbo_vendor_expense_months: spend per (section, account, vendor) per
+//    month — one ProfitAndLossDetail call per month, transactions summed by
+//    vendor (e.g. Blessed under Laundry). Failures here never fail the sync.
 //
 // Replaces the app_settings.qbo_pl_data blob as the source of truth: that
 // blob had no writer in this repo (a cloud routine refreshed it) and its
@@ -70,10 +73,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const startIso = monthStart(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - (MONTHS_BACK - 1), 1)))
     const endIso = today.toISOString().slice(0, 10)
 
-    const report = async (params: Record<string, string>): Promise<QboReport> => {
+    const report = async (params: Record<string, string>, name = 'ProfitAndLoss'): Promise<QboReport> => {
       const qs = new URLSearchParams({ accounting_method: 'Accrual', minorversion: '65', ...params }).toString()
-      const r = await fetch(`${base}/v3/company/${realmId}/reports/ProfitAndLoss?${qs}`, { headers })
-      if (!r.ok) throw new Error(`QBO P&L report failed (${r.status}): ${(await r.text()).slice(0, 300)}`)
+      const r = await fetch(`${base}/v3/company/${realmId}/reports/${name}?${qs}`, { headers })
+      if (!r.ok) throw new Error(`QBO ${name} report failed (${r.status}): ${(await r.text()).slice(0, 300)}`)
       return (await r.json()) as QboReport
     }
 
@@ -169,6 +172,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // ── Vendor spend per account, one detail call per month ─────────────
+    // QBO truncates large detail reports, so stay at one month per call.
+    let vendorMonths = 0
+    let vendorRows = 0
+    const vendorErrors: string[] = []
+    for (const { month } of monthRows) {
+      try {
+        const rep = await report({
+          start_date: month,
+          end_date: lastDayOfMonth(month),
+          columns: 'tx_date,txn_type,doc_num,name,memo,split_acc,subt_nat_amount',
+        }, 'ProfitAndLossDetail')
+        // Transactions are dated inside the requested month, but guard anyway
+        // so a stray row can never land in a month this pass doesn't replace.
+        const rows = vendorExpenseRows(rep)
+          .filter(r => r.month === month)
+          .map(r => ({ ...r, synced_at: nowIso }))
+
+        const { error: delErr } = await sb.from('qbo_vendor_expense_months').delete().eq('month', month)
+        if (delErr) throw new Error(delErr.message)
+        for (let i = 0; i < rows.length; i += 500) {
+          const { error } = await sb.from('qbo_vendor_expense_months').insert(rows.slice(i, i + 500))
+          if (error) throw new Error(error.message)
+        }
+        vendorMonths++
+        vendorRows += rows.length
+      } catch (e: any) {
+        vendorErrors.push(`${month}: ${String(e?.message ?? e).slice(0, 120)}`)
+      }
+    }
+
     return res.json({
       ok: true,
       months: monthRows.length,
@@ -176,6 +210,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       class_months: classMonths,
       class_rows: classRows,
       ...(classErrors.length ? { class_errors: classErrors } : {}),
+      vendor_months: vendorMonths,
+      vendor_rows: vendorRows,
+      ...(vendorErrors.length ? { vendor_errors: vendorErrors } : {}),
     })
   } catch (err: any) {
     console.error('QBO P&L SYNC FAILED:', err?.message || err)

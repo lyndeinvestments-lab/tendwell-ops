@@ -27,6 +27,7 @@ import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
 import { findDuplicatePairs } from '@/lib/property-duplicates'
+import { monthlyFigures, resolveCleansPerMonth } from '@/lib/financials/monthlyPace'
 
 // Frequency values stay canonical English (DB enum on properties.cleaning_frequency);
 // labels are resolved through t('proForma.freq.<value-camelCase>') at each call site.
@@ -336,6 +337,20 @@ export default function ProFormaPage() {
     },
   })
 
+  // operational_properties doesn't expose exclude_from_financials; these
+  // properties stay listed but are left out of totals and KPIs (as on By Client).
+  const { data: financialExcludedIds } = useQuery({
+    queryKey: ['/supabase/pro-forma-excluded-from-financials'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('properties')
+        .select('id')
+        .eq('exclude_from_financials', true)
+      if (error) throw error
+      return new Set((data || []).map(r => String(r.id)))
+    },
+  })
+
   // Live cleans-per-month from property_clean_stats: Trellis from the
   // app_settings.clean_source_cutover month on, the Breezeway archive before
   // it. When a property has clean history we override the manual
@@ -354,12 +369,12 @@ export default function ProFormaPage() {
     for (const s of breezewayStats as any[]) statsByPropId.set(String(s.property_id), s)
     return (rawProperties as any[]).map(p => {
       const s = statsByPropId.get(String(p.id))
-      if (!s || !s.months_with_data || Number(s.months_with_data) === 0) return p
-      const cpm = Number(s.avg_cleans_per_month) || 0
-      const ce = Number(p.ce_charged) || 0
-      const costPerClean = Number(p.total_estimated_cost) || 0
-      const revenue = cpm * ce
-      const cost    = cpm * costPerClean
+      const { cleansPerMonth, auto } = resolveCleansPerMonth(s, p.avg_cleans_per_month)
+      if (!auto) return p
+      const cpm = cleansPerMonth ?? 0
+      const m = monthlyFigures(p, cpm)
+      const revenue = m?.revenue ?? 0
+      const cost    = m?.cost ?? 0
       const manualCpm = Number(p.avg_cleans_per_month) || null
       // Auto-derived frequency + first clean date from real task cadence
       // (recent 90-day rate; see property_clean_stats). The stored manual
@@ -467,7 +482,7 @@ export default function ProFormaPage() {
       }
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [properties, search, freqFilter, profitFilter, missingDataFilter, sortKey, sortDir])
+  }, [properties, search, freqFilter, profitFilter, missingDataFilter, sortKey, sortDir, breakEvenMargin])
 
   // Feature 5: Duplicate detection (same house entered twice: same name or
   // same address; see lib/property-duplicates.ts)
@@ -490,32 +505,39 @@ export default function ProFormaPage() {
 
   const paged = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
 
-  // Feature 5: Totals exclude dismissed duplicates
+  // Totals and KPIs leave out undismissed duplicates and properties
+  // excluded from financials.
+  const financialExcludedCount = useMemo(
+    () => filtered.filter((p: any) => financialExcludedIds?.has(String(p.id))).length,
+    [filtered, financialExcludedIds],
+  )
+  const forTotals = useMemo(
+    () => (filtered as any[]).filter(p => !duplicateExcludedIds.has(p.id) && !financialExcludedIds?.has(String(p.id))),
+    [filtered, duplicateExcludedIds, financialExcludedIds],
+  )
+
   const totals = useMemo(() => {
     if (!filtered?.length) return null
-    const forTotals = filtered.filter((p: any) => !duplicateExcludedIds.has(p.id))
     return {
       revenue: forTotals.reduce((s: number, p: any) => s + (p.monthly_revenue_estimate || 0), 0),
       cost: forTotals.reduce((s: number, p: any) => s + (p.monthly_cost_estimate || 0), 0),
       profit: forTotals.reduce((s: number, p: any) => s + (p.monthly_profit_estimate || 0), 0),
     }
-  }, [filtered, duplicateExcludedIds])
+  }, [filtered, forTotals])
 
   const asNeededCount = filtered?.filter((p: any) => p.cleaning_frequency === 'as_needed').length ?? 0
 
-  // Summary-strip KPIs — computed purely from already-loaded/filtered rows.
-  // No new queries; uses the break_even_target_margin app setting (breakEvenMargin).
+  // Summary-strip KPIs over the same rows as the totals; uses the
+  // break_even_target_margin app setting (breakEvenMargin).
   const summary = useMemo(() => {
-    const rows = filtered as any[]
+    const rows = forTotals
     const total = rows.length
     const withPct = rows.filter(p => p.profit_percentage != null)
-    const avgMargin = withPct.length
-      ? withPct.reduce((s, p) => s + Number(p.profit_percentage), 0) / withPct.length
-      : null
+    const weightedMargin = totals && totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : null
     const belowBreakEven = withPct.filter(p => Number(p.profit_percentage) < breakEvenMargin * 100).length
     const negativeProfit = rows.filter(p => (p.monthly_profit_estimate ?? 0) < 0).length
-    return { total, avgMargin, belowBreakEven, negativeProfit }
-  }, [filtered])
+    return { total, weightedMargin, belowBreakEven, negativeProfit }
+  }, [forTotals, totals, breakEvenMargin])
 
   function toggleSelect(id: string) {
     setSelected(prev => {
@@ -692,7 +714,11 @@ export default function ProFormaPage() {
         )}
       </div>
 
-      {/* Summary KPI strip — computed from loaded/filtered rows (no new queries) */}
+      {!isLoading && filtered.length > 0 && (
+        <p className="text-xs text-muted-foreground -mb-1" data-testid="text-proforma-pace">{t('proForma.pace.note')}</p>
+      )}
+
+      {/* Summary KPI strip — same rows as the Monthly Totals row */}
       {!isLoading && filtered.length > 0 && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card shadow-sm p-4">
@@ -708,8 +734,9 @@ export default function ProFormaPage() {
               {t('proForma.summary.avgMargin')}
             </div>
             <div className="mt-1 text-3xl font-bold tabular-nums leading-none">
-              {summary.avgMargin != null ? `${summary.avgMargin.toFixed(1)}%` : '—'}
+              {summary.weightedMargin != null ? `${summary.weightedMargin.toFixed(1)}%` : '—'}
             </div>
+            <div className="mt-1 text-2xs text-muted-foreground">{t('proForma.summary.avgMarginHint')}</div>
           </div>
           <div className={`rounded-xl border shadow-sm p-4 ${summary.belowBreakEven > 0 ? 'border-warning/30 bg-warning/5' : 'border-card-border bg-card'}`}>
             <div className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -871,6 +898,7 @@ export default function ProFormaPage() {
                 role="columnheader"
                 aria-sort={sortKey === 'monthly_revenue_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                title={t('proForma.pace.tooltip')}
                 onClick={() => toggleSort('monthly_revenue_estimate')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_revenue_estimate') } }}
@@ -881,6 +909,7 @@ export default function ProFormaPage() {
                 role="columnheader"
                 aria-sort={sortKey === 'monthly_cost_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                title={t('proForma.pace.tooltip')}
                 onClick={() => toggleSort('monthly_cost_estimate')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_cost_estimate') } }}
@@ -891,6 +920,7 @@ export default function ProFormaPage() {
                 role="columnheader"
                 aria-sort={sortKey === 'monthly_profit_estimate' ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wide py-2 px-3 cursor-pointer select-none hover:text-foreground transition-colors group"
+                title={t('proForma.pace.tooltip')}
                 onClick={() => toggleSort('monthly_profit_estimate')}
                 tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort('monthly_profit_estimate') } }}
@@ -1030,10 +1060,15 @@ export default function ProFormaPage() {
               <tr className="bg-muted/70 border-t-2 border-border font-semibold sticky bottom-0 z-20" data-testid="row-proforma-totals">
                 <td className="py-2 px-3 sticky left-0 bottom-0 z-30 bg-muted/90 backdrop-blur" />
                 <td className="py-2 px-3 text-xs uppercase tracking-wide sticky left-[44px] bottom-0 z-30 bg-muted/90 backdrop-blur" colSpan={7}>
-                  {t('proForma.table.totalsLabel', { count: filtered?.length - duplicateExcludedIds.size > 0 ? filtered.length - duplicateExcludedIds.size : filtered.length })}
+                  {t('proForma.table.totalsLabel', { count: forTotals.length })}
                   {duplicateExcludedIds.size > 0 && (
                     <span className="ml-1 font-normal text-warning">
                       {t('proForma.table.excludedDupes', { count: duplicateExcludedIds.size })}
+                    </span>
+                  )}
+                  {financialExcludedCount > 0 && (
+                    <span className="ml-1 font-normal text-muted-foreground">
+                      {t('proForma.table.excludedFinancials', { count: financialExcludedCount })}
                     </span>
                   )}
                 </td>

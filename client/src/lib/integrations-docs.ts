@@ -406,7 +406,7 @@ export const INTEGRATIONS_DOCS: IntegrationDocSection[] = [
         heading: 'Which page reads which view',
         items: [
           'Financial Overview (`/financial-dashboard`): `financial_monthly_cleans`, `financial_task_load`, plus QuickBooks P&L.',
-          'Pro Forma: the Live (Forecaster) tab reads `financial_monthly_cleans`, `property_monthly_cleans` and `compute_monthly_estimate()`; the P&L and Per-Property tabs read `property_month_financials` (built on `property_monthly_cleans`); Pricing reads `property_clean_stats`, with clean history from `trellis_clean_tasks`.',
+          'Pro Forma: the Live (Forecaster) tab reads `financial_monthly_cleans`, `property_monthly_cleans` and `compute_monthly_estimate()`; the P&L tab reads `property_month_financials` (built on `property_monthly_cleans`); Per-Property reads `financial_clean_days` and `financial_invoice_lines` (approved/exported Busy Bee runs) plus QuickBooks, laundry weigh-ins and property rates; Pricing reads `property_clean_stats`, with clean history from `trellis_clean_tasks`.',
           'Master List (`/master-list`): auto cleans per month and first clean from `property_clean_stats`, the same numbers as Pricing.',
           'North Star: "% Cleans Inspected" = completed Ops inspections ÷ Tendwell\'s completed Trellis cleans in the month (`trellis_clean_tasks`).',
         ],

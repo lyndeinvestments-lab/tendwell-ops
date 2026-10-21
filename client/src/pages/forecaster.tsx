@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { usePageTitle } from '@/hooks/use-page-title'
@@ -25,11 +25,13 @@ import {
 } from 'recharts'
 import {
   computeDerived, generateForecast, FORECAST_PRESETS, rollupEstimates, computeVariance,
+  deriveCurrentPreset, partialWindowMonth, prorateEstimates,
   type ForecastSliders, type DerivedMonth,
 } from '@/lib/forecaster'
 import { useInProFormaWrapper } from '@/pages/pro-forma-wrapper'
 import {
-  qboRowToMonthRecord, propertiesPerMonth, cleansPerMonth, cleansByPropertyFromEstimate, cutoverMonth, monthKey,
+  qboRowToMonthRecord, propertiesPerMonth, cleansPerMonth, cleansByPropertyFromEstimate,
+  deepCleansByPropertyFromEstimate, cutoverMonth, monthKey,
   type QboPlMonthRow, type EstimatePerProperty,
 } from '@/lib/financials/clean-sources'
 
@@ -60,12 +62,16 @@ export default function ForecasterPage() {
   const { t } = useLocale('financials')
   usePageTitle(inWrapper ? t('forecaster.page.titleWrapped') : t('forecaster.page.title', undefined, 'Forecaster'))
 
-  // Default to the CURRENT calendar month: when QuickBooks has not posted the
-  // month yet we show a live estimate from the month's cleans (Trellis,
-  // completed + scheduled) × per-property rates.
-  const [selectedMonth, setSelectedMonth] = useState<string>(todayMonth())
+  // Default to the latest FULL month: QBO writes the current month from day 1,
+  // so its KPIs are month to date.
+  const [selectedMonth, setSelectedMonth] = useState<string>(priorMonth(todayMonth()))
   const [seasonal, setSeasonal] = useState(true)
   const [sliders, setSliders] = useState<ForecastSliders>(FORECAST_PRESETS.current)
+  const slidersTouched = useRef(false)
+  const editSliders = (next: ForecastSliders | ((s: ForecastSliders) => ForecastSliders)) => {
+    slidersTouched.current = true
+    setSliders(next)
+  }
 
   // ── Monthly P&L actuals: qbo_pl_months (nightly QBO sync) ───────────────
   // Replaces the hand-seeded proforma_months table. Same source as the P&L tab.
@@ -141,10 +147,12 @@ export default function ForecasterPage() {
     if (!qboMonths) return []
     const cleanMap = new Map<string, number>()
     for (const c of monthlyCleans || []) cleanMap.set(c.month, Number(c.cleans))
+    const partial = partialWindowMonth(Array.from(cleanMap.keys()), new Date())
+    if (partial) cleanMap.delete(partial)
     return qboMonths.map(r => {
       const key = monthKey(r.month)
-      // financial_monthly_cleans covers the trailing year; older months fall
-      // back to property_monthly_cleans (trailing 14 months).
+      // Months financial_monthly_cleans does not fully cover fall back to
+      // property_monthly_cleans (month-aligned, trailing 14 months).
       const tasks = cleanMap.get(key) ?? pmcByMonth?.cleans.get(key)
       return computeDerived(qboRowToMonthRecord(r, tasks, pmcByMonth?.props.get(key)))
     })
@@ -152,8 +160,19 @@ export default function ForecasterPage() {
 
   // The forecast starts from the latest COMPLETE month (the current month is
   // partial in QBO).
-  const completeHist = useMemo(() => histData.filter(m => m.month < todayMonth()), [histData])
-  const latestMonth = completeHist[completeHist.length - 1]
+  const derivedPreset = useMemo(
+    () => deriveCurrentPreset(histData, { asOfMonth: todayMonth(), seasonal }),
+    [histData, seasonal],
+  )
+  useEffect(() => {
+    if (!slidersTouched.current && derivedPreset.sourceMonths.length > 0) setSliders(derivedPreset.sliders)
+  }, [derivedPreset])
+
+  const isCurrentMonth = selectedMonth === todayMonth()
+  const monthProgress = useMemo(() => {
+    const now = new Date()
+    return { day: now.getDate(), days: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate() }
+  }, [])
   const prevMonth = useMemo(() => {
     const idx = histData.findIndex(m => m.month === selectedMonth)
     return idx > 0 ? histData[idx - 1] : undefined
@@ -165,7 +184,7 @@ export default function ForecasterPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('operational_properties')
-        .select('id, name, ce_charged, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost')
+        .select('id, name, ce_charged, deep_clean_3x_ce, cleaner_pay, est_laundry, est_consumables, inspection_cost, trash_cost')
       if (error) throw error
       return data || []
     },
@@ -193,14 +212,33 @@ export default function ForecasterPage() {
     () => cleansByPropertyFromEstimate(monthEstimate?.perProperty),
     [monthEstimate],
   )
+  const deepByProperty = useMemo(
+    () => deepCleansByPropertyFromEstimate(monthEstimate?.perProperty),
+    [monthEstimate],
+  )
   const totalPeriodTasks = monthEstimate?.cleans ?? 0
   const activePropsInPeriod = monthEstimate?.activeProperties ?? 0
+
+  // Completed cleans for the selected month (financial_monthly_cleans, same
+  // source as Financial Overview). For the current month this is "so far",
+  // while totalPeriodTasks also counts cleans scheduled through month end.
+  const completedTasks = useMemo<number | null>(() => {
+    const canon = (monthlyCleans || []).find(c => c.month === selectedMonth)
+    if (canon) return Number(canon.cleans)
+    return pmcByMonth?.cleans.get(selectedMonth) ?? null
+  }, [monthlyCleans, pmcByMonth, selectedMonth])
 
   // Estimated costs (rolled up from per-property cost-tracking estimates)
   const estimates = useMemo(() => {
     if (!properties) return null
-    return rollupEstimates(properties as any[], tasksByProperty)
-  }, [properties, tasksByProperty])
+    return rollupEstimates(properties as any[], tasksByProperty, deepByProperty)
+  }, [properties, tasksByProperty, deepByProperty])
+
+  // Current month: share of the month's estimated cleans already completed,
+  // used to compare the estimate with QBO month-to-date like for like.
+  const completedShare = isCurrentMonth && completedTasks != null && totalPeriodTasks > 0
+    ? Math.min(completedTasks / totalPeriodTasks, 1)
+    : null
 
   // ── LIVE ESTIMATE (cleans × per-property rates) ─────────────────────────
   // When QuickBooks has no posted actuals for the month (current/future
@@ -236,6 +274,7 @@ export default function ForecasterPage() {
     if (estimateRow) return 'estimate'
     return null
   }, [qboHasSignal, estimateRow])
+  const isMtd = isCurrentMonth && actualsSource === 'qbo'
 
   const actualsRow = useMemo<DerivedMonth | null>(() => {
     if (actualsSource === 'qbo') return qboRow
@@ -243,25 +282,34 @@ export default function ForecasterPage() {
     return null
   }, [actualsSource, qboRow, estimateRow])
 
-  // Variance per category: per-property estimates × cleans vs actuals.
+  // Variance per category: per-property estimates × cleans vs QBO actuals.
+  // Current month: the estimate is prorated to cleans completed so far.
+  // Leadership / Other COGS have no per-property formula (actual-only rows).
   const variance = useMemo(() => {
-    if (!estimates || !actualsRow) return null
+    if (!estimates || !actualsRow || actualsSource !== 'qbo') return null
+    const est = completedShare != null ? prorateEstimates(estimates, completedShare) : estimates
     return computeVariance([
-      { category: 'Laundry', estimated: estimates.laundry, actual: actualsRow.laundry || 0 },
-      { category: 'Supplies', estimated: estimates.supplies, actual: actualsRow.supplies || 0 },
-      { category: 'Inspections', estimated: estimates.inspections, actual: actualsRow.inspections || 0 },
-      { category: 'Trash', estimated: estimates.trash, actual: actualsRow.trash || 0 },
-      { category: 'Contractor Pay', estimated: estimates.contractorPay, actual: actualsRow.contractorPay || 0 },
-      { category: 'Revenue', estimated: estimates.revenue, actual: actualsRow.revenue || 0 },
+      { category: 'Laundry', estimated: est.laundry, actual: actualsRow.laundry || 0 },
+      { category: 'Supplies', estimated: est.supplies, actual: actualsRow.supplies || 0 },
+      { category: 'Inspections', estimated: est.inspections, actual: actualsRow.inspections || 0 },
+      { category: 'Trash', estimated: est.trash, actual: actualsRow.trash || 0 },
+      { category: 'Contractor Pay', estimated: est.contractorPay, actual: actualsRow.contractorPay || 0 },
+      { category: 'Leadership', estimated: null, actual: actualsRow.leadership || 0 },
+      { category: 'Other COGS', estimated: null, actual: actualsRow.otherCOGS || 0 },
+      { category: 'Revenue', estimated: est.revenue, actual: actualsRow.revenue || 0 },
     ])
-  }, [estimates, actualsRow])
+  }, [estimates, actualsRow, actualsSource, completedShare])
 
   // ── Forecast horizon ────────────────────────
   const forecast = useMemo(() => {
-    const startProperties = latestMonth?.properties ?? 70
-    const startMonth = latestMonth ? priorMonth(latestMonth.month, -1) : todayMonth()
-    return generateForecast(sliders, { startProperties, startMonth, horizon: 12, seasonal })
-  }, [sliders, seasonal, latestMonth])
+    const { startProperties, startMonth } = derivedPreset
+    return generateForecast(sliders, {
+      startProperties,
+      startMonth: startMonth ? priorMonth(startMonth, -1) : todayMonth(),
+      horizon: 12,
+      seasonal,
+    })
+  }, [sliders, seasonal, derivedPreset])
 
   // ── Render ──────────────────────────────
   // QBO actuals refresh nightly; clean counts refresh with the Trellis sync.
@@ -338,6 +386,14 @@ export default function ForecasterPage() {
           {t('forecaster.banners.estimatePrefix')} <strong>{t('forecaster.banners.estimateBold')}</strong> {t('forecaster.banners.estimateSuffix', { month: selectedMonth })}
         </div>
       )}
+      {isMtd && (
+        <div
+          className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning"
+          data-testid="actuals-source-banner-mtd"
+        >
+          {t('forecaster.banners.mtd', { month: selectedMonth, day: monthProgress.day, days: monthProgress.days })}
+        </div>
+      )}
       {actualsSource === null && (
         <div
           className="rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-xs text-warning"
@@ -356,33 +412,29 @@ export default function ForecasterPage() {
             <StatCard
               title={t('forecaster.kpis.revenue')}
               value={fmt(actualsRow.revenue)}
-              subtitle={prevMonth ? t('forecaster.kpis.revenueVsPrior', { arrow: actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼', pct: fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100), month: prevMonth.label }) : actualsSource === 'qbo' ? t('forecaster.kpis.revenueSourceQbo') : undefined}
+              subtitle={isMtd
+                ? t('forecaster.kpis.revenueMtd')
+                : prevMonth && actualsSource === 'qbo'
+                  ? t('forecaster.kpis.revenueVsPrior', { arrow: actualsRow.revenue >= prevMonth.revenue ? '▲' : '▼', pct: fmtPct(((actualsRow.revenue - prevMonth.revenue) / Math.max(prevMonth.revenue, 1)) * 100), month: prevMonth.label })
+                  : actualsSource === 'qbo' ? t('forecaster.kpis.revenueSourceQbo') : undefined}
             />
             <StatCard
               title={t('forecaster.kpis.netIncome')}
               value={fmt(actualsRow.netIncome)}
               tone={actualsRow.netIncome < 0 ? 'destructive' : 'primary'}
-              subtitle={t('forecaster.kpis.netIncomeMargin', { pct: fmtPct(actualsRow.netMargin) })}
+              subtitle={t(isMtd ? 'forecaster.kpis.netIncomeMarginMtd' : 'forecaster.kpis.netIncomeMargin', { pct: fmtPct(actualsRow.netMargin) })}
             />
             <StatCard
               title={t('forecaster.kpis.tasks')}
-              value={String(
-                // Completed cleans so far from financial_monthly_cleans (same
-                // source as Financial Overview); for months it does not cover
-                // yet, the month's completed + scheduled cleans.
-                (() => {
-                  const canonMap = new Map((monthlyCleans || []).map(c => [c.month, Number(c.cleans)]))
-                  return canonMap.has(selectedMonth)
-                    ? canonMap.get(selectedMonth)!
-                    : (totalPeriodTasks || actualsRow.tasks || 0)
-                })()
-              )}
-              subtitle={t('forecaster.kpis.tasksSubtitle', { count: actualsRow.properties ?? activePropsInPeriod ?? 0 })}
+              value={String(completedTasks ?? (totalPeriodTasks || actualsRow.tasks || 0))}
+              subtitle={isCurrentMonth && completedTasks != null
+                ? t('forecaster.kpis.tasksSubtitleMtd', { scheduled: totalPeriodTasks, count: actualsRow.properties ?? activePropsInPeriod ?? 0 })
+                : t('forecaster.kpis.tasksSubtitle', { count: actualsRow.properties ?? activePropsInPeriod ?? 0 })}
             />
             <StatCard
               title={t('forecaster.kpis.grossMargin')}
               value={fmtPct(actualsRow.grossMargin)}
-              subtitle={t('forecaster.kpis.grossMarginSubtitle', { amount: fmt(actualsRow.cogs) })}
+              subtitle={t(isMtd ? 'forecaster.kpis.grossMarginSubtitleMtd' : 'forecaster.kpis.grossMarginSubtitle', { amount: fmt(actualsRow.cogs) })}
             />
           </>
         ) : (
@@ -415,10 +467,21 @@ export default function ForecasterPage() {
                   <h3 className="text-sm font-semibold">{t('forecaster.variance.heading', { month: selectedMonth })}</h3>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {t('forecaster.variance.taskSummary', { tasks: totalPeriodTasks, properties: activePropsInPeriod })}
+                  {isCurrentMonth && completedTasks != null
+                    ? t('forecaster.variance.taskSummaryMtd', { completed: completedTasks, tasks: totalPeriodTasks, properties: activePropsInPeriod })
+                    : t('forecaster.variance.taskSummary', { tasks: totalPeriodTasks, properties: activePropsInPeriod })}
                 </span>
               </div>
-              {!variance ? (
+              {variance && completedShare != null && (
+                <p className="text-xs text-muted-foreground mb-3" data-testid="text-variance-prorated">
+                  {t('forecaster.variance.proratedNote', { completed: completedTasks ?? 0, tasks: totalPeriodTasks, pct: fmtPct(completedShare * 100) })}
+                </p>
+              )}
+              {actualsSource === 'estimate' ? (
+                <p className="text-xs text-muted-foreground" data-testid="text-variance-estimate-source">
+                  {t('forecaster.variance.estimateSourceNote', { month: selectedMonth })}
+                </p>
+              ) : !variance ? (
                 <EmptyState
                   icon={Calculator}
                   title={t('forecaster.variance.emptyTitle')}
@@ -441,7 +504,9 @@ export default function ForecasterPage() {
                     {variance.map(row => {
                       const isRevenue = row.category === 'Revenue'
                       // For revenue, "favorable" = actual ≥ estimated (more revenue is good).
-                      const fav = isRevenue ? row.variance >= 0 : row.favorable
+                      const fav = row.variance == null ? null : isRevenue ? row.variance >= 0 : row.favorable
+                      const neutral = fav == null || isCurrentMonth
+                      const tone = neutral ? 'text-muted-foreground' : fav ? 'text-success' : 'text-destructive'
                       // `row.category` is a plain UI string from the computeVariance
                       // call sites (not a DB enum) — displayed via slug lookup with
                       // the raw value as fallback; the data-testid below still keys
@@ -451,17 +516,23 @@ export default function ForecasterPage() {
                           <td className="py-2 text-foreground">{t(`forecaster.variance.category.${slugify(row.category)}`, undefined, row.category)}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.estimated)}</td>
                           <td className="py-2 text-right tabular-nums text-foreground">{fmt(row.actual)}</td>
-                          <td className={`py-2 text-right tabular-nums font-medium ${fav ? 'text-success' : 'text-destructive'}`}>
-                            {row.variance > 0 ? '+' : ''}{fmt(row.variance)}
+                          <td className={`py-2 text-right tabular-nums font-medium ${tone}`}>
+                            {row.variance != null && row.variance > 0 ? '+' : ''}{fmt(row.variance)}
                           </td>
-                          <td className={`py-2 text-right tabular-nums ${fav ? 'text-success' : 'text-destructive'}`}>
+                          <td className={`py-2 text-right tabular-nums ${tone}`}>
                             {fmtPct(row.variancePct)}
                           </td>
                           <td className="py-2 pl-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full border ${fav
-                              ? 'text-success bg-success/10 border-success/25'
-                              : 'text-destructive bg-destructive/10 border-destructive/25'}`}>
-                              {fav ? t('forecaster.variance.favorable') : t('forecaster.variance.unfavorable')}
+                            <span className={`text-xs px-2 py-0.5 rounded-full border ${neutral
+                              ? 'text-muted-foreground bg-muted/40 border-border'
+                              : fav
+                                ? 'text-success bg-success/10 border-success/25'
+                                : 'text-destructive bg-destructive/10 border-destructive/25'}`}>
+                              {fav == null
+                                ? t('forecaster.variance.actualOnly')
+                                : isCurrentMonth
+                                  ? t('forecaster.variance.pending')
+                                  : fav ? t('forecaster.variance.favorable') : t('forecaster.variance.unfavorable')}
                             </span>
                           </td>
                         </tr>
@@ -545,7 +616,7 @@ export default function ForecasterPage() {
                 </h3>
                 <div className="flex items-center gap-2 flex-wrap">
                   {(['current', 'conservative', 'aggressive'] as const).map(p => (
-                    <Button key={p} size="sm" variant="outline" className="h-7 text-xs" onClick={() => setSliders(FORECAST_PRESETS[p])}>
+                    <Button key={p} size="sm" variant="outline" className="h-7 text-xs" onClick={() => editSliders(p === 'current' ? derivedPreset.sliders : FORECAST_PRESETS[p])}>
                       {t(`forecaster.forecast.presets.${p}`)}
                     </Button>
                   ))}
@@ -557,14 +628,14 @@ export default function ForecasterPage() {
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <SliderInput label={t('forecaster.forecast.sliders.propGrowth')} value={sliders.propGrowth} onChange={v => setSliders(s => ({ ...s, propGrowth: v }))} step={1} />
-                <SliderInput label={t('forecaster.forecast.sliders.tasksPerProp')} value={sliders.tasksPerProp} onChange={v => setSliders(s => ({ ...s, tasksPerProp: v }))} step={0.1} />
-                <SliderInput label={t('forecaster.forecast.sliders.revPerTask')} value={sliders.revPerTask} onChange={v => setSliders(s => ({ ...s, revPerTask: v }))} step={5} />
-                <SliderInput label={t('forecaster.forecast.sliders.contractorPct')} value={sliders.contractorPct} onChange={v => setSliders(s => ({ ...s, contractorPct: v }))} step={1} />
-                <SliderInput label={t('forecaster.forecast.sliders.laundryPct')} value={sliders.laundryPct} onChange={v => setSliders(s => ({ ...s, laundryPct: v }))} step={1} />
-                <SliderInput label={t('forecaster.forecast.sliders.suppliesPct')} value={sliders.suppliesPct} onChange={v => setSliders(s => ({ ...s, suppliesPct: v }))} step={1} />
-                <SliderInput label={t('forecaster.forecast.sliders.leadership')} value={sliders.leadership} onChange={v => setSliders(s => ({ ...s, leadership: v }))} step={100} />
-                <SliderInput label={t('forecaster.forecast.sliders.opex')} value={sliders.opex} onChange={v => setSliders(s => ({ ...s, opex: v }))} step={100} />
+                <SliderInput label={t('forecaster.forecast.sliders.propGrowth')} value={sliders.propGrowth} onChange={v => editSliders(s => ({ ...s, propGrowth: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.tasksPerProp')} value={sliders.tasksPerProp} onChange={v => editSliders(s => ({ ...s, tasksPerProp: v }))} step={0.1} />
+                <SliderInput label={t('forecaster.forecast.sliders.revPerTask')} value={sliders.revPerTask} onChange={v => editSliders(s => ({ ...s, revPerTask: v }))} step={5} />
+                <SliderInput label={t('forecaster.forecast.sliders.contractorPct')} value={sliders.contractorPct} onChange={v => editSliders(s => ({ ...s, contractorPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.laundryPct')} value={sliders.laundryPct} onChange={v => editSliders(s => ({ ...s, laundryPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.suppliesPct')} value={sliders.suppliesPct} onChange={v => editSliders(s => ({ ...s, suppliesPct: v }))} step={1} />
+                <SliderInput label={t('forecaster.forecast.sliders.leadership')} value={sliders.leadership} onChange={v => editSliders(s => ({ ...s, leadership: v }))} step={100} />
+                <SliderInput label={t('forecaster.forecast.sliders.opex')} value={sliders.opex} onChange={v => editSliders(s => ({ ...s, opex: v }))} step={100} />
               </div>
 
               <div className="h-64">

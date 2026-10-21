@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   inspectionRatePct, monthKey, qboRowToMonthRecord, propertiesPerMonth, cleansPerMonth,
-  cleansByPropertyFromEstimate, cutoverMonth,
+  cleansByPropertyFromEstimate, deepCleansByPropertyFromEstimate, cutoverMonth,
 } from './clean-sources'
 import { computeDerived } from '@/lib/forecaster'
 
@@ -98,6 +98,17 @@ describe('cleansByPropertyFromEstimate', () => {
       { property_id: null, cleans: 5 },
     ])).toEqual({ '7': 4 })
     expect(cleansByPropertyFromEstimate(null)).toEqual({})
+  })
+})
+
+describe('deepCleansByPropertyFromEstimate', () => {
+  it('keeps only deep cleans per property', () => {
+    expect(deepCleansByPropertyFromEstimate([
+      { property_id: 7, cleans: 3, deep_cleans: 1 },
+      { property_id: '8', cleans: 2, deep_cleans: '0' },
+      { property_id: null, deep_cleans: 5 },
+    ])).toEqual({ '7': 1 })
+    expect(deepCleansByPropertyFromEstimate(undefined)).toEqual({})
   })
 })
 

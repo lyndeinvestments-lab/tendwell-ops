@@ -1,4 +1,5 @@
-// Pure parsing helpers for QuickBooks Online ProfitAndLoss report JSON.
+// Pure parsing helpers for QuickBooks Online ProfitAndLoss (and
+// ProfitAndLossDetail) report JSON.
 // No I/O — unit-tested against representative report shapes.
 //
 // A QBO report is a header + a Columns list + a recursive Rows tree:
@@ -113,4 +114,113 @@ export function columnMonth(col: PlColumn): string | null {
   if (!col.startDate) return null
   const m = /^(\d{4})-(\d{2})/.exec(col.startDate)
   return m ? `${m[1]}-${m[2]}-01` : null
+}
+
+// ── ProfitAndLossDetail ─────────────────────────────────────────────────────
+// The detail report has one column per transaction field (tx_date, name,
+// subt_nat_amount …, identified by ColKey metadata) and the same Section tree
+// as the summary report, but its Data rows are individual transactions
+// nested under the account (and sub-account) they posted to.
+
+export type VendorSection = 'Income' | 'COGS' | 'Expenses' | 'OtherIncome' | 'OtherExpenses'
+
+export interface VendorExpenseRow {
+  /** 'YYYY-MM-01' of the transaction date */
+  month: string
+  section: VendorSection
+  account: string
+  vendor: string
+  amount: number
+  txn_count: number
+}
+
+export const NO_VENDOR = '(no vendor)'
+
+const VENDOR_SECTIONS = new Set<string>(['Income', 'COGS', 'Expenses', 'OtherIncome', 'OtherExpenses'])
+
+/** Index of a detail-report column by ColKey, falling back to its title. */
+function detailColumn(report: QboReport, colKey: string, title: string): number {
+  const cols = report.Columns?.Column ?? []
+  const byKey = cols.findIndex(c => (c.MetaData ?? []).some(m => m.Name === 'ColKey' && m.Value === colKey))
+  if (byKey >= 0) return byKey
+  return cols.findIndex(c => (c.ColTitle ?? '').trim().toLowerCase() === title.toLowerCase())
+}
+
+function headerText(row: QboRow): string {
+  return (row.Header?.ColData?.[0]?.value ?? '').trim()
+}
+
+/** Top-level section of a row: its `group`, else inferred from the header label. */
+function sectionOf(row: QboRow): VendorSection | null {
+  if (row.group) return VENDOR_SECTIONS.has(row.group) ? (row.group as VendorSection) : null
+  const label = headerText(row)
+  if (/cost of goods/i.test(label)) return 'COGS'
+  if (/other income/i.test(label)) return 'OtherIncome'
+  if (/other expense/i.test(label)) return 'OtherExpenses'
+  if (/^income/i.test(label)) return 'Income'
+  if (/^expense/i.test(label)) return 'Expenses'
+  return null
+}
+
+/** 'YYYY-MM-01' from 'YYYY-MM-DD' (QBO JSON) or 'MM/DD/YYYY'. */
+function txnMonth(v: string | undefined): string | null {
+  const s = (v ?? '').trim()
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+  if (m) return Number(m[2]) >= 1 && Number(m[2]) <= 12 ? `${m[1]}-${m[2]}-01` : null
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s)
+  if (m) return Number(m[1]) >= 1 && Number(m[1]) <= 12 ? `${m[3]}-${m[1].padStart(2, '0')}-01` : null
+  return null
+}
+
+/**
+ * Aggregate a ProfitAndLossDetail report into one row per
+ * (transaction month, top-level section, innermost account, vendor).
+ * Computed sections (GrossProfit, NetIncome …) are skipped; rows whose date
+ * does not parse (e.g. balance lines) are skipped; amounts are rounded to
+ * cents after summing.
+ */
+export function vendorExpenseRows(report: QboReport): VendorExpenseRow[] {
+  const dateIdx = detailColumn(report, 'tx_date', 'Date')
+  const nameIdx = detailColumn(report, 'name', 'Name')
+  const amtIdx = detailColumn(report, 'subt_nat_amount', 'Amount')
+  if (dateIdx < 0 || amtIdx < 0) return []
+
+  const agg = new Map<string, VendorExpenseRow>()
+
+  const collect = (rows: QboRow[] | undefined, section: VendorSection, account: string) => {
+    for (const row of rows ?? []) {
+      if (row.Rows?.Row || row.Header) {
+        collect(row.Rows?.Row, section, headerText(row) || account)
+        continue
+      }
+      if (row.type !== 'Data' || !row.ColData) continue
+      const month = txnMonth(row.ColData[dateIdx]?.value)
+      if (!month) continue
+      const vendor = (nameIdx >= 0 ? row.ColData[nameIdx]?.value ?? '' : '').trim() || NO_VENDOR
+      const amount = parseMoney(row.ColData[amtIdx]?.value)
+      const key = [month, section, account, vendor].join('\u0000')
+      const cur = agg.get(key)
+      if (cur) {
+        cur.amount += amount
+        cur.txn_count++
+      } else {
+        agg.set(key, { month, section, account, vendor, amount, txn_count: 1 })
+      }
+    }
+  }
+
+  const findSections = (rows: QboRow[] | undefined) => {
+    for (const row of rows ?? []) {
+      const section = sectionOf(row)
+      if (section) collect(row.Rows?.Row, section, headerText(row) || section)
+      else if (!row.group) findSections(row.Rows?.Row)
+    }
+  }
+  findSections(report.Rows?.Row)
+
+  return [...agg.values()]
+    .map(r => ({ ...r, amount: Math.round(r.amount * 100) / 100 }))
+    .sort((a, b) =>
+      a.month.localeCompare(b.month) || a.section.localeCompare(b.section) ||
+      a.account.localeCompare(b.account) || a.vendor.localeCompare(b.vendor))
 }
