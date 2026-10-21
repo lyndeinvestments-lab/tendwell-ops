@@ -133,6 +133,21 @@ export function cleansByPropertyFromEstimate(
   return out
 }
 
+/** compute_monthly_estimate(...).per_property -> deep cleans per property id. */
+export function deepCleansByPropertyFromEstimate(
+  perProperty: EstimatePerProperty[] | null | undefined,
+): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const p of perProperty ?? []) {
+    if (p.property_id == null) continue
+    const n = num(p.deep_cleans)
+    if (n <= 0) continue
+    const id = String(p.property_id)
+    out[id] = (out[id] ?? 0) + n
+  }
+  return out
+}
+
 /** 'YYYY-MM-01' cutover -> 'YYYY-MM', or null for the never-switch sentinel. */
 export function cutoverMonth(cutover: string | null | undefined): string | null {
   if (!cutover || !/^\d{4}-\d{2}-\d{2}$/.test(cutover)) return null

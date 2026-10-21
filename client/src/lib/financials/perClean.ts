@@ -24,14 +24,14 @@ export function buildMonthlySeries(qbo: QboMonth[], cleans: Array<{ month: strin
   }
   return rows
 }
-export function lastTwo(series: MonthRow[]) {
+export function lastTwo<T>(series: T[]) {
   return { curr: series[series.length - 1] ?? null, prev: series[series.length - 2] ?? null }
 }
 
 // The QBO sync writes the current calendar month as it accrues, so the last
 // row is usually a partial month. Month-over-month KPIs must compare the two
 // latest COMPLETE months; the partial month is reported on its own.
-export function splitLatestMonths(series: MonthRow[], currentYm: string) {
+export function splitLatestMonths<T extends { ym: string }>(series: T[], currentYm: string) {
   const partial = series.length > 0 && series[series.length - 1].ym === currentYm ? series[series.length - 1] : null
   const complete = partial ? series.slice(0, -1) : series
   return { ...lastTwo(complete), partial }

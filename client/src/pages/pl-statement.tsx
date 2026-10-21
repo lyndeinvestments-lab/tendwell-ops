@@ -9,7 +9,9 @@ import { ErrorState } from '@/components/ErrorState'
 import { EmptyState } from '@/components/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { fmtCurrency, fmtPct } from '@/lib/financials/format'
+import { fmtCurrency, fmtDelta, fmtPct } from '@/lib/financials/format'
+import { splitLatestMonths } from '@/lib/financials/perClean'
+import { fetchAll } from '@/components/invoicing/pricing-data'
 import { profitColorClass } from '@/lib/profit-colors'
 import { DollarSign, TrendingUp, Percent, Sparkles, RefreshCw, ChevronRight, Landmark } from 'lucide-react'
 import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip as ChartTooltip, Legend, CartesianGrid } from 'recharts'
@@ -71,12 +73,17 @@ export default function PlStatementPage() {
   const estQuery = useQuery({
     queryKey: ['/supabase/pl-month-estimates'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from('property_month_financials')
-        .select('month, est_revenue, cleans')
-      if (error) throw error
+      // The view has more rows than PostgREST's 1,000-row cap; a stable order
+      // keeps pages from overlapping or skipping rows.
+      const data = await fetchAll<{ month: string; est_revenue: number; cleans: number }>(() =>
+        (supabase as any)
+          .from('property_month_financials')
+          .select('month, property_id, est_revenue, cleans')
+          .order('month', { ascending: true })
+          .order('property_id', { ascending: true }),
+      )
       const byMonth = new Map<string, EstimateRow>()
-      for (const r of (data ?? []) as Array<{ month: string; est_revenue: number; cleans: number }>) {
+      for (const r of data) {
         const key = r.month.slice(0, 10)
         const acc = byMonth.get(key) ?? { month: key, est_revenue: 0, cleans: 0 }
         acc.est_revenue += Number(r.est_revenue) || 0
@@ -105,24 +112,46 @@ export default function PlStatementPage() {
     }
   }
 
-  const rows = useMemo(() => {
-    const months = (plQuery.data ?? []).map(m => ({ ...m, month: m.month.slice(0, 10) }))
-    // Show trailing 13 months, newest first for the table.
-    return months.slice(-13).reverse()
-  }, [plQuery.data])
+  const now = new Date()
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  const chronological = useMemo(
+    () => (plQuery.data ?? []).map(m => ({ ...m, month: m.month.slice(0, 10), ym: m.month.slice(0, 7) })).slice(-13),
+    [plQuery.data],
+  )
+  // Newest first for the table.
+  const rows = useMemo(() => chronological.slice().reverse(), [chronological])
+
+  // The sync writes the current month as it accrues (COGS lag behind
+  // income), so KPIs use the latest complete month vs the one before it.
+  const { curr, prev, partial } = splitLatestMonths(chronological, currentYm)
+  const partialName = partial ? monthLabel(partial.month, locale) : null
 
   const chartData = useMemo(
-    () => rows.slice().reverse().map(m => ({
-      name: monthLabel(m.month, locale),
+    () => chronological.map(m => ({
+      name: partial && m.ym === partial.ym ? `${monthLabel(m.month, locale)}*` : monthLabel(m.month, locale),
       income: Math.round(m.total_income),
       costs: Math.round(m.total_cogs + m.total_expenses),
       margin: m.total_income > 0 ? Math.round((m.net_income / m.total_income) * 1000) / 10 : null,
     })),
-    [rows, locale],
+    [chronological, partial, locale],
   )
 
+  const cleansFor = (m: { month: string } | null) => (m ? estQuery.data?.get(m.month)?.cleans ?? 0 : 0)
+  const currCleans = cleansFor(curr)
+  const prevCleans = cleansFor(prev)
+  const perClean = (m: QboPlMonthRow | null, cleans: number, cost: boolean) =>
+    m && cleans > 0 ? (cost ? m.total_cogs + m.total_expenses : m.total_income) / cleans : null
+  const marginOf = (m: QboPlMonthRow | null) => (m && m.total_income > 0 ? (m.net_income / m.total_income) * 100 : null)
+  const delta = (c: number | null, p: number | null, lowerIsBetter = false) => {
+    const d = fmtDelta(c, p)
+    if (d.text === '—') return undefined
+    const good = lowerIsBetter ? d.dir === 'down' : d.dir === 'up'
+    const bad = lowerIsBetter ? d.dir === 'up' : d.dir === 'down'
+    return <span className={good ? 'text-success' : bad ? 'text-destructive' : ''}>{d.text} {t('pl.kpi.mom')}</span>
+  }
+
   const latest = rows[0]
-  const latestCleans = latest ? estQuery.data?.get(latest.month)?.cleans ?? 0 : 0
   const syncedAt = latest?.synced_at ? new Date(latest.synced_at) : null
   const isStale = !syncedAt || Date.now() - syncedAt.getTime() > STALE_AFTER_MS
 
@@ -146,13 +175,23 @@ export default function PlStatementPage() {
         )}
       </div>
 
-      {/* KPI strip — latest month */}
+      {/* KPI strip — latest complete month vs the one before */}
+      {!plQuery.isLoading && curr && (
+        <h2 className="text-sm font-medium text-foreground -mb-1" data-testid="text-pl-latest-full-month">
+          {t('pl.period.latestFull', { month: monthLabel(curr.month, locale) })}
+          {prev && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {' · '}{t('pl.period.comparedTo', { month: monthLabel(prev.month, locale) })}
+            </span>
+          )}
+        </h2>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <StatCard title={t('pl.kpi.revenue')} value={latest ? fmtCurrency(latest.total_income) : '—'} subtitle={latest ? monthLabel(latest.month, locale) : undefined} icon={DollarSign} loading={plQuery.isLoading} />
-        <StatCard title={t('pl.kpi.netIncome')} value={latest ? fmtCurrency(latest.net_income) : '—'} subtitle={latest ? monthLabel(latest.month, locale) : undefined} icon={TrendingUp} tone={latest && latest.net_income < 0 ? 'destructive' : 'primary'} loading={plQuery.isLoading} />
-        <StatCard title={t('pl.kpi.netMargin')} value={latest && latest.total_income > 0 ? fmtPct((latest.net_income / latest.total_income) * 100) : '—'} icon={Percent} loading={plQuery.isLoading} />
-        <StatCard title={t('pl.kpi.revPerClean')} value={latest && latestCleans > 0 ? fmtCurrency(latest.total_income / latestCleans) : '—'} subtitle={latestCleans > 0 ? t('pl.kpi.cleansCount', { count: latestCleans }) : undefined} icon={Sparkles} loading={plQuery.isLoading || estQuery.isLoading} />
-        <StatCard title={t('pl.kpi.costPerClean')} value={latest && latestCleans > 0 ? fmtCurrency((latest.total_cogs + latest.total_expenses) / latestCleans) : '—'} icon={DollarSign} loading={plQuery.isLoading || estQuery.isLoading} className="col-span-2 lg:col-span-1" />
+        <StatCard title={t('pl.kpi.revenue')} value={curr ? fmtCurrency(curr.total_income) : '—'} subtitle={delta(curr?.total_income ?? null, prev?.total_income ?? null)} icon={DollarSign} loading={plQuery.isLoading} />
+        <StatCard title={t('pl.kpi.netIncome')} value={curr ? fmtCurrency(curr.net_income) : '—'} subtitle={delta(curr?.net_income ?? null, prev?.net_income ?? null)} icon={TrendingUp} tone={curr && curr.net_income < 0 ? 'destructive' : 'primary'} loading={plQuery.isLoading} />
+        <StatCard title={t('pl.kpi.netMargin')} value={fmtPct(marginOf(curr))} subtitle={prev ? `${monthLabel(prev.month, locale)}: ${fmtPct(marginOf(prev))}` : undefined} icon={Percent} loading={plQuery.isLoading} />
+        <StatCard title={t('pl.kpi.revPerClean')} value={fmtCurrency(perClean(curr, currCleans, false))} subtitle={currCleans > 0 ? <>{t('pl.kpi.cleansCount', { count: currCleans })} {delta(perClean(curr, currCleans, false), perClean(prev, prevCleans, false))}</> : undefined} icon={Sparkles} loading={plQuery.isLoading || estQuery.isLoading} />
+        <StatCard title={t('pl.kpi.costPerClean')} value={fmtCurrency(perClean(curr, currCleans, true))} subtitle={delta(perClean(curr, currCleans, true), perClean(prev, prevCleans, true), true)} icon={DollarSign} loading={plQuery.isLoading || estQuery.isLoading} className="col-span-2 lg:col-span-1" />
       </div>
 
       {/* Trend chart */}
@@ -212,6 +251,15 @@ export default function PlStatementPage() {
                         <span className="inline-flex items-center gap-1">
                           <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${isOpen ? 'rotate-90' : ''}`} />
                           {monthLabel(m.month, locale)}
+                          {partial && m.ym === partial.ym && (
+                            <span
+                              className="ml-1 text-2xs font-semibold uppercase rounded px-1 py-0.5 bg-warning/15 text-warning"
+                              title={t('pl.period.mtdTitle', { month: monthLabel(m.month, locale) })}
+                              data-testid="badge-pl-mtd"
+                            >
+                              {t('pl.period.mtd')}
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums font-medium">{fmtCurrency(m.total_income)}</td>
@@ -253,6 +301,11 @@ export default function PlStatementPage() {
           </tbody>
         </table>
       </div>
+
+      <p className="text-2xs text-muted-foreground">
+        {partialName && <>{t('pl.period.chartPartial', { month: partialName })}{' '}</>}
+        {t('pl.footnote')}
+      </p>
     </div>
   )
 }

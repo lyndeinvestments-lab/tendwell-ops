@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, createContext, useContext } from 'react'
-import { useLocation } from 'wouter'
+import { useLocation, useSearch } from 'wouter'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TrendingUp, Building2, Users, Landmark, Tags } from 'lucide-react'
@@ -16,7 +16,8 @@ const ForecasterPage = lazy(() => import('@/pages/forecaster'))
 const ProFormaTablePage = lazy(() => import('@/pages/pro-forma'))
 const ProFormaByClientPage = lazy(() => import('@/pages/pro-forma-by-client'))
 
-type TabValue = 'pl' | 'per-property' | 'pricing' | 'by-client' | 'live'
+const TAB_VALUES = ['pl', 'per-property', 'pricing', 'by-client', 'live'] as const
+type TabValue = typeof TAB_VALUES[number]
 
 // Children inspect this context and hide their own page h1 / sub-title so the
 // unified wrapper renders the single page chrome. Default false → child pages
@@ -26,7 +27,10 @@ export function useInProFormaWrapper() {
   return useContext(ProFormaWrapperContext).inWrapper
 }
 
-function defaultTabFromLocation(loc: string): TabValue {
+export function defaultTabFromLocation(loc: string, search = ''): TabValue {
+  // ?tab=<value> deep-links to a tab (e.g. /pro-forma?tab=by-client).
+  const requested = new URLSearchParams(search).get('tab')
+  if (requested && (TAB_VALUES as readonly string[]).includes(requested)) return requested as TabValue
   // /pro-forma lands on the P&L (the QuickBooks mirror is now the primary
   // view); /forecaster deep-links keep landing on the Forecast tab.
   if (loc.startsWith('/forecaster')) return 'live'
@@ -37,13 +41,14 @@ function defaultTabFromLocation(loc: string): TabValue {
 export default function ProFormaWrapperPage() {
   const { t } = useLocale('financials')
   const [location] = useLocation()
-  const [tab, setTab] = useState<TabValue>(() => defaultTabFromLocation(location))
+  const search = useSearch()
+  const [tab, setTab] = useState<TabValue>(() => defaultTabFromLocation(location, search))
 
   // Keep the active tab in sync if the user navigates between the two routes
   // (e.g. via the sidebar or a deep link) without remounting this component.
   useEffect(() => {
-    setTab(defaultTabFromLocation(location))
-  }, [location])
+    setTab(defaultTabFromLocation(location, search))
+  }, [location, search])
 
   const TAB_META: Record<TabValue, { title: string; subtitle: string }> = {
     'pl': {

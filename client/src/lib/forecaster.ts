@@ -75,8 +75,8 @@ export const SEASONAL: Record<number, number> = {
  11: 1.15, 12: 1.10, 1: 0.65, 2: 0.65,
 }
 
-// Forecast slider presets (current/conservative/aggressive), matches the
-// original forecaster.
+// Forecast slider presets (current/conservative/aggressive). 'current' is
+// replaced at runtime by deriveCurrentPreset() when QBO + clean data load.
 export interface ForecastSliders {
   propGrowth: number    // properties added/month
   tasksPerProp: number  // avg cleans per property per month
@@ -88,10 +88,115 @@ export interface ForecastSliders {
   opex: number          // fixed monthly $ operating expense
 }
 
+// Fallbacks reflect Jul–Sep 2026 QBO actuals (tasksPerProp deseasonalized).
 export const FORECAST_PRESETS: Record<'current' | 'conservative' | 'aggressive', ForecastSliders> = {
-  current: { propGrowth: 5, tasksPerProp: 3, revPerTask: 380, contractorPct: 52, laundryPct: 10, leadership: 3300, suppliesPct: 5, opex: 1200 },
-  conservative: { propGrowth: 2, tasksPerProp: 2.5, revPerTask: 350, contractorPct: 55, laundryPct: 12, leadership: 3300, suppliesPct: 6, opex: 1500 },
-  aggressive: { propGrowth: 10, tasksPerProp: 4, revPerTask: 400, contractorPct: 48, laundryPct: 8, leadership: 4500, suppliesPct: 4, opex: 1800 },
+  current: { propGrowth: 30, tasksPerProp: 4.2, revPerTask: 230, contractorPct: 62.2, laundryPct: 16.1, leadership: 3282, suppliesPct: 9.7, opex: 3990 },
+  conservative: { propGrowth: 15, tasksPerProp: 3.8, revPerTask: 215, contractorPct: 64, laundryPct: 17, leadership: 3282, suppliesPct: 10.5, opex: 4500 },
+  aggressive: { propGrowth: 40, tasksPerProp: 4.6, revPerTask: 245, contractorPct: 60, laundryPct: 15, leadership: 4500, suppliesPct: 9, opex: 4500 },
+}
+
+export const FALLBACK_START_PROPERTIES = 276
+
+function shiftMonth(yyyymm: string, n: number): string {
+  const [y, m] = yyyymm.split('-').map(Number)
+  const d = new Date(y, m - 1 + n, 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthsBetween(a: string, b: string): number {
+  const [ay, am] = a.split('-').map(Number)
+  const [by, bm] = b.split('-').map(Number)
+  return (by - ay) * 12 + (bm - am)
+}
+
+const round1 = (n: number) => Math.round(n * 10) / 10
+
+export interface DerivedPreset {
+  sliders: ForecastSliders
+  /** Full months the financial ratios came from ('YYYY-MM'). */
+  sourceMonths: string[]
+  /** Properties with cleans in the latest full month, or the fallback. */
+  startProperties: number
+  /** Latest full month with properties, or null when using the fallback. */
+  startMonth: string | null
+}
+
+/**
+ * The 'current' preset from the last `window` FULL months (month < asOfMonth)
+ * of P&L actuals. Ratios are summed over the window (not averaged per month).
+ * Per-clean stats use only months that have clean / property counts. With
+ * `seasonal`, tasksPerProp is divided by the source months' average SEASONAL
+ * multiplier because generateForecast applies the multipliers again.
+ * Anything without data keeps the FORECAST_PRESETS.current fallback.
+ */
+export function deriveCurrentPreset(
+  months: MonthRecord[],
+  opts: { asOfMonth: string; window?: number; seasonal?: boolean },
+): DerivedPreset {
+  const window = opts.window ?? 3
+  const seasonal = opts.seasonal ?? true
+  const fb = FORECAST_PRESETS.current
+  const full = months
+    .filter(m => m.month < opts.asOfMonth)
+    .sort((a, b) => a.month.localeCompare(b.month))
+  const withIncome = full.filter(m => computeDerived(m).revenue > 0)
+  const src = withIncome.slice(-window)
+
+  const sliders: ForecastSliders = { ...fb }
+  if (src.length > 0) {
+    const sum = (f: (m: MonthRecord) => number) => src.reduce((s, m) => s + f(m), 0)
+    const revenue = sum(m => computeDerived(m).revenue)
+    sliders.contractorPct = round1(sum(m => m.contractorPay || 0) / revenue * 100)
+    sliders.laundryPct = round1(sum(m => m.laundry || 0) / revenue * 100)
+    sliders.suppliesPct = round1(sum(m => m.supplies || 0) / revenue * 100)
+    sliders.leadership = Math.round(sum(m => m.leadership || 0) / src.length)
+    sliders.opex = Math.round(sum(m => m.opex || 0) / src.length)
+
+    const counted = src.filter(m => (m.tasks ?? 0) > 0)
+    if (counted.length > 0) {
+      const rev = counted.reduce((s, m) => s + computeDerived(m).revenue, 0)
+      const tasks = counted.reduce((s, m) => s + (m.tasks || 0), 0)
+      sliders.revPerTask = Math.round(rev / tasks)
+    }
+    const perProp = src.filter(m => (m.tasks ?? 0) > 0 && (m.properties ?? 0) > 0)
+    if (perProp.length > 0) {
+      const tasks = perProp.reduce((s, m) => s + (m.tasks || 0), 0)
+      const props = perProp.reduce((s, m) => s + (m.properties || 0), 0)
+      const mult = seasonal
+        ? perProp.reduce((s, m) => s + (SEASONAL[Number(m.month.slice(5, 7))] ?? 1), 0) / perProp.length
+        : 1
+      sliders.tasksPerProp = round1(tasks / props / mult)
+    }
+  }
+
+  // Growth over the window plus one prior month (window intervals).
+  const withProps = full.filter(m => (m.properties ?? 0) > 0).slice(-(window + 1))
+  const last = withProps[withProps.length - 1]
+  if (withProps.length >= 2) {
+    const first = withProps[0]
+    const span = monthsBetween(first.month, last.month)
+    if (span > 0) sliders.propGrowth = Math.round(((last.properties || 0) - (first.properties || 0)) / span)
+  }
+
+  return {
+    sliders,
+    sourceMonths: src.map(m => m.month),
+    startProperties: last?.properties ?? FALLBACK_START_PROPERTIES,
+    startMonth: last?.month ?? null,
+  }
+}
+
+/**
+ * The earliest month of a clean-count view built on a rolling
+ * `current_date - interval '1 year'` window starts mid-month. Returns that
+ * month when `months` begins exactly there (and today is not the 1st), else
+ * null; a month-aligned view never matches.
+ */
+export function partialWindowMonth(months: string[], today: Date): string | null {
+  if (months.length === 0 || today.getDate() === 1) return null
+  const earliest = [...months].sort()[0]
+  const thisMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  return earliest === shiftMonth(thisMonth, -12) ? earliest : null
 }
 
 export interface ForecastMonth {
@@ -117,7 +222,7 @@ export interface ForecastMonth {
 export function generateForecast(
   v: ForecastSliders,
   options: { startProperties: number; startMonth: string; horizon?: number; seasonal?: boolean } = {
-    startProperties: 70,
+    startProperties: FALLBACK_START_PROPERTIES,
     startMonth: new Date().toISOString().slice(0, 7),
   }
 ): ForecastMonth[] {
@@ -173,54 +278,76 @@ export function generateForecast(
 
 export interface CategoryEstimate {
   category: string
-  estimated: number
+  estimated: number | null  // null = no estimate formula (actual-only row)
   actual: number
 }
 
 export interface CategoryVariance extends CategoryEstimate {
-  variance: number       // actual - estimated (positive = over-spent)
-  variancePct: number    // variance / estimated × 100; null-safe
-  favorable: boolean     // true when actual ≤ estimated
+  variance: number | null    // actual - estimated (positive = over-spent)
+  variancePct: number | null // variance / estimated × 100; null-safe
+  favorable: boolean | null  // true when actual ≤ estimated
 }
 
 export function computeVariance(rows: CategoryEstimate[]): CategoryVariance[] {
   return rows.map(r => {
+    if (r.estimated == null) return { ...r, variance: null, variancePct: null, favorable: null }
     const variance = r.actual - r.estimated
     const variancePct = r.estimated > 0 ? (variance / r.estimated) * 100 : 0
     return { ...r, variance, variancePct, favorable: variance <= 0 }
   })
 }
 
+export type EstimateRollup = ReturnType<typeof rollupEstimates>
+
+/** Scale every estimate category by `factor` (clamped to 0–1). */
+export function prorateEstimates(e: EstimateRollup, factor: number): EstimateRollup {
+  const f = Number.isFinite(factor) ? Math.min(Math.max(factor, 0), 1) : 1
+  return {
+    laundry: e.laundry * f,
+    supplies: e.supplies * f,
+    inspections: e.inspections * f,
+    trash: e.trash * f,
+    contractorPay: e.contractorPay * f,
+    revenue: e.revenue * f,
+  }
+}
+
 // Roll up per-property cost-tracking estimates into expected category totals
 // for a given month. A property's per-clean estimate × number of cleans (tasks)
 // in the period gives the expected cost.
 //
-// `tasksByProperty` is a map of property_id → number of tasks completed in the
-// period. Properties without tasks contribute 0.
+// `tasksByProperty` is a map of property_id → number of tasks (regular + deep)
+// in the period; `deepByProperty` is the deep-clean subset, priced like
+// compute_monthly_estimate: deep_clean_3x_ce, else 3 × ce_charged.
+// Properties without tasks contribute 0.
 export interface PropertyCostRow {
-  id: string
+  id: string | number
   est_laundry?: number | null
   est_consumables?: number | null
   inspection_cost?: number | null
   trash_cost?: number | null
   cleaner_pay?: number | null
   ce_charged?: number | null
+  deep_clean_3x_ce?: number | null
 }
 
 export function rollupEstimates(
   properties: PropertyCostRow[],
   tasksByProperty: Record<string, number>,
+  deepByProperty: Record<string, number> = {},
 ): { laundry: number; supplies: number; inspections: number; trash: number; contractorPay: number; revenue: number } {
   let laundry = 0, supplies = 0, inspections = 0, trash = 0, contractorPay = 0, revenue = 0
   for (const p of properties) {
-    const n = tasksByProperty[p.id] ?? 0
+    const n = tasksByProperty[String(p.id)] ?? 0
     if (n === 0) continue
+    const deep = Math.min(deepByProperty[String(p.id)] ?? 0, n)
+    const ce = p.ce_charged || 0
     laundry += (p.est_laundry || 0) * n
     supplies += (p.est_consumables || 0) * n
     inspections += (p.inspection_cost || 0) * n
     trash += (p.trash_cost || 0) * n
     contractorPay += (p.cleaner_pay || 0) * n
-    revenue += (p.ce_charged || 0) * n
+    revenue += ce * (n - deep) + (p.deep_clean_3x_ce ?? ce * 3) * deep
   }
   return { laundry, supplies, inspections, trash, contractorPay, revenue }
 }
