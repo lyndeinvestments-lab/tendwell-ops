@@ -15,7 +15,12 @@ export const dashboardEs: typeof dashboardEn = {
     errorTitle: 'Error al cargar los datos del panel',
   },
   hero: {
-    monthlyRevenue: 'Ingresos Mensuales (activas)',
+    monthlyRevenue: 'Ingresos mensuales estimados (tarifas de propiedades activas)',
+    ytdRevenue: 'Ingresos {{year}} en lo que va del año',
+    netIncomeLabel: 'de ingreso neto',
+    netMarginLabel: 'de margen neto',
+    monthToDate: '{{month}} en lo que va del mes',
+    fromQuickBooks: 'Datos reales de QuickBooks',
     portfolio: 'Portafolio',
     activeOfTotal: 'activas de {{total}} propiedades',
     profitLabel: 'de ganancia',

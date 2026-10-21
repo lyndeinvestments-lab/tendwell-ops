@@ -1,7 +1,7 @@
 import { usePageTitle } from '@/hooks/use-page-title'
 import { useFinancialOverview } from '@/hooks/use-financial-overview'
 import { fmtCurrency, fmtPct, fmtDelta } from '@/lib/financials/format'
-import { lastTwo } from '@/lib/financials/perClean'
+import { splitLatestMonths, sumMonths, type PeriodTotals } from '@/lib/financials/perClean'
 import { PageContainer } from '@/components/PageContainer'
 import { PageHeader } from '@/components/PageHeader'
 import { StatCard } from '@/components/StatCard'
@@ -78,6 +78,46 @@ function FreshnessChip({
   )
 }
 
+function PeriodCard({
+  title,
+  note,
+  totals,
+  testId,
+}: {
+  title: string
+  note?: string
+  totals: PeriodTotals
+  testId: string
+}) {
+  const { t } = useLocale('financials')
+  const figures: Array<{ label: string; value: string; className?: string }> = [
+    { label: t('overview.kpi.revenue'), value: fmtCurrency(totals.income) },
+    { label: t('overview.kpi.expenses'), value: fmtCurrency(totals.totalExpenses) },
+    {
+      label: t('overview.kpi.netIncome'),
+      value: fmtCurrency(totals.netIncome),
+      className: totals.netIncome < 0 ? 'text-destructive' : undefined,
+    },
+    { label: t('overview.kpi.margin'), value: fmtPct(totals.marginPct) },
+  ]
+  return (
+    <Card className="border-card-border shadow-xs" data-testid={testId}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {note && <p className="text-2xs text-muted-foreground">{note}</p>}
+      </CardHeader>
+      <CardContent className="pt-0 grid grid-cols-2 gap-x-4 gap-y-2">
+        {figures.map(f => (
+          <div key={f.label}>
+            <p className="text-2xs text-muted-foreground uppercase tracking-wide">{f.label}</p>
+            <p className={cn('text-base font-semibold tabular-nums', f.className)}>{f.value}</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 // Tooltip styling mirroring financial-dashboard.tsx
 const tooltipStyle: React.CSSProperties = {
   backgroundColor: 'hsl(var(--popover))',
@@ -94,7 +134,12 @@ export default function FinancialOverviewPage() {
   const { format } = useDateFormat()
   usePageTitle(t('overview.page.title', undefined, 'Financial Overview'))
   const o = useFinancialOverview()
-  const { curr, prev } = lastTwo(o.series)
+  const now = new Date()
+  const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const currentYear = String(now.getFullYear())
+  const { curr, prev, partial } = splitLatestMonths(o.series, currentYm)
+  const ytd = sumMonths(o.series.filter(r => r.ym.startsWith(currentYear)))
+  const trailing = sumMonths(o.series)
 
   function ymToAbbr(v: string): string {
     const [y, m] = v.split('-')
@@ -102,6 +147,17 @@ export default function FinancialOverviewPage() {
     if (!y || Number.isNaN(monthIdx)) return v
     return format(new Date(Number(y), monthIdx, 1), 'MMM')
   }
+
+  function ymToLong(v: string): string {
+    const [y, m] = v.split('-').map(Number)
+    if (!y || !m) return v
+    return format(new Date(y, m - 1, 1), 'MMMM yyyy')
+  }
+
+  const chartTick = (v: string) => (partial && v === partial.ym ? `${ymToAbbr(v)}*` : ymToAbbr(v))
+
+  const partialName = partial ? ymToLong(partial.ym).split(' ')[0] : null
+  const partialThrough = o.qboUpdatedAt ? format(new Date(o.qboUpdatedAt), 'MMM d') : null
 
   // ── Error state ──
   if (o.isError) {
@@ -143,7 +199,54 @@ export default function FinancialOverviewPage() {
         </div>
       )}
 
-      {/* ── KPI tiles ── */}
+      {/* ── Period totals: YTD, trailing 12 months, current month to date ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {o.isLoading ? (
+          [...Array(3)].map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)
+        ) : o.series.length > 0 ? (
+          <>
+            <PeriodCard
+              testId="card-period-ytd"
+              title={t('overview.period.ytd', { year: currentYear })}
+              note={partialName ? t('overview.period.includesPartial', { month: partialName }) : undefined}
+              totals={ytd}
+            />
+            <PeriodCard
+              testId="card-period-trailing"
+              title={t('overview.period.trailing')}
+              note={
+                trailing.months > 0
+                  ? t('overview.period.range', {
+                      from: ymToLong(o.series[0].ym),
+                      to: ymToLong(o.series[o.series.length - 1].ym),
+                    })
+                  : undefined
+              }
+              totals={trailing}
+            />
+            {partial && partialName ? (
+              <PeriodCard
+                testId="card-period-mtd"
+                title={t('overview.period.mtd', { month: partialName })}
+                note={partialThrough ? t('overview.period.through', { date: partialThrough }) : undefined}
+                totals={sumMonths([partial])}
+              />
+            ) : null}
+          </>
+        ) : null}
+      </div>
+
+      {/* ── KPI tiles: the latest COMPLETE month vs the one before ── */}
+      {!o.isLoading && curr && (
+        <h2 className="text-sm font-medium text-foreground -mb-1" data-testid="text-latest-full-month">
+          {t('overview.period.latestFull', { month: ymToLong(curr.ym) })}
+          {prev && (
+            <span className="text-xs font-normal text-muted-foreground">
+              {' · '}{t('overview.period.comparedTo', { month: ymToLong(prev.ym) })}
+            </span>
+          )}
+        </h2>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         {o.isLoading ? (
           [...Array(6)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
@@ -260,7 +363,7 @@ export default function FinancialOverviewPage() {
                     tick={{ fontSize: 10 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={ymToAbbr}
+                    tickFormatter={chartTick}
                   />
                   <YAxis
                     yAxisId="left"
@@ -319,7 +422,7 @@ export default function FinancialOverviewPage() {
                     tick={{ fontSize: 10 }}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={ymToAbbr}
+                    tickFormatter={chartTick}
                   />
                   <YAxis
                     yAxisId="left"
@@ -417,6 +520,7 @@ export default function FinancialOverviewPage() {
 
       {/* ── Footnote ── */}
       <p className="text-2xs text-muted-foreground">
+        {partialName && <>{t('overview.period.chartPartial', { month: partialName })}{' '}</>}
         {t('overview.footnote')}
       </p>
     </PageContainer>
