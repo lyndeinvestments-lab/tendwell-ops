@@ -10,7 +10,18 @@ export const financialsEn = {
   overview: {
     page: {
       title: 'Financial Overview',
-      subtitle: 'QuickBooks actuals, clean throughput, and card spend - last 12 months.',
+      subtitle: 'QuickBooks actuals, clean throughput, and card spend.',
+    },
+    period: {
+      ytd: '{{year}} year to date',
+      trailing: 'Last 12 months',
+      mtd: '{{month}} to date',
+      range: '{{from}} to {{to}}',
+      includesPartial: 'Includes {{month}} to date',
+      through: 'QuickBooks through {{date}}',
+      latestFull: '{{month}} (latest full month)',
+      comparedTo: 'changes compared to {{month}}',
+      chartPartial: '* {{month}} is month to date.',
     },
     freshness: {
       notConnected: 'QuickBooks not connected',

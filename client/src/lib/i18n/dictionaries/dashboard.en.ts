@@ -20,7 +20,12 @@ export const dashboardEn = {
     errorTitle: 'Failed to load dashboard data',
   },
   hero: {
-    monthlyRevenue: 'Monthly Revenue (active)',
+    monthlyRevenue: 'Estimated monthly revenue (active property rates)',
+    ytdRevenue: '{{year}} revenue to date',
+    netIncomeLabel: 'net income',
+    netMarginLabel: 'net margin',
+    monthToDate: '{{month}} to date',
+    fromQuickBooks: 'QuickBooks actuals',
     portfolio: 'Portfolio',
     activeOfTotal: 'active of {{total}} properties',
     profitLabel: 'profit',

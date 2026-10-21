@@ -22,6 +22,9 @@ import { useContacts } from '@/hooks/use-contacts'
 import { useAlerts } from '@/pages/alerts'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
 import { useDateFormat } from '@/lib/i18n/date'
+import { useQboSeries } from '@/hooks/use-financial-overview'
+import { splitLatestMonths, sumMonths } from '@/lib/financials/perClean'
+import { fmtCurrency, fmtPct } from '@/lib/financials/format'
 
 /** `'Active'` → `'active'`; used to look up the shared `common.stage.*` display name for `pipeline_stages.name` (DB value stays canonical English). Copied from `lib/issues.ts`'s `slugify`. */
 function slugify(value: string): string {
@@ -73,6 +76,19 @@ export default function DashboardPage() {
   const canViewFinancials = canAccessView('cost-tracking', effectiveUser) || canAccessView('financial-dashboard', effectiveUser)
 
   const { data: trellisTasks, isLoading: trellisLoading, error: trellisError } = useTrellisTasksToday()
+
+  // Headline revenue = QuickBooks actuals (same source as Financial Overview).
+  // Roles without QBO access get an empty series and fall back to the
+  // per-property rate estimate below.
+  const qbo = useQboSeries(canViewFinancials)
+  const qboHeadline = useMemo(() => {
+    if (!qbo.qboConnected || qbo.series.length === 0) return null
+    const now = new Date()
+    const currentYm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const year = String(now.getFullYear())
+    const { curr, partial } = splitLatestMonths(qbo.series, currentYm)
+    return { year, ytd: sumMonths(qbo.series.filter(r => r.ym.startsWith(year))), lastFull: curr, partial }
+  }, [qbo.qboConnected, qbo.series])
 
   type Preset = '7d' | '30d' | '90d' | 'custom'
   const [preset, setPreset] = useState<Preset>(() => {
@@ -483,7 +499,46 @@ export default function DashboardPage() {
       <Card className="relative overflow-hidden rounded-2xl border-primary/20 shadow-md bg-gradient-to-br from-primary/10 via-card to-card">
         <CardContent className="p-5 sm:p-6">
           <div className="flex flex-col lg:flex-row lg:items-end gap-6">
-            {canViewFinancials ? (
+            {canViewFinancials && qbo.isLoading ? (
+              <div className="min-w-0 space-y-2">
+                <Skeleton className="h-3 w-40" />
+                <Skeleton className="h-12 w-56" />
+              </div>
+            ) : canViewFinancials && qboHeadline ? (
+              <div className="min-w-0" data-testid="hero-qbo-revenue">
+                <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('hero.ytdRevenue', { year: qboHeadline.year })}</p>
+                <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">
+                  <button
+                    onClick={() => navigate('/financial-dashboard')}
+                    className="text-4xl sm:text-5xl font-bold tabular-nums leading-none bg-gradient-to-r from-primary to-info bg-clip-text text-transparent hover:opacity-80 transition-opacity"
+                  >
+                    {fmtCurrency(qboHeadline.ytd.income)}
+                  </button>
+                  <span className="text-sm font-medium text-muted-foreground">
+                    {fmtCurrency(qboHeadline.ytd.netIncome)} {t('hero.netIncomeLabel')}
+                    <span className="mx-1.5 text-border">•</span>
+                    <span className={(qboHeadline.ytd.marginPct ?? 0) < 10 ? 'text-destructive font-semibold' : 'text-success font-semibold'}>{fmtPct(qboHeadline.ytd.marginPct)} {t('hero.netMarginLabel')}</span>
+                  </span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                  {qboHeadline.partial && (
+                    <>
+                      {t('hero.monthToDate', { month: format(new Date(`${qboHeadline.partial.ym}-01T00:00:00`), 'MMMM') })}{' '}
+                      <span className="font-semibold text-foreground">{fmtCurrency(qboHeadline.partial.income)}</span>
+                    </>
+                  )}
+                  {qboHeadline.partial && qboHeadline.lastFull && <span className="mx-1.5 text-border">•</span>}
+                  {qboHeadline.lastFull && (
+                    <>
+                      {format(new Date(`${qboHeadline.lastFull.ym}-01T00:00:00`), 'MMMM')}{' '}
+                      <span className="font-semibold text-foreground">{fmtCurrency(qboHeadline.lastFull.income)}</span>
+                    </>
+                  )}
+                  <span className="mx-1.5 text-border">•</span>
+                  {t('hero.fromQuickBooks')}
+                </p>
+              </div>
+            ) : canViewFinancials ? (
               <div className="min-w-0">
                 <p className="text-2xs font-semibold uppercase tracking-wider text-muted-foreground">{t('hero.monthlyRevenue')}</p>
                 <div className="mt-1.5 flex items-baseline gap-3 flex-wrap">

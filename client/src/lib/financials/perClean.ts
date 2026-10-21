@@ -27,3 +27,29 @@ export function buildMonthlySeries(qbo: QboMonth[], cleans: Array<{ month: strin
 export function lastTwo(series: MonthRow[]) {
   return { curr: series[series.length - 1] ?? null, prev: series[series.length - 2] ?? null }
 }
+
+// The QBO sync writes the current calendar month as it accrues, so the last
+// row is usually a partial month. Month-over-month KPIs must compare the two
+// latest COMPLETE months; the partial month is reported on its own.
+export function splitLatestMonths(series: MonthRow[], currentYm: string) {
+  const partial = series.length > 0 && series[series.length - 1].ym === currentYm ? series[series.length - 1] : null
+  const complete = partial ? series.slice(0, -1) : series
+  return { ...lastTwo(complete), partial }
+}
+
+export type PeriodTotals = {
+  months: number; income: number; totalExpenses: number; netIncome: number
+  marginPct: number | null; cleans: number; revPerClean: number | null
+}
+export function sumMonths(rows: MonthRow[]): PeriodTotals {
+  const t = rows.reduce(
+    (a, r) => ({ income: a.income + r.income, totalExpenses: a.totalExpenses + r.totalExpenses, netIncome: a.netIncome + r.netIncome, cleans: a.cleans + r.cleans }),
+    { income: 0, totalExpenses: 0, netIncome: 0, cleans: 0 },
+  )
+  return {
+    months: rows.length,
+    ...t,
+    marginPct: t.income > 0 ? (t.netIncome / t.income) * 100 : null,
+    revPerClean: t.cleans > 0 ? t.income / t.cleans : null,
+  }
+}

@@ -6,7 +6,18 @@ export const financialsEs: typeof financialsEn = {
   overview: {
     page: {
       title: 'Resumen Financiero',
-      subtitle: 'Datos reales de QuickBooks, rendimiento de limpiezas y gasto con tarjeta - últimos 12 meses.',
+      subtitle: 'Datos reales de QuickBooks, rendimiento de limpiezas y gasto con tarjeta.',
+    },
+    period: {
+      ytd: '{{year}} en lo que va del año',
+      trailing: 'Últimos 12 meses',
+      mtd: '{{month}} en lo que va del mes',
+      range: '{{from}} a {{to}}',
+      includesPartial: 'Incluye {{month}} en lo que va del mes',
+      through: 'QuickBooks hasta el {{date}}',
+      latestFull: '{{month}} (último mes completo)',
+      comparedTo: 'cambios comparados con {{month}}',
+      chartPartial: '* {{month}} es en lo que va del mes.',
     },
     freshness: {
       notConnected: 'QuickBooks no conectado',
