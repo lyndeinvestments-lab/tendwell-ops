@@ -55,7 +55,7 @@ export const INTEGRATIONS_DOCS: IntegrationDocSection[] = [
           'Trellis task refresh: every hour on the hour from 12:00 to 02:00, roughly 8 AM to 10 PM Eastern (`/api/cron/trellis-tasks-refresh`). Tasks only.',
           'Trellis auxiliary jobs: at :40 past 01, 05, 09, 13, 17 and 21 (`/api/cron/trellis-aux-sync`). Guest reviews, assignee details, history backfill, inspection attribution.',
           'Hostaway listings: nightly at 03:30 (`/api/cron/hostaway-sync`).',
-          'QuickBooks classes at 04:15 and QuickBooks P&L at 04:45 (`/api/cron/qbo-classes-sync`, `/api/cron/qbo-pl-sync`).',
+          'QuickBooks classes at 04:15 and QuickBooks P&L at 04:45 (`/api/cron/qbo-classes-sync`, `/api/cron/qbo-pl-sync`); Ramp supply bills itemized at 05:00 (`/api/cron/ramp-bills-sync`).',
           'Breezeway (legacy): a GitHub Actions workflow posts the daily CSV export at 13:00 (`.github/workflows/breezeway-import.yml`).',
         ],
       },
@@ -406,7 +406,7 @@ export const INTEGRATIONS_DOCS: IntegrationDocSection[] = [
         heading: 'Which page reads which view',
         items: [
           'Financial Overview (`/financial-dashboard`): `financial_monthly_cleans`, `financial_task_load`, plus QuickBooks P&L.',
-          'Pro Forma: the Live (Forecaster) tab reads `financial_monthly_cleans`, `property_monthly_cleans` and `compute_monthly_estimate()`; the P&L tab reads `property_month_financials` (built on `property_monthly_cleans`); Per-Property reads `financial_clean_days` and `financial_invoice_lines` (approved/exported Busy Bee runs) plus QuickBooks, laundry weigh-ins and property rates; Pricing reads `property_clean_stats`, with clean history from `trellis_clean_tasks`.',
+          'Pro Forma: the Live (Forecaster) tab reads `financial_monthly_cleans`, `property_monthly_cleans` and `compute_monthly_estimate()`; the P&L tab reads `property_month_financials` (built on `property_monthly_cleans`); Per-Property reads `financial_clean_days` and `financial_invoice_lines` (approved/exported Busy Bee runs) plus QuickBooks, laundry weigh-ins, property rates and `supply_purchase_lines` (Ramp supply bills itemized nightly, so linens come out of consumables); Pricing reads `property_clean_stats`, with clean history from `trellis_clean_tasks`.',
           'Master List (`/master-list`): auto cleans per month and first clean from `property_clean_stats`, the same numbers as Pricing.',
           'North Star: "% Cleans Inspected" = completed Ops inspections ÷ Tendwell\'s completed Trellis cleans in the month (`trellis_clean_tasks`).',
         ],

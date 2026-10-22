@@ -254,6 +254,7 @@ export default function PropertyProfitabilityPage() {
         <LedgerCard title={t('profit.cards.consumables.title')} loading={loading}>
           {company && <>
             <Row label={t('profit.cards.consumables.qbo')} value={fmtCurrency(company.consumables.qbo)} tone="muted" />
+            {company.consumables.linensExcluded > 0 && <Row label={t('profit.cards.consumables.linens')} value={signed(-company.consumables.linensExcluded)} tone="muted" />}
             <Row label={<>{t('profit.cards.consumables.actual')}{company.months.some(m => m.consumablesSource === 'expected') && srcTag('expected')}</>} value={fmtCurrency(company.consumables.actual)} bold />
             <Row label={t('profit.cards.consumables.expected')} value={fmtCurrency(company.consumables.expected)} />
             <Row label={t('profit.cards.consumables.diff')} value={signed(company.consumables.diff)} tone={company.consumables.diff > 0 ? 'bad' : 'good'} />
@@ -271,6 +272,12 @@ export default function PropertyProfitabilityPage() {
             <Row label={t('profit.cards.bottom.profit')} value={fmtCurrency(company.profit)} bold tone={company.profit < 0 ? 'bad' : 'good'} />
             <Row label={t('profit.cards.bottom.margin')} value={company.margin != null ? fmtPct(company.margin) : '—'} />
             <Row label={t('profit.cards.bottom.cleans', { count: company.cleans, properties: company.properties })} value="" tone="muted" />
+            {(company.linens.purchased > 0 || company.linens.fees > 0) && <>
+              <div className="pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{t('profit.cards.bottom.linensTitle')}</div>
+              <Row label={t('profit.cards.bottom.linensBought')} value={fmtCurrency(company.linens.purchased)} tone="muted" />
+              <Row label={t('profit.cards.bottom.linensFees')} value={fmtCurrency(company.linens.fees)} tone="muted" />
+              <Row label={t('profit.cards.bottom.linensNet')} value={signed(company.linens.net)} tone={company.linens.net < 0 ? 'bad' : 'good'} />
+            </>}
           </>}
         </LedgerCard>
         <div className="lg:col-span-2 rounded-2xl border border-border bg-card shadow-sm p-4">

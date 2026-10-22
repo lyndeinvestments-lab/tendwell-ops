@@ -201,7 +201,8 @@ export const financialsEs: typeof financialsEn = {
       consumables: {
         title: 'Consumibles',
         qbo: 'Registrado en insumos de QuickBooks',
-        actual: 'Real (promedio de 3 meses)',
+        linens: 'Menos blancos (inventario de incorporación)',
+        actual: 'Real, sin blancos (promedio de 3 meses)',
         expected: 'Esperado (limpiezas × consumibles por limpieza)',
         diff: 'Diferencia',
       },
@@ -221,6 +222,10 @@ export const financialsEs: typeof financialsEn = {
         profit: 'Ganancia',
         margin: 'Margen',
         cleans: '{{count}} limpiezas en {{properties}} propiedades',
+        linensTitle: 'Programa de blancos (fuera del resultado)',
+        linensBought: 'Blancos comprados',
+        linensFees: 'Cargos de blancos facturados a propietarios',
+        linensNet: 'Neto de blancos',
       },
     },
     sourceTag: { qbo: 'QuickBooks', weighins: 'pesajes', expected: 'esperado', average: 'prom. 3 meses' },
@@ -276,7 +281,7 @@ export const financialsEs: typeof financialsEn = {
     },
     emptyTitle: 'Sin actividad en este período',
     emptyDescription: 'No se encontraron limpiezas ni líneas de factura para el período seleccionado.',
-    methodology: 'Cómo funciona: en semanas cubiertas por una factura aprobada de Busy Bee, las limpiezas, ingresos y pago de limpieza de una propiedad son sus líneas de factura; después de la última factura son los días de limpieza de Breezeway/Trellis a las tarifas de la propiedad. Las inspecciones son las líneas por hora de inspección de Busy Bee (Irma, Joshua … “Work”, Inspection Work), cada una repartida en partes iguales entre las propiedades limpiadas esa semana, más el costo de inspección de QuickBooks repartido entre las propiedades del mes. La lavandería es Blessed (QuickBooks) más las horas de instalaciones/ropa de cama de Busy Bee, repartida según la lavandería esperada de cada propiedad. Los consumibles son el promedio de 3 meses de insumos en QuickBooks (los pedidos grandes caen en un solo mes), repartidos según los consumibles esperados. Los gastos generales (liderazgo, gastos operativos, envíos) se reparten por limpiezas. Los montos mensuales de QuickBooks cuentan en proporción a las limpiezas del mes que caen en el período.',
+    methodology: 'Cómo funciona: en semanas cubiertas por una factura aprobada de Busy Bee, las limpiezas, ingresos y pago de limpieza de una propiedad son sus líneas de factura; después de la última factura son los días de limpieza de Breezeway/Trellis a las tarifas de la propiedad. Las inspecciones son las líneas por hora de inspección de Busy Bee (Irma, Joshua … “Work”, Inspection Work), cada una repartida en partes iguales entre las propiedades limpiadas esa semana, más el costo de inspección de QuickBooks repartido entre las propiedades del mes. La lavandería es Blessed (QuickBooks) más las horas de instalaciones/ropa de cama de Busy Bee, repartida según la lavandería esperada de cada propiedad. Los consumibles son el promedio de 3 meses de insumos en QuickBooks sin blancos (los pedidos grandes caen en un solo mes), repartidos según los consumibles esperados; los blancos se identifican detallando cada factura de insumos en Ramp y son inventario de incorporación facturado a los propietarios, así que quedan fuera del resultado. Los gastos generales (liderazgo, gastos operativos, envíos) se reparten por limpiezas. Los montos mensuales de QuickBooks cuentan en proporción a las limpiezas del mes que caen en el período.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────
