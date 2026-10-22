@@ -15,14 +15,18 @@
 //     across the month's cleaned properties.
 //   * laundry — QuickBooks Laundry (Blessed) + Busy Bee linen labor
 //     ("Facility Work", "Wash linens", …), allocated by expected laundry.
-//   * consumables — QuickBooks supplies (Hospitality Depot), smoothed to the
-//     trailing 3-month average because bulk orders land in one month, and
-//     allocated by expected consumables.
+//   * consumables — QuickBooks supplies (Hospitality Depot) minus linen
+//     purchases (itemized from the Ramp bills), smoothed to the trailing
+//     3-month average because bulk orders land in one month, and allocated by
+//     expected consumables.
+//   * linens — onboarding stock billed to owners as linen fees; shown at
+//     company level (purchases vs fees) and kept out of every property's
+//     revenue and cost.
 //   * overhead — Leadership Pay, other COGS, operating expenses and other
 //     Busy Bee company lines, allocated by cleans.
 // Monthly amounts enter the range by the share of the month's cleans inside it.
 
-export type LineBucket = 'cleaning' | 'extra' | 'inspection' | 'linen' | 'other'
+export type LineBucket = 'cleaning' | 'extra' | 'inspection' | 'linen' | 'linen_fee' | 'other'
 
 export interface EconProperty {
   id: number
@@ -83,6 +87,21 @@ export interface EconInput {
   /** Dirty-laundry weigh-ins sent to Blessed. */
   weighIns?: EconWeighIn[]
   laundryRatePerLb?: number
+  /** Linen purchases inside QuickBooks supplies, per month (same months as `qbo`). */
+  linenPurchases?: EconMonthAmount[]
+  /** Linen fees billed to owners, by billing date. */
+  linenFees?: EconDatedAmount[]
+}
+
+export interface EconMonthAmount {
+  /** YYYY-MM-01 */
+  month: string
+  amount: number
+}
+
+export interface EconDatedAmount {
+  d: string
+  amount: number
 }
 
 export type ReasonCode =
@@ -175,7 +194,8 @@ export interface CompanyEconomics {
   labor: { cleaning: number; extras: number; estimated: number; total: number; qboContractorPay: number | null }
   inspections: { busyBee: number; qbo: number; direct: number; total: number; propertiesCleaned: number; weeks: InspectionWeek[] }
   laundry: { qbo: number; weighIns: number | null; linenLabor: number; actual: number; expected: number; diff: number }
-  consumables: { qbo: number; actual: number; expected: number; diff: number }
+  consumables: { qbo: number; linensExcluded: number; actual: number; expected: number; diff: number }
+  linens: { purchased: number; fees: number; net: number }
   overhead: { leadership: number; otherCogs: number; opex: number; busyBeeOther: number; total: number; opexAccounts: Record<string, number> }
   totalCost: number
   profit: number
@@ -212,6 +232,7 @@ const CLEAN_KINDS = new Set(['clean', 'deep_clean', 'combined_split'])
 
 /** Which cost bucket a Busy Bee invoice line belongs to. */
 export function classifyLine(l: Pick<EconLine, 'property_id' | 'line_kind' | 'service_type' | 'description'>): LineBucket {
+  if (/linen onboarding/i.test(l.service_type ?? '')) return 'linen_fee'
   if (l.property_id == null) {
     const text = (l.description ?? '').toLowerCase()
     if (/\bbulb\b|deliver|fedex|\bups\b|reimburs/.test(text)) return 'other'
@@ -362,6 +383,7 @@ export function computePropertyEconomics(input: EconInput): EconResult {
   const inspectionByProp = new Map<number, number>()
   for (const l of input.lines) {
     const bucket = classifyLine(l)
+    if (bucket === 'linen_fee') continue
     const pay = num(l.cleaner_pay_amount)
     const charge = num(l.client_charge_amount)
     if (l.property_id != null) {
@@ -399,6 +421,14 @@ export function computePropertyEconomics(input: EconInput): EconResult {
 
   // ── Monthly QuickBooks pools ──────────────────────────────────────────────
   const qboByMonth = new Map(input.qbo.map(q => [q.month.slice(0, 10), q]))
+  const linenPurchased = new Map<string, number>()
+  for (const p of input.linenPurchases ?? []) {
+    const m = monthOf(p.month)
+    linenPurchased.set(m, (linenPurchased.get(m) ?? 0) + num(p.amount))
+  }
+  // Linens bought inside the supplies account; never more than the account itself.
+  const linensIn = (q: EconQboMonth) => Math.min(linenPurchased.get(monthOf(q.month)) ?? 0, Math.max(0, qboGroups(q).consumables))
+  const consumablesOf = (q: EconQboMonth) => qboGroups(q).consumables - linensIn(q)
   const weighByMonth = new Map<string, number>()
   for (const w of input.weighIns ?? []) weighByMonth.set(monthOf(w.d), (weighByMonth.get(monthOf(w.d)) ?? 0) + num(w.pounds) * lbRate)
   const currentMonth = monthOf(today)
@@ -416,7 +446,7 @@ export function computePropertyEconomics(input: EconInput): EconResult {
     return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null
   }
 
-  let laundryQbo = 0, laundryPool = 0, weighInsTotal = 0, consumablesQbo = 0, consumablesPool = 0
+  let laundryQbo = 0, laundryPool = 0, weighInsTotal = 0, consumablesQbo = 0, consumablesPool = 0, linensPurchased = 0
   let inspectionQbo = 0, leadership = 0, otherCogs = 0, opex = 0, contractorQbo = 0, incomeQbo = 0
   let anyQbo = false
   const opexAccounts: Record<string, number> = {}
@@ -454,10 +484,12 @@ export function computePropertyEconomics(input: EconInput): EconResult {
       : 1
     let consumablesSource: PoolSource = 'average'
     let consumablesMonth: number
-    const avg = trailingAverage(m, q => qboGroups(q).consumables)
+    const linensMonth = q ? linensIn(q) : 0
+    const consumablesBooked = g.consumables - linensMonth
+    const avg = trailingAverage(m, consumablesOf)
     if (avg == null) {
-      consumablesMonth = Math.max(g.consumables, partial || !q ? consumablesExpMonth : 0)
-      consumablesSource = g.consumables >= consumablesMonth && q ? 'qbo' : 'expected'
+      consumablesMonth = Math.max(consumablesBooked, partial || !q ? consumablesExpMonth : 0)
+      consumablesSource = consumablesBooked >= consumablesMonth && q ? 'qbo' : 'expected'
     } else {
       consumablesMonth = avg * elapsedFraction
     }
@@ -481,6 +513,7 @@ export function computePropertyEconomics(input: EconInput): EconResult {
     laundryPool += laundryMonth * share
     if (weigh != null) weighInsTotal += weigh * share
     consumablesQbo += g.consumables * share
+    linensPurchased += linensMonth * share
     consumablesPool += consumablesMonth * share
     inspectionQbo += g.inspection * share
     leadership += leadershipMonth * share
@@ -496,6 +529,8 @@ export function computePropertyEconomics(input: EconInput): EconResult {
       cleaned.forEach(id => addTo(inspectionQboByProp, id, (g.inspection * share) / cleaned.size))
     }
   }
+
+  const linenFees = (input.linenFees ?? []).filter(f => inRange(f.d, start, end)).reduce((s, f) => s + num(f.amount), 0)
 
   // ── Allocation ────────────────────────────────────────────────────────────
   const laundryActual = laundryPool + weekly.linen
@@ -601,10 +636,12 @@ export function computePropertyEconomics(input: EconInput): EconResult {
     },
     consumables: {
       qbo: consumablesQbo,
+      linensExcluded: linensPurchased,
       actual: consumablesPool,
       expected: sum(r => r.consumablesExpected),
       diff: consumablesPool - sum(r => r.consumablesExpected),
     },
+    linens: { purchased: linensPurchased, fees: linenFees, net: linenFees - linensPurchased },
     overhead: { leadership, otherCogs, opex, busyBeeOther: weekly.other, total: overheadTotal, opexAccounts },
     totalCost,
     profit: revenueTotal - totalCost,

@@ -1,34 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { requireAdminBearer } from '../qbo/_lib.js'
+import { RAMP_API_BASE, RAMP_USER_AGENT, getRampToken } from './_lib.js'
 
 // Ramp API proxy — server-side only, secrets never exposed to client
-const RAMP_API_BASE = 'https://api.ramp.com/developer/v1'
-
-async function getRampToken(): Promise<string> {
-  const clientId = process.env.RAMP_CLIENT_ID
-  const clientSecret = process.env.RAMP_CLIENT_SECRET
-  if (!clientId || !clientSecret) throw new Error('Ramp credentials not configured')
-
-  // Ramp requires Basic auth header for client_credentials flow
-  const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  const res = await fetch(`${RAMP_API_BASE}/token`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${basicAuth}`,
-    },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      scope: 'transactions:read',
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Ramp auth failed: ${err}`)
-  }
-  const data = await res.json()
-  return data.access_token
-}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' })
@@ -38,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!admin) return // requireAdminBearer already wrote the 401/403 response
 
   try {
-    const rampToken = await getRampToken()
+    const rampToken = await getRampToken('transactions:read')
 
     // Support ?months=N window (default 12, clamped 1–12; negative values clamped to 1)
     const windowMonths = Math.max(1, Math.min(Number(req.query.months) || 12, 12))
@@ -56,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Paginate through all results (bounded to MAX_TX to avoid runaway)
     while (nextUrl && allTransactions.length < MAX_TX) {
       const txRes = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${rampToken}` },
+        headers: { Authorization: `Bearer ${rampToken}`, 'User-Agent': RAMP_USER_AGENT },
       })
       if (!txRes.ok) throw new Error(`Ramp API error: ${txRes.status}`)
       const txData = await txRes.json()

@@ -68,7 +68,7 @@ export function usePropertyEconomics(start: string | null, end: string | null, c
       const through = monthEnd(monthOf(e)) < today ? monthEnd(monthOf(e)) : today
       const linesThrough = addDays(monthEnd(monthOf(e)), 6)
 
-      const [props, days, lines, qbo, weigh] = await Promise.all([
+      const [props, days, lines, qbo, weigh, linenBuys, linenFeeRows] = await Promise.all([
         fetchAllPages<any>((a, b) => db.from('properties')
           .select('id, name, ce_charged, deep_clean_3x_ce, cleaner_pay, est_laundry, est_consumables, pipeline_stages!properties_stage_id_fkey(name)')
           .is('deleted_at', null)
@@ -99,8 +99,21 @@ export function usePropertyEconomics(start: string | null, end: string | null, c
           .lt('submitted_at', addDays(through, 2))
           .order('submitted_at')
           .range(a, b)),
+        fetchAllPages<{ bill_month: string; amount: number }>((a, b) => db.from('supply_purchase_lines')
+          .select('bill_month, amount')
+          .eq('category', 'linens')
+          .gte('bill_month', addMonths(monthOf(s), -3))
+          .lte('bill_month', monthOf(e))
+          .order('bill_month')
+          .order('ramp_bill_id')
+          .order('line_no')
+          .range(a, b)),
+        db.from('linen_charge_installments')
+          .select('amount, billed_at, service_month')
+          .in('status', ['billed', 'billed_external']),
       ])
       if (qbo.error) throw new Error(qbo.error.message)
+      if (linenFeeRows.error) throw new Error(linenFeeRows.error.message)
 
       const properties: EconProperty[] = props.map(p => ({
         id: p.id,
@@ -137,6 +150,13 @@ export function usePropertyEconomics(start: string | null, end: string | null, c
           total_expenses: Number(q.total_expenses) || 0,
         })),
         weighIns,
+        linenPurchases: linenBuys.map(l => ({ month: String(l.bill_month).slice(0, 10), amount: Number(l.amount) || 0 })),
+        linenFees: ((linenFeeRows.data ?? []) as { amount: number; billed_at: string | null; service_month: string | null }[])
+          .map(f => ({
+            d: f.billed_at ? String(f.billed_at).slice(0, 10) : `${String(f.service_month ?? '').slice(0, 7)}-01`,
+            amount: Number(f.amount) || 0,
+          }))
+          .filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f.d)),
       })
       return { ...result, start: s, end: e, today, coverage: coverage! }
     },

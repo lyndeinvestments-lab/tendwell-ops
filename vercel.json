@@ -38,6 +38,13 @@
       "includeFiles": "api/qbo/_lib.ts,api/qbo/_pl-parse.ts",
       "maxDuration": 300
     },
+    "api/cron/ramp-bills-sync.ts": {
+      "includeFiles": "api/qbo/_lib.ts,api/ramp/_lib.ts,api/ramp/_supplies.ts",
+      "maxDuration": 300
+    },
+    "api/ramp/*.ts": {
+      "includeFiles": "api/ramp/_lib.ts,api/qbo/_lib.ts"
+    },
     "api/cron/owner-activity.ts": {
       "includeFiles": "api/cron/_owner-activity.ts,api/notify/_lib.ts,api/qbo/_lib.ts",
       "maxDuration": 60
@@ -134,6 +141,10 @@
     {
       "path": "/api/cron/qbo-pl-sync",
       "schedule": "45 4 * * *"
+    },
+    {
+      "path": "/api/cron/ramp-bills-sync",
+      "schedule": "0 5 * * *"
     },
     {
       "path": "/api/cron/purge-properties",

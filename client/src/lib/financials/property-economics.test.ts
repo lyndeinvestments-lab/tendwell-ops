@@ -186,6 +186,33 @@ describe('computePropertyEconomics', () => {
     expect(r.company.months[0].consumablesSource).toBe('average')
   })
 
+  it('takes linen purchases out of supplies before averaging and shows them beside the linen fees', () => {
+    const month = (m: string, supplies: number) => ({
+      month: m, total_income: 0, total_expenses: 0, cogs_breakdown: { 'Cleaning Supplies': supplies }, expense_breakdown: {},
+    })
+    const r = computePropertyEconomics({
+      ...base,
+      qbo: [month('2026-07-01', 30), month('2026-08-01', 0), month('2026-09-01', 90)],
+      // More linens than the month's supplies is capped at the supplies total.
+      linenPurchases: [{ month: '2026-09-01', amount: 60 }, { month: '2026-08-01', amount: 5 }],
+      linenFees: [{ d: '2026-09-15', amount: 75 }, { d: '2026-10-06', amount: 999 }],
+    })
+    // (30 + 0 + (90 − 60)) / 3
+    expect(r.company.consumables.actual).toBeCloseTo(20)
+    expect(r.company.consumables.linensExcluded).toBeCloseTo(60)
+    expect(r.company.linens).toEqual({ purchased: 60, fees: 75, net: 15 })
+  })
+
+  it('keeps linen onboarding fees out of property revenue', () => {
+    expect(classifyLine({ property_id: 1, line_kind: 'extra', service_type: 'Linen Onboarding', description: null })).toBe('linen_fee')
+    const r = computePropertyEconomics({
+      ...base,
+      lines: [...base.lines, line({ property_id: 1, line_kind: 'extra', service_type: 'Linen Onboarding', work_date: '2026-09-20', client_charge_amount: 500 })],
+    })
+    const without = computePropertyEconomics(base)
+    expect(r.properties.find(p => p.property_id === 1)!.revenue).toBe(without.properties.find(p => p.property_id === 1)!.revenue)
+  })
+
   it('fills fixed overhead not yet booked in the month in progress from the trailing average', () => {
     const r = computePropertyEconomics({
       ...base,

@@ -205,7 +205,8 @@ export const financialsEn = {
       consumables: {
         title: 'Consumables',
         qbo: 'Booked in QuickBooks supplies',
-        actual: 'Actual (3-month average)',
+        linens: 'Less linens (onboarding stock)',
+        actual: 'Actual, without linens (3-month average)',
         expected: 'Expected (cleans × per-clean consumables)',
         diff: 'Off by',
       },
@@ -225,6 +226,10 @@ export const financialsEn = {
         profit: 'Profit',
         margin: 'Margin',
         cleans: '{{count}} cleans at {{properties}} properties',
+        linensTitle: 'Linen program (not in the bottom line)',
+        linensBought: 'Linens bought',
+        linensFees: 'Linen fees billed to owners',
+        linensNet: 'Linen net',
       },
     },
     sourceTag: { qbo: 'QuickBooks', weighins: 'weigh-ins', expected: 'expected', average: '3-mo avg' },
@@ -280,7 +285,7 @@ export const financialsEn = {
     },
     emptyTitle: 'No activity in this period',
     emptyDescription: 'No cleans or invoice lines found for the selected period.',
-    methodology: 'How this works: in weeks covered by an approved Busy Bee invoice, a property’s cleans, revenue and cleaner pay are its invoice lines; after the last invoice they are the Breezeway/Trellis clean days at the property’s rates. Inspections are Busy Bee’s hourly inspection lines (Irma, Joshua … “Work”, Inspection Work), each split evenly across the properties cleaned that week, plus QuickBooks Inspection Cost split across the month’s properties. Laundry is Blessed (QuickBooks) plus Busy Bee facility/linen hours, shared by each property’s expected laundry. Consumables are the 3-month average of QuickBooks supplies (bulk orders land in one month), shared by expected consumables. Overhead (leadership, operating expenses, deliveries) is shared by cleans. Monthly QuickBooks amounts count in proportion to the month’s cleans that fall in the period.',
+    methodology: 'How this works: in weeks covered by an approved Busy Bee invoice, a property’s cleans, revenue and cleaner pay are its invoice lines; after the last invoice they are the Breezeway/Trellis clean days at the property’s rates. Inspections are Busy Bee’s hourly inspection lines (Irma, Joshua … “Work”, Inspection Work), each split evenly across the properties cleaned that week, plus QuickBooks Inspection Cost split across the month’s properties. Laundry is Blessed (QuickBooks) plus Busy Bee facility/linen hours, shared by each property’s expected laundry. Consumables are the 3-month average of QuickBooks supplies without linens (bulk orders land in one month), shared by expected consumables; linens are found by itemizing each Ramp supply bill and are onboarding stock billed to owners, so they sit outside the bottom line. Overhead (leadership, operating expenses, deliveries) is shared by cleans. Monthly QuickBooks amounts count in proportion to the month’s cleans that fall in the period.',
   },
 
   // ─── owned by: pro-forma.tsx (per-property table) ───────────────────────
