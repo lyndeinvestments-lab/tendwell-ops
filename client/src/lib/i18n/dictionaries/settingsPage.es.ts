@@ -410,6 +410,8 @@ export const settingsPageEs: typeof settingsPageEn = {
     billcomOk: 'Conectado. {{customers}} clientes activos ({{withEmail}} con correo), {{invoices}} facturas.',
     billcomLatest: 'Facturas más recientes',
     billcomFailed: 'No se pudo conectar ({{stage}}): {{error}}',
+    billcomSetup: 'Detalles de configuración de facturas (facturas recientes, artículos, plazos de pago)',
+    billcomSetupCopy: 'Copiar',
     anthropicName: 'Anthropic (Asistente de IA)',
     anthropicDesc: 'Impulsa el chat de IA dentro de la app.',
     anthropicDetailPresent: 'Hay una clave de cliente pública presente - normalmente las claves se mantienen en el servidor. Verifica que esto sea intencional.',

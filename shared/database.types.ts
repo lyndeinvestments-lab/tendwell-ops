@@ -1817,6 +1817,7 @@ export type Database = {
         Row: {
           additional_properties_count: number | null
           additional_properties_notes: string | null
+          billcom_customer_id: string | null
           billing_channel: string
           client_since: string | null
           client_stage: string
@@ -1844,6 +1845,7 @@ export type Database = {
         Insert: {
           additional_properties_count?: number | null
           additional_properties_notes?: string | null
+          billcom_customer_id?: string | null
           billing_channel?: string
           client_since?: string | null
           client_stage?: string
@@ -1871,6 +1873,7 @@ export type Database = {
         Update: {
           additional_properties_count?: number | null
           additional_properties_notes?: string | null
+          billcom_customer_id?: string | null
           billing_channel?: string
           client_since?: string | null
           client_stage?: string
