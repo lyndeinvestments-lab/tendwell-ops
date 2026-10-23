@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
 import { isCreditLine } from './_credits.js'
 import { isLinenChargeLine } from '../../shared/linen-charges.js'
+import { registerInvoiceNumber } from './_billcom-drafts.js'
 import {
   linenClientsByLine,
   canTransition,
@@ -322,10 +323,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const row = existing.get(group.key)
 
-  // ── pre-send check (read only) ────────────────────────────────────────────
-  if (a.action === 'presend_check') {
-    // Every row of this client invoice, held ones included (same membership
-    // as groupBillComInvoices and the SQL function).
+  // The pre-send check for this client invoice: every row of it, held ones
+  // included (same membership as groupBillComInvoices and the SQL function).
+  // Used by presend_check and before emailing from bill.com.
+  const preSend = async (invoiceNumber: string | null) => {
     const groupLines = rows
       .filter((r, i) => {
         const l = inputs[i]
@@ -338,13 +339,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .from('sent_invoices')
       .select('client_name, sent_at')
       .eq('billing_channel', a.channel)
-      .eq('invoice_number', a.billcomInvoiceNumber ?? '')
+      .eq('invoice_number', invoiceNumber ?? '')
       .is('voids_id', null)
       .limit(1)
-    if (regErr && !isMissingSchemaError(regErr)) {
-      res.status(500).json({ error: 'Failed to read the sent-invoices register', detail: regErr.message })
-      return
-    }
+    if (regErr && !isMissingSchemaError(regErr)) throw new Error(`Failed to read the sent-invoices register: ${regErr.message}`)
     const { data: contact } = await supabase.from('contacts').select('email').eq('id', a.contactId).maybeSingle()
     const exceptions: PreSendException[] = preSendExceptions({
       run: { status: run.status, archivedAt: run.archived_at },
@@ -352,14 +350,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       lines: groupLines,
       registered: regRows?.[0] ? { clientName: regRows[0].client_name, sentAt: regRows[0].sent_at } : null,
     })
+    return { groupLines, exceptions, registerAvailable: !regErr, recipientDefault: contact?.email?.trim() || null }
+  }
+
+  // ── pre-send check (read only) ────────────────────────────────────────────
+  if (a.action === 'presend_check') {
+    let check: Awaited<ReturnType<typeof preSend>>
+    try {
+      check = await preSend(a.billcomInvoiceNumber ?? null)
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) })
+      return
+    }
     res.status(200).json({
       ok: true,
-      register_available: !regErr,
-      exceptions,
-      total: sendableTotal(groupLines),
-      period: registerPeriod(a.serviceMonth, run.period_start, run.period_end, groupLines.map(l => l.serviceDate)),
-      recipient_default: contact?.email?.trim() || null,
+      register_available: check.registerAvailable,
+      exceptions: check.exceptions,
+      total: sendableTotal(check.groupLines),
+      period: registerPeriod(a.serviceMonth, run.period_start, run.period_end, check.groupLines.map(l => l.serviceDate)),
+      recipient_default: check.recipientDefault,
       run_source: run.source,
+      billcom_invoices: Array.isArray(row?.billcom_invoices) ? row.billcom_invoices : null,
+      // The number to record when it was created through the API
+      // (billcom-create.ts): Mark sent prefills it.
+      billcom_register_number: Array.isArray(row?.billcom_invoices) && row.billcom_invoices.length > 0
+        ? registerInvoiceNumber(row.billcom_invoices.map((c: { number: string }) => ({ invoiceNumber: c.number })))
+        : null,
     })
     return
   }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, ChevronRight, Loader2, PauseCircle, Pencil, PlayCircle, Send, Tag } from 'lucide-react'
+import { CheckCircle2, ChevronDown, ChevronRight, FilePlus2, Loader2, PauseCircle, Pencil, PlayCircle, Send, Tag } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useToast } from '@/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -33,6 +33,7 @@ import {
   type CreditClient,
 } from '@shared/billcom-send'
 import { MarkSentDialog } from './MarkSentDialog'
+import { CreateInBillComDialog } from './CreateInBillComDialog'
 
 /**
  * bill.com send control on an approved run: one row per client invoice (a
@@ -77,6 +78,7 @@ type Prompt =
   | { kind: 'hold_invoice'; group: BillComGroup }
   | { kind: 'hold_line'; line: InvoiceLine }
   | { kind: 'mark_sent'; group: BillComGroup }
+  | { kind: 'create_billcom'; group: BillComGroup }
 
 /** One line's client charge, editable until its invoice is sent. */
 function ChargeEditor({ line, editable, pending, onSave }: {
@@ -168,16 +170,20 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
     enabled: enabled && billComLines.length > 0,
     retry: false,
     queryFn: async () => {
-      const { data, error } = await supabase
+      const load = (columns: string) => supabase
         .from('client_invoices')
-        .select('contact_id, billing_channel, service_month, status, hold_reason, billcom_invoice_number, sent_at, sent_by, total')
+        .select(columns)
         .eq('run_id', run.id)
         .in('billing_channel', CLIENT_INVOICE_CHANNELS as unknown as string[])
+      const base = 'contact_id, billing_channel, service_month, status, hold_reason, billcom_invoice_number, sent_at, sent_by, total'
+      // billcom_invoices arrived with 20261023b; without it the panel works as before.
+      let { data, error } = await load(`${base}, billcom_invoices`)
+      if (error && isMissingSchemaError(error)) ({ data, error } = await load(base))
       if (error) {
         if (isMissingSchemaError(error)) return null
         throw error
       }
-      return (data ?? []).map(r => ({
+      return ((data ?? []) as unknown as Array<Record<string, any>>).map(r => ({
         contactId: r.contact_id,
         channel: r.billing_channel as ClientInvoiceChannel,
         serviceMonth: r.service_month,
@@ -187,6 +193,7 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
         sentAt: r.sent_at,
         sentBy: r.sent_by,
         total: r.total,
+        billcomInvoices: Array.isArray(r.billcom_invoices) ? r.billcom_invoices : null,
       }))
     },
   })
@@ -401,6 +408,18 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
                           >
                             <PauseCircle className="w-3.5 h-3.5 mr-1.5" /> Hold
                           </Button>
+                          {g.channel === 'bill_com' && !state?.billcomInvoices?.length && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7"
+                              disabled={actionMutation.isPending}
+                              onClick={() => setPrompt({ kind: 'create_billcom', group: g })}
+                              data-testid={`button-billcom-create-${g.key}`}
+                            >
+                              <FilePlus2 className="w-3.5 h-3.5 mr-1.5" /> Create in bill.com
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             className="h-7"
@@ -417,6 +436,11 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
 
                   {!g.contactId && (
                     <p className="text-2xs text-destructive">These lines' property has no client, so they can't be invoiced. Set the client on the property first.</p>
+                  )}
+                  {status === 'approved' && !!state?.billcomInvoices?.length && (
+                    <p className="text-2xs text-info">
+                      Created in bill.com as {state.billcomInvoices.map(c => `#${c.number}`).join(', ')}. Not emailed yet: send it from bill.com, then Mark sent.
+                    </p>
                   )}
                   {status === 'held' && state?.holdReason && (
                     <p className="text-2xs text-warning">Held: {state.holdReason}</p>
@@ -523,7 +547,7 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
         )}
       </CardContent>
 
-      <Dialog open={prompt != null && prompt.kind !== 'mark_sent'} onOpenChange={open => { if (!open) setPrompt(null) }}>
+      <Dialog open={prompt != null && prompt.kind !== 'mark_sent' && prompt.kind !== 'create_billcom'} onOpenChange={open => { if (!open) setPrompt(null) }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
@@ -563,6 +587,12 @@ export function BillComSendPanel({ run, lines, onChanged, onCounts }: {
         group={prompt?.kind === 'mark_sent' ? prompt.group : null}
         onClose={() => setPrompt(null)}
         onSent={() => { invoicesQuery.refetch(); onChanged() }}
+      />
+      <CreateInBillComDialog
+        run={run}
+        group={prompt?.kind === 'create_billcom' ? prompt.group : null}
+        onClose={() => setPrompt(null)}
+        onCreated={() => invoicesQuery.refetch()}
       />
     </Card>
   )

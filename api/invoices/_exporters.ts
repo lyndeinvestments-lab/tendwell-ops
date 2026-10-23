@@ -463,32 +463,68 @@ const BILLCOM_HEADERS = [
   'Amount',
 ]
 
-export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
+/** One bill.com line as a person enters it: the worksheet's rows, before any
+ *  send-control filtering. Also the source for invoices Ops creates in
+ *  bill.com through the API (_billcom-drafts.ts), so the two never disagree. */
+export interface BillComRow {
+  line: ExportLine // split rows collapsed onto their base
+  contactId: string | null
+  clientName: string | null
+  serviceMonth: string // yyyy-mm
+  invoiceDate: string | null // yyyy-mm-dd, also the due date (Due On Receipt)
+  service: string
+  serviceDate: string | null
+  propertyName: string | null
+  amount: number
+  /** The line, or any row of its split vendor line, carries a hold reason. */
+  held: boolean
+}
+
+export function billComRows(run: Pick<ExportRun, 'invoiceDate'>, lines: ExportLine[]): BillComRow[] {
   // A hold set on any row of a split vendor line holds the whole line, so it
   // has to be read before the rows collapse onto their base.
   const held = heldLineNumbers(lines.filter(l => l.lineNo != null).map(l => ({ lineNo: l.lineNo!, billHoldReason: l.billHoldReason })))
   const collapsed = collapseSplits(lines, l => l.clientChargeAmount, (l, total) => ({ ...l, clientChargeAmount: total }))
-  const states = run.billComInvoices ? stateMap(run.billComInvoices) : null
-  const rows = collapsed
+  return collapsed
     .filter(l => isArLine(l, 'bill_com'))
-    .filter(l => !states || billComLineSendable({
-      contactId: l.contactId,
-      serviceMonth: serviceMonth(l, run.invoiceDate),
-      billHoldReason: l.billHoldReason ?? (l.lineNo != null && held.has(l.lineNo) ? 'held' : null),
-    }, states))
+    .map(l => {
+      const month = serviceMonth(l, run.invoiceDate)
+      return {
+        line: l,
+        contactId: l.contactId ?? null,
+        clientName: l.clientName,
+        serviceMonth: month,
+        invoiceDate: invoiceDateForMonth(run.invoiceDate, month),
+        service: serviceTitle(l),
+        serviceDate: l.serviceDate,
+        propertyName: l.propertyName,
+        amount: l.clientChargeAmount ?? 0,
+        held: !!(l.billHoldReason?.trim() || (l.lineNo != null && held.has(l.lineNo))),
+      }
+    })
     // Client, then MONTH (one bill.com invoice per client per month), then date.
     .sort((a, b) => (a.clientName ?? '').localeCompare(b.clientName ?? '') ||
-      serviceMonth(a, run.invoiceDate).localeCompare(serviceMonth(b, run.invoiceDate)) ||
+      a.serviceMonth.localeCompare(b.serviceMonth) ||
       (a.serviceDate ?? '').localeCompare(b.serviceDate ?? ''))
-    .map(l => [
-      s(l.clientName ?? ''),
-      fmtUsDate(invoiceDateForMonth(run.invoiceDate, serviceMonth(l, run.invoiceDate))),
-      fmtUsDate(invoiceDateForMonth(run.invoiceDate, serviceMonth(l, run.invoiceDate))),
-      s(serviceTitle(l)),
-      fmtUsDate(l.serviceDate),
-      s(l.propertyName ?? ''),
-      withNote('', l.note),
-      (l.clientChargeAmount ?? 0).toFixed(2),
+}
+
+export function toBillComCsv(run: ExportRun, lines: ExportLine[]): string {
+  const states = run.billComInvoices ? stateMap(run.billComInvoices) : null
+  const rows = billComRows(run, lines)
+    .filter(r => !states || billComLineSendable({
+      contactId: r.contactId,
+      serviceMonth: r.serviceMonth,
+      billHoldReason: r.held ? 'held' : null,
+    }, states))
+    .map(r => [
+      s(r.clientName ?? ''),
+      fmtUsDate(r.invoiceDate),
+      fmtUsDate(r.invoiceDate),
+      s(r.service),
+      fmtUsDate(r.serviceDate),
+      s(r.propertyName ?? ''),
+      withNote('', r.line.note),
+      r.amount.toFixed(2),
     ])
   return Papa.unparse({ fields: BILLCOM_HEADERS, data: rows }, { newline: '\r\n' })
 }

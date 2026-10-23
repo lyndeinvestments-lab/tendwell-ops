@@ -1,10 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import type { BillingChannel, LineKind } from './_engine.js'
 import { monthsOf, toBillComCsv, toQboFlatCsv, toQboMultilineCsv, toRampCsv, type ExportLine, type ExportRun } from './_exporters.js'
-import { fetchAllRows, getServiceClient, requireInvoicingBearer } from './_lib.js'
-import { creditClientsByLine, isMissingSchemaError, lineClient, linenClientsByLine, type ClientInvoiceState, type ClientInvoiceStatus, type CreditClient } from '../../shared/billcom-send.js'
-import { isCreditLine } from './_credits.js'
-import { isLinenChargeLine } from '../../shared/linen-charges.js'
+import { getServiceClient, requireInvoicingBearer } from './_lib.js'
+import { loadExportLines } from './_export-lines.js'
+import { isMissingSchemaError, type ClientInvoiceState, type ClientInvoiceStatus } from '../../shared/billcom-send.js'
 import { allocateClearNumber, docNumberTaken, qboConnection, raiseCounterToQbo } from './_qbo-numbers.js'
 
 // GET /api/invoices/export?run_id=<uuid>&format=ramp|qbo_flat|qbo_multiline|billcom
@@ -72,32 +70,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // Paged: PostgREST caps a response at 1000 rows, and a silently truncated
-  // export is the worst failure here — a CSV that looks complete while
-  // under-billing the client and under-paying the cleaner.
-  const LINE_COLUMNS = 'id, line_no, line_kind, service_type, raw_date_mentioned, service_date, flags, raw_property_text, raw_note_text, review_note, review_status, cleaner_pay_amount, client_charge_amount, billing_channel, property_id, split_group, properties(name, contact_id, contacts:contact_id(full_name, company))'
-  const loadLines = (columns: string) => fetchAllRows<Record<string, any>>(
-    'invoice_lines',
-    () => supabase
-      .from('invoice_lines')
-      .select(columns)
-      .eq('run_id', runId)
-      .order('line_no'),
-    'line_no',
-  )
-  let lineRows: Array<Record<string, any>>
+  let lines: ExportLine[]
   // bill.com send control needs invoice_lines.bill_hold_reason and the
   // client_invoices table (20261009c). Until that migration is applied both
   // are missing, and the export behaves exactly as it did before.
-  let sendControl = true
+  let sendControl: boolean
   try {
-    try {
-      lineRows = await loadLines(`${LINE_COLUMNS}, bill_hold_reason`)
-    } catch (e) {
-      if (!isMissingSchemaError(e)) throw e
-      sendControl = false
-      lineRows = await loadLines(LINE_COLUMNS)
-    }
+    ({ lines, sendControl } = await loadExportLines(supabase, runId))
   } catch (e) {
     res.status(500).json({ error: 'Failed to load lines', detail: e instanceof Error ? e.message : String(e) })
     return
@@ -124,69 +103,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // A client credit (invoice_adjustments) names its client on the adjustment,
-  // not through a property: most credits carry none. Without this the
-  // bill.com worksheet would list the credit under a blank customer, and send
-  // control (which needs the client's contact id) would drop it entirely.
-  let creditClients: Map<string, CreditClient> = new Map()
-  const creditLineIds = lineRows.filter(r => isCreditLine(r)).map(r => String(r.id))
-  if (creditLineIds.length > 0) {
-    const { data: adjRows, error: adjErr } = await supabase
-      .from('invoice_adjustments')
-      .select('applied_line_id, contact_id, contacts:contact_id(full_name, company)')
-      .in('applied_line_id', creditLineIds)
-    if (adjErr && !isMissingSchemaError(adjErr)) {
-      res.status(500).json({ error: 'Failed to load client credits', detail: adjErr.message })
-      return
-    }
-    creditClients = creditClientsByLine(adjRows)
-  }
-  // A client-wide linen charge (no property) names its client on the charge.
-  const linenLineIds = lineRows.filter(r => isLinenChargeLine(r)).map(r => String(r.id))
-  if (linenLineIds.length > 0) {
-    const { data: instRows, error: instErr } = await supabase
-      .from('linen_charge_installments')
-      .select('line_id, linen_charges:charge_id(contact_id, contacts:contact_id(full_name, company))')
-      .in('line_id', linenLineIds)
-    if (instErr && !isMissingSchemaError(instErr)) {
-      res.status(500).json({ error: 'Failed to load linen charges', detail: instErr.message })
-      return
-    }
-    creditClients = new Map([...Array.from(creditClients), ...Array.from(linenClientsByLine(instRows))])
-  }
-
   const vendorRel = (run as unknown as { vendors: { name: string } | Array<{ name: string }> | null }).vendors
   const vendorName = Array.isArray(vendorRel) ? vendorRel[0]?.name ?? 'Vendor' : vendorRel?.name ?? 'Vendor'
-
-  const lines: ExportLine[] = ((lineRows ?? []) as Array<Record<string, any>>).map(r => {
-    const prop = Array.isArray(r.properties) ? r.properties[0] : r.properties
-    const contact = prop ? (Array.isArray(prop.contacts) ? prop.contacts[0] : prop.contacts) : null
-    const client = lineClient({
-      id: r.id != null ? String(r.id) : null,
-      propertyContactId: prop?.contact_id ?? null,
-      propertyClientName: contact?.full_name ?? contact?.company ?? null,
-    }, creditClients)
-    return {
-      lineKind: r.line_kind as LineKind,
-      serviceType: r.service_type,
-      serviceDate: r.service_date ?? r.raw_date_mentioned,
-      propertyName: prop?.name ?? null,
-      rawPropertyText: r.raw_property_text ?? null,
-      propertyId: r.property_id != null ? Number(r.property_id) : null,
-      clientName: client.clientName,
-      billingChannel: r.billing_channel as BillingChannel | null,
-      cleanerPayAmount: r.cleaner_pay_amount != null ? Number(r.cleaner_pay_amount) : null,
-      clientChargeAmount: r.client_charge_amount != null ? Number(r.client_charge_amount) : null,
-      note: r.raw_note_text,
-      reviewNote: r.review_note,
-      reviewStatus: r.review_status,
-      splitGroup: r.split_group != null ? Number(r.split_group) : null,
-      flags: Array.isArray(r.flags) ? r.flags : [],
-      lineNo: r.line_no != null ? Number(r.line_no) : null,
-      contactId: client.contactId,
-      billHoldReason: r.bill_hold_reason ?? null,
-    }
-  })
 
   // One QBO invoice number per SERVICE MONTH of the Haven lines (Haven books
   // by month and rejected 1096 for mixing Sept + Oct). Numbers already
