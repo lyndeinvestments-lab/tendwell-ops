@@ -47,9 +47,11 @@ import { getGoogleMapsRuntimeStatus, type GoogleMapsRuntimeStatus } from '@/comp
 import { SignaturePad } from '@/components/SignaturePad'
 import { downloadAgreementPdf } from '@/lib/agreements'
 import { useLocale } from '@/lib/i18n/LocaleProvider'
+import type { TFunc } from '@/lib/i18n/t'
 import { slugify } from '@/lib/issues'
 import { ApiKeysSection } from '@/components/settings/ApiKeysSection'
 import { IntegrationsGuide } from '@/components/settings/IntegrationsGuide'
+import { authFetch } from '@/components/lost-items/shared'
 
 // ─── Role Options (system roles for the invite dropdown) ─────────────────────
 
@@ -2062,6 +2064,21 @@ function IntegrationsSection() {
   const { toast } = useToast()
   const { t } = useLocale('settingsPage')
   const [qboConnecting, setQboConnecting] = useState(false)
+  const [billcomTesting, setBillcomTesting] = useState(false)
+  const [billcomResult, setBillcomResult] = useState<BillComStatus | null>(null)
+
+  // Read-only bill.com check: the server logs in with the Sensitive BILLCOM_*
+  // env vars and returns counts + the latest invoice numbers.
+  async function testBillcom() {
+    setBillcomTesting(true)
+    try {
+      setBillcomResult(await authFetch('/api/billcom/status', { method: 'POST' }))
+    } catch (e) {
+      setBillcomResult({ ok: false, stage: 'request', error: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setBillcomTesting(false)
+    }
+  }
 
   // Click handler for the admin "Reconnect QuickBooks" button. The /api/qbo/
   // authorize endpoint is admin-gated (Bearer header) and sets a one-shot
@@ -2153,6 +2170,26 @@ function IntegrationsSection() {
       ) : null,
     },
     {
+      icon: Send,
+      name: t('integrations.billcomName'),
+      description: t('integrations.billcomDesc'),
+      status: (billcomResult ? (billcomResult.ok ? 'connected' : 'not_configured') : 'unknown') as Status,
+      detail: t('integrations.billcomDetail'),
+      action: isAdmin ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs"
+          disabled={billcomTesting}
+          onClick={testBillcom}
+          data-testid="button-billcom-test"
+        >
+          {billcomTesting ? t('integrations.billcomTesting') : t('integrations.billcomTest')}
+        </Button>
+      ) : null,
+      extra: billcomResult ? <BillComStatusDetail result={billcomResult} t={t} /> : null,
+    },
+    {
       icon: KeyRound,
       name: t('integrations.anthropicName'),
       description: t('integrations.anthropicDesc'),
@@ -2177,6 +2214,7 @@ function IntegrationsSection() {
         {integrations.map((it) => {
           const Icon = it.icon
           const action = (it as { action?: React.ReactNode }).action
+          const extra = (it as { extra?: React.ReactNode }).extra
           return (
             <div key={it.name} className="flex items-start gap-3 p-3">
               <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
@@ -2189,12 +2227,48 @@ function IntegrationsSection() {
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{it.description}</p>
                 <p className="text-2xs text-muted-foreground/80 mt-1">{it.detail}</p>
+                {extra}
               </div>
               {action ? <div className="flex-shrink-0">{action}</div> : null}
             </div>
           )
         })}
       </div>
+    </div>
+  )
+}
+
+type BillComStatus =
+  | {
+      ok: true
+      customers: { active: number; archived: number; with_email: number }
+      invoices: { total: number; by_status: Record<string, number>; latest: Array<{ number: string; date: string; status: string }> }
+    }
+  | { ok: false; stage: string; error: string; code?: string }
+
+function BillComStatusDetail({ result, t }: { result: BillComStatus; t: TFunc }) {
+  if (!result.ok) {
+    return (
+      <p className="text-xs text-destructive mt-2" data-testid="text-billcom-error">
+        {t('integrations.billcomFailed', { stage: result.stage, error: result.code ? `${result.error} (${result.code})` : result.error })}
+      </p>
+    )
+  }
+  return (
+    <div className="mt-2 space-y-1" data-testid="text-billcom-ok">
+      <p className="text-xs text-success">
+        {t('integrations.billcomOk', {
+          customers: result.customers.active,
+          withEmail: result.customers.with_email,
+          invoices: result.invoices.total,
+        })}
+      </p>
+      {result.invoices.latest.length > 0 && (
+        <div className="text-2xs text-muted-foreground">
+          <span className="font-medium">{t('integrations.billcomLatest')}:</span>{' '}
+          {result.invoices.latest.map((i) => `#${i.number} (${i.date}, ${i.status})`).join(' · ')}
+        </div>
+      )}
     </div>
   )
 }
