@@ -81,3 +81,24 @@ describe('vendor_invoice_submitted recipients', () => {
     expect(got).toEqual([3])
   })
 })
+
+describe('crew roles default to no email', () => {
+  const users = [
+    user(1, 'admin', ['issues']),
+    user(2, 'inspector', ['issues']),
+    user(3, 'supervisor', ['issues']),
+    user(4, 'cleaning', ['issues']),
+    user(5, 'inspector', ['issues']),
+  ]
+
+  it('skips inspectors, supervisors and cleaners with no preferences row', () => {
+    const got = filterRecipients(users, new Map(), 'issue_logged').map(u => u.id)
+    expect(got).toEqual([1])
+  })
+
+  it('still emails a crew member who explicitly opted in', () => {
+    const prefs = new Map<number, NotifPrefs>([[5, { user_id: 5, ...DEFAULT_NOTIF_PREFS }]])
+    const got = filterRecipients(users, prefs, 'issue_logged').map(u => u.id)
+    expect(got).toEqual([1, 5])
+  })
+})
