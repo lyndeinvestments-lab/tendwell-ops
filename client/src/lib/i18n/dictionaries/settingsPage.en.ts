@@ -448,6 +448,8 @@ export const settingsPageEn = {
     billcomOk: 'Connected. {{customers}} active customers ({{withEmail}} with an email), {{invoices}} invoices.',
     billcomLatest: 'Latest invoices',
     billcomFailed: 'Could not connect ({{stage}}): {{error}}',
+    billcomSetup: 'Invoice setup details (recent invoices, items, payment terms)',
+    billcomSetupCopy: 'Copy',
     anthropicName: 'Anthropic (AI Assistant)',
     anthropicDesc: 'Powers the in-app AI chat.',
     anthropicDetailPresent: 'Public client key present - usually keys are kept server-side. Verify this is intended.',

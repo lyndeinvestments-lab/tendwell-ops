@@ -31,6 +31,9 @@ const WRITE_DENYLIST = new Set([
   // server-owned from this surface's point of view.
   'client_stage',
   'client_stage_since',
+  // Set only through api/billcom/customers.ts, which checks the customer
+  // exists in bill.com; a wrong id would send one client's invoice to another.
+  'billcom_customer_id',
 ])
 
 // Filter a write body: drop the PK and denylisted columns, coerce '' → null so

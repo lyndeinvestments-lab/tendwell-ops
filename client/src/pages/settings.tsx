@@ -2243,6 +2243,7 @@ type BillComStatus =
       ok: true
       customers: { active: number; archived: number; with_email: number }
       invoices: { total: number; by_status: Record<string, number>; latest: Array<{ number: string; date: string; status: string }> }
+      setup?: unknown
     }
   | { ok: false; stage: string; error: string; code?: string }
 
@@ -2268,6 +2269,22 @@ function BillComStatusDetail({ result, t }: { result: BillComStatus; t: TFunc })
           <span className="font-medium">{t('integrations.billcomLatest')}:</span>{' '}
           {result.invoices.latest.map((i) => `#${i.number} (${i.date}, ${i.status})`).join(' · ')}
         </div>
+      )}
+      {result.setup != null && (
+        <details className="text-2xs text-muted-foreground">
+          <summary className="cursor-pointer select-none">{t('integrations.billcomSetup')}</summary>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 text-2xs mt-1"
+            onClick={() => navigator.clipboard?.writeText(JSON.stringify(result.setup, null, 2))}
+          >
+            {t('integrations.billcomSetupCopy')}
+          </Button>
+          <pre className="mt-1 max-h-64 overflow-auto rounded border border-border bg-muted/40 p-2 whitespace-pre-wrap break-all">
+            {JSON.stringify(result.setup, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   )

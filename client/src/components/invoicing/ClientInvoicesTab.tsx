@@ -21,6 +21,7 @@ import { vendorNameOf, type InvoiceRun } from '@/lib/invoices'
 import { monthLong, type ClientInvoiceRow } from '@/lib/invoicing-overview'
 import { channelLabel, type ClientInvoiceStatus } from '@shared/billcom-send'
 import { SentInvoicesRegister, useSentInvoicesRegister } from './SentInvoicesRegister'
+import { BillComCustomersCard } from './BillComCustomersCard'
 import type { useInvoicingOverview } from './useInvoicingOverview'
 
 type Overview = ReturnType<typeof useInvoicingOverview>
@@ -63,6 +64,7 @@ export function ClientInvoicesTab({ runs, overview, onOpenRun }: {
 
   return (
     <div className="space-y-6" data-testid="client-invoices-tab">
+      <BillComCustomersCard />
       {(sendAvailable || overview.isLoading) && (
         <section className="space-y-2" data-testid="client-invoices-to-send">
           <div className="flex items-baseline gap-2 flex-wrap">

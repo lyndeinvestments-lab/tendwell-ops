@@ -21,6 +21,9 @@ export class BillComError extends Error {
 export interface BillComSession {
   sessionId: string
   devKey: string
+  /** The signed-in bill.com user (`006…`); the reply-to on emailed invoices. */
+  userId: string
+  organizationId: string
 }
 
 /** Names of the BILLCOM_* variables that are missing or blank. */
@@ -54,7 +57,12 @@ export async function billComLogin(): Promise<BillComSession> {
   })
   const body = await res.json().catch(() => null)
   if (!res.ok || !body?.sessionId) throw billComErrorFrom(res.status, body)
-  return { sessionId: body.sessionId, devKey }
+  return {
+    sessionId: body.sessionId,
+    devKey,
+    userId: body.userId ?? '',
+    organizationId: body.organizationId ?? process.env.BILLCOM_ORG_ID!.trim(),
+  }
 }
 
 export async function billComLogout(session: BillComSession): Promise<void> {
@@ -72,6 +80,17 @@ export async function billComGet<T>(session: BillComSession, path: string, param
   const body = await res.json().catch(() => null)
   if (!res.ok) throw billComErrorFrom(res.status, body)
   return body as T
+}
+
+export async function billComPost<T>(session: BillComSession, path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BILLCOM_API_BASE}/${path}`, {
+    method: 'POST',
+    headers: { ...sessionHeaders(session), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const out = await res.json().catch(() => null)
+  if (!res.ok) throw billComErrorFrom(res.status, out)
+  return out as T
 }
 
 /** Every row of a paged list endpoint (customers, invoices…), following nextPage. */
