@@ -51,6 +51,8 @@ export interface ClientInvoiceState {
   sentAt?: string | null
   sentBy?: string | null
   total?: number | null
+  /** Created in bill.com from Ops (api/invoices/billcom-create.ts); one per property for HomeTeam. */
+  billcomInvoices?: Array<{ id: string; number: string; total: number; property: string | null }> | null
 }
 
 export function clientInvoiceKey(

@@ -32,6 +32,8 @@ interface PreSendResult {
   period: { start: string; end: string } | null
   recipient_default: string | null
   run_source: string | null
+  /** Set when Ops created it in bill.com (Create in bill.com): the number to record. */
+  billcom_register_number?: string | null
 }
 
 const fmtMoney = (n: number | null | undefined) =>
@@ -92,6 +94,11 @@ export function MarkSentDialog({ run, group, onClose, onSent }: {
   useEffect(() => {
     if (!recipientTouched && result?.recipient_default) setRecipient(result.recipient_default)
   }, [result?.recipient_default, recipientTouched])
+
+  // Created from Ops: the number is known, so fill it in.
+  useEffect(() => {
+    if (result?.billcom_register_number) setNumber(n => n || result.billcom_register_number!)
+  }, [result?.billcom_register_number])
 
   const send = useMutation({
     mutationFn: () => {
