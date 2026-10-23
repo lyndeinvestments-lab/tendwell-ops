@@ -45,6 +45,10 @@
     "api/ramp/*.ts": {
       "includeFiles": "api/ramp/_lib.ts,api/qbo/_lib.ts"
     },
+    "api/billcom/*.ts": {
+      "includeFiles": "api/billcom/_lib.ts,api/qbo/_lib.ts",
+      "maxDuration": 60
+    },
     "api/cron/owner-activity.ts": {
       "includeFiles": "api/cron/_owner-activity.ts,api/notify/_lib.ts,api/qbo/_lib.ts",
       "maxDuration": 60
