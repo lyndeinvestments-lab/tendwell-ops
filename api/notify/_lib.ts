@@ -274,6 +274,9 @@ export async function sendEmail(opts: {
   return { ok: true }
 }
 
+// Roles that never get staff email unless they explicitly opted in.
+export const CREW_ROLES: ReadonlySet<string> = new Set(['cleaning', 'cleaner', 'inspector', 'supervisor'])
+
 // Determine which users should receive a given event
 export function filterRecipients(
   users: Array<AppUserMin & { allowedViews: string[] }>,
@@ -291,10 +294,12 @@ export function filterRecipients(
     if (!u.allowedViews.includes(requiredView)) return false
     const roles = EVENT_ROLE_REQUIREMENT[eventType]
     if (roles && !roles.includes(u.role)) return false
-    // Cleaning / cleaner roles default to NO email notifications. They only
-    // opt IN if they have an explicit preferences row with email_enabled=true.
+    // Field crew roles (cleaners, inspectors, supervisors) default to NO email
+    // notifications. They only opt IN with an explicit preferences row that has
+    // email_enabled=true. Inspectors used to fall through to the all-on
+    // defaults and got every bot-logged issue (2026-10-22/23, ~14 emails each).
     const explicit = prefsByUser.get(u.id)
-    if (!explicit && (u.role === 'cleaning' || u.role === 'cleaner')) return false
+    if (!explicit && CREW_ROLES.has(u.role)) return false
     // Any other user with no row is treated as the table defaults (NOT a
     // blanket "send all") so opt-in events like follow_up_due
     // stay off until enabled. Matches the Settings UI's effective-defaults.
